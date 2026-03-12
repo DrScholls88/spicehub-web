@@ -1,0 +1,7 @@
+/* SpiceHub - Base Reset */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; }
+body { overscroll-behavior-y: none; }
+img { display: block; }
+button { font-family: inherit; }
+textarea { resize: vertical; }

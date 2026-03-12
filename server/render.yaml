@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: spicehub-server
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: SPICEHUB_MODE
+        value: cloud
+      - key: ALLOWED_ORIGINS
+        sync: false  # Set this in Render dashboard to your Vercel URL
+      - key: NODE_ENV
+        value: production
