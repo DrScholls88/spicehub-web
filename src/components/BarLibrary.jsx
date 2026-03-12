@@ -4,7 +4,7 @@ import db from '../db';
 // Category chips shown in the library
 const BAR_CATEGORIES = ['All', 'Cocktail', 'Mocktail', 'Beer & Wine', 'Shots', 'Non-Alcoholic'];
 
-export default function BarLibrary({ drinks, onAdd, onEdit, onDelete, onViewDetail, onShare, onImport, onReload, onToast }) {
+export default function BarLibrary({ drinks, onAdd, onEdit, onDelete, onViewDetail, onShare, onImport, onReload, onToast, onOpenShelf, onOpenBarFridge }) {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
   const [confirmDelete, setConfirmDelete] = useState(null);
@@ -115,8 +115,18 @@ export default function BarLibrary({ drinks, onAdd, onEdit, onDelete, onViewDeta
         </div>
       </div>
 
-      {/* ── Header actions (Import + Menu) ── */}
+      {/* ── Header actions ── */}
       <div className="bl-header">
+        {onOpenBarFridge && (
+          <button className="bl-import-btn" onClick={onOpenBarFridge} title="What's on My Shelf?">
+            🍸 My Shelf
+          </button>
+        )}
+        {onOpenShelf && (
+          <button className="bl-import-btn" onClick={onOpenShelf} title="View Bar Shelf" style={{ background: 'linear-gradient(135deg, #1a0a2e, #3a1f5e)', color: '#ff4081', border: 'none' }}>
+            🎮 Shelf View
+          </button>
+        )}
         <button className="bl-import-btn" onClick={onImport} title="Import from URL or Paprika">
           📥 Import
         </button>

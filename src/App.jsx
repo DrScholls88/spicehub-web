@@ -11,6 +11,8 @@ import ImportModal from './components/ImportModal';
 import FridgeMode from './components/FridgeMode';
 import CookMode from './components/CookMode';
 import MealStats from './components/MealStats';
+import BarShelf from './components/BarShelf';
+import BarFridgeMode from './components/BarFridgeMode';
 import { ThemeSettings } from './components/ThemeProvider';
 import { isMobileDevice } from './isMobile';
 import './App.css';
@@ -45,6 +47,8 @@ export default function App() {
   const [cookModeMeal, setCookModeMeal] = useState(null); // { meal, scaleFactor }
   const [showStats, setShowStats] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showBarShelf, setShowBarShelf] = useState(false);
+  const [showBarFridge, setShowBarFridge] = useState(false);
 
   const showToast = useCallback((message, type = 'success', duration = 2500) => {
     setToast({ message, type });
@@ -330,6 +334,8 @@ export default function App() {
             onImport={() => setShowImportFor('drinks')}
             onReload={loadDrinks}
             onToast={showToast}
+            onOpenShelf={() => setShowBarShelf(true)}
+            onOpenBarFridge={() => setShowBarFridge(true)}
           />
         )}
         {tab === 'grocery' && (
@@ -402,6 +408,20 @@ export default function App() {
           meals={meals}
           onViewDetail={(meal) => { setShowFridge(false); setDetailItem(meal); }}
           onClose={() => setShowFridge(false)}
+        />
+      )}
+      {showBarShelf && (
+        <BarShelf
+          drinks={drinks}
+          onViewDetail={(drink) => { setShowBarShelf(false); setDetailItem(drink); }}
+          onClose={() => setShowBarShelf(false)}
+        />
+      )}
+      {showBarFridge && (
+        <BarFridgeMode
+          drinks={drinks}
+          onViewDetail={(drink) => { setShowBarFridge(false); setDetailItem(drink); }}
+          onClose={() => setShowBarFridge(false)}
         />
       )}
       {cookModeMeal && (
