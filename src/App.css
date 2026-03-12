@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════
    SpiceHub Meal Spinner - Complete Styles
    ═══════════════════════════════════════════════════ */
-
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
@@ -3410,8 +3410,6 @@ body {
 /* ═══════════════════════════════════════════════════════════════════════════════
    BAR SHELF — Retro 16-bit Pixel Art Back Bar (bs-*)
    ═══════════════════════════════════════════════════════════════════════════════ */
-
-@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
 
 .bs-overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 550;
