@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { downloadMealsFile, importMealsFromJson, shareMealsFile } from '../sync';
+import { proxyImageUrl } from '../api';
 
-// Image component with proxy fallback for CORS/expired CDN URLs
+// Image component with CORS proxy fallback for expired CDN URLs
 function CardImage({ src, alt, className, phClass }) {
   const [failed, setFailed] = useState(false);
   const [triedProxy, setTriedProxy] = useState(false);
@@ -16,9 +17,8 @@ function CardImage({ src, alt, className, phClass }) {
       loading="lazy"
       onError={() => {
         if (!triedProxy && src.startsWith('http')) {
-          // Try image proxy fallback
-          const proxyBase = (import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3001`).replace(/\/$/, '');
-          setCurrentSrc(`${proxyBase}/api/image-proxy?url=${encodeURIComponent(src)}`);
+          // Try CORS proxy fallback (no backend server needed)
+          setCurrentSrc(proxyImageUrl(src));
           setTriedProxy(true);
         } else {
           setFailed(true);

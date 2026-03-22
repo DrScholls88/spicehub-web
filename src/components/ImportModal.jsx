@@ -333,12 +333,10 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                         alt=""
                         className="preview-detail-thumb"
                         onError={e => {
-                          // Try image proxy fallback for CORS/expired CDN URLs
-                          const proxyBase = (import.meta.env.VITE_API_URL || `http://${window.location.hostname}:3001`).replace(/\/$/, '');
-                          const proxyUrl = `${proxyBase}/api/image-proxy?url=${encodeURIComponent(m.imageUrl)}`;
+                          // Try CORS proxy fallback (no backend server needed)
                           if (!e.target.dataset.proxied) {
                             e.target.dataset.proxied = '1';
-                            e.target.src = proxyUrl;
+                            e.target.src = `https://api.allorigins.win/raw?url=${encodeURIComponent(m.imageUrl)}`;
                           } else {
                             e.target.style.display = 'none';
                           }

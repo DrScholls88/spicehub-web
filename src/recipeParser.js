@@ -524,7 +524,7 @@ function stripSocialMetaPrefix(text) {
   return text.trim();
 }
 
-// ─── CORS proxy fallback (used when server is unavailable) ────────────────────
+// ─── CORS proxy cascade (fully client-side, no server needed) ─────────────────
 const PROXIES = [
   url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
   url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
@@ -551,101 +551,147 @@ async function fetchHtmlViaProxy(url, timeoutMs = 15000) {
   return null;
 }
 
-// ─── Convert server extraction response → recipe format ──────────────────────
-function handleServerExtraction(data, sourceUrl) {
+// ─── Instagram embed extraction (client-side via CORS proxy) ──────────────────
+function extractInstagramShortcode(url) {
+  try {
+    const u = new URL(url);
+    const m = u.pathname.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
+    return m ? m[1] : null;
+  } catch { return null; }
+}
+
+function isInstagramUrl(urlStr) {
+  try {
+    const host = new URL(urlStr).hostname.replace(/^www\./, '');
+    return host === 'instagram.com' || host.endsWith('.instagram.com');
+  } catch { return false; }
+}
+
+async function extractInstagramEmbed(url) {
+  const shortcode = extractInstagramShortcode(url);
+  if (!shortcode) return null;
+
+  const embedUrl = `https://www.instagram.com/p/${shortcode}/embed/captioned/`;
+  console.log(`[instagram-embed] Trying embed page: ${embedUrl}`);
+
+  try {
+    const html = await fetchHtmlViaProxy(embedUrl, 15000);
+    if (!html) { console.log('[instagram-embed] CORS proxy returned no data'); return null; }
+    if (html.length < 5000 && (html.includes('Log in') || html.includes('login'))) {
+      console.log('[instagram-embed] Login wall detected'); return null;
+    }
+
+    // Extract caption
+    let caption = '';
+    const captionPatterns = [
+      /<div\s+class="[^"]*Caption[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+      /<div\s+class="[^"]*EmbedCaption[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+      /class="[^"]*[Cc]aption[^"]*"[^>]*>[\s\S]*?<span[^>]*>([\s\S]*?)<\/span>/i,
+    ];
+    for (const re of captionPatterns) {
+      const m = re.exec(html);
+      if (m && m[1]) {
+        const text = m[1].replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+        if (text && text.length > 15) { caption = text; break; }
+      }
+    }
+    // JSON data fallback
+    if (!caption) {
+      const dataPatterns = [
+        /"caption"\s*:\s*\{\s*"text"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/,
+        /"text"\s*:\s*"([^"]{20,}(?:\\.[^"]*)*)"/,
+      ];
+      for (const re of dataPatterns) {
+        const m = re.exec(html);
+        if (m && m[1]) {
+          try { caption = JSON.parse('"' + m[1] + '"'); } catch { caption = m[1]; }
+          if (caption.length > 15) break; else caption = '';
+        }
+      }
+    }
+    // OG description fallback
+    if (!caption) {
+      const og = extractMeta(html, 'og:description');
+      if (og && og.length > 15) caption = og;
+    }
+
+    // Extract image
+    let imageUrl = extractMeta(html, 'og:image') || '';
+    if (!imageUrl) {
+      const imgPatterns = [
+        /<img[^>]+src="(https:\/\/[^"]*instagram[^"]*\/[^"]*_n\.jpg[^"]*)"/i,
+        /<img[^>]+src="(https:\/\/scontent[^"]+)"/i,
+        /"display_url"\s*:\s*"(https:[^"]+)"/i,
+        /"thumbnail_src"\s*:\s*"(https:[^"]+)"/i,
+      ];
+      for (const re of imgPatterns) {
+        const m = re.exec(html);
+        if (m) { imageUrl = m[1].replace(/&amp;/g, '&').replace(/\\u0026/g, '&'); break; }
+      }
+    }
+
+    // Extract title
+    let title = cleanTitle(extractMeta(html, 'og:title') || '');
+
+    if (!caption && !title) { console.log('[instagram-embed] No data found'); return null; }
+
+    console.log(`[instagram-embed] Success — caption: ${caption.length} chars, image: ${imageUrl ? 'yes' : 'no'}`);
+    return { ok: true, type: 'caption', caption: stripSocialMetaPrefix(caption), title, imageUrl, sourceUrl: url };
+  } catch (e) {
+    console.log(`[instagram-embed] Error: ${e.message}`);
+    return null;
+  }
+}
+
+// ─── Convert embed extraction result → recipe format ─────────────────────────
+function handleEmbedResult(data, sourceUrl) {
   if (!data || !data.ok) return null;
 
-  // ── Always prefer the server-resolved imageUrl (it already ran selectBestImage) ──
-  const serverImage = data.imageUrl || '';
+  const caption = stripSocialMetaPrefix(data.caption || '');
+  const parsed = parseCaption(caption);
+  let title = data.title || parsed.title || 'Imported Recipe';
+  title = cleanTitle(title);
 
-  if (data.type === 'jsonld' && data.recipe?.name) {
-    const node = data.recipe;
-    const name = (node.name || '').toString().trim() || 'Imported Recipe';
-
-    const ingredients = Array.isArray(node.recipeIngredient)
-      ? node.recipeIngredient.map(s => s.toString().trim()).filter(Boolean)
-      : [];
-
-    // Use Mealie-style flexible instruction parsing
-    const directions = parseInstructionsFlexible(node.recipeInstructions);
-
-    // Image: server sends pre-resolved imageUrl; fallback to node.image parsing
-    const nodeImage = selectBestImage(node.image);
-    const imageUrl = serverImage || nodeImage || '';
-
-    return {
-      name,
-      ingredients: ingredients.length ? ingredients : ['See recipe for ingredients'],
-      directions: directions.length ? directions : ['See recipe for directions'],
-      imageUrl,
-      link: data.sourceUrl || sourceUrl,
-    };
-  }
-
-  if (data.type === 'caption' && (data.caption || data.title)) {
-    const caption = stripSocialMetaPrefix(data.caption || '');
-    const parsed = parseCaption(caption);
-    let title = data.title || parsed.title || 'Imported Recipe';
-    title = cleanTitle(title);
-
-    return {
-      name: title,
-      ingredients: parsed.ingredients.length > 0 ? parsed.ingredients : ['See original post for ingredients'],
-      directions: parsed.directions.length > 0 ? parsed.directions : ['See original post for directions'],
-      imageUrl: serverImage,
-      link: data.sourceUrl || sourceUrl,
-    };
-  }
-
-  // Server got the page but found nothing useful — try with OG data if available
-  if (data.title) {
-    const title = cleanTitle(data.title);
-    const desc = stripSocialMetaPrefix(data.caption || data.description || '');
-    const parsed = desc ? parseCaption(desc) : { ingredients: [], directions: [], title: null };
-    return {
-      name: parsed.title || title,
-      ingredients: parsed.ingredients.length > 0 ? parsed.ingredients : ['See original post for ingredients'],
-      directions: parsed.directions.length > 0 ? parsed.directions : ['See original post for directions'],
-      imageUrl: serverImage,
-      link: data.sourceUrl || sourceUrl,
-    };
-  }
-
-  return null;
+  return {
+    name: title,
+    ingredients: parsed.ingredients.length > 0 ? parsed.ingredients : ['See original post for ingredients'],
+    directions: parsed.directions.length > 0 ? parsed.directions : ['See original post for directions'],
+    imageUrl: data.imageUrl || '',
+    link: data.sourceUrl || sourceUrl,
+  };
 }
 
 /**
  * Main entry: parse recipe from a URL.
- * Tries: 1) Server-side extraction  2) CORS proxy  3) Retry server once more
+ * FULLY CLIENT-SIDE — no backend server required.
+ *
+ * Strategy:
+ *   1. Instagram URLs → embed page extraction via CORS proxy
+ *   2. All URLs → CORS proxy fetch → JSON-LD / microdata / CSS heuristic parse
+ *   3. Social media → guide user to Paste Text tab
+ *
  * Returns { name, ingredients, directions, link, imageUrl }
  *      or { _error: true, reason } on failure
  *      or null if completely failed
  */
 export async function parseFromUrl(url) {
-  let serverResult = null;
 
-  // ── 1. Try server-side extraction (works for ALL URLs including social media) ──
-  try {
-    const { extractUrl } = await import('./api.js');
-    const data = await extractUrl(url);
-    serverResult = data;
-    if (data && data.ok) {
-      const recipe = handleServerExtraction(data, url);
-      if (recipe) return recipe;
+  // ── 1. Instagram: try embed page extraction (fast, client-side) ──
+  if (isInstagramUrl(url)) {
+    console.log('[SpiceHub] Instagram URL detected, trying embed extraction...');
+    try {
+      const embedResult = await extractInstagramEmbed(url);
+      if (embedResult && embedResult.ok) {
+        const recipe = handleEmbedResult(embedResult, url);
+        if (recipe) return recipe;
+      }
+    } catch (e) {
+      console.log('[SpiceHub] Instagram embed failed:', e.message);
     }
-    // If server says login wall
-    if (data && data.isLoginWall) {
-      return { _error: true, reason: 'login-wall', platform: getSocialPlatform(url) };
-    }
-    if (data && !data.ok) {
-      console.log('[SpiceHub] Server extraction returned:', data.reason || 'no recipe found');
-    }
-  } catch (e) {
-    console.log('[SpiceHub] Server extraction error:', e.message);
-  }
 
-  // ── 2. CORS proxy fallback (works for recipe blogs, limited for social media) ──
-  if (!isSocialMediaUrl(url)) {
+    // Instagram embed failed — try CORS proxy on the main URL as fallback
     try {
       const html = await fetchHtmlViaProxy(url);
       if (html) {
@@ -653,33 +699,41 @@ export async function parseFromUrl(url) {
         if (recipe) return recipe;
       }
     } catch {
-      console.log('[SpiceHub] CORS proxy failed');
+      console.log('[SpiceHub] Instagram CORS proxy failed');
     }
+
+    // Instagram: all automated methods failed
+    return { _error: true, reason: 'social-fetch-failed', platform: 'Instagram' };
   }
 
-  // ── 3. Retry server once more (Render free tier spins down — first call wakes it) ──
-  if (serverResult && serverResult.reason === 'server-unavailable') {
-    console.log('[SpiceHub] Retrying server after wake-up period...');
+  // ── 2. Other social media: try CORS proxy (sometimes works for TikTok, YouTube, etc.) ──
+  if (isSocialMediaUrl(url)) {
+    console.log('[SpiceHub] Social media URL, trying CORS proxy...');
     try {
-      const { extractUrl, resetServerAvailabilityCache } = await import('./api.js');
-      // Force re-check by clearing the availability cache
-      resetServerAvailabilityCache();
-      // Wait a moment for Render to spin up
-      await new Promise(r => setTimeout(r, 4000));
-      const data = await extractUrl(url);
-      if (data && data.ok) {
-        const recipe = handleServerExtraction(data, url);
+      const html = await fetchHtmlViaProxy(url);
+      if (html) {
+        const recipe = parseHtml(html, url);
         if (recipe) return recipe;
       }
-    } catch (e) {
-      console.log('[SpiceHub] Server retry failed:', e.message);
+    } catch {
+      console.log('[SpiceHub] Social media CORS proxy failed');
     }
+    return { _error: true, reason: 'social-fetch-failed', platform: getSocialPlatform(url) };
+  }
+
+  // ── 3. Recipe blogs and other URLs: CORS proxy + full HTML parsing ──
+  console.log('[SpiceHub] Fetching recipe via CORS proxy...');
+  try {
+    const html = await fetchHtmlViaProxy(url);
+    if (html) {
+      const recipe = parseHtml(html, url);
+      if (recipe) return recipe;
+    }
+  } catch (e) {
+    console.log('[SpiceHub] CORS proxy failed:', e.message);
   }
 
   // ── 4. All methods exhausted ──
-  if (isSocialMediaUrl(url)) {
-    return { _error: true, reason: 'social-fetch-failed', platform: getSocialPlatform(url) };
-  }
   return null;
 }
 
