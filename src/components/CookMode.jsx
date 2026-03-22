@@ -1,8 +1,16 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 
 /**
  * Cook Mode — full-screen, step-by-step kitchen walkthrough with timers.
  * Big text, big buttons, designed for messy hands and steamy kitchens.
+ *
+ * Features:
+ *   • Carousel-style step transitions with prev/next preview
+ *   • Smart ingredient sidebar when a step mentions ingredients
+ *   • Swipe gesture navigation (touch-friendly)
+ *   • Auto-detected timers from step text
+ *   • Screen wake lock to keep display on
+ *   • Step completion checkmarks
  */
 export default function CookMode({ meal, scaleFactor = 1.0, onClose }) {
   const [currentStep, setCurrentStep] = useState(-1); // -1 = ingredients overview
@@ -10,6 +18,10 @@ export default function CookMode({ meal, scaleFactor = 1.0, onClose }) {
   const [timer, setTimer] = useState(null); // { seconds, running, label }
   const timerRef = useRef(null);
   const [wakeLock, setWakeLock] = useState(null);
+  const [slideDir, setSlideDir] = useState(''); // 'left' | 'right' | ''
+  const [showIngSidebar, setShowIngSidebar] = useState(false);
+  const touchStartRef = useRef(null);
+  const contentRef = useRef(null);
 
   const totalSteps = meal.directions.length;
   const progress = currentStep === -1 ? 0 : ((currentStep + 1) / (totalSteps + 1)) * 100;
@@ -36,7 +48,6 @@ export default function CookMode({ meal, scaleFactor = 1.0, onClose }) {
         setTimer(prev => {
           if (!prev || prev.seconds <= 1) {
             clearInterval(timerRef.current);
-            // Vibrate if available
             if (navigator.vibrate) navigator.vibrate([200, 100, 200, 100, 200]);
             return { ...prev, seconds: 0, running: false };
           }
@@ -66,23 +77,57 @@ export default function CookMode({ meal, scaleFactor = 1.0, onClose }) {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // ── Navigation with slide animation ──
+  const animateAndGo = useCallback((nextStep, direction) => {
+    setSlideDir(direction);
+    // After slide-out, switch step and slide-in
+    setTimeout(() => {
+      setCurrentStep(nextStep);
+      setSlideDir('');
+    }, 200);
+  }, []);
+
   const goNext = useCallback(() => {
     if (currentStep < totalSteps - 1) {
       if (currentStep >= 0) {
         setCompletedSteps(prev => new Set([...prev, currentStep]));
       }
-      setCurrentStep(prev => prev + 1);
+      animateAndGo(currentStep + 1, 'left');
     }
-  }, [currentStep, totalSteps]);
+  }, [currentStep, totalSteps, animateAndGo]);
 
   const goPrev = useCallback(() => {
-    if (currentStep > -1) setCurrentStep(prev => prev - 1);
-  }, [currentStep]);
+    if (currentStep > -1) {
+      animateAndGo(currentStep - 1, 'right');
+    }
+  }, [currentStep, animateAndGo]);
+
+  const goToStep = useCallback((step) => {
+    if (step === currentStep) return;
+    animateAndGo(step, step > currentStep ? 'left' : 'right');
+  }, [currentStep, animateAndGo]);
 
   const markComplete = useCallback(() => {
     setCompletedSteps(prev => new Set([...prev, currentStep]));
     goNext();
   }, [currentStep, goNext]);
+
+  // ── Swipe gesture handling ──
+  const onTouchStart = useCallback((e) => {
+    touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }, []);
+
+  const onTouchEnd = useCallback((e) => {
+    if (!touchStartRef.current) return;
+    const dx = e.changedTouches[0].clientX - touchStartRef.current.x;
+    const dy = e.changedTouches[0].clientY - touchStartRef.current.y;
+    touchStartRef.current = null;
+    // Only trigger on horizontal swipes (dx > dy)
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      if (dx < 0 && currentStep < totalSteps - 1) goNext();
+      else if (dx > 0 && currentStep > -1) goPrev();
+    }
+  }, [currentStep, totalSteps, goNext, goPrev]);
 
   const isLastStep = currentStep === totalSteps - 1;
   const isIngredientView = currentStep === -1;
@@ -110,8 +155,45 @@ export default function CookMode({ meal, scaleFactor = 1.0, onClose }) {
     return `${fmt} ${rest}`;
   };
 
+  // ── Smart ingredient detection: find which ingredients this step mentions ──
+  const matchedIngredients = useMemo(() => {
+    if (currentStep < 0 || !meal.directions[currentStep]) return [];
+    const stepText = meal.directions[currentStep].toLowerCase();
+    return meal.ingredients.filter(ing => {
+      // Extract the core ingredient name (after amounts/units)
+      const cleaned = ing.replace(/^[\d½¼¾⅓⅔⅛⅜⅝⅞\s./]+/, '')
+        .replace(/\b(cups?|tbsp|tsp|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|grams?|g\b|kg|ml|liters?|pinch|dash|bunch|cloves?|cans?|jars?|packages?|sticks?|slices?|handful|medium|large|small|whole|half)\b/gi, '')
+        .replace(/[,()]/g, '')
+        .trim()
+        .toLowerCase();
+      if (cleaned.length < 3) return false;
+      // Check if main words of ingredient appear in step text
+      const words = cleaned.split(/\s+/).filter(w => w.length >= 3);
+      return words.some(word => stepText.includes(word));
+    });
+  }, [currentStep, meal.directions, meal.ingredients]);
+
+  // Auto-show ingredient sidebar when step mentions ingredients
+  useEffect(() => {
+    setShowIngSidebar(matchedIngredients.length > 0);
+  }, [matchedIngredients.length]);
+
+  // Prev/next step text for carousel preview
+  const prevStepText = currentStep > 0 ? meal.directions[currentStep - 1] : null;
+  const nextStepText = currentStep >= 0 && currentStep < totalSteps - 1 ? meal.directions[currentStep + 1] : null;
+
+  // Truncate preview text
+  const truncate = (text, maxLen = 60) => {
+    if (!text) return '';
+    return text.length > maxLen ? text.slice(0, maxLen) + '…' : text;
+  };
+
   return (
-    <div className="cm-container">
+    <div
+      className="cm-container"
+      onTouchStart={onTouchStart}
+      onTouchEnd={onTouchEnd}
+    >
       {/* Progress bar */}
       <div className="cm-progress-bar">
         <div className="cm-progress-fill" style={{ width: `${progress}%` }} />
@@ -128,17 +210,17 @@ export default function CookMode({ meal, scaleFactor = 1.0, onClose }) {
             <span
               key={i}
               className={`cm-dot ${i - 1 === currentStep ? 'active' : ''} ${completedSteps.has(i - 1) ? 'done' : ''} ${i === 0 ? 'ingredients' : ''}`}
-              onClick={() => setCurrentStep(i - 1)}
+              onClick={() => goToStep(i - 1)}
             />
           ))}
         </div>
       </div>
 
       {/* Main content area */}
-      <div className="cm-content">
+      <div className="cm-content" ref={contentRef}>
         {isIngredientView ? (
           /* ── Ingredients overview ── */
-          <div className="cm-ingredients-view">
+          <div className={`cm-ingredients-view ${slideDir ? 'cm-slide-' + slideDir : 'cm-slide-in'}`}>
             <h2 className="cm-recipe-name">{meal.name}</h2>
             {meal.imageUrl && (
               <img src={meal.imageUrl} alt={meal.name} className="cm-hero-img" onError={e => { e.target.style.display = 'none'; }} />
@@ -157,20 +239,64 @@ export default function CookMode({ meal, scaleFactor = 1.0, onClose }) {
             </ul>
           </div>
         ) : (
-          /* ── Step view ── */
-          <div className="cm-step-view">
-            <div className="cm-step-number">Step {currentStep + 1}</div>
-            <p className="cm-step-text">{meal.directions[currentStep]}</p>
+          /* ── Step carousel view ── */
+          <div className={`cm-step-carousel ${slideDir ? 'cm-slide-' + slideDir : 'cm-slide-in'}`}>
+            {/* Previous step preview (faded, above) */}
+            {prevStepText && (
+              <div className="cm-step-preview cm-preview-prev" onClick={goPrev}>
+                <span className="cm-preview-label">Step {currentStep}</span>
+                <span className="cm-preview-text">{truncate(prevStepText)}</span>
+              </div>
+            )}
 
-            {/* Auto-detect timer from step text */}
-            {extractTimerHint(meal.directions[currentStep]) && !timer && (
-              <button
-                className="cm-timer-suggest"
-                onClick={() => startTimer(extractTimerHint(meal.directions[currentStep]), `Step ${currentStep + 1}`)}
-              >
-                <span className="cm-timer-icon">⏱️</span>
-                Set {extractTimerHint(meal.directions[currentStep])} min timer
+            {/* Current step */}
+            <div className="cm-step-view">
+              <div className="cm-step-number">
+                Step {currentStep + 1}
+                {completedSteps.has(currentStep) && <span className="cm-step-check">✓</span>}
+              </div>
+              <p className="cm-step-text">{meal.directions[currentStep]}</p>
+
+              {/* Auto-detect timer from step text */}
+              {extractTimerHint(meal.directions[currentStep]) && !timer && (
+                <button
+                  className="cm-timer-suggest"
+                  onClick={() => startTimer(extractTimerHint(meal.directions[currentStep]), `Step ${currentStep + 1}`)}
+                >
+                  <span className="cm-timer-icon">⏱️</span>
+                  Set {extractTimerHint(meal.directions[currentStep])} min timer
+                </button>
+              )}
+            </div>
+
+            {/* Next step preview (faded, below) */}
+            {nextStepText && (
+              <div className="cm-step-preview cm-preview-next" onClick={goNext}>
+                <span className="cm-preview-label">Up next — Step {currentStep + 2}</span>
+                <span className="cm-preview-text">{truncate(nextStepText)}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Ingredient sidebar (appears when step mentions ingredients) ── */}
+        {!isIngredientView && matchedIngredients.length > 0 && (
+          <div className={`cm-ing-sidebar ${showIngSidebar ? 'cm-sidebar-visible' : ''}`}>
+            <div className="cm-sidebar-header">
+              <span className="cm-sidebar-icon">🧂</span>
+              <span className="cm-sidebar-title">Ingredients</span>
+              <button className="cm-sidebar-toggle" onClick={() => setShowIngSidebar(v => !v)}>
+                {showIngSidebar ? '▾' : '▸'}
               </button>
+            </div>
+            {showIngSidebar && (
+              <ul className="cm-sidebar-list">
+                {matchedIngredients.map((ing, i) => (
+                  <li key={i} className="cm-sidebar-item">
+                    {scaleIngredient(ing, scaleFactor)}
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         )}

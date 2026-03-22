@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, onRate, onStartCook }) {
+export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, onRate, onStartCook, onStartMix, isDrink = false }) {
   const scaleOptions = [
     { value: 1.0, label: '1×' },
     { value: 1.5, label: '1.5×' },
@@ -116,7 +116,7 @@ export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, o
         </div>
 
         <div className="detail-section">
-          <h3>📝 Ingredients</h3>
+          <h3>{isDrink ? '🍸 Ingredients' : '📝 Ingredients'}</h3>
           <ul className="ingredient-list">
             {scaledIngredients.map((ing, i) => (
               <li key={i}>{ing}</li>
@@ -125,7 +125,7 @@ export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, o
         </div>
 
         <div className="detail-section">
-          <h3>👨‍🍳 Directions</h3>
+          <h3>{isDrink ? '🫗 Instructions' : '👨‍🍳 Directions'}</h3>
           <ol className="direction-list">
             {meal.directions.map((dir, i) => (
               <li key={i}>{dir}</li>
@@ -148,7 +148,7 @@ export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, o
           </div>
         )}
 
-        {/* Start Cooking button */}
+        {/* Start Cooking / Start Mixing button */}
         {onStartCook && meal.directions && meal.directions.length > 0 && (
           <div className="detail-section" style={{ paddingBottom: 20 }}>
             <button
@@ -156,6 +156,16 @@ export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, o
               onClick={() => { onClose(); onStartCook(meal, scaleFactor); }}
             >
               👨‍🍳 Start Cooking
+            </button>
+          </div>
+        )}
+        {onStartMix && meal.directions && meal.directions.length > 0 && (
+          <div className="detail-section" style={{ paddingBottom: 20 }}>
+            <button
+              className="cook-mode-launch-btn mix-mode-launch-btn"
+              onClick={() => { onClose(); onStartMix(meal, scaleFactor); }}
+            >
+              🍹 Start Mixing
             </button>
           </div>
         )}

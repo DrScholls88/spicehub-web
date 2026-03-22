@@ -60,6 +60,19 @@ export async function getCookingLog() {
   return db.cookingLog.toArray();
 }
 
+// Mixing log helpers (for drinks)
+export async function logMix(drinkId, drinkName) {
+  await db.cookingLog.add({ mealId: drinkId, mealName: drinkName, cookedAt: new Date().toISOString(), type: 'mix' });
+  // Increment mixCount on the drink
+  const drink = await db.drinks.get(drinkId);
+  if (drink) {
+    await db.drinks.update(drinkId, {
+      cookCount: (drink.cookCount || 0) + 1,
+      lastCooked: new Date().toISOString(),
+    });
+  }
+}
+
 // Seed data
 export const SEED_MEALS = [
   {
@@ -169,8 +182,10 @@ export async function importPaprikaMeals(paprikaMeals) {
 }
 
 export const SEED_DRINKS = [
+  // Classic cocktails
   {
     name: 'Classic Margarita',
+    category: 'Cocktail',
     ingredients: ['2 oz Tequila (blanco)', '1 oz Cointreau or triple sec', '3/4 oz Fresh lime juice', 'Kosher salt (for rim)', 'Lime wheel (for garnish)', 'Ice'],
     directions: ['Rub a lime wedge around the rim of a rocks glass, then dip in salt.', 'Fill glass with ice.', 'Combine tequila, Cointreau, and lime juice in a shaker with ice.', 'Shake well for 15 seconds.', 'Strain into the prepared glass over fresh ice.', 'Garnish with a lime wheel.'],
     link: '',
@@ -178,6 +193,7 @@ export const SEED_DRINKS = [
   },
   {
     name: 'Old Fashioned',
+    category: 'Cocktail',
     ingredients: ['2 oz Bourbon or Rye whiskey', '1 sugar cube (or 1 tsp simple syrup)', '2 dashes Angostura bitters', 'Orange peel (for garnish)', 'Maraschino cherry (optional)', 'Ice'],
     directions: ['Place sugar cube in a rocks glass and saturate with bitters. Add a splash of water.', 'Muddle until the sugar is dissolved.', 'Add whiskey and stir to combine.', 'Add a large ice cube.', 'Express an orange peel over the glass and drop it in.', 'Optional: add a cherry garnish.'],
     link: '',
@@ -185,9 +201,166 @@ export const SEED_DRINKS = [
   },
   {
     name: 'Moscow Mule',
+    category: 'Cocktail',
     ingredients: ['2 oz Vodka', '4 oz Ginger beer', '1/2 oz Fresh lime juice', 'Lime wedge (for garnish)', 'Fresh mint (optional)', 'Ice'],
     directions: ['Fill a copper mug (or highball glass) with ice.', 'Pour vodka and lime juice over ice.', 'Top with ginger beer and gently stir.', 'Garnish with a lime wedge and fresh mint if desired.'],
     link: '',
     imageUrl: 'https://images.unsplash.com/photo-1607446045875-c4a6f74f9e64?w=400',
+  },
+  // More classic cocktails
+  {
+    name: 'Daiquiri',
+    category: 'Cocktail',
+    ingredients: ['2 oz Light Rum', '3/4 oz Fresh lime juice', '1/2 oz Simple syrup', 'Lime wheel (for garnish)', 'Ice'],
+    directions: ['Fill a cocktail shaker with ice.', 'Add rum, lime juice, and simple syrup.', 'Shake vigorously for 15 seconds.', 'Strain into a chilled coupe glass.', 'Garnish with a lime wheel.'],
+    link: '',
+    imageUrl: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=400',
+  },
+  {
+    name: 'Martini',
+    category: 'Cocktail',
+    ingredients: ['2.5 oz Gin (or Vodka)', '1/2 oz Dry vermouth', 'Dash of orange bitters', 'Olives or lemon twist (for garnish)', 'Ice'],
+    directions: ['Fill a mixing glass with ice.', 'Pour gin and dry vermouth over ice.', 'Add a dash of bitters.', 'Stir for 30 seconds until well-chilled.', 'Strain into a chilled martini glass.', 'Garnish with olives or a lemon twist.'],
+    link: '',
+    imageUrl: 'https://images.unsplash.com/photo-1608889335941-33d1cff32c0a?w=400',
+  },
+  {
+    name: 'Manhattan',
+    category: 'Cocktail',
+    ingredients: ['2 oz Rye whiskey', '1 oz Sweet vermouth', '2 dashes Angostura bitters', 'Maraschino cherry (for garnish)', 'Ice'],
+    directions: ['Fill a mixing glass with ice.', 'Add rye, sweet vermouth, and bitters.', 'Stir for 30 seconds.', 'Strain into a chilled coupe glass.', 'Garnish with a cherry.'],
+    link: '',
+    imageUrl: 'https://images.unsplash.com/photo-1599959619048-7e0a1f3c2bdf?w=400',
+  },
+  {
+    name: 'Cosmopolitan',
+    category: 'Cocktail',
+    ingredients: ['1.5 oz Vodka', '1 oz Cranberry juice', '1/2 oz Cointreau', '1/2 oz Fresh lime juice', 'Lime twist (for garnish)', 'Ice'],
+    directions: ['Fill a cocktail shaker with ice.', 'Add vodka, cranberry juice, Cointreau, and lime juice.', 'Shake for 15 seconds.', 'Strain into a chilled martini glass.', 'Garnish with a lime twist.'],
+    link: '',
+    imageUrl: 'https://images.unsplash.com/photo-1614707267537-b85faf00021b?w=400',
+  },
+  {
+    name: 'Mojito',
+    category: 'Cocktail',
+    ingredients: ['2 oz White rum', '1 oz Fresh lime juice', '3/4 oz Simple syrup', '8-10 Fresh mint leaves', '4 oz Soda water', 'Mint sprig and lime wheel (for garnish)', 'Ice'],
+    directions: ['Place mint leaves and simple syrup in a highball glass.', 'Gently muddle to release mint oils (do not shred leaves).', 'Fill glass with ice.', 'Pour in rum and lime juice.', 'Top with soda water and stir gently.', 'Garnish with a mint sprig and lime wheel.'],
+    link: '',
+    imageUrl: 'https://images.unsplash.com/photo-1612528443702-f6741f70a049?w=400',
+  },
+  {
+    name: 'Margarita (Frozen)',
+    category: 'Cocktail',
+    ingredients: ['2 oz Tequila', '1 oz Cointreau', '1 oz Fresh lime juice', '1 cup Crushed ice', 'Kosher salt (for rim)', 'Lime wheel (for garnish)'],
+    directions: ['Rim a margarita glass with salt using a lime wedge.', 'Add all ingredients to a blender.', 'Blend until smooth and slushy.', 'Pour into the prepared glass.', 'Garnish with a lime wheel.'],
+    link: '',
+    imageUrl: 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?w=400',
+  },
+  {
+    name: 'Pina Colada',
+    category: 'Cocktail',
+    ingredients: ['3 oz Light rum', '3 oz Coconut cream', '3 oz Pineapple juice', 'Pineapple wedge (for garnish)', 'Maraschino cherry (for garnish)', '1 cup Crushed ice'],
+    directions: ['Add rum, coconut cream, pineapple juice, and crushed ice to a blender.', 'Blend until smooth.', 'Pour into a chilled highball glass.', 'Garnish with a pineapple wedge and cherry.'],
+    link: '',
+    imageUrl: 'https://images.unsplash.com/photo-1604432556933-4efce902b127?w=400',
+  },
+  {
+    name: 'Screwdriver',
+    category: 'Cocktail',
+    ingredients: ['2 oz Vodka', '4 oz Fresh orange juice', 'Orange wheel (for garnish)', 'Ice'],
+    directions: ['Fill a highball glass with ice.', 'Pour vodka into the glass.', 'Top with fresh orange juice.', 'Stir gently.', 'Garnish with an orange wheel.'],
+    link: '',
+    imageUrl: 'https://images.unsplash.com/photo-1608270861620-7c80a0bc14d6?w=400',
+  },
+  // Popular modern cocktails
+  {
+    name: 'Aperol Spritz',
+    category: 'Cocktail',
+    ingredients: ['3 oz Prosecco', '2 oz Aperol', '1 oz Soda water', 'Orange slice (for garnish)', 'Ice'],
+    directions: ['Fill a wine glass with ice.', 'Pour Aperol into the glass.', 'Top with Prosecco.', 'Add soda water.', 'Stir gently and garnish with an orange slice.'],
+    link: '',
+    imageUrl: 'https://images.unsplash.com/photo-1608270861620-7c80a0bc14d6?w=400',
+  },
+  {
+    name: 'Paloma',
+    category: 'Cocktail',
+    ingredients: ['2 oz Tequila (blanco)', '1 oz Fresh lime juice', '3/4 oz Fresh grapefruit juice', '1/2 oz Simple syrup', 'Pinch of salt', 'Grapefruit slice (for garnish)', 'Ice'],
+    directions: ['Fill a highball glass with ice.', 'Pour tequila, lime juice, grapefruit juice, and simple syrup.', 'Add a pinch of salt.', 'Stir well.', 'Garnish with a grapefruit slice.'],
+    link: '',
+    imageUrl: 'https://images.unsplash.com/photo-1514432543241-edd65efc1d47?w=400',
+  },
+  {
+    name: 'Sazerac',
+    category: 'Cocktail',
+    ingredients: ['2 oz Rye whiskey', '1 dash Peychaud\'s bitters', '1 dash Angostura bitters', '1/2 tsp Absinthe (for rinse)', '1 sugar cube', 'Lemon peel (for garnish)', 'Ice'],
+    directions: ['Rinse a rocks glass with absinthe and discard excess.', 'Place sugar cube in the glass and saturate with bitters.', 'Add a splash of water and muddle.', 'Add rye whiskey and ice.', 'Stir well.', 'Express lemon peel over the drink and drop in as garnish.'],
+    link: '',
+    imageUrl: 'https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?w=400',
+  },
+  {
+    name: 'Negroni',
+    category: 'Cocktail',
+    ingredients: ['1 oz Gin', '1 oz Campari', '1 oz Sweet vermouth', 'Orange peel (for garnish)', 'Ice'],
+    directions: ['Fill a rocks glass with ice.', 'Pour equal parts gin, Campari, and sweet vermouth.', 'Stir well.', 'Express an orange peel over the drink and add as garnish.'],
+    link: '',
+    imageUrl: 'https://images.unsplash.com/photo-1514432643241-edd65efc1d47?w=400',
+  },
+  {
+    name: 'Sidecar',
+    category: 'Cocktail',
+    ingredients: ['2 oz Cognac', '1 oz Cointreau', '3/4 oz Fresh lemon juice', 'Lemon wheel or sugar rim (for garnish)', 'Ice'],
+    directions: ['Fill a cocktail shaker with ice.', 'Add Cognac, Cointreau, and lemon juice.', 'Shake for 15 seconds.', 'Strain into a chilled coupe glass.', 'Garnish with a lemon wheel or sugar rim.'],
+    link: '',
+    imageUrl: 'https://images.unsplash.com/photo-1606312519331-379a88e0df60?w=400',
+  },
+  {
+    name: 'Whiskey Sour',
+    category: 'Cocktail',
+    ingredients: ['2 oz Whiskey', '3/4 oz Fresh lemon juice', '1/2 oz Simple syrup', '1 Egg white (optional)', 'Angostura bitters (for dash)', 'Cherry and orange slice (for garnish)', 'Ice'],
+    directions: ['Fill a cocktail shaker with ice.', 'Add whiskey, lemon juice, and simple syrup.', 'Optional: add egg white for silky texture.', 'Shake vigorously for 15 seconds.', 'Strain into a rocks glass over fresh ice.', 'Dash bitters on top and garnish with cherry and orange.'],
+    link: '',
+    imageUrl: 'https://images.unsplash.com/photo-1608270861620-7c80a0bc14d6?w=400',
+  },
+  // Non-alcoholic options
+  {
+    name: 'Virgin Mojito',
+    category: 'Mocktail',
+    ingredients: ['1 oz Fresh lime juice', '3/4 oz Simple syrup', '8-10 Fresh mint leaves', '4 oz Soda water', 'Mint sprig and lime wheel (for garnish)', 'Ice'],
+    directions: ['Place mint leaves and simple syrup in a highball glass.', 'Gently muddle to release mint oils.', 'Fill glass with ice.', 'Pour in lime juice.', 'Top with soda water and stir gently.', 'Garnish with a mint sprig and lime wheel.'],
+    link: '',
+    imageUrl: 'https://images.unsplash.com/photo-1559329007-40790c9c8dd0?w=400',
+  },
+  {
+    name: 'Virgin Margarita',
+    category: 'Mocktail',
+    ingredients: ['1 oz Fresh lime juice', '1 oz Orange juice', '1/2 oz Lime cordial', '1/2 oz Simple syrup', 'Kosher salt (for rim)', 'Lime wheel (for garnish)', 'Ice'],
+    directions: ['Rim a rocks glass with salt using a lime wedge.', 'Fill glass with ice.', 'Combine lime juice, orange juice, lime cordial, and simple syrup in a shaker with ice.', 'Shake well for 15 seconds.', 'Strain into the prepared glass.', 'Garnish with a lime wheel.'],
+    link: '',
+    imageUrl: 'https://images.unsplash.com/photo-1556679343-c7306c1976bc?w=400',
+  },
+  {
+    name: 'Shirley Temple',
+    category: 'Mocktail',
+    ingredients: ['4 oz Ginger ale', '2 oz Orange juice', '1 oz Grenadine', 'Maraschino cherry and orange slice (for garnish)', 'Ice'],
+    directions: ['Fill a highball glass with ice.', 'Pour orange juice and ginger ale.', 'Float grenadine on top by pouring slowly over the back of a spoon.', 'Stir gently.', 'Garnish with a cherry and orange slice.'],
+    link: '',
+    imageUrl: 'https://images.unsplash.com/photo-1591017403286-c55161c77336?w=400',
+  },
+  // Shots
+  {
+    name: 'Tequila Shot',
+    category: 'Shots',
+    ingredients: ['1.5 oz Tequila', 'Lime wedge', 'Salt'],
+    directions: ['Pour tequila into a shot glass.', 'Lick the back of your hand and sprinkle salt on it.', 'Lick the salt, shoot the tequila, then bite the lime wedge.'],
+    link: '',
+    imageUrl: 'https://images.unsplash.com/photo-1514432543241-edd65efc1d47?w=400',
+  },
+  {
+    name: 'Jäger Bomb',
+    category: 'Shots',
+    ingredients: ['1 oz Jägermeister', '5 oz Red Bull or energy drink'],
+    directions: ['Pour Jägermeister into a shot glass.', 'Pour energy drink into a separate glass.', 'Drop the shot glass into the energy drink.', 'Drink quickly.'],
+    link: '',
+    imageUrl: 'https://images.unsplash.com/photo-1514432543241-edd65efc1d47?w=400',
   },
 ];

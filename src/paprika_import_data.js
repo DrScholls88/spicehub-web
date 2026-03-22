@@ -233,7 +233,7 @@ export const PAPRIKA_MEALS = [
     "cookCount": 0
   },
   {
-    "name": "Chris \u2022 \u24cb | Creamy Spinach and Artichoke Pasta Ready in Just 10 Minutes! Welcome",
+    "name": "Creamy Spinach and Artichoke Pasta",
     "ingredients": [
       "16 oz Organic Lemon Torchiette Pasta (If the lemon pasta isn\u2019t available, any other variety works great)",
       "12 oz Marinated Artichoke Hearts",
@@ -541,7 +541,7 @@ export const PAPRIKA_MEALS = [
     "cookCount": 0
   },
   {
-    "name": "Sheet Pan Ghnocchi",
+    "name": "Sheet Pan Gnocchi",
     "ingredients": [
       "Here\u2019s what you need:",
       "1 package vacuum sealed gnocchi",
@@ -609,7 +609,7 @@ export const PAPRIKA_MEALS = [
     "cookCount": 0
   },
   {
-    "name": "Super Seedy Pumpkin Pie Oatmeal! \ud83c\udf83",
+    "name": "Super Seedy Pumpkin Pie Oatmeal",
     "ingredients": [
       "1 cup rolled oats.",
       "2 cups oat/almond milk.",
@@ -709,7 +709,7 @@ export const PAPRIKA_MEALS = [
     "cookCount": 0
   },
   {
-    "name": "VEGAN \u201cCHEESESTEAK\u201d PASTA SKILLET",
+    "name": "Vegan Cheesesteak Pasta Skillet",
     "ingredients": [
       "1 medium yellow onion, sliced into strips",
       "1 red bell pepper, sliced into strips",
@@ -864,7 +864,7 @@ export const PAPRIKA_MEALS = [
     "cookCount": 0
   },
   {
-    "name": "WEEK OF EASY HEALTHY DINNER RECIPE IDEAS! Part 2! - YouTube",
+    "name": "Easy Healthy Dinner Ideas",
     "ingredients": [
       "Broccoli soup:",
       "1 onion diced",

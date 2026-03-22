@@ -2,6 +2,11 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import os from 'os'
+import fs from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // Auto-detect local IP for HMR on remote devices (dev only)
 function getLocalIP() {
@@ -22,7 +27,28 @@ function getLocalIP() {
 
 const localIP = getLocalIP();
 
+// ── Build numbering system ──────────────────────────────────────────────────
+// Auto-increments a build counter stored in buildNumber.json on each `vite build`.
+// In dev mode, reads current number without incrementing.
+const buildNumPath = path.resolve(__dirname, 'buildNumber.json');
+let buildNum = 0;
+try {
+  const data = JSON.parse(fs.readFileSync(buildNumPath, 'utf8'));
+  buildNum = data.build || 0;
+} catch { /* first run */ }
+const isProduction = process.env.NODE_ENV === 'production' || process.argv.includes('build');
+if (isProduction) {
+  buildNum++;
+  fs.writeFileSync(buildNumPath, JSON.stringify({ build: buildNum }, null, 2));
+}
+const BUILD_VERSION = `1.0.${buildNum}`;
+console.log(`\n  SpiceHub Build #${buildNum}  (v${BUILD_VERSION})\n`);
+
 export default defineConfig({
+  define: {
+    '__SPICEHUB_BUILD__': JSON.stringify(buildNum),
+    '__SPICEHUB_VERSION__': JSON.stringify(BUILD_VERSION),
+  },
   plugins: [
     react(),
     VitePWA({

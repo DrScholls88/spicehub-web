@@ -8,6 +8,11 @@
  *   3. CAPTION TEXT  → 4-pass heuristic parser (used internally on extracted captions)
  */
 
+// ─── Title sanitizer (public export, delegates to cleanTitle) ────────────────
+export function sanitizeRecipeTitle(raw) {
+  return cleanTitle(raw);
+}
+
 // ─── Social media detection ───────────────────────────────────────────────────
 const SOCIAL_DOMAINS = [
   'instagram.com', 'www.instagram.com',
@@ -36,6 +41,52 @@ export function getSocialPlatform(url) {
     if (host.includes('twitter') || host === 'x.com') return 'X / Twitter';
     return 'Social Media';
   } catch { return 'Social Media'; }
+}
+
+// ─── Mealie-inspired image selection: pick the best/largest from candidates ──
+// JSON-LD `image` can be: a string, an array of strings, an ImageObject,
+// an array of ImageObjects, or nested combinations.
+function selectBestImage(imageField) {
+  if (!imageField) return '';
+
+  const candidates = [];
+  function collect(val) {
+    if (!val) return;
+    if (typeof val === 'string') {
+      const trimmed = val.trim();
+      if (trimmed && (trimmed.startsWith('http') || trimmed.startsWith('//'))) {
+        candidates.push(trimmed);
+      }
+      return;
+    }
+    if (Array.isArray(val)) {
+      for (const item of val) collect(item);
+      return;
+    }
+    if (typeof val === 'object') {
+      if (val.url) collect(val.url);
+      else if (val.contentUrl) collect(val.contentUrl);
+      else if (val['@id']) collect(val['@id']);
+      if (val.thumbnail?.url) collect(val.thumbnail.url);
+    }
+  }
+
+  collect(imageField);
+  if (candidates.length === 0) return '';
+  if (candidates.length === 1) return candidates[0];
+
+  function scoreUrl(url) {
+    let score = 0;
+    const sizeMatch = url.match(/(\d{3,4})x(\d{3,4})/);
+    if (sizeMatch) score = parseInt(sizeMatch[1]) * parseInt(sizeMatch[2]);
+    if (/\b(full|large|original|hero|featured)\b/i.test(url)) score += 500000;
+    if (/\b(thumb|small|tiny|icon|avatar|s150|s320|150x150|320x320)\b/i.test(url)) score -= 1000000;
+    score += url.length;
+    return score;
+  }
+
+  candidates.sort((a, b) => scoreUrl(b) - scoreUrl(a));
+  return candidates[0];
 }
 
 // ─── Ingredient / Direction heuristics ────────────────────────────────────────
@@ -84,6 +135,18 @@ function isIngredientsHeader(lower) {
 }
 function isDirectionsHeader(lower) {
   return DIRECTIONS_HEADERS.some(h => lower === h || lower.startsWith(h + ':') || lower.startsWith(h + ' -'));
+}
+
+// ─── Caption Parser wrapper (used by BrowserImport) ─────────────────────────
+export function parseManualCaption(captionText, sourceUrl) {
+  const parsed = parseCaption(captionText);
+  return {
+    name: parsed.title || 'Imported Recipe',
+    ingredients: parsed.ingredients.length > 0 ? parsed.ingredients : ['See original post for ingredients'],
+    directions: parsed.directions.length > 0 ? parsed.directions : ['See original post for directions'],
+    imageUrl: '',
+    link: sourceUrl || '',
+  };
 }
 
 // ─── Caption Parser (Paprika-style 4-pass) ────────────────────────────────────
@@ -182,8 +245,24 @@ export function parseCaption(text) {
     if (!foundSections) {
       const looksIng = looksLikeIngredient(cleanLine);
       const looksDir = looksLikeDirection(cleanLine);
-      if (looksIng && !looksDir) { inIngredients = true; inDirections = false; }
+
+      // Only switch modes if the signal is clear — avoid misclassification
+      if (looksIng && !looksDir) {
+        // Extra check: if line contains a cooking verb AND a measurement, it's ambiguous
+        // e.g. "Add 2 cups flour" — this is a direction that mentions an ingredient
+        if (COOKING_VERBS_RE.test(cleanLine) && cleanLine.length > 40) {
+          // Long line with cooking verb — treat as direction even if it has measurements
+          inIngredients = false; inDirections = true;
+        } else {
+          inIngredients = true; inDirections = false;
+        }
+      }
       else if (looksDir && !looksIng) { inIngredients = false; inDirections = true; }
+      // If both look true, use length as tiebreaker: short = ingredient, long = direction
+      else if (looksIng && looksDir) {
+        if (cleanLine.length < 50) { inIngredients = true; inDirections = false; }
+        else { inIngredients = false; inDirections = true; }
+      }
     }
 
     // Clean prefix markers
@@ -238,9 +317,12 @@ function cleanTitle(title) {
   title = title
     // Remove "Username on Instagram: ..." prefix
     .replace(/^[\w.\s]+on\s+(Instagram|TikTok|Facebook)\s*:\s*/i, '')
-    // Remove "... | Instagram" / "... - TikTok" suffix
+    // Remove "... | Instagram" / "... - TikTok" / "... - YouTube" suffix
     .replace(/\s*[|\-–—•]\s*(Instagram|TikTok|Facebook|Pinterest|YouTube|Reels?).*$/i, '')
     .replace(/\s*on (Instagram|TikTok|Facebook).*$/i, '')
+    // Remove social handle prefixes: "Chris • Ⓥ | " or "@username: "
+    .replace(/^[^|]*[•\u24cb\u24b6-\u24E9][^|]*\|\s*/u, '')
+    .replace(/^@[\w.]+[:\s]+/i, '')
     // Remove handles and hashtags
     .replace(/\s*\(@[\w.]+\).*$/, '')
     .replace(/#\w[\w.]*/g, '')
@@ -248,17 +330,28 @@ function cleanTitle(title) {
     .replace(/^(Reel|Video|Post)\s+by\s+[\w.]+\s*[-–—:.]?\s*/i, '')
     // Remove social media engagement stats
     .replace(/\d+[kKmM]?\s*(likes?|comments?|shares?|views?|saves?)\s*[,.]?\s*/gi, '')
+    // Remove "Part N!" suffix
+    .replace(/\s*Part\s*\d+!?\s*$/i, '')
+    // Remove "Ready in Just N Minutes!" filler
+    .replace(/\s*Ready in Just \d+ Minutes!?\s*/i, '')
+    // Remove trailing "Welcome" filler
+    .replace(/\s*Welcome\s*$/i, '')
+    // Remove emojis
+    .replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1FA00}-\u{1FAFF}]/gu, '')
+    // Fix smart quotes
+    .replace(/[\u201c\u201d]/g, '"').replace(/[\u2018\u2019]/g, "'")
     .replace(/\s+/g, ' ')
     .trim();
 
+  // Remove trailing exclamation marks clutter
+  title = title.replace(/[!]+$/, '').trim();
+
   // If title is too long, try to find a natural break point
   if (title.length > 120) {
-    // Try splitting on common delimiters
     const parts = title.split(/\s*[|\-–—]\s*/);
     if (parts[0].length > 3 && parts[0].length <= 120) {
       title = parts[0].trim();
     } else {
-      // Truncate to word boundary
       title = title.substring(0, 115).replace(/\s\S+$/, '').trim();
     }
   }
@@ -266,12 +359,88 @@ function cleanTitle(title) {
   // If title ended up empty after cleaning, use fallback
   if (!title || title.length < 2) return 'Imported Recipe';
 
+  // Fix ALL CAPS to Title Case
+  if (title === title.toUpperCase() && title.length > 5) {
+    title = title.toLowerCase().replace(/(?:^|\s)\S/g, c => c.toUpperCase());
+  }
+
   // Capitalize first letter if it's all lowercase
   if (title === title.toLowerCase() && title.length < 80) {
     title = title.charAt(0).toUpperCase() + title.slice(1);
   }
 
   return title;
+}
+
+// ─── Flexible instruction parser (Mealie-inspired) ──────────────────────────
+// Handles the many formats recipe sites use for instructions:
+//   - Array of strings
+//   - Array of { text: "..." } objects (HowToStep)
+//   - Array of { "@type": "HowToSection", itemListElement: [...] }
+//   - A single string (newline-separated or JSON-encoded)
+//   - Dict-indexed objects { "0": { text: "..." }, "1": { text: "..." } }
+function parseInstructionsFlexible(inst) {
+  if (!inst) return [];
+
+  // String — could be newline-separated or a JSON string
+  if (typeof inst === 'string') {
+    const trimmed = inst.trim();
+    if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+      try { return parseInstructionsFlexible(JSON.parse(trimmed)); }
+      catch { /* fall through to split */ }
+    }
+    return trimmed.split(/[\n\r]+/).map(s => sanitizeInstruction(s)).filter(Boolean);
+  }
+
+  // Dict-indexed (e.g. { "0": { text: "..." }, "1": { text: "..." } })
+  if (inst && typeof inst === 'object' && !Array.isArray(inst)) {
+    const keys = Object.keys(inst);
+    if (keys.length > 0 && keys.every(k => /^\d+$/.test(k))) {
+      return parseInstructionsFlexible(keys.sort((a, b) => +a - +b).map(k => inst[k]));
+    }
+    // Single object with text
+    const txt = inst.text || inst.name || '';
+    return txt ? [sanitizeInstruction(txt.toString())] : [];
+  }
+
+  if (!Array.isArray(inst)) return [];
+
+  const directions = [];
+  for (const step of inst) {
+    if (typeof step === 'string') {
+      const clean = sanitizeInstruction(step);
+      if (clean) directions.push(clean);
+    } else if (step && typeof step === 'object') {
+      const t = [].concat(step['@type'] || step.type || []).join(' ').toLowerCase();
+
+      // HowToSection — flatten nested itemListElement
+      if (t.includes('howtosection') && Array.isArray(step.itemListElement)) {
+        for (const sub of step.itemListElement) {
+          const txt = (sub.text || sub.name || '').toString().trim();
+          if (txt) directions.push(sanitizeInstruction(txt));
+        }
+      } else {
+        const txt = (step.text || step.name || '').toString().trim();
+        if (txt) directions.push(sanitizeInstruction(txt));
+      }
+    }
+  }
+  return directions.filter(Boolean);
+}
+
+/**
+ * Mealie-inspired iterative instruction sanitization:
+ * Strip HTML, decode entities, collapse whitespace — loop until stable.
+ */
+function sanitizeInstruction(text) {
+  if (!text || typeof text !== 'string') return '';
+  let clean = text.trim();
+  let prev = '';
+  for (let i = 0; i < 5 && clean !== prev; i++) {
+    prev = clean;
+    clean = decodeHtml(clean.replace(/<[^>]+>/g, ' ').replace(/\xa0/g, ' ').replace(/ +/g, ' ')).trim();
+  }
+  return clean;
 }
 
 // ─── JSON-LD extraction ───────────────────────────────────────────────────────
@@ -321,37 +490,15 @@ function parseRecipeNode(node) {
       .filter(Boolean);
   }
 
-  // Directions — handle HowToStep, HowToSection, plain strings
+  // Directions — Mealie-inspired comprehensive parsing:
+  // Handles HowToStep, HowToSection, plain strings, JSON strings,
+  // dict-indexed steps, and newline-separated blocks.
   let directions = [];
   const inst = node.recipeInstructions;
-  if (Array.isArray(inst)) {
-    for (const step of inst) {
-      if (typeof step === 'string') {
-        directions.push(decodeHtml(step.trim()));
-      } else if (step && typeof step === 'object') {
-        const t = [].concat(step['@type'] || []).join(' ').toLowerCase();
-        if (t.includes('howtosection') && Array.isArray(step.itemListElement)) {
-          for (const sub of step.itemListElement) {
-            const txt = (sub.text || sub.name || '').toString().trim();
-            if (txt) directions.push(decodeHtml(txt));
-          }
-        } else {
-          const txt = (step.text || step.name || '').toString().trim();
-          if (txt) directions.push(decodeHtml(txt));
-        }
-      }
-    }
-  } else if (typeof inst === 'string') {
-    directions = inst.split(/[\n\r]+/).map(s => decodeHtml(s.trim())).filter(Boolean);
-  }
+  directions = parseInstructionsFlexible(inst);
 
-  // Image
-  let imageUrl = '';
-  const img = node.image;
-  if (typeof img === 'string') imageUrl = img;
-  else if (Array.isArray(img) && img.length > 0)
-    imageUrl = typeof img[0] === 'string' ? img[0] : (img[0]?.url || '');
-  else if (img && typeof img === 'object') imageUrl = img.url || img['@id'] || '';
+  // Image — Mealie-inspired: pick the best/largest from multiple candidates
+  const imageUrl = selectBestImage(node.image);
 
   return {
     name,
@@ -381,20 +528,23 @@ function stripSocialMetaPrefix(text) {
 const PROXIES = [
   url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
   url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
 ];
 
-async function fetchHtmlViaProxy(url, timeoutMs = 12000) {
+async function fetchHtmlViaProxy(url, timeoutMs = 15000) {
   for (const makeProxy of PROXIES) {
     const proxyUrl = makeProxy(url);
     try {
-      const resp = await fetch(proxyUrl, {
-        signal: AbortSignal.timeout(timeoutMs),
-      });
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      const resp = await fetch(proxyUrl, { signal: ctrl.signal });
+      clearTimeout(timer);
       if (!resp.ok) continue;
       const text = await resp.text();
       if (text.includes('Log in') && text.includes('instagram') && text.length < 20000) {
-        return null; // Instagram login wall
+        continue; // Instagram login wall — try next proxy
       }
+      if (text.length < 500) continue; // Likely an error page
       return text;
     } catch { /* try next proxy */ }
   }
@@ -405,6 +555,9 @@ async function fetchHtmlViaProxy(url, timeoutMs = 12000) {
 function handleServerExtraction(data, sourceUrl) {
   if (!data || !data.ok) return null;
 
+  // ── Always prefer the server-resolved imageUrl (it already ran selectBestImage) ──
+  const serverImage = data.imageUrl || '';
+
   if (data.type === 'jsonld' && data.recipe?.name) {
     const node = data.recipe;
     const name = (node.name || '').toString().trim() || 'Imported Recipe';
@@ -413,40 +566,18 @@ function handleServerExtraction(data, sourceUrl) {
       ? node.recipeIngredient.map(s => s.toString().trim()).filter(Boolean)
       : [];
 
-    const directions = [];
-    const inst = node.recipeInstructions;
-    if (Array.isArray(inst)) {
-      for (const step of inst) {
-        if (typeof step === 'string') {
-          directions.push(step.trim());
-        } else if (step && typeof step === 'object') {
-          const types = [].concat(step['@type'] || []).join(' ').toLowerCase();
-          if (types.includes('howtosection') && Array.isArray(step.itemListElement)) {
-            for (const sub of step.itemListElement) {
-              const t = (sub.text || sub.name || '').toString().trim();
-              if (t) directions.push(t);
-            }
-          } else {
-            const t = (step.text || step.name || '').toString().trim();
-            if (t) directions.push(t);
-          }
-        }
-      }
-    } else if (typeof inst === 'string') {
-      directions.push(...inst.split(/[\n\r]+/).map(s => s.trim()).filter(Boolean));
-    }
+    // Use Mealie-style flexible instruction parsing
+    const directions = parseInstructionsFlexible(node.recipeInstructions);
 
-    let imageUrl = '';
-    const img = node.image;
-    if (typeof img === 'string') imageUrl = img;
-    else if (Array.isArray(img) && img.length) imageUrl = typeof img[0] === 'string' ? img[0] : img[0]?.url || '';
-    else if (img && typeof img === 'object') imageUrl = img.url || '';
+    // Image: server sends pre-resolved imageUrl; fallback to node.image parsing
+    const nodeImage = selectBestImage(node.image);
+    const imageUrl = serverImage || nodeImage || '';
 
     return {
       name,
       ingredients: ingredients.length ? ingredients : ['See recipe for ingredients'],
       directions: directions.length ? directions : ['See recipe for directions'],
-      imageUrl: data.imageUrl || imageUrl,
+      imageUrl,
       link: data.sourceUrl || sourceUrl,
     };
   }
@@ -461,7 +592,7 @@ function handleServerExtraction(data, sourceUrl) {
       name: title,
       ingredients: parsed.ingredients.length > 0 ? parsed.ingredients : ['See original post for ingredients'],
       directions: parsed.directions.length > 0 ? parsed.directions : ['See original post for directions'],
-      imageUrl: data.imageUrl || '',
+      imageUrl: serverImage,
       link: data.sourceUrl || sourceUrl,
     };
   }
@@ -475,7 +606,7 @@ function handleServerExtraction(data, sourceUrl) {
       name: parsed.title || title,
       ingredients: parsed.ingredients.length > 0 ? parsed.ingredients : ['See original post for ingredients'],
       directions: parsed.directions.length > 0 ? parsed.directions : ['See original post for directions'],
-      imageUrl: data.imageUrl || '',
+      imageUrl: serverImage,
       link: data.sourceUrl || sourceUrl,
     };
   }
@@ -485,16 +616,19 @@ function handleServerExtraction(data, sourceUrl) {
 
 /**
  * Main entry: parse recipe from a URL.
- * Tries: 1) Server-side extraction  2) CORS proxy
+ * Tries: 1) Server-side extraction  2) CORS proxy  3) Retry server once more
  * Returns { name, ingredients, directions, link, imageUrl }
  *      or { _error: true, reason } on failure
  *      or null if completely failed
  */
 export async function parseFromUrl(url) {
+  let serverResult = null;
+
   // ── 1. Try server-side extraction (works for ALL URLs including social media) ──
   try {
     const { extractUrl } = await import('./api.js');
     const data = await extractUrl(url);
+    serverResult = data;
     if (data && data.ok) {
       const recipe = handleServerExtraction(data, url);
       if (recipe) return recipe;
@@ -503,23 +637,46 @@ export async function parseFromUrl(url) {
     if (data && data.isLoginWall) {
       return { _error: true, reason: 'login-wall', platform: getSocialPlatform(url) };
     }
-  } catch {
-    // Server unreachable — fall through to CORS proxy
-    console.log('[SpiceHub] Server extraction unavailable, trying CORS proxy...');
+    if (data && !data.ok) {
+      console.log('[SpiceHub] Server extraction returned:', data.reason || 'no recipe found');
+    }
+  } catch (e) {
+    console.log('[SpiceHub] Server extraction error:', e.message);
   }
 
   // ── 2. CORS proxy fallback (works for recipe blogs, limited for social media) ──
-  try {
-    const html = await fetchHtmlViaProxy(url);
-    if (html) {
-      const recipe = parseHtml(html, url);
-      if (recipe) return recipe;
+  if (!isSocialMediaUrl(url)) {
+    try {
+      const html = await fetchHtmlViaProxy(url);
+      if (html) {
+        const recipe = parseHtml(html, url);
+        if (recipe) return recipe;
+      }
+    } catch {
+      console.log('[SpiceHub] CORS proxy failed');
     }
-  } catch {
-    console.log('[SpiceHub] CORS proxy failed');
   }
 
-  // ── 3. All methods exhausted ──
+  // ── 3. Retry server once more (Render free tier spins down — first call wakes it) ──
+  if (serverResult && serverResult.reason === 'server-unavailable') {
+    console.log('[SpiceHub] Retrying server after wake-up period...');
+    try {
+      const { extractUrl, resetServerAvailabilityCache } = await import('./api.js');
+      // Force re-check by clearing the availability cache
+      resetServerAvailabilityCache();
+      // Wait a moment for Render to spin up
+      await new Promise(r => setTimeout(r, 4000));
+      const data = await extractUrl(url);
+      if (data && data.ok) {
+        const recipe = handleServerExtraction(data, url);
+        if (recipe) return recipe;
+      }
+    } catch (e) {
+      console.log('[SpiceHub] Server retry failed:', e.message);
+    }
+  }
+
+  // ── 4. All methods exhausted ──
   if (isSocialMediaUrl(url)) {
     return { _error: true, reason: 'social-fetch-failed', platform: getSocialPlatform(url) };
   }
@@ -528,6 +685,11 @@ export async function parseFromUrl(url) {
 
 /**
  * Parse recipe from raw HTML.
+ * Multi-pass strategy (mirrors Paprika 3):
+ *   1. JSON-LD structured data
+ *   2. Microdata (Schema.org itemscope)
+ *   3. Heuristic CSS class matching
+ *   4. OG meta tags fallback
  */
 export function parseHtml(html, sourceUrl) {
   // 1. JSON-LD (best, most reliable)
@@ -536,7 +698,19 @@ export function parseHtml(html, sourceUrl) {
     return { ...jsonLdRecipe, link: sourceUrl };
   }
 
-  // 2. Meta tags fallback
+  // 2. Microdata (itemprop/itemtype)
+  const microdataRecipe = extractMicrodataFromHtml(html);
+  if (microdataRecipe) {
+    return { ...microdataRecipe, link: sourceUrl };
+  }
+
+  // 3. Heuristic CSS class matching (WPRM, Tasty, etc.)
+  const heuristicRecipe = extractRecipeByCSS(html);
+  if (heuristicRecipe) {
+    return { ...heuristicRecipe, link: sourceUrl };
+  }
+
+  // 4. Meta tags fallback
   let title = extractMeta(html, 'og:title') || extractMeta(html, 'twitter:title');
   let description = extractMeta(html, 'og:description') || extractMeta(html, 'twitter:description');
   let imageUrl = extractMeta(html, 'og:image') || extractMeta(html, 'twitter:image') || '';
@@ -563,5 +737,109 @@ export function parseHtml(html, sourceUrl) {
   }
 
   return { name: title, ingredients, directions, link: sourceUrl, imageUrl };
+}
+
+// ── Client-side Microdata extraction ──────────────────────────────────────────
+function extractMicrodataFromHtml(html) {
+  if (!html.includes('schema.org/Recipe')) return null;
+
+  const stripTags = (s) => s.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+
+  // Name
+  const nameRe = /<[^>]*itemprop\s*=\s*["']name["'][^>]*>([^<]+)/i;
+  const nameM = nameRe.exec(html);
+  const name = nameM ? decodeHtml(nameM[1].trim()) : '';
+  if (!name) return null;
+
+  // Ingredients
+  const ingredients = [];
+  const ingRe = /<[^>]*itemprop\s*=\s*["']recipeIngredient["'][^>]*>([\s\S]*?)<\/(?:li|span|div|p)>/gi;
+  let m;
+  while ((m = ingRe.exec(html)) !== null) {
+    const text = stripTags(decodeHtml(m[1]));
+    if (text && text.length > 2) ingredients.push(text);
+  }
+
+  // Instructions
+  const directions = [];
+  const instRe = /<[^>]*itemprop\s*=\s*["']recipeInstructions["'][^>]*>([\s\S]*?)<\/(?:li|div|ol|section)>/gi;
+  while ((m = instRe.exec(html)) !== null) {
+    const text = stripTags(decodeHtml(m[1]));
+    if (text && text.length > 5) directions.push(text);
+  }
+
+  if (ingredients.length === 0 && directions.length === 0) return null;
+
+  const imageUrl = extractMeta(html, 'og:image') || '';
+
+  return {
+    name,
+    ingredients: ingredients.length ? ingredients : ['See recipe for ingredients'],
+    directions: directions.length ? directions : ['See recipe for directions'],
+    imageUrl,
+  };
+}
+
+// ── Client-side heuristic CSS class extraction ─────────────────────────────────
+function extractRecipeByCSS(html) {
+  const stripTags = (s) => s.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+
+  // Look for popular recipe plugin patterns
+  const ingPatterns = [
+    /class\s*=\s*["'][^"']*wprm-recipe-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
+    /class\s*=\s*["'][^"']*tasty-recipe[s]?-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
+    /class\s*=\s*["'][^"']*recipe-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
+    /class\s*=\s*["'][^"']*ingredient-text[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|span|div)>/gi,
+  ];
+
+  const ingredients = [];
+  for (const re of ingPatterns) {
+    let m;
+    while ((m = re.exec(html)) !== null) {
+      const text = stripTags(decodeHtml(m[1]));
+      if (text && text.length > 2 && text.length < 200) ingredients.push(text);
+    }
+    if (ingredients.length > 0) break;
+  }
+
+  const dirPatterns = [
+    /class\s*=\s*["'][^"']*wprm-recipe-instruction[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
+    /class\s*=\s*["'][^"']*tasty-recipe[s]?-instruction[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
+    /class\s*=\s*["'][^"']*recipe-instruction[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
+    /class\s*=\s*["'][^"']*step-text[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div|p)>/gi,
+  ];
+
+  const directions = [];
+  for (const re of dirPatterns) {
+    let m;
+    while ((m = re.exec(html)) !== null) {
+      const text = stripTags(decodeHtml(m[1]));
+      if (text && text.length > 5) directions.push(text);
+    }
+    if (directions.length > 0) break;
+  }
+
+  if (ingredients.length === 0 && directions.length === 0) return null;
+
+  // Get title from recipe plugin or OG
+  let name = '';
+  const titlePatterns = [
+    /class\s*=\s*["'][^"']*wprm-recipe-name[^"']*["'][^>]*>([^<]+)/i,
+    /class\s*=\s*["'][^"']*tasty-recipes-title[^"']*["'][^>]*>([^<]+)/i,
+    /class\s*=\s*["'][^"']*recipe[_-]?title[^"']*["'][^>]*>([^<]+)/i,
+  ];
+  for (const re of titlePatterns) {
+    const m = re.exec(html);
+    if (m) { name = decodeHtml(m[1].trim()); break; }
+  }
+  if (!name) name = extractMeta(html, 'og:title') || 'Imported Recipe';
+  name = cleanTitle(name);
+
+  return {
+    name,
+    ingredients: ingredients.length ? ingredients : ['See recipe for ingredients'],
+    directions: directions.length ? directions : ['See recipe for directions'],
+    imageUrl: extractMeta(html, 'og:image') || '',
+  };
 }
 

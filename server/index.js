@@ -287,14 +287,247 @@ function isSocialUrl(url) {
   } catch { return false; }
 }
 
+// ── Instagram shortcode extraction from URL ──────────────────────────────────
+function extractInstagramShortcode(url) {
+  try {
+    const u = new URL(url);
+    // Matches: /p/ABC123/, /reel/ABC123/, /reels/ABC123/, /tv/ABC123/
+    const m = u.pathname.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
+    return m ? m[1] : null;
+  } catch { return null; }
+}
+
+function isInstagramUrl(url) {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '');
+    return host === 'instagram.com' || host.endsWith('.instagram.com');
+  } catch { return false; }
+}
+
+// ── Instagram embed page extraction ──────────────────────────────────────────
+// Instagram's /embed/ endpoint serves a lighter page that often works without
+// login walls. We parse the caption text and image from the embed HTML.
+// This is tried BEFORE headless Chrome for Instagram URLs.
+async function extractInstagramEmbed(url) {
+  const shortcode = extractInstagramShortcode(url);
+  if (!shortcode) return null;
+
+  const embedUrl = `https://www.instagram.com/p/${shortcode}/embed/captioned/`;
+  console.log(`[instagram-embed] Trying embed page: ${embedUrl}`);
+
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 15000);
+
+    const resp = await fetch(embedUrl, {
+      signal: ctrl.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Referer': 'https://www.instagram.com/',
+      },
+      redirect: 'follow',
+    });
+    clearTimeout(timer);
+
+    if (!resp.ok) {
+      console.log(`[instagram-embed] HTTP ${resp.status}`);
+      return null;
+    }
+
+    const html = await readResponseWithChunkTimeout(resp, 10000, 2 * 1024 * 1024);
+
+    // Check for login wall
+    if (html.length < 5000 && (html.includes('Log in') || html.includes('login'))) {
+      console.log('[instagram-embed] Login wall detected');
+      return null;
+    }
+
+    // ── Extract caption from embed HTML ──
+    // The embed page has the caption in a specific div
+    let caption = '';
+
+    // Method 1: Look for the caption div in the embed
+    const captionPatterns = [
+      /<div\s+class="[^"]*Caption[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+      /<div\s+class="[^"]*EmbedCaption[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+      // Instagram embed uses class like "CaptionContent" or similar
+      /class="[^"]*[Cc]aption[^"]*"[^>]*>[\s\S]*?<span[^>]*>([\s\S]*?)<\/span>/i,
+    ];
+    for (const re of captionPatterns) {
+      const m = re.exec(html);
+      if (m && m[1]) {
+        const text = sanitizeText(m[1]);
+        if (text && text.length > 15) { caption = text; break; }
+      }
+    }
+
+    // Method 2: Look for window.__additionalData or shared_data in scripts
+    if (!caption) {
+      const dataPatterns = [
+        /window\.__additionalDataLoaded\s*\(\s*['"][^'"]*['"]\s*,\s*({[\s\S]*?})\s*\)/,
+        /"caption"\s*:\s*\{\s*"text"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/,
+        /"edge_media_to_caption"\s*:\s*\{\s*"edges"\s*:\s*\[\s*\{\s*"node"\s*:\s*\{\s*"text"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/,
+      ];
+      for (const re of dataPatterns) {
+        const m = re.exec(html);
+        if (m) {
+          let text = m[1];
+          // If it looks like JSON, parse the caption from it
+          if (text.startsWith('{')) {
+            try {
+              const data = JSON.parse(text);
+              const cap = data?.graphql?.shortcode_media?.edge_media_to_caption?.edges?.[0]?.node?.text
+                || data?.shortcode_media?.edge_media_to_caption?.edges?.[0]?.node?.text;
+              if (cap) text = cap;
+            } catch { /* use raw match */ }
+          }
+          // Unescape JSON string escapes
+          try { text = JSON.parse(`"${text}"`); } catch {}
+          text = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+          if (text.length > 15) { caption = text; break; }
+        }
+      }
+    }
+
+    // Method 3: Parse OG description from embed page
+    if (!caption) {
+      const ogDesc = extractMetaFromHtml(html, 'og:description');
+      if (ogDesc && ogDesc.length > 15) {
+        caption = stripSocialMetaPrefix(ogDesc);
+      }
+    }
+
+    // ── Extract image ──
+    let imageUrl = '';
+    const ogImage = extractMetaFromHtml(html, 'og:image');
+    if (ogImage) {
+      imageUrl = ogImage;
+    }
+    // Also try extracting from embed HTML (may find higher-res)
+    if (!imageUrl) {
+      const imgPatterns = [
+        /<img[^>]+class="[^"]*EmbedImage[^"]*"[^>]+src="([^"]+)"/i,
+        /<img[^>]+src="(https:\/\/[^"]*instagram[^"]*\/[^"]*_n\.jpg[^"]*)"/i,
+        /<img[^>]+src="(https:\/\/scontent[^"]+)"/i,
+        // Newer IG embed patterns
+        /<img[^>]+srcset="([^"]+)"/i,
+        // Background image in style
+        /background-image:\s*url\(['"]?(https:\/\/scontent[^'")\s]+)['"]?\)/i,
+        // Any instagram CDN image
+        /"display_url"\s*:\s*"(https:[^"]+)"/i,
+        /"thumbnail_src"\s*:\s*"(https:[^"]+)"/i,
+      ];
+      for (const re of imgPatterns) {
+        const m = re.exec(html);
+        if (m) {
+          let candidate = m[1].replace(/&amp;/g, '&').replace(/\\u0026/g, '&');
+          // If srcset, pick the largest
+          if (candidate.includes(',')) {
+            const parts = candidate.split(',').map(s => s.trim());
+            candidate = parts[parts.length - 1].split(/\s+/)[0]; // last = largest
+          }
+          if (candidate.startsWith('http')) {
+            imageUrl = candidate;
+            break;
+          }
+        }
+      }
+    }
+    // Also try to find image from __additionalData JSON
+    if (!imageUrl) {
+      const dataMatch = html.match(/"display_url"\s*:\s*"(https:[^"]+)"/);
+      if (dataMatch) imageUrl = dataMatch[1].replace(/\\u0026/g, '&')
+    }
+
+    // ── Extract title (username / post name) ──
+    let title = '';
+    const ogTitle = extractMetaFromHtml(html, 'og:title');
+    if (ogTitle) {
+      title = ogTitle
+        .replace(/\s*on\s+Instagram\s*$/i, '')
+        .replace(/\s*\(@[\w.]+\)\s*$/i, '')
+        .replace(/#\w[\w.]*/g, '')
+        .trim();
+    }
+
+    if (!caption && !title) {
+      console.log('[instagram-embed] No caption or title found in embed page');
+      return null;
+    }
+
+    console.log(`[instagram-embed] Success — caption: ${caption.length} chars, image: ${imageUrl ? 'yes' : 'no'}`);
+
+    return {
+      ok: true,
+      type: 'caption',
+      caption: stripSocialMetaPrefix(caption),
+      title: title || '',
+      imageUrl,
+      sourceUrl: url,
+    };
+  } catch (e) {
+    console.log(`[instagram-embed] Error: ${e.message}`);
+    return null;
+  }
+}
+
+// ── GET /api/image-proxy ─────────────────────────────────────────────────────
+// Proxies external recipe images to avoid CORS issues and expired CDN URLs.
+// Client can use this when <img> fails to load (e.g. Instagram CDN expiry).
+app.get('/api/image-proxy', async (req, res) => {
+  const imageUrl = req.query.url;
+  if (!imageUrl) return res.status(400).send('Missing ?url=');
+
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10000);
+    const resp = await fetch(imageUrl, {
+      signal: ctrl.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Referer': new URL(imageUrl).origin + '/',
+        'Accept': 'image/*,*/*;q=0.8',
+      },
+      redirect: 'follow',
+    });
+    clearTimeout(timer);
+
+    if (!resp.ok) return res.status(resp.status).send('Image fetch failed');
+
+    const contentType = resp.headers.get('content-type') || 'image/jpeg';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=86400'); // cache 24h
+
+    // Stream the image to the client
+    const buffer = Buffer.from(await resp.arrayBuffer());
+    res.send(buffer);
+  } catch (e) {
+    console.log(`[image-proxy] Failed: ${e.message}`);
+    res.status(502).send('Image proxy error');
+  }
+});
+
 // ── POST /api/extract-url ────────────────────────────────────────────────────
 // PRIMARY import endpoint — works from phone, desktop, anywhere.
 // Strategy:
-//   • Social media URLs → headless Chrome (real browser rendering, like Paprika's WebView)
+//   • Instagram URLs    → embed page first, then headless Chrome fallback
+//   • Other social URLs → headless Chrome (real browser rendering)
 //   • Recipe blogs      → fast HTTP fetch + HTML parse (JSON-LD, OG tags)
 app.post('/api/extract-url', async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ ok: false, error: 'URL required' });
+
+  // ── Instagram: try embed page first (fast, no browser needed) ──
+  if (isInstagramUrl(url)) {
+    const embedResult = await extractInstagramEmbed(url);
+    if (embedResult && embedResult.ok && embedResult.caption) {
+      return res.json(embedResult);
+    }
+    // Embed failed — fall through to headless Chrome
+    console.log('[extract-url] Instagram embed failed, trying headless Chrome...');
+  }
 
   // ── Social media: use headless puppeteer (like Paprika's embedded WebView) ──
   if (isSocialUrl(url)) {
@@ -308,26 +541,87 @@ app.post('/api/extract-url', async (req, res) => {
 // ── Headless browser extraction (Instagram, TikTok, Facebook) ────────────────
 // Launches Chrome in headless mode, navigates to URL, waits for JS to render,
 // then extracts recipe data from the rendered DOM — exactly like Paprika's WebView.
+//
+// Retry logic: Instagram is flaky with headless Chrome — we retry up to 2 times
+// with increasing wait times if we get a login wall or empty page on first try.
 async function extractWithHeadlessBrowser(url, res) {
   let browser = null;
-  try {
-    const launchOpts = getLaunchOptions(true);
-    browser = await puppeteer.launch(launchOpts);
+  const MAX_ATTEMPTS = 2;
 
-    const page = await browser.newPage();
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-      '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    );
-    await page.evaluateOnNewDocument(() => {
-      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-    });
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const launchOpts = getLaunchOptions(true);
+      browser = await puppeteer.launch(launchOpts);
 
-    // Navigate and wait for network to settle
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 25000 });
+      const page = await browser.newPage();
 
-    // Extra wait for JS-rendered content (Instagram loads captions asynchronously)
-    await new Promise(r => setTimeout(r, 3000));
+      // Rotate user agents to reduce detection — use current 2025/2026 Chrome versions
+      const userAgents = [
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+      ];
+      await page.setUserAgent(userAgents[attempt - 1] || userAgents[0]);
+
+      // Anti-detection measures — comprehensive stealth
+      await page.evaluateOnNewDocument(() => {
+        // Hide webdriver flag
+        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+        // Remove automation-related properties
+        delete navigator.__proto__.webdriver;
+
+        // Mock permissions API
+        if (navigator.permissions) {
+          const origQuery = navigator.permissions.query;
+          navigator.permissions.query = (params) =>
+            params.name === 'notifications'
+              ? Promise.resolve({ state: Notification.permission })
+              : origQuery(params);
+        }
+        // Mock plugins (real Chrome has PDF viewer etc)
+        Object.defineProperty(navigator, 'plugins', {
+          get: () => {
+            const p = { length: 5 };
+            ['Chrome PDF Plugin', 'Chrome PDF Viewer', 'Native Client', 'Chromium PDF Plugin', 'Chromium PDF Viewer']
+              .forEach((name, i) => { p[i] = { name, length: 1 }; });
+            return p;
+          },
+        });
+        // Mock languages
+        Object.defineProperty(navigator, 'languages', {
+          get: () => ['en-US', 'en'],
+        });
+        // Fake Chrome runtime
+        window.chrome = { runtime: {}, loadTimes: () => ({}) };
+        // Override toString on functions to return native code string
+        const origToString = Function.prototype.toString;
+        Function.prototype.toString = function() {
+          if (this === Function.prototype.toString) return 'function toString() { [native code] }';
+          return origToString.call(this);
+        };
+        // Mock connection (headless often has missing NetworkInformation)
+        if (!navigator.connection) {
+          Object.defineProperty(navigator, 'connection', {
+            get: () => ({ effectiveType: '4g', rtt: 50, downlink: 10, saveData: false }),
+          });
+        }
+      });
+
+      // Set viewport to look like a real browser
+      await page.setViewport({ width: 1280, height: 900 });
+
+      // Navigate and wait for network to settle
+      const waitTime = attempt === 1 ? 25000 : 35000;
+      await page.goto(url, { waitUntil: 'networkidle2', timeout: waitTime });
+
+      // Adaptive wait: longer on retry, and wait for specific selectors
+      const baseWait = attempt === 1 ? 3000 : 5000;
+      await new Promise(r => setTimeout(r, baseWait));
+
+      // Try to wait for Instagram caption elements specifically
+      try {
+        await page.waitForSelector('._a9zs, [data-e2e="video-desc"], article h1, script[type="application/ld+json"]', { timeout: 5000 });
+      } catch { /* selector didn't appear, continue anyway */ }
 
     // ── Extract from rendered DOM (same approach as Paprika's browser.js) ──
     const data = await page.evaluate(() => {
@@ -384,27 +678,55 @@ async function extractWithHeadlessBrowser(url, res) {
       const ogDesc = document.querySelector('meta[property="og:description"]')?.content?.trim() || '';
       const ogImage = document.querySelector('meta[property="og:image"]')?.content?.trim() || '';
 
-      // 4. Grab post image from rendered DOM
+      // 4. Grab post image from rendered DOM (try multiple strategies)
       let imageUrl = ogImage;
       if (!imageUrl) {
         const imgSelectors = [
           'article img[srcset]',
           'article img[src*="instagram"]',
+          'article img[src*="scontent"]',
           'article video[poster]',
           'img._aagt',
+          'img[style*="object-fit"]',
           'article img',
           '[data-e2e="video-desc"] ~ img',
           'video[poster]',
+          'img[src*="cdninstagram"]',
         ];
         for (const sel of imgSelectors) {
           const el = document.querySelector(sel);
           if (el) {
-            const src = el.getAttribute('poster') || el.currentSrc || el.src;
-            if (src && src.startsWith('http') && !src.includes('profile_pic') && !src.includes('s150x150')) {
+            // Prefer srcset (higher resolution) over src
+            let src = '';
+            if (el.srcset) {
+              const parts = el.srcset.split(',').map(s => s.trim());
+              const last = parts[parts.length - 1]; // largest
+              src = last.split(/\s+/)[0];
+            }
+            if (!src) src = el.getAttribute('poster') || el.currentSrc || el.src;
+            if (src && src.startsWith('http') && !src.includes('profile_pic') && !src.includes('s150x150') && !src.includes('s320x320')) {
               imageUrl = src;
               break;
             }
           }
+        }
+      }
+      // Also check for images via JSON-LD or script data
+      if (!imageUrl) {
+        for (const s of document.querySelectorAll('script[type="application/ld+json"]')) {
+          try {
+            const d = JSON.parse(s.textContent);
+            const findImg = (o) => {
+              if (!o) return '';
+              if (typeof o.image === 'string') return o.image;
+              if (Array.isArray(o.image)) return o.image[0]?.url || o.image[0] || '';
+              if (o.image?.url) return o.image.url;
+              if (o['@graph']) for (const g of o['@graph']) { const r = findImg(g); if (r) return r; }
+              return '';
+            };
+            const img = findImg(d);
+            if (img && img.startsWith('http')) { imageUrl = img; break; }
+          } catch {}
         }
       }
 
@@ -430,6 +752,12 @@ async function extractWithHeadlessBrowser(url, res) {
 
     // Process result
     if (data.isLoginWall && !data.caption) {
+      // On first attempt, retry — sometimes Instagram shows login wall briefly
+      if (attempt < MAX_ATTEMPTS) {
+        console.log(`[extract-url] Login wall on attempt ${attempt}, retrying...`);
+        await new Promise(r => setTimeout(r, 2000));
+        continue; // retry
+      }
       return res.json({ ok: true, type: 'none', isLoginWall: true, sourceUrl: url });
     }
 
@@ -442,96 +770,470 @@ async function extractWithHeadlessBrowser(url, res) {
       .trim();
 
     if (!caption && !title) {
+      // Empty result on first attempt — retry
+      if (attempt < MAX_ATTEMPTS) {
+        console.log(`[extract-url] Empty result on attempt ${attempt}, retrying...`);
+        await new Promise(r => setTimeout(r, 2000));
+        continue;
+      }
       return res.json({ ok: true, type: 'none', sourceUrl: url });
     }
 
-    res.json({
+    // Success — return the data
+    return res.json({
       ok: true,
-      type: 'caption',
-      caption,
+      type: data.type === 'jsonld' ? 'jsonld' : 'caption',
+      ...(data.type === 'jsonld' ? { recipe: data.recipe } : { caption }),
       title: title || '',
       imageUrl: data.imageUrl || '',
       sourceUrl: data.sourceUrl || url,
     });
 
   } catch (e) {
-    console.error('[extract-url headless]', e.message);
+    console.error(`[extract-url headless] attempt ${attempt}:`, e.message);
     if (browser) try { await browser.close(); } catch {}
-    res.status(500).json({ ok: false, error: e.message || 'Headless extraction failed' });
+    browser = null;
+
+    // Retry on timeout or network errors
+    if (attempt < MAX_ATTEMPTS && (e.message.includes('timeout') || e.message.includes('net::') || e.message.includes('Navigation'))) {
+      console.log(`[extract-url] Retrying after error: ${e.message}`);
+      await new Promise(r => setTimeout(r, 2000));
+      continue;
+    }
+
+    return res.status(500).json({ ok: false, error: e.message || 'Headless extraction failed' });
   }
+  } // end retry loop
+}
+
+// ── Mealie-inspired browser-like request headers ──────────────────────────────
+// These headers mimic a real browser to avoid 403 blocks from recipe sites.
+// Adapted from Mealie's user_agents_manager.py get_scrape_headers()
+const SCRAPE_USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (iPhone; CPU iPhone OS 18_1_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1.1 Mobile/15E148 Safari/604.1',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/128.0',
+  'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)',
+];
+
+function getScrapeHeaders(userAgent) {
+  return {
+    'User-Agent': userAgent,
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'Accept-Encoding': 'gzip, deflate',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Sec-Fetch-User': '?1',
+    'Cache-Control': 'max-age=0',
+  };
 }
 
 // ── HTTP fetch extraction (recipe blogs — fast, no browser needed) ───────────
+// Strategy (Mealie/Paprika-style multi-pass):
+//   1. JSON-LD structured data (best quality — Schema.org/Recipe)
+//   2. Microdata (itemscope/itemtype Recipe — used by some older recipe sites)
+//   3. Heuristic HTML parsing (look for common recipe CSS classes/patterns)
+//   4. OG meta tags fallback
+//
+// Retry: cycles through user agents on failure (like Mealie's safe_scrape_html)
 async function extractWithHttpFetch(url, res) {
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 15000);
+  const MAX_ATTEMPTS = 3;
 
-    const resp = await fetch(url, {
-      signal: ctrl.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-      redirect: 'follow',
-    });
-    clearTimeout(timer);
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const ctrl = new AbortController();
+      const timeout = attempt === 1 ? 15000 : attempt === 2 ? 20000 : 25000;
+      const timer = setTimeout(() => ctrl.abort(), timeout);
+      const ua = SCRAPE_USER_AGENTS[(attempt - 1) % SCRAPE_USER_AGENTS.length];
 
-    if (!resp.ok) {
-      return res.status(502).json({ ok: false, error: `Page returned HTTP ${resp.status}` });
+      const resp = await fetch(url, {
+        signal: ctrl.signal,
+        headers: getScrapeHeaders(ua),
+        redirect: 'follow',
+      });
+      clearTimeout(timer);
+
+      if (!resp.ok) {
+        if (attempt < MAX_ATTEMPTS && (resp.status === 403 || resp.status === 429)) {
+          console.log(`[extract-url http] HTTP ${resp.status} on attempt ${attempt}, retrying with different UA...`);
+          await new Promise(r => setTimeout(r, 1500));
+          continue;
+        }
+        return res.status(502).json({ ok: false, error: `Page returned HTTP ${resp.status}` });
+      }
+
+      // ── Mealie-inspired streaming with chunk-level timeout ──
+      // Prevents hanging on huge pages that send data very slowly.
+      // Each chunk must arrive within CHUNK_TIMEOUT_MS, and total body
+      // is capped at MAX_BODY_BYTES to avoid memory issues.
+      const CHUNK_TIMEOUT_MS = 10000; // 10s per chunk
+      const MAX_BODY_BYTES = 5 * 1024 * 1024; // 5 MB max
+      const html = await readResponseWithChunkTimeout(resp, CHUNK_TIMEOUT_MS, MAX_BODY_BYTES);
+
+      // ── PASS 1: JSON-LD (best quality — most modern recipe sites) ──
+      const jsonLdRe = /<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+      let jsonLdRecipe = null;
+      let ldMatch;
+      while ((ldMatch = jsonLdRe.exec(html)) !== null) {
+        try {
+          const raw = ldMatch[1].replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, ' ').trim();
+          const data = JSON.parse(raw);
+          jsonLdRecipe = findRecipeInLd(Array.isArray(data) ? data : [data]);
+          if (jsonLdRecipe) break;
+        } catch {}
+      }
+
+      if (jsonLdRecipe) {
+        // Mealie-inspired: pick the best/largest image from candidates
+        const recipeImage = selectBestImage(jsonLdRecipe.image);
+        const ogImage = extractMetaFromHtml(html, 'og:image');
+        const bestImage = recipeImage || ogImage || '';
+        jsonLdRecipe.image = bestImage;
+        return res.json({ ok: true, type: 'jsonld', recipe: jsonLdRecipe, imageUrl: bestImage, sourceUrl: url });
+      }
+
+      // ── PASS 2: Microdata (Schema.org Recipe via itemscope/itemprop) ──
+      const microdataRecipe = extractMicrodataRecipe(html);
+      if (microdataRecipe) {
+        const ogImage = extractMetaFromHtml(html, 'og:image');
+        return res.json({ ok: true, type: 'jsonld', recipe: microdataRecipe, imageUrl: ogImage || '', sourceUrl: url });
+      }
+
+      // ── PASS 3: Heuristic HTML parsing (common recipe site patterns) ──
+      const heuristicRecipe = extractRecipeFromHtmlHeuristic(html);
+      if (heuristicRecipe) {
+        return res.json({ ok: true, type: 'jsonld', recipe: heuristicRecipe, imageUrl: heuristicRecipe.image || '', sourceUrl: url });
+      }
+
+      // ── PASS 4: OG meta tags fallback ──
+      const ogTitle = extractMetaFromHtml(html, 'og:title') || extractMetaFromHtml(html, 'twitter:title') || '';
+      const ogDesc = extractMetaFromHtml(html, 'og:description') || extractMetaFromHtml(html, 'twitter:description') || '';
+      const ogImage = extractMetaFromHtml(html, 'og:image') || extractMetaFromHtml(html, 'twitter:image') || '';
+
+      if (!ogTitle && !ogDesc) {
+        if (attempt < MAX_ATTEMPTS) {
+          console.log(`[extract-url http] No data on attempt ${attempt}, retrying...`);
+          await new Promise(r => setTimeout(r, 1500));
+          continue;
+        }
+        return res.json({ ok: true, type: 'none', sourceUrl: url });
+      }
+
+      const caption = stripSocialMetaPrefix(ogDesc);
+      const title = ogTitle
+        .replace(/\s*[|–—-]\s*(Instagram|TikTok|Facebook|Pinterest|YouTube).*$/i, '')
+        .replace(/\s*on (Instagram|TikTok|Facebook).*$/i, '')
+        .replace(/\s*\(@[\w.]+\).*$/i, '')
+        .replace(/#\w[\w.]*/g, '')
+        .trim();
+
+      return res.json({
+        ok: true,
+        type: 'caption',
+        caption,
+        title: title || '',
+        imageUrl: ogImage,
+        sourceUrl: url,
+      });
+
+    } catch (e) {
+      if (attempt < MAX_ATTEMPTS && (e.name === 'AbortError' || e.message.includes('fetch'))) {
+        console.log(`[extract-url http] attempt ${attempt} failed: ${e.message}, retrying...`);
+        await new Promise(r => setTimeout(r, 1500));
+        continue;
+      }
+      return res.status(500).json({ ok: false, error: e.message || 'Fetch failed' });
     }
-
-    const html = await resp.text();
-
-    // 1. JSON-LD (best quality)
-    const jsonLdRe = /<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
-    let jsonLdRecipe = null;
-    let ldMatch;
-    while ((ldMatch = jsonLdRe.exec(html)) !== null) {
-      try {
-        const data = JSON.parse(ldMatch[1].trim());
-        jsonLdRecipe = findRecipeInLd(Array.isArray(data) ? data : [data]);
-        if (jsonLdRecipe) break;
-      } catch {}
-    }
-
-    if (jsonLdRecipe) {
-      // Also grab OG image as backup
-      const ogImage = extractMetaFromHtml(html, 'og:image');
-      if (ogImage && !jsonLdRecipe.image) jsonLdRecipe.image = ogImage;
-      return res.json({ ok: true, type: 'jsonld', recipe: jsonLdRecipe, imageUrl: ogImage || '', sourceUrl: url });
-    }
-
-    // 2. OG meta tags fallback
-    const ogTitle = extractMetaFromHtml(html, 'og:title') || extractMetaFromHtml(html, 'twitter:title') || '';
-    const ogDesc = extractMetaFromHtml(html, 'og:description') || extractMetaFromHtml(html, 'twitter:description') || '';
-    const ogImage = extractMetaFromHtml(html, 'og:image') || extractMetaFromHtml(html, 'twitter:image') || '';
-
-    if (!ogTitle && !ogDesc) {
-      return res.json({ ok: true, type: 'none', sourceUrl: url });
-    }
-
-    const caption = stripSocialMetaPrefix(ogDesc);
-    const title = ogTitle
-      .replace(/\s*[|–—-]\s*(Instagram|TikTok|Facebook|Pinterest|YouTube).*$/i, '')
-      .replace(/\s*on (Instagram|TikTok|Facebook).*$/i, '')
-      .replace(/\s*\(@[\w.]+\).*$/i, '')
-      .replace(/#\w[\w.]*/g, '')
-      .trim();
-
-    res.json({
-      ok: true,
-      type: 'caption',
-      caption,
-      title: title || '',
-      imageUrl: ogImage,
-      sourceUrl: url,
-    });
-
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message || 'Fetch failed' });
   }
+}
+
+// ── Microdata extraction (Schema.org Recipe via HTML itemscope/itemprop) ─────
+// Handles older recipe sites that use Microdata instead of JSON-LD
+function extractMicrodataRecipe(html) {
+  // Check if there's a Recipe itemscope
+  const recipeMatch = html.match(/<[^>]*itemtype\s*=\s*["'][^"']*schema\.org\/Recipe["'][^>]*>([\s\S]*?)(?=<[^>]*itemtype\s*=\s*["']|$)/i);
+  if (!recipeMatch) return null;
+
+  const block = recipeMatch[0];
+
+  // Extract name
+  const nameMatch = block.match(/<[^>]*itemprop\s*=\s*["']name["'][^>]*>([^<]+)/i)
+    || block.match(/<[^>]*itemprop\s*=\s*["']name["'][^>]*content\s*=\s*["']([^"']+)/i);
+  const name = nameMatch ? nameMatch[1].trim() : '';
+  if (!name) return null;
+
+  // Extract ingredients
+  const ingredients = [];
+  const ingRe = /<[^>]*itemprop\s*=\s*["']recipeIngredient["'][^>]*>([^<]*)/gi;
+  let ingMatch;
+  while ((ingMatch = ingRe.exec(html)) !== null) {
+    const text = ingMatch[1].replace(/<[^>]*>/g, '').trim();
+    if (text) ingredients.push(text);
+  }
+  // Also try content attribute
+  const ingContentRe = /<[^>]*itemprop\s*=\s*["']recipeIngredient["'][^>]*content\s*=\s*["']([^"']+)/gi;
+  while ((ingMatch = ingContentRe.exec(html)) !== null) {
+    if (ingMatch[1].trim()) ingredients.push(ingMatch[1].trim());
+  }
+
+  // Extract instructions
+  const instructions = [];
+  const instRe = /<[^>]*itemprop\s*=\s*["']recipeInstructions["'][^>]*>([\s\S]*?)(?=<\/[a-z]+>)/gi;
+  let instMatch;
+  while ((instMatch = instRe.exec(html)) !== null) {
+    const text = instMatch[1].replace(/<[^>]*>/g, '').trim();
+    if (text) instructions.push(text);
+  }
+
+  // Extract image
+  const imgMatch = block.match(/<img[^>]*itemprop\s*=\s*["']image["'][^>]*src\s*=\s*["']([^"']+)/i)
+    || block.match(/<[^>]*itemprop\s*=\s*["']image["'][^>]*content\s*=\s*["']([^"']+)/i);
+  const image = imgMatch ? imgMatch[1] : '';
+
+  if (ingredients.length === 0 && instructions.length === 0) return null;
+
+  return {
+    name,
+    recipeIngredient: ingredients,
+    recipeInstructions: instructions.map(text => ({ '@type': 'HowToStep', text })),
+    image,
+  };
+}
+
+// ── Heuristic HTML extraction (Paprika-style CSS class pattern matching) ─────
+// Looks for common recipe site DOM patterns when structured data is missing
+function extractRecipeFromHtmlHeuristic(html) {
+  // Common class/id patterns for recipe titles
+  const titlePatterns = [
+    /class\s*=\s*["'][^"']*recipe[_-]?title[^"']*["'][^>]*>([^<]+)/i,
+    /class\s*=\s*["'][^"']*wprm-recipe-name[^"']*["'][^>]*>([^<]+)/i,
+    /class\s*=\s*["'][^"']*tasty-recipes-title[^"']*["'][^>]*>([^<]+)/i,
+    /class\s*=\s*["'][^"']*easyrecipe[^"']*["'][^>]*>[\s\S]*?<[^>]*class\s*=\s*["'][^"']*fn[^"']*["'][^>]*>([^<]+)/i,
+  ];
+
+  let recipeName = '';
+  for (const re of titlePatterns) {
+    const m = re.exec(html);
+    if (m) { recipeName = m[1].trim(); break; }
+  }
+
+  // Common class patterns for ingredients
+  const ingredientPatterns = [
+    /class\s*=\s*["'][^"']*wprm-recipe-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
+    /class\s*=\s*["'][^"']*recipe-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
+    /class\s*=\s*["'][^"']*tasty-recipe[s]?-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
+    /class\s*=\s*["'][^"']*ingredient[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
+  ];
+
+  const ingredients = [];
+  for (const re of ingredientPatterns) {
+    let m;
+    while ((m = re.exec(html)) !== null) {
+      const text = sanitizeText(m[1]);
+      if (text && text.length > 2 && text.length < 200) ingredients.push(text);
+    }
+    if (ingredients.length > 0) break;
+  }
+
+  // Common class patterns for instructions
+  const instructionPatterns = [
+    /class\s*=\s*["'][^"']*wprm-recipe-instruction[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
+    /class\s*=\s*["'][^"']*recipe-instruction[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
+    /class\s*=\s*["'][^"']*tasty-recipe[s]?-instruction[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
+    /class\s*=\s*["'][^"']*instruction[s]?-step[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
+    /class\s*=\s*["'][^"']*step-text[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div|p)>/gi,
+  ];
+
+  const instructions = [];
+  for (const re of instructionPatterns) {
+    let m;
+    while ((m = re.exec(html)) !== null) {
+      const text = sanitizeText(m[1]);
+      if (text && text.length > 5) instructions.push(text);
+    }
+    if (instructions.length > 0) break;
+  }
+
+  // Need at least a name + ingredients or instructions
+  if (!recipeName && ingredients.length === 0) return null;
+  if (ingredients.length === 0 && instructions.length === 0) return null;
+
+  // Get OG title as fallback name
+  if (!recipeName) {
+    recipeName = extractMetaFromHtml(html, 'og:title') || 'Imported Recipe';
+  }
+
+  return {
+    name: recipeName,
+    recipeIngredient: ingredients,
+    recipeInstructions: instructions.map(text => ({ '@type': 'HowToStep', text })),
+    image: extractMetaFromHtml(html, 'og:image') || '',
+  };
+}
+
+// ── HTML entity decoding (Mealie-style iterative cleaning) ─────────────────
+function decodeHtmlEntities(text) {
+  if (!text) return '';
+  return text
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&apos;/g, "'")
+    .replace(/&#x27;/g, "'").replace(/&nbsp;/g, ' ')
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+}
+
+/**
+ * Mealie-inspired iterative sanitization: clean HTML tags, entities, and
+ * whitespace in a loop until the string stabilizes. Some sites have doubly-
+ * escaped HTML (e.g. "&amp;lt;p&amp;gt;") that needs multiple passes.
+ */
+function sanitizeText(text) {
+  if (!text || typeof text !== 'string') return '';
+  let clean = text;
+  let prev = '';
+  // Max 5 iterations to prevent infinite loops
+  for (let i = 0; i < 5 && clean !== prev; i++) {
+    prev = clean;
+    clean = clean
+      .replace(/<[^>]+>/g, ' ')      // strip HTML tags
+      .replace(/\xa0/g, ' ')          // non-breaking space
+      .replace(/\t/g, ' ')
+      .replace(/ +/g, ' ')            // collapse spaces
+      .replace(/\n\s*\n/g, '\n\n');   // collapse blank lines
+    clean = decodeHtmlEntities(clean).trim();
+  }
+  return clean;
+}
+
+/**
+ * Mealie-inspired streaming body reader with per-chunk timeout.
+ * Reads the response body as a stream, aborting if:
+ *   - Any single chunk takes longer than chunkTimeoutMs to arrive
+ *   - Total body exceeds maxBytes
+ * This prevents the server from hanging on sites that trickle data slowly
+ * or serve unexpectedly large pages (e.g. recipe sites with enormous inline images).
+ */
+async function readResponseWithChunkTimeout(resp, chunkTimeoutMs = 10000, maxBytes = 5 * 1024 * 1024) {
+  // If no body stream (e.g. Node 18+ with ReadableStream), fall back to .text()
+  if (!resp.body || typeof resp.body.getReader !== 'function') {
+    // Fallback: use arrayBuffer with a safety timeout
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), chunkTimeoutMs * 3);
+    try {
+      const buf = await resp.arrayBuffer();
+      clearTimeout(timer);
+      return new TextDecoder().decode(buf);
+    } catch (e) {
+      clearTimeout(timer);
+      throw new Error(`Response body read timed out: ${e.message}`);
+    }
+  }
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  const chunks = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      // Race: next chunk vs timeout
+      const chunkPromise = reader.read();
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Chunk read timed out')), chunkTimeoutMs)
+      );
+
+      const { done, value } = await Promise.race([chunkPromise, timeoutPromise]);
+
+      if (done) break;
+
+      totalBytes += value.length;
+      if (totalBytes > maxBytes) {
+        // We have enough HTML — recipe data is in the first few MB
+        console.log(`[readResponseWithChunkTimeout] Body exceeded ${maxBytes} bytes, truncating`);
+        chunks.push(decoder.decode(value, { stream: false }));
+        break;
+      }
+
+      chunks.push(decoder.decode(value, { stream: true }));
+    }
+  } catch (e) {
+    // If we already have some data, use it (recipe JSON-LD is usually near the top)
+    if (chunks.length > 0) {
+      console.log(`[readResponseWithChunkTimeout] ${e.message}, using ${totalBytes} bytes already received`);
+      return chunks.join('');
+    }
+    throw e;
+  } finally {
+    try { reader.cancel(); } catch { /* ignore */ }
+  }
+
+  return chunks.join('');
+}
+
+/**
+ * Mealie-inspired image selection: when a recipe has multiple image candidates,
+ * pick the best one. Prefers URLs with size hints suggesting the largest image.
+ * Falls back to the first valid URL.
+ *
+ * JSON-LD `image` can be: a string, an array of strings, an ImageObject,
+ * an array of ImageObjects, or nested combinations.
+ */
+function selectBestImage(imageField) {
+  if (!imageField) return '';
+
+  // Collect all candidate URLs
+  const candidates = [];
+
+  function collect(val) {
+    if (!val) return;
+    if (typeof val === 'string') {
+      const trimmed = val.trim();
+      if (trimmed && (trimmed.startsWith('http') || trimmed.startsWith('//'))) {
+        candidates.push(trimmed);
+      }
+      return;
+    }
+    if (Array.isArray(val)) {
+      for (const item of val) collect(item);
+      return;
+    }
+    if (typeof val === 'object') {
+      // ImageObject: { @type: "ImageObject", url: "...", width: 1200 }
+      if (val.url) collect(val.url);
+      else if (val.contentUrl) collect(val.contentUrl);
+      // Also check thumbnail
+      if (val.thumbnail?.url) collect(val.thumbnail.url);
+    }
+  }
+
+  collect(imageField);
+  if (candidates.length === 0) return '';
+  if (candidates.length === 1) return candidates[0];
+
+  // Score each candidate: prefer larger images based on URL hints
+  function scoreUrl(url) {
+    let score = 0;
+    // Prefer URLs with size hints suggesting large images
+    const sizeMatch = url.match(/(\d{3,4})x(\d{3,4})/);
+    if (sizeMatch) {
+      score = parseInt(sizeMatch[1]) * parseInt(sizeMatch[2]);
+    }
+    // URLs with "full", "large", "original" are likely higher quality
+    if (/\b(full|large|original|hero|featured)\b/i.test(url)) score += 500000;
+    // Penalize thumbnails and small sizes
+    if (/\b(thumb|small|tiny|icon|avatar|s150|s320|150x150|320x320)\b/i.test(url)) score -= 1000000;
+    // Prefer longer URLs (usually more specific/higher quality)
+    score += url.length;
+    return score;
+  }
+
+  candidates.sort((a, b) => scoreUrl(b) - scoreUrl(a));
+  return candidates[0];
 }
 
 // Helper: extract meta tag from raw HTML
@@ -542,7 +1244,7 @@ function extractMetaFromHtml(html, property) {
   ];
   for (const re of patterns) {
     const m = re.exec(html);
-    if (m) return m[1].replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+    if (m) return decodeHtmlEntities(m[1]);
   }
   return '';
 }

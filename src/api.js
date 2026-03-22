@@ -61,6 +61,12 @@ export async function isServerAvailable() {
   }
 }
 
+/** Invalidate cached server availability so next call re-checks */
+export function resetServerAvailabilityCache() {
+  _serverAvailable = null;
+  _lastCheck = 0;
+}
+
 export async function getServerStatus() {
   try {
     const ctrl = new AbortController();
@@ -100,65 +106,31 @@ export async function closeBrowser() {
 /**
  * Primary recipe extraction — server fetches the page and parses it.
  * Works for both social media (headless Chrome) and recipe blogs (HTTP fetch).
+ *
+ * IMPORTANT: This function only tries the server. Client-side fallback is handled
+ * by parseFromUrl() in recipeParser.js to avoid circular dependency loops.
  */
 export async function extractUrl(url) {
   try {
     const available = await isServerAvailable();
     if (!available) {
-      // Server not available — fall back to client-side parsing
-      console.log('[SpiceHub] Server unavailable for URL extraction, using client-side parser');
-      const { parseFromUrl } = await import('./recipeParser.js');
-      const result = await parseFromUrl(url);
-      if (result && !result._error) {
-        // Convert client-side result to server response format
-        return {
-          ok: true,
-          type: 'jsonld',
-          sourceUrl: url,
-          title: result.name,
-          recipe: {
-            name: result.name,
-            recipeIngredient: result.ingredients,
-            recipeInstructions: result.directions,
-            image: result.imageUrl ? [result.imageUrl] : [],
-          },
-          imageUrl: result.imageUrl,
-        };
-      }
-      return result || { ok: false, reason: 'client-parse-failed' };
+      console.log('[SpiceHub] Server unavailable for URL extraction');
+      return { ok: false, reason: 'server-unavailable' };
     }
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 30000); // 30s timeout
 
     const r = await fetch(`${SERVER}/api/extract-url`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url }),
+      signal: ctrl.signal,
     });
+    clearTimeout(timer);
     return r.json();
   } catch (e) {
     console.error('[SpiceHub] extractUrl error:', e.message);
-    // Fall back to client-side parsing on network error
-    try {
-      const { parseFromUrl } = await import('./recipeParser.js');
-      const result = await parseFromUrl(url);
-      if (result && !result._error) {
-        return {
-          ok: true,
-          type: 'jsonld',
-          sourceUrl: url,
-          title: result.name,
-          recipe: {
-            name: result.name,
-            recipeIngredient: result.ingredients,
-            recipeInstructions: result.directions,
-            image: result.imageUrl ? [result.imageUrl] : [],
-          },
-          imageUrl: result.imageUrl,
-        };
-      }
-      return result || { ok: false, reason: 'client-parse-failed' };
-    } catch (fallbackErr) {
-      console.error('[SpiceHub] Fallback parsing also failed:', fallbackErr);
-      return { ok: false, reason: 'extraction-failed', error: e.message };
-    }
+    return { ok: false, reason: 'extraction-failed', error: e.message };
   }
 }

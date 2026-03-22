@@ -1,4 +1,30 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+
+// Helper: image component with proper fallback (doesn't permanently hide on transient errors)
+function MealImage({ src, alt, className, fallbackEmoji = '🍽️', fallbackClass }) {
+  const [status, setStatus] = useState(src ? 'loading' : 'fallback');
+  const imgRef = useRef(null);
+
+  useEffect(() => {
+    setStatus(src ? 'loading' : 'fallback');
+  }, [src]);
+
+  if (status === 'fallback' || !src) {
+    return <div className={fallbackClass || className}>{fallbackEmoji}</div>;
+  }
+
+  return (
+    <img
+      ref={imgRef}
+      src={src}
+      alt={alt || ''}
+      className={className}
+      onLoad={() => setStatus('loaded')}
+      onError={() => setStatus('fallback')}
+      style={status === 'loading' ? { minHeight: 60, background: '#f5f5f5' } : undefined}
+    />
+  );
+}
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const DAY_FULL   = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -148,16 +174,12 @@ export default function WeekView({
         ) : selectedEntry ? (
           <div className="wv-hero-meal">
             <div className="wv-hero-img-wrap">
-              {selectedEntry.imageUrl ? (
-                <img
-                  src={selectedEntry.imageUrl}
-                  alt={selectedEntry.name}
-                  className="wv-hero-img"
-                  onError={e => { e.target.style.display = 'none'; }}
-                />
-              ) : (
-                <div className="wv-hero-img-ph">🍽️</div>
-              )}
+              <MealImage
+                src={selectedEntry.imageUrl}
+                alt={selectedEntry.name}
+                className="wv-hero-img"
+                fallbackClass="wv-hero-img-ph"
+              />
             </div>
             <div className="wv-hero-info">
               <h3 className="wv-hero-name">{selectedEntry.name}</h3>
@@ -222,7 +244,13 @@ export default function WeekView({
               ) : entry ? (
                 <div className="wv-mini-content">
                   {entry.imageUrl && (
-                    <img src={entry.imageUrl} alt="" className="wv-mini-img" onError={e => { e.target.style.display='none'; }} />
+                    <MealImage
+                      src={entry.imageUrl}
+                      alt=""
+                      className="wv-mini-img"
+                      fallbackEmoji=""
+                      fallbackClass="wv-mini-img-ph"
+                    />
                   )}
                   <span className="wv-mini-name">{entry.name}</span>
                 </div>
@@ -289,11 +317,12 @@ export default function WeekView({
                     className={`pk-item ${isCurrent ? 'current' : ''}`}
                     onClick={() => { onSetDay(pickerDay, meal); closePicker(); }}
                   >
-                    {meal.imageUrl ? (
-                      <img src={meal.imageUrl} alt="" className="pk-img" onError={e => { e.target.style.display = 'none'; }} />
-                    ) : (
-                      <div className="pk-img-ph">🍽️</div>
-                    )}
+                    <MealImage
+                      src={meal.imageUrl}
+                      alt=""
+                      className="pk-img"
+                      fallbackClass="pk-img-ph"
+                    />
                     <div className="pk-info">
                       <span className="pk-name">{meal.name}</span>
                       <span className="pk-meta">

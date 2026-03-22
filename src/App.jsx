@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import db, { seedIfEmpty, SEED_DRINKS, importPaprikaMeals, logCook } from './db';
+import db, { seedIfEmpty, SEED_DRINKS, importPaprikaMeals, logCook, logMix } from './db';
 import { PAPRIKA_MEALS } from './paprika_import_data';
 import WeekView from './components/WeekView';
 import MealLibrary from './components/MealLibrary';
@@ -10,6 +10,7 @@ import AddEditMeal from './components/AddEditMeal';
 import ImportModal from './components/ImportModal';
 import FridgeMode from './components/FridgeMode';
 import CookMode from './components/CookMode';
+import MixMode from './components/MixMode';
 import MealStats from './components/MealStats';
 import BarShelf from './components/BarShelf';
 import BarFridgeMode from './components/BarFridgeMode';
@@ -45,6 +46,7 @@ export default function App() {
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [showFridge, setShowFridge] = useState(false);
   const [cookModeMeal, setCookModeMeal] = useState(null); // { meal, scaleFactor }
+  const [mixModeDrink, setMixModeDrink] = useState(null); // { drink, scaleFactor }
   const [showStats, setShowStats] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showBarShelf, setShowBarShelf] = useState(false);
@@ -256,6 +258,29 @@ export default function App() {
     setCookModeMeal(null);
   }, [cookModeMeal, loadMeals, showToast]);
 
+  // ── Mix Mode (drinks) ───────────────────────────────────────────────────────
+  const startMixMode = useCallback((drink, scaleFactor = 1.0) => {
+    setMixModeDrink({ drink, scaleFactor });
+  }, []);
+
+  const finishMixMode = useCallback(async () => {
+    if (mixModeDrink) {
+      const { drink } = mixModeDrink;
+      try {
+        await logMix(drink.id, drink.name);
+        await loadDrinks();
+        showToast(`Cheers! Logged "${drink.name}" as mixed 🍹`);
+      } catch {}
+    }
+    setMixModeDrink(null);
+  }, [mixModeDrink, loadDrinks, showToast]);
+
+  // Helper: check if a detailItem is a drink (exists in drinks array)
+  const isDrink = useCallback((item) => {
+    if (!item) return false;
+    return drinks.some(d => d.id === item.id);
+  }, [drinks]);
+
   // ── Share ─────────────────────────────────────────────────────────────────────
   const shareItem = useCallback((item) => {
     const text = item.name + '\n\nIngredients:\n' + item.ingredients.map(i => '- ' + i).join('\n') +
@@ -272,7 +297,7 @@ export default function App() {
       <header className="app-header">
         <div>
           <h1>SpiceHub</h1>
-          <p className="subtitle">Meal Spinner</p>
+          <p className="subtitle">Meal Spinner <span className="build-tag">v{__SPICEHUB_VERSION__}</span></p>
         </div>
         <div className="header-actions">
           <button className="hdr-btn" onClick={() => setShowFridge(true)} title="What's in My Fridge?">🧊</button>
@@ -375,9 +400,11 @@ export default function App() {
           meal={detailItem}
           onClose={() => setDetailItem(null)}
           onShare={() => shareItem(detailItem)}
-          onToggleFavorite={toggleFavorite}
-          onRate={rateMeal}
-          onStartCook={startCookMode}
+          onToggleFavorite={isDrink(detailItem) ? null : toggleFavorite}
+          onRate={isDrink(detailItem) ? null : rateMeal}
+          onStartCook={isDrink(detailItem) ? null : startCookMode}
+          onStartMix={isDrink(detailItem) ? startMixMode : null}
+          isDrink={isDrink(detailItem)}
         />
       )}
       {editMeal !== null && (
@@ -429,6 +456,13 @@ export default function App() {
           meal={cookModeMeal.meal}
           scaleFactor={cookModeMeal.scaleFactor}
           onClose={finishCookMode}
+        />
+      )}
+      {mixModeDrink && (
+        <MixMode
+          drink={mixModeDrink.drink}
+          scaleFactor={mixModeDrink.scaleFactor}
+          onClose={finishMixMode}
         />
       )}
       {showStats && (
