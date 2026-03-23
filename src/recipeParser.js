@@ -560,7 +560,7 @@ function extractInstagramShortcode(url) {
   } catch { return null; }
 }
 
-function isInstagramUrl(urlStr) {
+export function isInstagramUrl(urlStr) {
   try {
     const host = new URL(urlStr).hostname.replace(/^www\./, '');
     return host === 'instagram.com' || host.endsWith('.instagram.com');
@@ -895,5 +895,131 @@ function extractRecipeByCSS(html) {
     directions: directions.length ? directions : ['See recipe for directions'],
     imageUrl: extractMeta(html, 'og:image') || '',
   };
+}
+
+// ── Extract recipe from DOM (used by BrowserAssist for visible page content) ──────
+/**
+ * Extract recipe from visible DOM content (text + image URLs).
+ * Called by BrowserAssist when user clicks "Extract Recipe" button on visible page.
+ * Tries: parseCaption() first, then heuristic line classification.
+ * Returns recipe object or null if nothing found.
+ */
+export function extractRecipeFromDOM(visibleText, imageUrls = []) {
+  if (!visibleText || visibleText.trim().length < 10) return null;
+
+  // First try parseCaption to split ingredients/directions
+  let parsed = parseCaption(visibleText);
+  let name = parsed.title || 'Imported Recipe';
+  let ingredients = parsed.ingredients;
+  let directions = parsed.directions;
+
+  // If parseCaption didn't find clear structure, use heuristic classification
+  if (ingredients.length === 0 && directions.length === 0) {
+    const lines = visibleText.split('\n').map(l => l.trim()).filter(l => l.length > 2);
+    if (lines.length > 0) {
+      classifyDOMLines(lines, { ingredients: [], directions: [] }, recipe => {
+        ingredients = recipe.ingredients;
+        directions = recipe.directions;
+      });
+    }
+  }
+
+  // If still nothing found, put all text in directions
+  if (ingredients.length === 0 && directions.length === 0) {
+    const lines = visibleText.split('\n').map(l => l.trim()).filter(l => l.length > 2);
+    if (lines.length > 0) {
+      directions = lines;
+    } else {
+      return null;
+    }
+  }
+
+  // Pick best image from available URLs
+  let imageUrl = '';
+  if (imageUrls && imageUrls.length > 0) {
+    // Prefer images that look like recipe/food images (heuristic)
+    imageUrl = imageUrls[0];
+  }
+
+  return {
+    name: cleanTitle(name),
+    ingredients: ingredients.length ? ingredients : ['See recipe for ingredients'],
+    directions: directions.length ? directions : ['See recipe for directions'],
+    imageUrl,
+    link: '', // No source URL from DOM extraction
+  };
+}
+
+// ── Helper: Classify DOM lines into ingredients vs directions (reused from ImportModal) ──
+function classifyDOMLines(lines, recipe, callback) {
+  // Measurement units that strongly indicate ingredients
+  const UNIT_RE = /\b(cups?|tbsp|tsp|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|grams?|g\b|kg|ml|liters?|pinch|dash|cloves?|cans?|packages?|sticks?|slices?|bunch)\b/i;
+  // Fractions at start of line strongly indicate ingredients
+  const STARTS_WITH_NUM = /^[\d½¼¾⅓⅔⅛⅜⅝⅞]/;
+  // Cooking action verbs strongly indicate directions
+  const COOKING_VERB = COOKING_VERBS_RE;
+  // Numbered step at start
+  const STEP_NUM = /^\d+[.):\s-]\s*/;
+
+  let inIngredients = false;
+  let inDirections = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // Check for section headers
+    const lower = trimmed.toLowerCase();
+    if (/^ingredients?:?\s*$/i.test(lower) || lower === 'you will need' || lower === "what you'll need") {
+      inIngredients = true;
+      inDirections = false;
+      continue;
+    }
+    if (/^(directions?|instructions?|method|steps?|preparation):?\s*$/i.test(lower)) {
+      inIngredients = false;
+      inDirections = true;
+      continue;
+    }
+
+    // If we're in a detected section, use that
+    if (inIngredients) {
+      recipe.ingredients.push(trimmed);
+      continue;
+    }
+    if (inDirections) {
+      recipe.directions.push(trimmed);
+      continue;
+    }
+
+    // Heuristic classification
+    const hasUnit = UNIT_RE.test(trimmed);
+    const startsWithNum = STARTS_WITH_NUM.test(trimmed);
+    const hasCookingVerb = COOKING_VERB.test(trimmed);
+    const hasStepNum = STEP_NUM.test(trimmed);
+    const isShort = trimmed.length < 50;
+
+    // Strong ingredient signals
+    if ((startsWithNum && hasUnit) || (isShort && hasUnit && !hasCookingVerb)) {
+      recipe.ingredients.push(trimmed);
+    }
+    // Strong direction signals
+    else if (hasCookingVerb || hasStepNum || trimmed.length > 80) {
+      recipe.directions.push(trimmed);
+    }
+    // Moderate: starts with number + short = ingredient
+    else if (startsWithNum && isShort) {
+      recipe.ingredients.push(trimmed);
+    }
+    // Default: longer lines are more likely directions
+    else if (trimmed.length > 40) {
+      recipe.directions.push(trimmed);
+    }
+    // Short lines without clear signal — guess ingredient
+    else {
+      recipe.ingredients.push(trimmed);
+    }
+  }
+
+  if (callback) callback(recipe);
 }
 

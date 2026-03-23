@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
-import { parseFromUrl, isSocialMediaUrl, getSocialPlatform, parseCaption } from '../recipeParser';
+import { parseFromUrl, isSocialMediaUrl, getSocialPlatform, parseCaption, isInstagramUrl } from '../recipeParser';
+import BrowserAssist from './BrowserAssist';
 
 /**
  * ImportModal — four import paths:
@@ -23,6 +24,9 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   const [socialDetected, setSocialDetected] = useState(null);
   const [pasteText, setPasteText] = useState('');
   const [pasteLink, setPasteLink] = useState('');
+  // Browser Assist state
+  const [browserAssistUrl, setBrowserAssistUrl] = useState(null);
+  const [browserAssistMode, setBrowserAssistMode] = useState('off'); // 'off' | 'showing'
   const fileRef = useRef(null);
   const paprikaRef = useRef(null);
   const imageRef = useRef(null);
@@ -45,26 +49,40 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     if (!url.trim()) return;
     setImporting(true);
     setError('');
-    setImportProgress('Contacting recipe server...');
+    setBrowserAssistMode('off');
+    setImportProgress('Extracting recipe...');
     try {
       // Show progress updates as the extraction runs
       const progressTimer = setTimeout(() => {
         setImportProgress('Extracting recipe data... (this may take a moment)');
       }, 5000);
-      const retryTimer = setTimeout(() => {
-        setImportProgress('Still working... server may be waking up from sleep mode');
-      }, 12000);
 
       const result = await parseFromUrl(url.trim());
       clearTimeout(progressTimer);
-      clearTimeout(retryTimer);
 
       if (!result) {
+        // Auto-extraction failed. For Instagram URLs, offer Browser Assist instead of error message
+        if (isInstagramUrl(url.trim())) {
+          setBrowserAssistUrl(url.trim());
+          setBrowserAssistMode('showing');
+          setImporting(false);
+          setImportProgress('');
+          return;
+        }
         setError(
           'Could not extract a recipe from that URL. The site may block automated access. ' +
           'Try the "Paste Text" tab to paste the recipe caption or text instead.'
         );
       } else if (result._error) {
+        // Error extracting. For Instagram, offer Browser Assist
+        if (isInstagramUrl(url.trim())) {
+          setBrowserAssistUrl(url.trim());
+          setBrowserAssistMode('showing');
+          setImporting(false);
+          setImportProgress('');
+          return;
+        }
+
         if (result.reason === 'login-wall') {
           setError(
             `This ${result.platform || 'social media'} post requires login to view. ` +
@@ -89,6 +107,24 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     }
     setImporting(false);
     setImportProgress('');
+  };
+
+  // ── Browser Assist callbacks ───────────────────────────────────────────────────
+  const handleBrowserAssistRecipe = (recipe) => {
+    if (recipe) {
+      // Recipe successfully extracted from visible page
+      setPreview([recipe]);
+      setBrowserAssistMode('off');
+    }
+  };
+
+  const handleBrowserAssistFallback = () => {
+    // User clicked "Use Paste Text Instead"
+    setBrowserAssistMode('off');
+    setError(
+      'Could not extract recipe from visible page. ' +
+      'Copy the recipe caption from Instagram and use the Paste Text tab below.'
+    );
   };
 
   // ── Paste caption/text import (Mealie-style fallback) ────────────────────────
@@ -315,6 +351,17 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
           <div className="error-bar">
             {error}
             <button className="btn-icon small" onClick={() => setError('')} style={{ marginLeft: 'auto' }}>✕</button>
+          </div>
+        )}
+
+        {/* ── Browser Assist (interactive Instagram extraction) ──────────────────── */}
+        {browserAssistMode === 'showing' && (
+          <div className="import-browser-assist">
+            <BrowserAssist
+              url={browserAssistUrl}
+              onRecipeExtracted={handleBrowserAssistRecipe}
+              onFallbackToText={handleBrowserAssistFallback}
+            />
           </div>
         )}
 
