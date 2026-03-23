@@ -904,7 +904,7 @@ function extractRecipeByCSS(html) {
  * Tries: parseCaption() first, then heuristic line classification.
  * Returns recipe object or null if nothing found.
  */
-export function extractRecipeFromDOM(visibleText, imageUrls = []) {
+export function extractRecipeFromDOM(visibleText, imageUrls = [], sourceUrl = '') {
   if (!visibleText || visibleText.trim().length < 10) return null;
 
   // First try parseCaption to split ingredients/directions
@@ -917,10 +917,10 @@ export function extractRecipeFromDOM(visibleText, imageUrls = []) {
   if (ingredients.length === 0 && directions.length === 0) {
     const lines = visibleText.split('\n').map(l => l.trim()).filter(l => l.length > 2);
     if (lines.length > 0) {
-      classifyDOMLines(lines, { ingredients: [], directions: [] }, recipe => {
-        ingredients = recipe.ingredients;
-        directions = recipe.directions;
-      });
+      const classified = { ingredients: [], directions: [] };
+      classifyDOMLines(lines, classified);
+      ingredients = classified.ingredients;
+      directions = classified.directions;
     }
   }
 
@@ -937,7 +937,6 @@ export function extractRecipeFromDOM(visibleText, imageUrls = []) {
   // Pick best image from available URLs
   let imageUrl = '';
   if (imageUrls && imageUrls.length > 0) {
-    // Prefer images that look like recipe/food images (heuristic)
     imageUrl = imageUrls[0];
   }
 
@@ -946,12 +945,13 @@ export function extractRecipeFromDOM(visibleText, imageUrls = []) {
     ingredients: ingredients.length ? ingredients : ['See recipe for ingredients'],
     directions: directions.length ? directions : ['See recipe for directions'],
     imageUrl,
-    link: '', // No source URL from DOM extraction
+    link: sourceUrl,
   };
 }
 
-// ── Helper: Classify DOM lines into ingredients vs directions (reused from ImportModal) ──
-function classifyDOMLines(lines, recipe, callback) {
+// ── Helper: Classify DOM lines into ingredients vs directions ──
+// Mutates recipe.ingredients and recipe.directions in place.
+function classifyDOMLines(lines, recipe) {
   // Measurement units that strongly indicate ingredients
   const UNIT_RE = /\b(cups?|tbsp|tsp|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|grams?|g\b|kg|ml|liters?|pinch|dash|cloves?|cans?|packages?|sticks?|slices?|bunch)\b/i;
   // Fractions at start of line strongly indicate ingredients
@@ -1020,6 +1020,5 @@ function classifyDOMLines(lines, recipe, callback) {
     }
   }
 
-  if (callback) callback(recipe);
 }
 

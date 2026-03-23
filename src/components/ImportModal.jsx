@@ -119,12 +119,10 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   };
 
   const handleBrowserAssistFallback = () => {
-    // User clicked "Use Paste Text Instead"
+    // User clicked "Use Paste Text Instead" — switch directly to Paste Text tab
     setBrowserAssistMode('off');
-    setError(
-      'Could not extract recipe from visible page. ' +
-      'Copy the recipe caption from Instagram and use the Paste Text tab below.'
-    );
+    setMode('paste');
+    setPasteLink(url); // Pre-fill the source URL so user doesn't lose it
   };
 
   // ── Paste caption/text import (Mealie-style fallback) ────────────────────────
@@ -355,7 +353,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
         )}
 
         {/* ── Browser Assist (interactive Instagram extraction) ──────────────────── */}
-        {browserAssistMode === 'showing' && (
+        {browserAssistMode === 'showing' ? (
           <div className="import-browser-assist">
             <BrowserAssist
               url={browserAssistUrl}
@@ -363,10 +361,9 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
               onFallbackToText={handleBrowserAssistFallback}
             />
           </div>
-        )}
 
-        {/* ── Preview screen (full detail + editable) ──────────────────────── */}
-        {preview ? (
+        ) : /* ── Preview screen (full detail + editable) ──────────────────────── */
+        preview ? (
           <div className="import-preview">
             <h3>Preview — {preview.length} recipe{preview.length !== 1 ? 's' : ''} found</h3>
             <div className="preview-detail-list">
