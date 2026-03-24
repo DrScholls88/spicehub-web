@@ -47,42 +47,35 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   // ── Import from ANY URL ───────────────────────────────────────────────────────
   const handleUrlImport = async () => {
     if (!url.trim()) return;
+    const trimmedUrl = url.trim();
+
+    // Instagram → skip auto-extraction entirely, go straight to BrowserAssist
+    if (isInstagramUrl(trimmedUrl)) {
+      setError('');
+      setBrowserAssistUrl(trimmedUrl);
+      setBrowserAssistMode('showing');
+      return;
+    }
+
+    // Non-Instagram URLs → try auto-extraction
     setImporting(true);
     setError('');
     setBrowserAssistMode('off');
     setImportProgress('Extracting recipe...');
     try {
-      // Show progress updates as the extraction runs
       const progressTimer = setTimeout(() => {
         setImportProgress('Extracting recipe data... (this may take a moment)');
       }, 5000);
 
-      const result = await parseFromUrl(url.trim());
+      const result = await parseFromUrl(trimmedUrl);
       clearTimeout(progressTimer);
 
       if (!result) {
-        // Auto-extraction failed. For Instagram URLs, offer Browser Assist instead of error message
-        if (isInstagramUrl(url.trim())) {
-          setBrowserAssistUrl(url.trim());
-          setBrowserAssistMode('showing');
-          setImporting(false);
-          setImportProgress('');
-          return;
-        }
         setError(
           'Could not extract a recipe from that URL. The site may block automated access. ' +
           'Try the "Paste Text" tab to paste the recipe caption or text instead.'
         );
       } else if (result._error) {
-        // Error extracting. For Instagram, offer Browser Assist
-        if (isInstagramUrl(url.trim())) {
-          setBrowserAssistUrl(url.trim());
-          setBrowserAssistMode('showing');
-          setImporting(false);
-          setImportProgress('');
-          return;
-        }
-
         if (result.reason === 'login-wall') {
           setError(
             `This ${result.platform || 'social media'} post requires login to view. ` +

@@ -678,32 +678,13 @@ function handleEmbedResult(data, sourceUrl) {
  */
 export async function parseFromUrl(url) {
 
-  // ── 1. Instagram: try embed page extraction (fast, client-side) ──
+  // ── 1. Instagram: skip auto-extraction, go straight to BrowserAssist ──
+  // Auto-extraction via embed/CORS proxy produces garbage results (placeholder
+  // ingredients/directions from OG meta). BrowserAssist lets the user see the
+  // actual post content and extract from the visible DOM.
   if (isInstagramUrl(url)) {
-    console.log('[SpiceHub] Instagram URL detected, trying embed extraction...');
-    try {
-      const embedResult = await extractInstagramEmbed(url);
-      if (embedResult && embedResult.ok) {
-        const recipe = handleEmbedResult(embedResult, url);
-        if (recipe) return recipe;
-      }
-    } catch (e) {
-      console.log('[SpiceHub] Instagram embed failed:', e.message);
-    }
-
-    // Instagram embed failed — try CORS proxy on the main URL as fallback
-    try {
-      const html = await fetchHtmlViaProxy(url);
-      if (html) {
-        const recipe = parseHtml(html, url);
-        if (recipe) return recipe;
-      }
-    } catch {
-      console.log('[SpiceHub] Instagram CORS proxy failed');
-    }
-
-    // Instagram: all automated methods failed
-    return { _error: true, reason: 'social-fetch-failed', platform: 'Instagram' };
+    console.log('[SpiceHub] Instagram URL — skipping auto-extraction, routing to BrowserAssist');
+    return null;
   }
 
   // ── 2. Other social media: try CORS proxy (sometimes works for TikTok, YouTube, etc.) ──
