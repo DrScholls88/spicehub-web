@@ -4352,6 +4352,18 @@ body {
   text-align: center;
 }
 
+/* Pulsing text animation for loading state */
+.browser-assist-pulse-text {
+  font-size: 14px;
+  color: var(--text);
+  animation: browserAssistPulse 2s ease-in-out infinite;
+  min-height: 1.5em;
+}
+@keyframes browserAssistPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 .browser-assist-error .error-text {
   font-size: 14px;
   color: var(--danger);
