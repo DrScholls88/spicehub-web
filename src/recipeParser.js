@@ -1315,3 +1315,653 @@ function classifyDOMLines(lines, recipe) {
 
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// ENHANCED RECIPE EXTRACTION FUNCTIONS (Production-Ready)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Detect recipe plugins and structured markup in DOM/HTML content.
+ *
+ * Recognizes:
+ *   - WPRM (WP Recipe Maker) — .wprm-recipe, data-json
+ *   - Tasty Recipes — .tasty-recipes, schema.org JSON-LD
+ *   - EasyRecipe — .EasyRecipeType
+ *   - Schema.org Recipe — JSON-LD @type: Recipe
+ *   - Semantic HTML — <article>, <section> with microdata/aria labels
+ *   - Common CSS patterns — recipe-ingredient, recipe-instruction, etc.
+ *
+ * Returns: { type, title, ingredients, directions, imageUrl, meta }
+ *   type: 'wprm' | 'tasty' | 'easyrecipe' | 'jsonld' | 'semantic' | null
+ *   Each returns normalized { title, ingredients: [...], directions: [...], imageUrl }
+ */
+export function detectRecipePlugins(domOrHtml) {
+  // Support both DOM Document and HTML string
+  let doc = domOrHtml;
+  if (typeof domOrHtml === 'string') {
+    const parser = new DOMParser();
+    doc = parser.parseFromString(domOrHtml, 'text/html');
+  }
+
+  // ── WPRM (WP Recipe Maker) Detection ──
+  const wprmContainer = doc.querySelector('.wprm-recipe, [data-wprm-recipe]');
+  if (wprmContainer) {
+    const result = extractWPRM(wprmContainer);
+    if (result.ingredients.length > 0 || result.directions.length > 0) {
+      return { type: 'wprm', ...result };
+    }
+  }
+
+  // ── Tasty Recipes Detection ──
+  const tastyContainer = doc.querySelector('.tasty-recipes, [data-tasty-recipe]');
+  if (tastyContainer) {
+    const result = extractTastyRecipes(tastyContainer);
+    if (result.ingredients.length > 0 || result.directions.length > 0) {
+      return { type: 'tasty', ...result };
+    }
+  }
+
+  // ── EasyRecipe Detection ──
+  const easyRecipeContainer = doc.querySelector('.EasyRecipeType, [itemtype*="Recipe"]');
+  if (easyRecipeContainer) {
+    const result = extractEasyRecipe(easyRecipeContainer);
+    if (result.ingredients.length > 0 || result.directions.length > 0) {
+      return { type: 'easyrecipe', ...result };
+    }
+  }
+
+  // ── JSON-LD Recipe Detection (Schema.org) ──
+  const jsonldResult = extractJsonLdRecipe(doc);
+  if (jsonldResult.ingredients.length > 0 || jsonldResult.directions.length > 0) {
+    return { type: 'jsonld', ...jsonldResult };
+  }
+
+  // ── Semantic HTML + Microdata Detection ──
+  const semanticResult = extractSemanticRecipe(doc);
+  if (semanticResult.ingredients.length > 0 || semanticResult.directions.length > 0) {
+    return { type: 'semantic', ...semanticResult };
+  }
+
+  // ── Common CSS pattern detection ──
+  const cssResult = extractByCommonPatterns(doc);
+  if (cssResult.ingredients.length > 0 || cssResult.directions.length > 0) {
+    return { type: 'css-patterns', ...cssResult };
+  }
+
+  // No recognized plugin found
+  return { type: null, title: '', ingredients: [], directions: [], imageUrl: '' };
+}
+
+/**
+ * Extract recipe from WPRM (WP Recipe Maker) markup.
+ * WPRM stores recipe data in data-wprm-recipe JSON attributes and semantic HTML.
+ */
+function extractWPRM(container) {
+  const title = container.querySelector('.wprm-recipe-name, h2.wprm-recipe-name, [itemprop="name"]')?.textContent.trim() || '';
+  const ingredients = [];
+  const directions = [];
+  let imageUrl = '';
+
+  // Extract ingredients from list items with proper class patterns
+  for (const item of container.querySelectorAll('.wprm-recipe-ingredient, li[itemprop="recipeIngredient"]')) {
+    const text = item.textContent?.trim();
+    if (text) {
+      ingredients.push(text);
+    }
+  }
+
+  // Extract directions from numbered steps
+  for (const item of container.querySelectorAll('.wprm-recipe-instruction, li[itemprop="recipeInstructions"]')) {
+    const text = item.textContent?.trim();
+    if (text) {
+      directions.push(text);
+    }
+  }
+
+  // Try to find image
+  const imgEl = container.querySelector('img[itemprop="image"], .wprm-recipe-image img');
+  if (imgEl) {
+    imageUrl = imgEl.src || imgEl.dataset.src || '';
+  }
+
+  return { title, ingredients, directions, imageUrl };
+}
+
+/**
+ * Extract recipe from Tasty Recipes markup.
+ * Tasty Recipes uses semantic HTML with microdata and CSS classes.
+ */
+function extractTastyRecipes(container) {
+  const title = container.querySelector('h1[itemprop="name"], .tasty-recipes-title')?.textContent.trim() || '';
+  const ingredients = [];
+  const directions = [];
+  let imageUrl = '';
+
+  // Tasty Recipes uses structured list items
+  for (const item of container.querySelectorAll('[itemprop="recipeIngredient"], .tasty-recipe-ingredient')) {
+    const text = item.textContent?.trim();
+    if (text) {
+      ingredients.push(text);
+    }
+  }
+
+  // Instructions are in divs/spans with itemprop
+  for (const item of container.querySelectorAll('[itemprop="recipeInstructions"], .tasty-recipe-instructions li')) {
+    const text = item.textContent?.trim();
+    if (text) {
+      directions.push(text);
+    }
+  }
+
+  // Try to find recipe image
+  const imgEl = container.querySelector('img[itemprop="image"], .tasty-recipes-image img');
+  if (imgEl) {
+    imageUrl = imgEl.src || imgEl.dataset.src || '';
+  }
+
+  return { title, ingredients, directions, imageUrl };
+}
+
+/**
+ * Extract recipe from EasyRecipe markup (microdata based).
+ * Uses schema.org itemtype and itemprop attributes.
+ */
+function extractEasyRecipe(container) {
+  const title = container.querySelector('[itemprop="name"]')?.textContent.trim() || '';
+  const ingredients = [];
+  const directions = [];
+  let imageUrl = '';
+
+  // EasyRecipe wraps ingredients in divs with itemprop
+  for (const item of container.querySelectorAll('[itemprop="recipeIngredient"], .ingredient')) {
+    const text = item.textContent?.trim();
+    if (text) {
+      ingredients.push(text);
+    }
+  }
+
+  // Instructions are in itemprop="recipeInstructions" or similar
+  for (const item of container.querySelectorAll('[itemprop="recipeInstructions"], .recipe-instructions li')) {
+    const text = item.textContent?.trim();
+    if (text) {
+      directions.push(text);
+    }
+  }
+
+  // Image extraction
+  const imgEl = container.querySelector('[itemprop="image"]');
+  if (imgEl) {
+    imageUrl = imgEl.src || imgEl.dataset.src || imgEl.getAttribute('content') || '';
+  }
+
+  return { title, ingredients, directions, imageUrl };
+}
+
+/**
+ * Extract recipe from JSON-LD structured data (Schema.org Recipe type).
+ * Searches for <script type="application/ld+json"> with @type: Recipe.
+ */
+function extractJsonLdRecipe(doc) {
+  const scripts = doc.querySelectorAll('script[type="application/ld+json"]');
+
+  for (const script of scripts) {
+    try {
+      const data = JSON.parse(script.textContent);
+      const recipe = findRecipeInJson(data);
+      if (recipe) {
+        const result = normalizeJsonLdRecipe(recipe);
+        if (result.ingredients.length > 0 || result.directions.length > 0) {
+          return result;
+        }
+      }
+    } catch { /* not valid JSON, skip */ }
+  }
+
+  return { title: '', ingredients: [], directions: [], imageUrl: '' };
+}
+
+/**
+ * Recursively find Recipe object in JSON-LD data structure.
+ * Handles nested @graph and arrays.
+ */
+function findRecipeInJson(obj) {
+  if (!obj || typeof obj !== 'object') return null;
+
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      const found = findRecipeInJson(item);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  const type = (obj['@type'] || '').toString().toLowerCase();
+  if (type.includes('recipe')) return obj;
+
+  if (obj['@graph']) {
+    return findRecipeInJson(obj['@graph']);
+  }
+
+  return null;
+}
+
+/**
+ * Normalize JSON-LD Recipe to standard format.
+ * Handles various field names and structures.
+ */
+function normalizeJsonLdRecipe(recipe) {
+  const title = recipe.name || recipe.title || '';
+  const ingredients = [];
+  const directions = [];
+  let imageUrl = selectBestImage(recipe.image) || '';
+
+  // Ingredients can be string array or objects with @type: RecipeIngredient
+  if (recipe.recipeIngredient) {
+    if (Array.isArray(recipe.recipeIngredient)) {
+      for (const ing of recipe.recipeIngredient) {
+        if (typeof ing === 'string') {
+          ingredients.push(ing);
+        } else if (ing.text) {
+          ingredients.push(ing.text);
+        }
+      }
+    }
+  }
+
+  // Instructions can be string array or objects with @type: RecipeInstructions
+  if (recipe.recipeInstructions) {
+    const instrs = Array.isArray(recipe.recipeInstructions) ? recipe.recipeInstructions : [recipe.recipeInstructions];
+    for (const instr of instrs) {
+      if (typeof instr === 'string') {
+        directions.push(instr);
+      } else if (instr.text) {
+        directions.push(instr.text);
+      } else if (instr.itemListElement && Array.isArray(instr.itemListElement)) {
+        for (const item of instr.itemListElement) {
+          if (item.text) directions.push(item.text);
+        }
+      }
+    }
+  }
+
+  return { title, ingredients, directions, imageUrl };
+}
+
+/**
+ * Extract recipe using semantic HTML structure.
+ * Looks for <article>, <section> with aria-labels and semantic markup.
+ */
+function extractSemanticRecipe(doc) {
+  const title = '';
+  const ingredients = [];
+  const directions = [];
+  let imageUrl = '';
+
+  // Find semantic containers for recipe sections
+  const ingSection = doc.querySelector(
+    'section[aria-label*="ingredient" i], section[aria-label*="ingredient" i], ' +
+    'div[aria-label*="ingredient" i], .ingredients-section'
+  );
+
+  const dirSection = doc.querySelector(
+    'section[aria-label*="instruction" i], section[aria-label*="direction" i], ' +
+    'div[aria-label*="instruction" i], .directions-section'
+  );
+
+  // Extract ingredients from semantic container
+  if (ingSection) {
+    for (const item of ingSection.querySelectorAll('li, div[role="listitem"], p')) {
+      const text = item.textContent?.trim();
+      if (text && text.length > 2 && text.length < 200) {
+        ingredients.push(text);
+      }
+    }
+  }
+
+  // Extract directions from semantic container
+  if (dirSection) {
+    for (const item of dirSection.querySelectorAll('li, div[role="listitem"], p')) {
+      const text = item.textContent?.trim();
+      if (text && text.length > 2) {
+        directions.push(text);
+      }
+    }
+  }
+
+  return { title, ingredients, directions, imageUrl };
+}
+
+/**
+ * Extract recipe by looking for common CSS class and attribute patterns.
+ * Useful for non-standard recipe sites with custom markup.
+ *
+ * Patterns include:
+ *   - recipe-ingredient, recipe-ingredient-item, ingredient-*
+ *   - recipe-instruction, recipe-direction, recipe-step, instruction-*
+ *   - ingredient-name, ingredient-amount, ingredient-unit
+ */
+function extractByCommonPatterns(doc) {
+  const ingredients = [];
+  const directions = [];
+  let imageUrl = '';
+
+  // Common ingredient selector patterns
+  const ingredientSelectors = [
+    '.recipe-ingredient',
+    '.recipe-ingredient-item',
+    '.ingredient-item',
+    '[data-ingredient]',
+    '.ingredients li',
+    '.ingredient-list li',
+    '[class*="ingredient"][class*="item"]',
+  ];
+
+  const directionSelectors = [
+    '.recipe-instruction',
+    '.recipe-step',
+    '.instruction-item',
+    '.recipe-direction',
+    '[data-instruction]',
+    '.instructions li',
+    '.directions li',
+    '.steps li',
+    '[class*="instruction"][class*="item"]',
+    '[class*="step"][class*="item"]',
+  ];
+
+  // Extract ingredients
+  for (const selector of ingredientSelectors) {
+    for (const el of doc.querySelectorAll(selector)) {
+      const text = el.textContent?.trim();
+      if (text && text.length > 2 && text.length < 200) {
+        ingredients.push(text);
+      }
+    }
+    if (ingredients.length > 0) break; // Stop after finding first pattern
+  }
+
+  // Extract directions
+  for (const selector of directionSelectors) {
+    for (const el of doc.querySelectorAll(selector)) {
+      const text = el.textContent?.trim();
+      if (text && text.length > 2) {
+        directions.push(text);
+      }
+    }
+    if (directions.length > 0) break; // Stop after finding first pattern
+  }
+
+  // Look for recipe image
+  const imgEl = doc.querySelector('img[alt*="recipe" i], img[alt*="dish" i], .recipe-image img');
+  if (imgEl) {
+    imageUrl = imgEl.src || imgEl.dataset.src || '';
+  }
+
+  return { title: '', ingredients, directions, imageUrl };
+}
+
+/**
+ * Parse a single ingredient line into structured components.
+ *
+ * Input:  "2 1/2 cups all-purpose flour"
+ * Output: { quantity: "2 1/2", unit: "cups", name: "all-purpose flour" }
+ *
+ * Input:  "3 cloves garlic, minced"
+ * Output: { quantity: "3", unit: "cloves", name: "garlic, minced" }
+ *
+ * Input:  "Salt and pepper to taste"
+ * Output: { quantity: null, unit: null, name: "Salt and pepper to taste" }
+ */
+export function parseIngredientLine(text) {
+  if (!text || text.trim().length === 0) {
+    return { quantity: null, unit: null, name: '' };
+  }
+
+  text = text.trim();
+
+  // Remove bullet points and list markers
+  text = text.replace(/^[-•*▪▸►◦‣⁃✓✔]\s*/, '').trim();
+
+  // Remove numbered list markers (1), 1., 1) etc.
+  text = text.replace(/^\d+[.):\s-]\s*/, '').trim();
+
+  // Match quantity + unit pattern
+  // Quantity: decimal numbers, fractions (1/2, ⅓), unicode fractions
+  const quantityUnitPattern = /^([\d½¼¾⅓⅔⅛⅜⅝⅞][\d./\s-]*?)\s+(cups?|tablespoons?|tbsp|teaspoons?|tsp|ounces?|oz|lbs?|pounds?|grams?|g\b|kg|ml|liters?|litres?|pinch|pinches|dash|dashes|bunch|cloves?|cans?|jars?|packages?|pkg|sticks?|slices?|handful|handfuls|sprigs?|heads?|stalks?|fillets?|breasts?|thighs?|inches?|inch|pieces?|pcs?|counts?)\b/i;
+
+  const match = text.match(quantityUnitPattern);
+  if (match) {
+    const quantity = match[1].trim();
+    const unit = match[2].toLowerCase();
+    const name = text.substring(match[0].length).trim();
+
+    return {
+      quantity: quantity || null,
+      unit: unit || null,
+      name: name || 'Unknown ingredient',
+    };
+  }
+
+  // Try to match just quantity (for things like "3 chicken breasts")
+  const quantityOnlyPattern = /^([\d½¼¾⅓⅔⅛⅜⅝⅞][\d./\s-]*?)\s+/;
+  const qMatch = text.match(quantityOnlyPattern);
+  if (qMatch) {
+    const quantity = qMatch[1].trim();
+    // Check if what follows is a food item (heuristic)
+    const rest = text.substring(qMatch[0].length).trim();
+    if (rest.length > 0 && /^[a-z]/i.test(rest)) {
+      return {
+        quantity: quantity || null,
+        unit: null,
+        name: rest,
+      };
+    }
+  }
+
+  // No quantity/unit detected — entire line is ingredient name
+  return {
+    quantity: null,
+    unit: null,
+    name: text,
+  };
+}
+
+/**
+ * Smart classification of text lines into ingredients vs directions.
+ *
+ * Combines multiple signals:
+ *   1. CSS/class patterns from DOM elements
+ *   2. Content heuristics (cooking verbs, measurements, structure)
+ *   3. Section header detection
+ *   4. Length and formatting analysis
+ *
+ * Returns: { ingredients: [...], directions: [...] }
+ *   Each string is normalized and trimmed.
+ */
+export function smartClassifyLines(lines, sourceElement = null) {
+  const ingredients = [];
+  const directions = [];
+
+  if (!lines || lines.length === 0) {
+    return { ingredients, directions };
+  }
+
+  // Enhanced patterns with stronger signals
+  const STRONG_INGREDIENT_PATTERN = /^([\d½¼¾⅓⅔⅛⅜⅝⅞][\d./\s]*\s+)?(cups?|tbsp|tsp|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|grams?|g\b|kg|ml|liters?|pinch|dash|bunch|cloves?|cans?|packages?|sticks?|slices?|handful|sprigs?|heads?|stalks?|fillets?|pieces?)\b/i;
+
+  const DIRECTION_KEYWORD_START = /^(mix|stir|add|combine|pour|heat|cook|bake|fry|saut[eé]|chop|dice|mince|preheat|whisk|blend|fold|season|serve|place|put|set|bring|let|cover|remove|transfer|slice|cut|grill|roast|simmer|boil|drain|rinse|prepare|arrange|sprinkle|drizzle|toss|marinate|refrigerate|chill|freeze|thaw|melt|beat|cream|knead|roll|shape|form|spread|layer|garnish|start|begin|first|then|next|finally|broil|brush|coat|press|squeeze|wash|peel|trim|shred|grate|crush|smash|pound|flatten|stuff|fill|top|finish|taste|adjust|reduce|deglaze|caramelize|brown|sear|steam|poach|microwave)\b/i;
+
+  const NUMBERED_STEP = /^\d+[.):\s-]/;
+  const BULLET_POINT = /^[-•*▪▸►◦‣⁃]/;
+
+  let inIngredientsSection = false;
+  let inDirectionsSection = false;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    const lower = trimmed.toLowerCase();
+
+    // Check for explicit section headers
+    if (/^ingredients?s?:?\s*$|^you will need:?\s*$|^what you need:?\s*$/i.test(lower)) {
+      inIngredientsSection = true;
+      inDirectionsSection = false;
+      continue;
+    }
+
+    if (/^(directions?|instructions?|method|steps?|preparation|how to.*):?\s*$/i.test(lower)) {
+      inIngredientsSection = false;
+      inDirectionsSection = true;
+      continue;
+    }
+
+    // If we're in a known section, use that classification
+    if (inIngredientsSection) {
+      ingredients.push(trimmed);
+      continue;
+    }
+    if (inDirectionsSection) {
+      directions.push(trimmed);
+      continue;
+    }
+
+    // Heuristic classification (no explicit section found yet)
+    const hasStrongIngredientPattern = STRONG_INGREDIENT_PATTERN.test(trimmed);
+    const hasDirectionKeyword = DIRECTION_KEYWORD_START.test(trimmed);
+    const hasNumberedStep = NUMBERED_STEP.test(trimmed);
+    const hasBulletPoint = BULLET_POINT.test(trimmed);
+    const length = trimmed.length;
+
+    // Strong signals
+    if (hasStrongIngredientPattern && !hasDirectionKeyword) {
+      ingredients.push(trimmed);
+    } else if ((hasNumberedStep || hasDirectionKeyword) && length > 20) {
+      directions.push(trimmed);
+    } else if (hasBulletPoint && !hasDirectionKeyword && !hasNumberedStep) {
+      // Bullets without clear direction signal — likely ingredients
+      ingredients.push(trimmed);
+    } else if (hasDirectionKeyword) {
+      directions.push(trimmed);
+    } else if (length > 60) {
+      // Long lines without clear cooking signal are probably directions
+      directions.push(trimmed);
+    } else if (length < 50 && FOOD_RE.test(trimmed)) {
+      // Short line with food keywords → ingredient
+      ingredients.push(trimmed);
+    } else if (hasNumberedStep) {
+      directions.push(trimmed);
+    } else {
+      // Default: short unknown lines → ingredients, long ones → directions
+      if (length < 50) {
+        ingredients.push(trimmed);
+      } else {
+        directions.push(trimmed);
+      }
+    }
+  }
+
+  return { ingredients, directions };
+}
+
+/**
+ * Automatically extract recipe from page content without requiring user interaction.
+ *
+ * Attempts extraction in order of confidence:
+ *   1. Detect recipe plugin markup (WPRM, Tasty Recipes, etc.)
+ *   2. Extract JSON-LD structured data
+ *   3. Use smart heuristic classification on visible text
+ *
+ * This is suitable for:
+ *   - Server-side processing (render Instagram posts automatically)
+ *   - Client-side auto-extraction (without BrowserAssist button)
+ *
+ * Args:
+ *   pageContent - { html, visibleText, imageUrls, sourceUrl }
+ *   or just HTML string for backward compat
+ *
+ * Returns:
+ *   { name, ingredients, directions, imageUrl, link, extractedVia }
+ *   or null if nothing found
+ */
+export function extractWithBrowserAPI(pageContent) {
+  let html, visibleText, imageUrls, sourceUrl;
+
+  // Support both object and string input
+  if (typeof pageContent === 'string') {
+    html = pageContent;
+    visibleText = '';
+    imageUrls = [];
+    sourceUrl = '';
+  } else {
+    html = pageContent.html || '';
+    visibleText = pageContent.visibleText || '';
+    imageUrls = pageContent.imageUrls || [];
+    sourceUrl = pageContent.sourceUrl || '';
+  }
+
+  // ── Step 1: Try to detect recipe plugins/structured markup ──
+  if (html) {
+    const pluginResult = detectRecipePlugins(html);
+    if (pluginResult.type && (pluginResult.ingredients.length > 0 || pluginResult.directions.length > 0)) {
+      return {
+        name: cleanTitle(pluginResult.title || 'Recipe'),
+        ingredients: pluginResult.ingredients.length > 0
+          ? pluginResult.ingredients
+          : ['See recipe for ingredients'],
+        directions: pluginResult.directions.length > 0
+          ? pluginResult.directions
+          : ['See recipe for directions'],
+        imageUrl: pluginResult.imageUrl || (imageUrls[0] || ''),
+        link: sourceUrl,
+        extractedVia: `plugin-${pluginResult.type}`,
+      };
+    }
+  }
+
+  // ── Step 2: Try parseCaption on visible text (leverages existing heuristics) ──
+  if (visibleText) {
+    const parsed = parseCaption(visibleText);
+    if (parsed.ingredients.length > 0 || parsed.directions.length > 0) {
+      return {
+        name: cleanTitle(parsed.title || 'Recipe'),
+        ingredients: parsed.ingredients.length > 0
+          ? parsed.ingredients
+          : ['See recipe for ingredients'],
+        directions: parsed.directions.length > 0
+          ? parsed.directions
+          : ['See recipe for directions'],
+        imageUrl: imageUrls[0] || '',
+        link: sourceUrl,
+        extractedVia: 'caption-parsing',
+      };
+    }
+
+    // ── Step 3: Use smart line classification as fallback ──
+    const lines = visibleText
+      .split('\n')
+      .map(l => l.trim())
+      .filter(l => l.length > 2);
+
+    if (lines.length > 0) {
+      const classified = smartClassifyLines(lines);
+      if (classified.ingredients.length > 0 || classified.directions.length > 0) {
+        return {
+          name: cleanTitle('Recipe'),
+          ingredients: classified.ingredients.length > 0
+            ? classified.ingredients
+            : ['See recipe for ingredients'],
+          directions: classified.directions.length > 0
+            ? classified.directions
+            : ['See recipe for directions'],
+          imageUrl: imageUrls[0] || '',
+          link: sourceUrl,
+          extractedVia: 'smart-classification',
+        };
+      }
+    }
+  }
+
+  // No recipe found
+  return null;
+}
+

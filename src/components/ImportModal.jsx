@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { parseFromUrl, isSocialMediaUrl, getSocialPlatform, parseCaption, isInstagramUrl, resetServerDetection } from '../recipeParser';
+import { parseFromUrl, isSocialMediaUrl, getSocialPlatform, parseCaption, isInstagramUrl, resetServerDetection, extractWithBrowserAPI } from '../recipeParser';
 import BrowserAssist from './BrowserAssist';
 
 /**
@@ -49,7 +49,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     if (!url.trim()) return;
     const trimmedUrl = url.trim();
 
-    // Instagram → try unified pipeline first (embed + yt-dlp), then BrowserAssist
+    // Instagram → try unified pipeline first (embed + yt-dlp), then BrowserAssist as last resort
     if (isInstagramUrl(trimmedUrl)) {
       setError('');
       setImporting(true);
@@ -64,10 +64,36 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
           setImportProgress('');
           return;
         }
+      } catch { /* fall through */ }
+
+      // parseFromUrl failed — try BrowserAssist auto-extraction before showing iframe
+      setImportProgress('Trying embedded page extraction...');
+      try {
+        const { fetchHtmlViaProxy } = await import('../api');
+        const shortcodeMatch = trimmedUrl.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
+        const embedUrl = shortcodeMatch
+          ? `https://www.instagram.com/p/${shortcodeMatch[1]}/embed/captioned/`
+          : trimmedUrl;
+        const html = await fetchHtmlViaProxy(embedUrl, 40000);
+        if (html && html.length > 500) {
+          const extracted = extractWithBrowserAPI({
+            html,
+            visibleText: '',
+            imageUrls: [],
+            sourceUrl: trimmedUrl,
+          });
+          if (extracted && extracted.ingredients?.length > 1) {
+            setPreview([extracted]);
+            setImporting(false);
+            setImportProgress('');
+            return;
+          }
+        }
       } catch { /* fall through to BrowserAssist */ }
+
       setImporting(false);
       setImportProgress('');
-      // Auto-extraction failed — fall back to BrowserAssist
+      // All automatic methods failed — fall back to BrowserAssist interactive view
       setBrowserAssistUrl(trimmedUrl);
       setBrowserAssistMode('showing');
       return;
@@ -83,26 +109,26 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
         setImportProgress(progress);
       });
 
-      if (!result) {
-        setError(
-          'Could not extract a recipe from that URL. The site may block automated access. ' +
-          'Try the "Paste Text" tab to paste the recipe caption or text instead.'
-        );
-      } else if (result._error) {
-        if (result.reason === 'login-wall') {
+      if (!result || result._error) {
+        // Auto-extraction failed — try BrowserAssist for any URL as interactive fallback
+        if (isSocialMediaUrl(trimmedUrl)) {
+          // Social URLs: go to BrowserAssist interactive mode
+          setImporting(false);
+          setImportProgress('');
+          setBrowserAssistUrl(trimmedUrl);
+          setBrowserAssistMode('showing');
+          return;
+        }
+        // Non-social: show error with helpful message
+        if (result?._error && result.reason === 'login-wall') {
           setError(
             `This ${result.platform || 'social media'} post requires login to view. ` +
             'Copy the recipe caption from the app and use the "Paste Text" tab instead.'
           );
-        } else if (result.reason === 'social-fetch-failed') {
-          setError(
-            `Could not extract from ${result.platform || 'this social media platform'}. ` +
-            'Copy the recipe caption and use the "Paste Text" tab, or try again in 30 seconds.'
-          );
         } else {
           setError(
-            'Could not extract the recipe. The site may block automated access. ' +
-            'Try the "Paste Text" tab to paste the recipe text instead.'
+            'Could not extract a recipe from that URL. The site may block automated access. ' +
+            'Try the "Paste Text" tab to paste the recipe caption or text instead.'
           );
         }
       } else {
@@ -358,7 +384,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
           </div>
         )}
 
-        {/* ── Browser Assist (interactive Instagram extraction) ──────────────────── */}
+        {/* ── Browser Assist (interactive extraction — last resort for any URL) ── */}
         {browserAssistMode === 'showing' ? (
           <div className="import-browser-assist">
             <BrowserAssist

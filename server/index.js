@@ -944,9 +944,83 @@ async function extractWithHeadlessBrowser(url, res) {
         await page.waitForSelector('._a9zs, [data-e2e="video-desc"], article h1, script[type="application/ld+json"]', { timeout: 5000 });
       } catch { /* selector didn't appear, continue anyway */ }
 
-    // ── Extract from rendered DOM (same approach as Paprika's browser.js) ──
+    // ── Extract from rendered DOM — enhanced with recipe plugin detection ──
     const data = await page.evaluate(() => {
-      // 1. JSON-LD (recipe blogs that also happen to be on social media)
+      // ── Recipe plugin detection (WPRM, Tasty, EasyRecipe, etc.) ──
+      function extractRecipePlugins() {
+        // WPRM (WP Recipe Maker)
+        const wprmEl = document.querySelector('.wprm-recipe, [data-wprm-recipe]');
+        if (wprmEl) {
+          const title = wprmEl.querySelector('.wprm-recipe-name, h2.wprm-recipe-name, [itemprop="name"]')?.textContent?.trim() || '';
+          const ings = [...wprmEl.querySelectorAll('.wprm-recipe-ingredient, li[itemprop="recipeIngredient"]')]
+            .map(el => el.textContent?.trim()).filter(Boolean);
+          const dirs = [...wprmEl.querySelectorAll('.wprm-recipe-instruction, li[itemprop="recipeInstructions"]')]
+            .map(el => el.textContent?.trim()).filter(Boolean);
+          const img = wprmEl.querySelector('.wprm-recipe-image img, img[itemprop="image"]');
+          const imgUrl = img?.src || img?.getAttribute('data-src') || '';
+          if (ings.length > 0 || dirs.length > 0) return { type: 'wprm', title, ingredients: ings, directions: dirs, imageUrl: imgUrl };
+        }
+
+        // Tasty Recipes
+        const tastyEl = document.querySelector('.tasty-recipes, [data-tasty-recipe]');
+        if (tastyEl) {
+          const title = tastyEl.querySelector('.tasty-recipes-title, h2')?.textContent?.trim() || '';
+          const ings = [...tastyEl.querySelectorAll('.tasty-recipes-ingredients li, li[itemprop="recipeIngredient"]')]
+            .map(el => el.textContent?.trim()).filter(Boolean);
+          const dirs = [...tastyEl.querySelectorAll('.tasty-recipes-instructions li, li[itemprop="recipeInstructions"]')]
+            .map(el => el.textContent?.trim()).filter(Boolean);
+          const img = tastyEl.querySelector('.tasty-recipes-image img, img');
+          const imgUrl = img?.src || '';
+          if (ings.length > 0 || dirs.length > 0) return { type: 'tasty', title, ingredients: ings, directions: dirs, imageUrl: imgUrl };
+        }
+
+        // EasyRecipe / Microdata
+        const easyEl = document.querySelector('.EasyRecipeType, [itemtype*="Recipe"]');
+        if (easyEl) {
+          const title = easyEl.querySelector('[itemprop="name"], .ERSName, h2')?.textContent?.trim() || '';
+          const ings = [...easyEl.querySelectorAll('[itemprop="recipeIngredient"], [itemprop="ingredients"], .ingredient')]
+            .map(el => el.textContent?.trim()).filter(Boolean);
+          const dirs = [...easyEl.querySelectorAll('[itemprop="recipeInstructions"] li, .instruction, .step')]
+            .map(el => el.textContent?.trim()).filter(Boolean);
+          const img = easyEl.querySelector('[itemprop="image"], img');
+          const imgUrl = (img?.src || img?.getAttribute('content') || '');
+          if (ings.length > 0 || dirs.length > 0) return { type: 'easyrecipe', title, ingredients: ings, directions: dirs, imageUrl: imgUrl };
+        }
+
+        // Common CSS patterns for recipe sites
+        const cssSelectors = {
+          ingredients: [
+            '.recipe-ingredients li', '.ingredients li', '.ingredient-list li',
+            '[class*="ingredient"] li', '[class*="Ingredient"] li',
+            '.wprm-recipe-ingredient', '.tasty-recipe-ingredients li',
+            'ul.ingredients li', 'ol.ingredients li',
+          ],
+          directions: [
+            '.recipe-instructions li', '.instructions li', '.directions li', '.steps li',
+            '[class*="instruction"] li', '[class*="direction"] li', '[class*="step"] li',
+            '.recipe-method li', '.method li', '.preparation li',
+          ],
+        };
+
+        let cssIngs = [];
+        let cssDirs = [];
+        for (const sel of cssSelectors.ingredients) {
+          const els = document.querySelectorAll(sel);
+          if (els.length > 0) { cssIngs = [...els].map(el => el.textContent?.trim()).filter(Boolean); break; }
+        }
+        for (const sel of cssSelectors.directions) {
+          const els = document.querySelectorAll(sel);
+          if (els.length > 0) { cssDirs = [...els].map(el => el.textContent?.trim()).filter(Boolean); break; }
+        }
+        if (cssIngs.length > 0 || cssDirs.length > 0) {
+          const title = document.querySelector('h1, h2')?.textContent?.trim() || '';
+          return { type: 'css-patterns', title, ingredients: cssIngs, directions: cssDirs, imageUrl: '' };
+        }
+
+        return null;
+      }
+
+      // 1. JSON-LD (recipe blogs — Schema.org Recipe)
       function tryRecipe(obj) {
         if (!obj || typeof obj !== 'object') return null;
         if (Array.isArray(obj)) { for (const x of obj) { const r = tryRecipe(x); if (r) return r; } return null; }
@@ -962,7 +1036,22 @@ async function extractWithHeadlessBrowser(url, res) {
         } catch {}
       }
 
-      // 2. Caption from rendered DOM (Instagram / TikTok specific selectors)
+      // 2. Try recipe plugin detection (DOM-based structured extraction)
+      const pluginResult = extractRecipePlugins();
+      if (pluginResult) {
+        return {
+          type: 'plugin',
+          pluginType: pluginResult.type,
+          recipe: {
+            name: pluginResult.title,
+            recipeIngredient: pluginResult.ingredients,
+            recipeInstructions: pluginResult.directions.map(d => ({ text: d })),
+            image: pluginResult.imageUrl || undefined,
+          },
+        };
+      }
+
+      // 3. Caption from rendered DOM (Instagram / TikTok specific selectors)
       const captionSelectors = [
         // Instagram
         'h1._ap3a',                                    // IG Reel/post title
@@ -994,12 +1083,12 @@ async function extractWithHeadlessBrowser(url, res) {
         }
       }
 
-      // 3. OG meta fallback
+      // 4. OG meta fallback
       const ogTitle = document.querySelector('meta[property="og:title"]')?.content?.trim() || '';
       const ogDesc = document.querySelector('meta[property="og:description"]')?.content?.trim() || '';
       const ogImage = document.querySelector('meta[property="og:image"]')?.content?.trim() || '';
 
-      // 4. Grab post image from rendered DOM (try multiple strategies)
+      // 5. Grab post image from rendered DOM (try multiple strategies)
       let imageUrl = ogImage;
       if (!imageUrl) {
         const imgSelectors = [
@@ -1017,11 +1106,10 @@ async function extractWithHeadlessBrowser(url, res) {
         for (const sel of imgSelectors) {
           const el = document.querySelector(sel);
           if (el) {
-            // Prefer srcset (higher resolution) over src
             let src = '';
             if (el.srcset) {
               const parts = el.srcset.split(',').map(s => s.trim());
-              const last = parts[parts.length - 1]; // largest
+              const last = parts[parts.length - 1];
               src = last.split(/\s+/)[0];
             }
             if (!src) src = el.getAttribute('poster') || el.currentSrc || el.src;
@@ -1051,7 +1139,7 @@ async function extractWithHeadlessBrowser(url, res) {
         }
       }
 
-      // 5. Detect login wall
+      // 6. Detect login wall
       const bodyText = document.body?.innerText?.toLowerCase() || '';
       const isLoginWall = !caption && !ogDesc &&
         (bodyText.includes('log in') || bodyText.includes('sign in')) &&
@@ -1101,13 +1189,16 @@ async function extractWithHeadlessBrowser(url, res) {
     }
 
     // Success — return the data
+    // Plugin extraction returns structured recipe data (same format as jsonld)
+    const resultType = (data.type === 'jsonld' || data.type === 'plugin') ? 'jsonld' : 'caption';
     return res.json({
       ok: true,
-      type: data.type === 'jsonld' ? 'jsonld' : 'caption',
-      ...(data.type === 'jsonld' ? { recipe: data.recipe } : { caption }),
+      type: resultType,
+      ...(resultType === 'jsonld' ? { recipe: data.recipe } : { caption }),
       title: title || '',
       imageUrl: data.imageUrl || '',
       sourceUrl: data.sourceUrl || url,
+      ...(data.pluginType ? { pluginType: data.pluginType } : {}),
     });
 
   } catch (e) {

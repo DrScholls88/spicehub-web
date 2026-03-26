@@ -1,30 +1,31 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { extractRecipeFromDOM, parseCaption } from '../recipeParser';
+import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins } from '../recipeParser';
 import { fetchHtmlViaProxy, proxyImageUrl } from '../api';
 
 /**
- * BrowserAssist — Interactive embedded view for Instagram recipe extraction.
+ * BrowserAssist — Enhanced interactive embedded view for recipe extraction.
  *
- * Strategy:
- *   1. Fetch the Instagram embed/captioned page via CORS proxy
- *   2. Try regex extraction on the raw HTML first (caption, image, title)
- *   3. If regex finds a real recipe (not placeholders), return it immediately
- *   4. If not, render the HTML in an srcdoc iframe for user to view
- *   5. User scrolls, reads the content, clicks "Extract Recipe"
- *   6. Extract visible text from iframe DOM, parse with extractRecipeFromDOM
+ * Strategy (fully automatic, iframe as last resort):
+ *   1. Fetch the page HTML via CORS proxy
+ *   2. Run extractWithBrowserAPI() — tries plugin detection, caption parsing, smart classification
+ *   3. Also try regex extraction on raw HTML (caption, image, title)
+ *   4. If auto-extraction finds a recipe → show editable preview (no iframe needed)
+ *   5. If auto-extraction fails → show iframe with manual "Extract Recipe" button
+ *   6. User scrolls, reads the content, clicks "Extract Recipe"
  *   7. Fallback: "Paste Text Instead" switches to manual paste tab
  *
  * Props:
- *   url                 - Instagram URL
+ *   url                 - Page URL (Instagram or any recipe URL)
  *   onRecipeExtracted   - callback(recipe) on success
  *   onFallbackToText    - callback() when user wants Paste Text
  */
 export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText }) {
-  const [phase, setPhase] = useState('loading');
+  const [phase, setPhase] = useState('loading');     // 'loading' | 'preview' | 'iframe' | 'extracting' | 'error'
   const [errorMsg, setErrorMsg] = useState('');
   const [htmlContent, setHtmlContent] = useState('');
-  const [rawHtml, setRawHtml] = useState('');       // unsanitized, for regex extraction
-  const [loadingDots, setLoadingDots] = useState(''); // animated dots
+  const [rawHtml, setRawHtml] = useState('');
+  const [autoRecipe, setAutoRecipe] = useState(null); // auto-extracted recipe for preview
+  const [loadingDots, setLoadingDots] = useState('');
   const iframeRef = useRef(null);
   const extractionRef = useRef(null);
 
@@ -32,9 +33,9 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
   useEffect(() => {
     if (phase !== 'loading') return;
     const messages = [
-      'Fetching Instagram post',
-      'Loading page content',
+      'Fetching page content',
       'Scanning for recipe data',
+      'Trying plugin detection',
       'Almost there',
     ];
     let idx = 0;
@@ -47,52 +48,79 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
     return () => clearInterval(interval);
   }, [phase]);
 
-  // ── Fetch the page HTML ──────────────────────────────────────────────────────
+  // ── Fetch and auto-extract ─────────────────────────────────────────────────
   useEffect(() => {
     let cancelled = false;
     const timeout = setTimeout(() => {
       if (!cancelled && phase === 'loading') {
-        setErrorMsg('Page took too long to load. Instagram may be blocking the request.');
+        setErrorMsg('Page took too long to load. The site may be blocking the request.');
         setPhase('error');
       }
-    }, 45000); // Extended from 20s to 45s
+    }, 45000);
 
     (async () => {
       try {
-        // Build the embed/captioned URL (has more caption text visible)
+        // Build URL variants to try
+        const urls = [url];
         const shortcodeMatch = url.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
-        const embedUrl = shortcodeMatch
-          ? `https://www.instagram.com/p/${shortcodeMatch[1]}/embed/captioned/`
-          : url;
+        if (shortcodeMatch) {
+          // Instagram: try embed/captioned first (more text visible)
+          urls.unshift(`https://www.instagram.com/p/${shortcodeMatch[1]}/embed/captioned/`);
+        }
 
-        let html = await fetchHtmlViaProxy(embedUrl, 40000);
-        if (cancelled) return;
-
-        // Fallback to the original URL if embed didn't work
-        if (!html || html.length < 500) {
-          html = await fetchHtmlViaProxy(url, 40000);
+        let html = null;
+        for (const tryUrl of urls) {
+          try {
+            const fetched = await fetchHtmlViaProxy(tryUrl, 40000);
+            if (fetched && fetched.length > 500) { html = fetched; break; }
+          } catch { /* try next */ }
           if (cancelled) return;
         }
 
         if (!html || html.length < 500) {
-          setErrorMsg('Could not load the Instagram post. Try "Paste Text Instead".');
-          setPhase('error');
+          if (!cancelled) {
+            setErrorMsg('Could not load the page. Try "Paste Text Instead".');
+            setPhase('error');
+          }
           return;
         }
 
-        // Store raw HTML for regex extraction
+        // Store raw HTML
         setRawHtml(html);
 
-        // ── Try regex-based extraction on raw HTML first ──
-        const regexRecipe = extractFromRawHtml(html, url);
-        if (regexRecipe && hasRealContent(regexRecipe)) {
-          // Got a real recipe with actual ingredients/directions — return immediately
-          if (!cancelled) onRecipeExtracted(regexRecipe);
+        // ── AUTO-EXTRACTION PIPELINE ──
+
+        // Pass 1: extractWithBrowserAPI — plugin detection + caption parsing + smart classification
+        const browserApiResult = extractWithBrowserAPI({
+          html,
+          visibleText: stripHtmlToText(html),
+          imageUrls: extractImageUrlsFromHtml(html),
+          sourceUrl: url,
+        });
+
+        if (browserApiResult && hasRealContent(browserApiResult)) {
+          if (!cancelled) {
+            setAutoRecipe(cleanRecipe(browserApiResult));
+            setPhase('preview');
+          }
           return;
         }
 
-        // Regex didn't find a full recipe — show the iframe for manual extraction
-        setHtmlContent(sanitizeHtmlForEmbed(html, embedUrl));
+        // Pass 2: Regex extraction on raw HTML (Instagram-specific patterns)
+        const regexRecipe = extractFromRawHtml(html, url);
+        if (regexRecipe && hasRealContent(regexRecipe)) {
+          if (!cancelled) {
+            setAutoRecipe(cleanRecipe(regexRecipe));
+            setPhase('preview');
+          }
+          return;
+        }
+
+        // Pass 3: Auto-extraction failed — fall back to iframe view
+        if (!cancelled) {
+          setHtmlContent(sanitizeHtmlForEmbed(html, url));
+          setPhase('iframe');
+        }
 
       } catch (err) {
         if (!cancelled) {
@@ -104,12 +132,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
     })();
 
     return () => { cancelled = true; clearTimeout(timeout); };
-  }, [url, onRecipeExtracted]);
-
-  // ── When HTML is ready, show the iframe ──────────────────────────────────────
-  useEffect(() => {
-    if (htmlContent) setPhase('ready');
-  }, [htmlContent]);
+  }, [url]);
 
   // ── After iframe renders, inject extraction button ───────────────────────────
   const handleIframeLoad = useCallback(() => {
@@ -118,7 +141,6 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
       const doc = iframeRef.current.contentDocument;
       if (!doc || !doc.body) return;
 
-      // Remove existing injected elements
       doc.getElementById('spicehub-extract-btn')?.remove();
       doc.getElementById('spicehub-helper')?.remove();
 
@@ -149,23 +171,22 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
         'font-size:13px', 'font-family:system-ui,sans-serif',
         'text-align:center', 'line-height:1.4',
       ].join(';');
-      helper.textContent = 'Scroll to see the full recipe caption, then tap the green button below.';
+      helper.textContent = 'Auto-extraction couldn\'t find the recipe. Scroll to see the full content, then tap the green button.';
       doc.body.appendChild(helper);
 
-      // Auto-dismiss helper after 5s
       setTimeout(() => {
         if (helper.parentNode) {
           helper.style.transition = 'opacity 0.5s';
           helper.style.opacity = '0';
           setTimeout(() => helper.remove(), 500);
         }
-      }, 5000);
+      }, 6000);
     } catch (err) {
       console.warn('[BrowserAssist] Could not inject into iframe:', err);
     }
   }, []);
 
-  // ── Extraction from iframe DOM ───────────────────────────────────────────────
+  // ── Manual extraction from iframe DOM ──────────────────────────────────────
   const handleExtraction = useCallback(() => {
     setPhase('extracting');
     try {
@@ -176,21 +197,35 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
       const visibleText = extractVisibleTextFromDoc(doc);
       const imageUrls = extractImageUrlsFromDoc(doc);
 
-      // Also try regex on raw HTML again (may have different results)
+      // Try extractWithBrowserAPI on iframe content
+      const fullHtml = doc.documentElement?.outerHTML || '';
+      const browserApiResult = extractWithBrowserAPI({
+        html: fullHtml,
+        visibleText,
+        imageUrls,
+        sourceUrl: url,
+      });
+
+      if (browserApiResult && hasRealContent(browserApiResult)) {
+        onRecipeExtracted(cleanRecipe(browserApiResult));
+        return;
+      }
+
+      // Also try regex on raw HTML
       const regexRecipe = rawHtml ? extractFromRawHtml(rawHtml, url) : null;
 
       // Try DOM-based extraction
       const domRecipe = extractRecipeFromDOM(visibleText, imageUrls, url);
 
-      // Pick the best result — prefer the one with more ingredients
+      // Pick the best result
       const recipe = pickBestRecipe(regexRecipe, domRecipe);
 
       if (recipe && hasRealContent(recipe)) {
-        onRecipeExtracted(recipe);
+        onRecipeExtracted(cleanRecipe(recipe));
         return;
       }
 
-      // No real recipe found — flash error on the iframe button
+      // No recipe found
       try {
         const btn = doc.getElementById('spicehub-extract-btn');
         if (btn) {
@@ -205,7 +240,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
         }
       } catch { /* ignore */ }
 
-      setPhase('ready');
+      setPhase('iframe');
     } catch (err) {
       console.error('[BrowserAssist] Extraction error:', err);
       setErrorMsg('Could not read page content. Try "Paste Text Instead".');
@@ -216,21 +251,159 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
   // Keep extractionRef in sync
   useEffect(() => { extractionRef.current = handleExtraction; }, [handleExtraction]);
 
+  // ── Accept auto-extracted recipe from preview ──────────────────────────────
+  const handleAcceptPreview = useCallback(() => {
+    if (autoRecipe) {
+      onRecipeExtracted(autoRecipe);
+    }
+  }, [autoRecipe, onRecipeExtracted]);
+
+  // ── Switch from preview to iframe for manual extraction ────────────────────
+  const handleTryManual = useCallback(() => {
+    if (rawHtml) {
+      setHtmlContent(sanitizeHtmlForEmbed(rawHtml, url));
+      setPhase('iframe');
+    } else {
+      onFallbackToText();
+    }
+  }, [rawHtml, url, onFallbackToText]);
+
+  // ── Update a field in the auto-extracted recipe preview ────────────────────
+  const updatePreviewField = useCallback((field, value) => {
+    setAutoRecipe(prev => prev ? { ...prev, [field]: value } : prev);
+  }, []);
+
+  const updatePreviewListItem = useCallback((field, index, value) => {
+    setAutoRecipe(prev => {
+      if (!prev) return prev;
+      const list = [...(prev[field] || [])];
+      list[index] = value;
+      return { ...prev, [field]: list };
+    });
+  }, []);
+
+  const removePreviewListItem = useCallback((field, index) => {
+    setAutoRecipe(prev => {
+      if (!prev) return prev;
+      const list = [...(prev[field] || [])];
+      list.splice(index, 1);
+      return { ...prev, [field]: list };
+    });
+  }, []);
+
+  const addPreviewListItem = useCallback((field) => {
+    setAutoRecipe(prev => {
+      if (!prev) return prev;
+      return { ...prev, [field]: [...(prev[field] || []), ''] };
+    });
+  }, []);
+
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <div className="browser-assist-container">
+      {/* ── Loading state ── */}
       {phase === 'loading' && (
         <div className="browser-assist-loading">
           <div className="browser-spinner large" />
-          <p className="browser-assist-pulse-text">{loadingDots || 'Fetching Instagram post...'}</p>
+          <p className="browser-assist-pulse-text">{loadingDots || 'Fetching page content...'}</p>
           <button className="btn-secondary" onClick={onFallbackToText} style={{ marginTop: 12 }}>
             Skip — Paste Text Instead
           </button>
         </div>
       )}
 
-      {(phase === 'ready' || phase === 'extracting') && (
+      {/* ── Auto-extracted preview (editable) ── */}
+      {phase === 'preview' && autoRecipe && (
+        <div className="browser-assist-preview">
+          <div className="browser-assist-preview-header">
+            <span className="browser-assist-success-icon">&#10003;</span>
+            <span>Recipe found automatically{autoRecipe.extractedVia ? ` (${autoRecipe.extractedVia})` : ''}</span>
+          </div>
+
+          <div className="browser-assist-preview-card">
+            {/* Title */}
+            <div className="preview-detail-title-zone">
+              <label className="preview-label">Recipe Name</label>
+              <input
+                type="text"
+                className="preview-title-input"
+                value={autoRecipe.name || ''}
+                onChange={e => updatePreviewField('name', e.target.value)}
+              />
+            </div>
+
+            {/* Ingredients */}
+            <div className="preview-detail-section">
+              <label className="preview-label">
+                Ingredients ({autoRecipe.ingredients?.length || 0})
+                <button className="preview-add-btn" onClick={() => addPreviewListItem('ingredients')}>+ Add</button>
+              </label>
+              <div className="preview-editable-list">
+                {(autoRecipe.ingredients || []).map((ing, i) => (
+                  <div key={i} className="preview-editable-row">
+                    <input
+                      type="text"
+                      value={ing}
+                      placeholder="e.g. 2 cups flour"
+                      onChange={e => updatePreviewListItem('ingredients', i, e.target.value)}
+                    />
+                    <button
+                      className="preview-remove-btn"
+                      onClick={() => removePreviewListItem('ingredients', i)}
+                      title="Remove"
+                    >&#10005;</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Directions */}
+            <div className="preview-detail-section">
+              <label className="preview-label">
+                Steps ({autoRecipe.directions?.length || 0})
+                <button className="preview-add-btn" onClick={() => addPreviewListItem('directions')}>+ Add</button>
+              </label>
+              <div className="preview-editable-list">
+                {(autoRecipe.directions || []).map((step, i) => (
+                  <div key={i} className="preview-editable-row preview-step-row">
+                    <span className="preview-step-num">{i + 1}</span>
+                    <textarea
+                      value={step}
+                      placeholder="Describe this step..."
+                      rows={2}
+                      onChange={e => updatePreviewListItem('directions', i, e.target.value)}
+                    />
+                    <button
+                      className="preview-remove-btn"
+                      onClick={() => removePreviewListItem('directions', i)}
+                      title="Remove"
+                    >&#10005;</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="browser-assist-preview-actions">
+            <button className="btn-primary" onClick={handleAcceptPreview}>
+              Use This Recipe
+            </button>
+            <button className="btn-secondary" onClick={handleTryManual}>
+              Not right? Try manual extraction
+            </button>
+            <button className="btn-secondary" onClick={onFallbackToText}>
+              Paste Text Instead
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Iframe fallback (manual extraction) ── */}
+      {(phase === 'iframe' || phase === 'extracting') && (
         <div className="browser-assist-ready">
+          <p className="browser-assist-fallback-note">
+            Auto-extraction couldn't find the recipe. Browse the page below and tap "Extract Recipe" when you see the recipe content.
+          </p>
           <div className="browser-assist-iframe-container">
             <iframe
               ref={iframeRef}
@@ -254,6 +427,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
         </div>
       )}
 
+      {/* ── Error state ── */}
       {phase === 'error' && (
         <div className="browser-assist-error">
           <p className="error-text">{errorMsg}</p>
@@ -300,9 +474,6 @@ const PLACEHOLDER_TITLE_PATTERNS = [
   /^\s*$/,
 ];
 
-/**
- * Check if a single line is placeholder text.
- */
 function isPlaceholderLine(line) {
   if (!line || typeof line !== 'string') return true;
   const trimmed = line.trim();
@@ -310,9 +481,6 @@ function isPlaceholderLine(line) {
   return PLACEHOLDER_PATTERNS.some(re => re.test(trimmed));
 }
 
-/**
- * Check if a recipe title is a placeholder.
- */
 function isPlaceholderTitle(title) {
   if (!title || typeof title !== 'string') return true;
   return PLACEHOLDER_TITLE_PATTERNS.some(re => re.test(title.trim()));
@@ -320,36 +488,22 @@ function isPlaceholderTitle(title) {
 
 /**
  * Check if a recipe has real content (not just placeholders).
- * This is the primary gate — nothing passes without real ingredients OR directions.
  */
 function hasRealContent(recipe) {
   if (!recipe) return false;
-
   const ings = recipe.ingredients || [];
   const dirs = recipe.directions || [];
-
-  // Filter out placeholder lines
   const realIngs = ings.filter(i => !isPlaceholderLine(i));
   const realDirs = dirs.filter(d => !isPlaceholderLine(d));
-
-  // Require at least 2 real ingredients OR 2 real directions
   if (realIngs.length < 2 && realDirs.length < 2) return false;
-
-  // Reject if title is a known placeholder and we barely have content
   if (isPlaceholderTitle(recipe.name) && realIngs.length < 3 && realDirs.length < 3) return false;
-
   return true;
 }
 
-/**
- * Pick the recipe with more actual content. Filter placeholders before scoring.
- */
 function pickBestRecipe(a, b) {
   if (!a && !b) return null;
   if (!a) return b;
   if (!b) return a;
-
-  // Score by real content count
   const realA = (a.ingredients?.filter(i => !isPlaceholderLine(i))?.length || 0)
     + (a.directions?.filter(d => !isPlaceholderLine(d))?.length || 0);
   const realB = (b.ingredients?.filter(i => !isPlaceholderLine(i))?.length || 0)
@@ -357,9 +511,6 @@ function pickBestRecipe(a, b) {
   return realA >= realB ? a : b;
 }
 
-/**
- * Clean a recipe — strip out any placeholder lines that snuck in.
- */
 function cleanRecipe(recipe) {
   if (!recipe) return recipe;
   return {
@@ -371,11 +522,58 @@ function cleanRecipe(recipe) {
 }
 
 /**
+ * Strip HTML to plain text (for visible text extraction from raw HTML string).
+ */
+function stripHtmlToText(html) {
+  return html
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(?:p|div|h[1-6]|li|tr)>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Extract image URLs from raw HTML string.
+ */
+function extractImageUrlsFromHtml(html) {
+  const urls = [];
+  const seen = new Set();
+
+  // OG image
+  const ogM = html.match(/<meta[^>]+property\s*=\s*["']og:image["'][^>]+content\s*=\s*["']([^"']*)["']/i)
+    || html.match(/<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+property\s*=\s*["']og:image["']/i);
+  if (ogM && ogM[1]) {
+    const u = ogM[1].replace(/&amp;/g, '&');
+    if (u.startsWith('http')) { urls.push(u); seen.add(u); }
+  }
+
+  // JSON display_url
+  for (const m of html.matchAll(/"display_url"\s*:\s*"(https:[^"]+)"/g)) {
+    const u = m[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
+    if (!seen.has(u) && u.includes('scontent')) { urls.push(u); seen.add(u); }
+  }
+
+  // img tags with scontent
+  for (const m of html.matchAll(/<img[^>]+src="(https:\/\/[^"]*scontent[^"]*)"/gi)) {
+    const u = m[1].replace(/&amp;/g, '&');
+    if (!seen.has(u) && !/\/s\d{2,3}x\d{2,3}\//.test(u) && !/profile_pic/i.test(u)) {
+      urls.push(u); seen.add(u);
+    }
+  }
+
+  return urls.slice(0, 5);
+}
+
+/**
  * Regex-based extraction from raw HTML (works before sanitization strips data).
  * Targets Instagram embed page patterns: caption divs, JSON data, OG meta.
  */
 function extractFromRawHtml(html, sourceUrl) {
-  // ── Extract caption text ──
   let caption = '';
 
   // Method 1: Caption div patterns
@@ -419,19 +617,18 @@ function extractFromRawHtml(html, sourceUrl) {
 
   if (!caption || caption.length < 30) return null;
 
-  // ── Reject known Instagram OG placeholder captions ──
+  // Reject known Instagram OG placeholder captions
   if (/^\d+[\s,]*(likes?|comments?|views?)/i.test(caption)) return null;
   if (/^[\d,.]+\s*(Likes?|Comments?)/i.test(caption)) return null;
 
-  // ── Parse caption into recipe ──
+  // Parse caption into recipe
   const parsed = parseCaption(caption);
   if (!parsed) return null;
 
-  // ── Extract images — prioritize actual content photos ──
-  let imageUrl = '';
-  imageUrl = extractBestImageFromHtml(html);
+  // Extract images
+  let imageUrl = extractBestImageFromHtml(html);
 
-  // ── Extract title ──
+  // Extract title
   let name = parsed.title || '';
   if (!name) {
     const ogTitleM = html.match(/<meta[^>]+property\s*=\s*["']og:title["'][^>]+content\s*=\s*["']([^"']*)["']/i);
@@ -446,40 +643,30 @@ function extractFromRawHtml(html, sourceUrl) {
   }
   if (!name || isPlaceholderTitle(name)) name = '';
 
-  const recipe = cleanRecipe({
+  return cleanRecipe({
     name,
     ingredients: parsed.ingredients.length ? parsed.ingredients : [],
     directions: parsed.directions.length ? parsed.directions : [],
     imageUrl,
     link: sourceUrl,
   });
-
-  return recipe;
 }
 
-/**
- * Extract the best image URL from raw HTML.
- * Prioritizes: display_url > thumbnail_src > scontent CDN images > OG image.
- * Filters out tiny icons, profile pics, and tracking pixels.
- */
 function extractBestImageFromHtml(html) {
   const candidates = [];
 
-  // 1. JSON display_url (highest res, usually the actual post image/video thumbnail)
   const displayUrlMatches = html.matchAll(/"display_url"\s*:\s*"(https:[^"]+)"/g);
   for (const m of displayUrlMatches) {
     const url = m[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
     if (url.includes('scontent')) candidates.push({ url, priority: 1 });
   }
 
-  // 2. JSON thumbnail_src
   const thumbMatches = html.matchAll(/"thumbnail_src"\s*:\s*"(https:[^"]+)"/g);
   for (const m of thumbMatches) {
     const url = m[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
     if (url.includes('scontent')) candidates.push({ url, priority: 2 });
   }
 
-  // 3. OG image
   const ogImgM = html.match(/<meta[^>]+property\s*=\s*["']og:image["'][^>]+content\s*=\s*["']([^"']*)["']/i)
     || html.match(/<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+property\s*=\s*["']og:image["']/i);
   if (ogImgM) {
@@ -487,31 +674,25 @@ function extractBestImageFromHtml(html) {
     if (url.startsWith('http')) candidates.push({ url, priority: 3 });
   }
 
-  // 4. Instagram CDN images from <img> tags (scontent URLs)
   const imgTagMatches = html.matchAll(/<img[^>]+src="(https:\/\/[^"]*scontent[^"]*)"/gi);
   for (const m of imgTagMatches) {
     const url = m[1].replace(/&amp;/g, '&');
     candidates.push({ url, priority: 4 });
   }
 
-  // 5. EmbedImage class
   const embedImgM = html.match(/<img[^>]+class="[^"]*EmbedImage[^"]*"[^>]+src="([^"]+)"/i);
   if (embedImgM) {
     candidates.push({ url: embedImgM[1].replace(/&amp;/g, '&'), priority: 2 });
   }
 
-  // Filter out tiny images (profile pics, icons) — look for dimension hints
   const filtered = candidates.filter(c => {
     const url = c.url;
-    // Skip profile pics
-    if (/\/s\d{2,3}x\d{2,3}\//.test(url)) return false;  // e.g., /s150x150/
+    if (/\/s\d{2,3}x\d{2,3}\//.test(url)) return false;
     if (/profile_pic/i.test(url)) return false;
-    // Skip tracking/blank pixels
     if (url.includes('1x1') || url.includes('blank')) return false;
     return true;
   });
 
-  // Sort by priority and return best
   filtered.sort((a, b) => a.priority - b.priority);
   return filtered.length > 0 ? filtered[0].url : '';
 }
@@ -526,9 +707,6 @@ function stripHtml(html) {
     .trim();
 }
 
-/**
- * Sanitize fetched HTML for safe embedding via srcdoc.
- */
 function sanitizeHtmlForEmbed(html, baseUrl) {
   let base = '';
   try { base = new URL(baseUrl).origin; } catch { /* ignore */ }
@@ -545,10 +723,8 @@ function sanitizeHtmlForEmbed(html, baseUrl) {
           body { font-family: system-ui, sans-serif !important; overflow-y: auto !important; }
           * { max-width: 100% !important; }
           img { height: auto !important; }
-          /* Force-expand any truncated/hidden content */
           [style*="display: none"], [style*="display:none"],
           .hidden, [hidden] { display: block !important; visibility: visible !important; }
-          /* Instagram-specific: expand truncated captions */
           .Caption, .EmbedCaption, [class*="Caption"] {
             max-height: none !important;
             overflow: visible !important;
@@ -558,9 +734,6 @@ function sanitizeHtmlForEmbed(html, baseUrl) {
     );
 }
 
-/**
- * Extract visible text from iframe document.
- */
 function extractVisibleTextFromDoc(doc) {
   const texts = [];
   const iframeWindow = doc.defaultView;
@@ -584,34 +757,26 @@ function extractVisibleTextFromDoc(doc) {
   return texts.join('\n');
 }
 
-/**
- * Extract image URLs from iframe document.
- * Prioritizes Instagram CDN images, filters out profile pics and tiny icons.
- */
 function extractImageUrlsFromDoc(doc) {
   const candidates = [];
   const seen = new Set();
 
-  // OG image first
   const ogImg = doc.querySelector('meta[property="og:image"]');
   if (ogImg?.content?.startsWith('http')) {
     candidates.push({ url: ogImg.content, priority: 3 });
     seen.add(ogImg.content);
   }
 
-  // All img tags — score by likely relevance
   for (const img of doc.querySelectorAll('img')) {
     const src = img.src || img.getAttribute('data-src') || '';
     if (!src || !src.startsWith('http') || seen.has(src)) continue;
     seen.add(src);
 
-    // Skip profile pics and tiny images
     if (/\/s\d{2,3}x\d{2,3}\//.test(src)) continue;
     if (/profile_pic/i.test(src)) continue;
     if (src.includes('1x1') || src.includes('blank')) continue;
 
     const isInstaCdn = src.includes('scontent') || src.includes('cdninstagram');
-    // Check if image is large (likely content, not icon)
     const w = img.naturalWidth || parseInt(img.getAttribute('width') || '0');
     const h = img.naturalHeight || parseInt(img.getAttribute('height') || '0');
     const isLarge = (w > 200 || h > 200);
@@ -622,7 +787,6 @@ function extractImageUrlsFromDoc(doc) {
     else candidates.push({ url: src, priority: 5 });
   }
 
-  // Background images
   try {
     const iframeWindow = doc.defaultView;
     for (const el of doc.querySelectorAll('[style*="background"]')) {
@@ -635,7 +799,6 @@ function extractImageUrlsFromDoc(doc) {
     }
   } catch { /* ignore */ }
 
-  // Sort by priority, return URLs only
   candidates.sort((a, b) => a.priority - b.priority);
   return candidates.slice(0, 5).map(c => c.url);
 }
