@@ -19,6 +19,7 @@ import cors from 'cors';
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
+import { execFile, exec } from 'child_process';
 
 const IS_CLOUD = process.env.SPICEHUB_MODE === 'cloud';
 
@@ -267,19 +268,21 @@ const INJECT_DOWNLOAD_BUTTON = `
 `;
 
 // ── GET /api/status ────────────────────────────────────────────────────────────
-app.get('/api/status', (req, res) => {
+app.get('/api/status', async (req, res) => {
   const chromePath = findChrome();
+  const ytdlp = await isYtdlpAvailable();
   res.json({
     ok: true,
     chromeFound: !!chromePath,
     chromePath: chromePath || null,
     browserOpen: !!activeBrowser,
     activeUrl: activeUrl || null,
+    ytdlpAvailable: ytdlp,
   });
 });
 
 // ── Detect social media URLs on server side ─────────────────────────────────
-const SOCIAL_HOSTS = ['instagram.com', 'tiktok.com', 'vm.tiktok.com', 'facebook.com', 'fb.watch'];
+const SOCIAL_HOSTS = ['instagram.com', 'tiktok.com', 'vm.tiktok.com', 'facebook.com', 'fb.watch', 'youtube.com', 'youtu.be'];
 function isSocialUrl(url) {
   try {
     const host = new URL(url).hostname.replace(/^www\./, '');
@@ -509,12 +512,276 @@ app.get('/api/image-proxy', async (req, res) => {
   }
 });
 
+// ── yt-dlp integration (Mealie-inspired video metadata + subtitle extraction) ─
+// Uses yt-dlp to extract video metadata and subtitles from social media URLs.
+// This replaces the fragile headless Chrome approach for platforms yt-dlp supports.
+// Zero API cost — subtitles are free, no AI/transcription needed.
+
+/** Check if yt-dlp is available on the system */
+let _ytdlpAvailable = null;
+async function isYtdlpAvailable() {
+  if (_ytdlpAvailable !== null) return _ytdlpAvailable;
+  return new Promise((resolve) => {
+    exec('yt-dlp --version', { timeout: 5000 }, (err, stdout) => {
+      _ytdlpAvailable = !err && !!stdout.trim();
+      if (_ytdlpAvailable) console.log(`   yt-dlp found: v${stdout.trim()}`);
+      else console.log('   yt-dlp not found — video metadata extraction disabled');
+      resolve(_ytdlpAvailable);
+    });
+  });
+}
+
+/**
+ * Extract video metadata via yt-dlp --dump-json (no download).
+ * Returns { title, description, thumbnail, uploader, subtitles, duration } or null.
+ */
+async function extractVideoMeta(url) {
+  if (!await isYtdlpAvailable()) return null;
+
+  return new Promise((resolve) => {
+    const args = [
+      '--dump-json',
+      '--no-download',
+      '--no-playlist',
+      '--socket-timeout', '15',
+      url,
+    ];
+
+    const child = execFile('yt-dlp', args, {
+      timeout: 30000,
+      maxBuffer: 10 * 1024 * 1024, // 10MB for large JSON
+    }, (err, stdout) => {
+      if (err) {
+        console.log(`[yt-dlp] metadata error: ${err.message}`);
+        resolve(null);
+        return;
+      }
+      try {
+        const info = JSON.parse(stdout);
+        resolve({
+          title: info.title || info.fulltitle || '',
+          description: info.description || '',
+          thumbnail: info.thumbnail || info.thumbnails?.[info.thumbnails.length - 1]?.url || '',
+          uploader: info.uploader || info.channel || '',
+          duration: info.duration || 0,
+          subtitles: info.subtitles || {},       // manual subs
+          autoSubs: info.automatic_captions || {}, // auto-generated subs
+          webpage_url: info.webpage_url || url,
+        });
+      } catch (e) {
+        console.log(`[yt-dlp] JSON parse error: ${e.message}`);
+        resolve(null);
+      }
+    });
+  });
+}
+
+/**
+ * Download subtitles/captions for a video URL via yt-dlp.
+ * Priority: manual English subs > auto-generated English subs.
+ * Returns subtitle text string or null.
+ */
+async function downloadSubtitles(url, metaInfo = null) {
+  if (!await isYtdlpAvailable()) return null;
+
+  // Check if subtitles are available from metadata
+  const meta = metaInfo || await extractVideoMeta(url);
+  if (!meta) return null;
+
+  const hasManualSubs = meta.subtitles && Object.keys(meta.subtitles).length > 0;
+  const hasAutoSubs = meta.autoSubs && Object.keys(meta.autoSubs).length > 0;
+
+  if (!hasManualSubs && !hasAutoSubs) {
+    console.log('[yt-dlp] No subtitles available for this video');
+    return null;
+  }
+
+  // Determine which subtitle languages are available
+  const manualLangs = Object.keys(meta.subtitles || {});
+  const autoLangs = Object.keys(meta.autoSubs || {});
+  const preferManual = manualLangs.some(l => l.startsWith('en'));
+  const hasEnAuto = autoLangs.some(l => l.startsWith('en'));
+
+  if (!preferManual && !hasEnAuto) {
+    // No English subs — try first available language
+    if (manualLangs.length === 0 && autoLangs.length === 0) return null;
+  }
+
+  const tmpDir = path.join(os.tmpdir(), '.spicehub-subs-' + Date.now());
+  fs.mkdirSync(tmpDir, { recursive: true });
+
+  return new Promise((resolve) => {
+    const args = [
+      '--skip-download',
+      '--no-playlist',
+      '--write-subs',
+      '--write-auto-subs',
+      '--sub-lang', 'en.*,en',
+      '--sub-format', 'vtt/srt/best',
+      '--convert-subs', 'srt',
+      '-o', path.join(tmpDir, 'subs.%(ext)s'),
+      '--socket-timeout', '15',
+      url,
+    ];
+
+    execFile('yt-dlp', args, { timeout: 30000, maxBuffer: 5 * 1024 * 1024 }, (err) => {
+      if (err) {
+        console.log(`[yt-dlp] subtitle download error: ${err.message}`);
+        cleanup();
+        resolve(null);
+        return;
+      }
+
+      // Find the subtitle file that was created
+      try {
+        const files = fs.readdirSync(tmpDir).filter(f => f.endsWith('.srt') || f.endsWith('.vtt'));
+        if (files.length === 0) {
+          console.log('[yt-dlp] No subtitle file created');
+          cleanup();
+          resolve(null);
+          return;
+        }
+
+        const subFile = path.join(tmpDir, files[0]);
+        const raw = fs.readFileSync(subFile, 'utf8');
+        cleanup();
+
+        // Clean SRT/VTT format to plain text
+        const plainText = cleanSubtitleText(raw);
+        if (plainText.length < 20) {
+          console.log('[yt-dlp] Subtitle text too short after cleaning');
+          resolve(null);
+          return;
+        }
+
+        console.log(`[yt-dlp] Subtitles extracted: ${plainText.length} chars`);
+        resolve(plainText);
+      } catch (e) {
+        console.log(`[yt-dlp] subtitle read error: ${e.message}`);
+        cleanup();
+        resolve(null);
+      }
+    });
+
+    function cleanup() {
+      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    }
+  });
+}
+
+/**
+ * Clean SRT/VTT subtitle text to plain readable text.
+ * Removes timestamps, sequence numbers, HTML tags, and deduplicates lines.
+ */
+function cleanSubtitleText(raw) {
+  return raw
+    // Remove VTT header
+    .replace(/^WEBVTT[\s\S]*?\n\n/, '')
+    // Remove timestamp lines (SRT: "00:00:01,000 --> 00:00:03,000" / VTT: "00:00:01.000 --> 00:00:03.000")
+    .replace(/^\d+\s*\n/gm, '')
+    .replace(/^[\d:.,-]+\s*-->\s*[\d:.,-]+.*$/gm, '')
+    // Remove VTT position/alignment cues
+    .replace(/^(position|align|size|line):.*$/gm, '')
+    // Remove HTML-like tags (<c>, <b>, etc.) and VTT cue tags
+    .replace(/<[^>]+>/g, '')
+    // Remove [Music], [Applause], etc.
+    .replace(/\[[\w\s]+\]/g, '')
+    // Collapse whitespace
+    .replace(/\n{2,}/g, '\n')
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => l.length > 0)
+    // Deduplicate consecutive identical lines (common in auto-subs)
+    .filter((line, i, arr) => i === 0 || line !== arr[i - 1])
+    .join(' ')
+    // Collapse multiple spaces
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
+// ── Video URL detection (broader than social — includes any yt-dlp-supported site) ─
+const VIDEO_HOSTS = [
+  'youtube.com', 'youtu.be', 'tiktok.com', 'vm.tiktok.com',
+  'instagram.com', 'facebook.com', 'fb.watch',
+  'vimeo.com', 'dailymotion.com', 'twitch.tv',
+];
+function isVideoUrl(url) {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '');
+    return VIDEO_HOSTS.some(d => host === d || host.endsWith('.' + d));
+  } catch { return false; }
+}
+
+// ── GET /api/ytdlp-status ────────────────────────────────────────────────────
+// Check if yt-dlp is available for video extraction
+app.get('/api/ytdlp-status', async (req, res) => {
+  const available = await isYtdlpAvailable();
+  res.json({ ok: true, available });
+});
+
+// ── POST /api/extract-video ──────────────────────────────────────────────────
+// Mealie-inspired video metadata + subtitle extraction endpoint.
+// Uses yt-dlp to get metadata and subtitles without downloading the video.
+// Zero cost — no AI, no API keys required.
+//
+// Returns:
+//   { ok, title, description, thumbnail, subtitles (cleaned text), sourceUrl }
+app.post('/api/extract-video', async (req, res) => {
+  const { url } = req.body;
+  if (!url) return res.status(400).json({ ok: false, error: 'URL required' });
+
+  console.log(`[extract-video] Processing: ${url}`);
+
+  // 1. Get metadata
+  const meta = await extractVideoMeta(url);
+  if (!meta) {
+    return res.json({
+      ok: false,
+      error: 'Could not extract video metadata. yt-dlp may not be installed or the URL may not be supported.',
+    });
+  }
+
+  console.log(`[extract-video] Metadata: "${meta.title}" by ${meta.uploader} (${meta.duration}s)`);
+
+  // 2. Try to download subtitles
+  const subtitleText = await downloadSubtitles(url, meta);
+
+  // 3. Combine description + subtitles for best results
+  // The description often has ingredients, subtitles have spoken directions
+  let combinedText = '';
+  if (meta.description && meta.description.length > 30) {
+    combinedText = meta.description;
+  }
+  if (subtitleText) {
+    if (combinedText) {
+      combinedText += '\n\nTranscript:\n' + subtitleText;
+    } else {
+      combinedText = subtitleText;
+    }
+  }
+
+  return res.json({
+    ok: true,
+    type: 'video-meta',
+    title: meta.title || '',
+    description: meta.description || '',
+    thumbnail: meta.thumbnail || '',
+    uploader: meta.uploader || '',
+    duration: meta.duration || 0,
+    subtitleText: subtitleText || '',
+    combinedText: combinedText || meta.description || '',
+    hasSubtitles: !!subtitleText,
+    sourceUrl: meta.webpage_url || url,
+  });
+});
+
 // ── POST /api/extract-url ────────────────────────────────────────────────────
 // PRIMARY import endpoint — works from phone, desktop, anywhere.
-// Strategy:
-//   • Instagram URLs    → embed page first, then headless Chrome fallback
-//   • Other social URLs → headless Chrome (real browser rendering)
-//   • Recipe blogs      → fast HTTP fetch + HTML parse (JSON-LD, OG tags)
+// Strategy (Mealie-inspired unified pipeline):
+//   1. Instagram URLs    → embed page first, then yt-dlp, then headless Chrome
+//   2. Video URLs        → yt-dlp metadata + subtitles first, then headless Chrome
+//   3. Other social URLs → yt-dlp first, then headless Chrome
+//   4. Recipe blogs      → fast HTTP fetch + HTML parse (JSON-LD, OG tags)
 app.post('/api/extract-url', async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ ok: false, error: 'URL required' });
@@ -525,11 +792,65 @@ app.post('/api/extract-url', async (req, res) => {
     if (embedResult && embedResult.ok && embedResult.caption) {
       return res.json(embedResult);
     }
-    // Embed failed — fall through to headless Chrome
-    console.log('[extract-url] Instagram embed failed, trying headless Chrome...');
+    console.log('[extract-url] Instagram embed failed, trying yt-dlp...');
   }
 
-  // ── Social media: use headless puppeteer (like Paprika's embedded WebView) ──
+  // ── Video/Social URLs: try yt-dlp metadata + subtitles first (Mealie-inspired) ──
+  // yt-dlp is faster and more reliable than headless Chrome for supported sites.
+  if (isVideoUrl(url) || isSocialUrl(url)) {
+    const meta = await extractVideoMeta(url);
+    if (meta && (meta.title || meta.description)) {
+      console.log(`[extract-url] yt-dlp metadata: "${meta.title}" (${meta.duration}s)`);
+
+      // Try to get subtitles too
+      const subtitleText = await downloadSubtitles(url, meta);
+
+      // Build combined text for caption parsing
+      let captionText = '';
+      if (meta.description && meta.description.length > 30) {
+        captionText = meta.description;
+      }
+      if (subtitleText) {
+        // Subtitles are often richer than descriptions for recipe content
+        if (captionText) {
+          captionText += '\n\nTranscript:\n' + subtitleText;
+        } else {
+          captionText = subtitleText;
+        }
+      }
+
+      if (captionText && captionText.length > 20) {
+        return res.json({
+          ok: true,
+          type: 'caption',
+          caption: stripSocialMetaPrefix(captionText),
+          title: meta.title || '',
+          imageUrl: meta.thumbnail || '',
+          sourceUrl: meta.webpage_url || url,
+          hasSubtitles: !!subtitleText,
+          extractedVia: 'yt-dlp',
+        });
+      }
+
+      // yt-dlp got metadata but no useful text — if we have a title + thumbnail,
+      // return what we have (user can edit in preview)
+      if (meta.title && meta.thumbnail) {
+        return res.json({
+          ok: true,
+          type: 'video-meta',
+          caption: meta.description || '',
+          title: meta.title,
+          imageUrl: meta.thumbnail,
+          sourceUrl: meta.webpage_url || url,
+          hasSubtitles: false,
+          extractedVia: 'yt-dlp',
+        });
+      }
+    }
+    console.log('[extract-url] yt-dlp failed or insufficient, trying headless Chrome...');
+  }
+
+  // ── Social media: use headless puppeteer as fallback ──
   if (isSocialUrl(url)) {
     return extractWithHeadlessBrowser(url, res);
   }
@@ -1456,7 +1777,7 @@ app.get('/health', (req, res) => res.json({ ok: true, mode: IS_CLOUD ? 'cloud' :
 
 // ── Start ──────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`\n🌶️  SpiceHub Recipe Server (${IS_CLOUD ? 'CLOUD' : 'LOCAL'} mode)`);
   console.log(`   Listening on port ${PORT}`);
   if (!IS_CLOUD) {
@@ -1465,5 +1786,7 @@ app.listen(PORT, () => {
       ? `   Chrome found: ${chromePath}`
       : '   ⚠️  Chrome not found — install from google.com/chrome');
   }
+  // Check yt-dlp availability on startup
+  await isYtdlpAvailable();
   console.log('');
 });

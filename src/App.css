@@ -794,6 +794,16 @@ body {
   color: white; padding: 2px 9px; border-radius: 10px;
   font-size: 11px; font-weight: 700; letter-spacing: 0.3px; flex-shrink: 0;
 }
+.subtitle-badge {
+  display: inline-block; background: #1976d2; color: white;
+  padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 700;
+  margin-left: 8px; vertical-align: middle; letter-spacing: 0.5px;
+}
+.extraction-badge {
+  display: inline-block; background: #43a047; color: white;
+  padding: 1px 6px; border-radius: 4px; font-size: 10px; font-weight: 700;
+  margin-left: 4px; vertical-align: middle;
+}
 .social-why {
   font-size: 12px; color: var(--text-light); line-height: 1.5;
   background: rgba(0,0,0,0.04); padding: 8px 10px; border-radius: 6px;

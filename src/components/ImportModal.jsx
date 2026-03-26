@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { parseFromUrl, isSocialMediaUrl, getSocialPlatform, parseCaption, isInstagramUrl } from '../recipeParser';
+import { parseFromUrl, isSocialMediaUrl, getSocialPlatform, parseCaption, isInstagramUrl, resetServerDetection } from '../recipeParser';
 import BrowserAssist from './BrowserAssist';
 
 /**
@@ -49,26 +49,39 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     if (!url.trim()) return;
     const trimmedUrl = url.trim();
 
-    // Instagram → skip auto-extraction entirely, go straight to BrowserAssist
+    // Instagram → try unified pipeline first (embed + yt-dlp), then BrowserAssist
     if (isInstagramUrl(trimmedUrl)) {
       setError('');
+      setImporting(true);
+      setImportProgress('Trying Instagram extraction...');
+      try {
+        const result = await parseFromUrl(trimmedUrl, (progress) => {
+          setImportProgress(progress);
+        });
+        if (result && !result._error) {
+          setPreview([result]);
+          setImporting(false);
+          setImportProgress('');
+          return;
+        }
+      } catch { /* fall through to BrowserAssist */ }
+      setImporting(false);
+      setImportProgress('');
+      // Auto-extraction failed — fall back to BrowserAssist
       setBrowserAssistUrl(trimmedUrl);
       setBrowserAssistMode('showing');
       return;
     }
 
-    // Non-Instagram URLs → try auto-extraction
+    // Non-Instagram URLs → try auto-extraction (unified pipeline)
     setImporting(true);
     setError('');
     setBrowserAssistMode('off');
     setImportProgress('Extracting recipe...');
     try {
-      const progressTimer = setTimeout(() => {
-        setImportProgress('Extracting recipe data... (this may take a moment)');
-      }, 5000);
-
-      const result = await parseFromUrl(trimmedUrl);
-      clearTimeout(progressTimer);
+      const result = await parseFromUrl(trimmedUrl, (progress) => {
+        setImportProgress(progress);
+      });
 
       if (!result) {
         setError(
@@ -358,7 +371,15 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
         ) : /* ── Preview screen (full detail + editable) ──────────────────────── */
         preview ? (
           <div className="import-preview">
-            <h3>Preview — {preview.length} recipe{preview.length !== 1 ? 's' : ''} found</h3>
+            <h3>
+              Preview — {preview.length} recipe{preview.length !== 1 ? 's' : ''} found
+              {preview.some(m => m._hasSubtitles) && (
+                <span className="subtitle-badge" title="Recipe extracted from video subtitles">CC</span>
+              )}
+              {preview.some(m => m._extractedVia === 'yt-dlp') && (
+                <span className="extraction-badge" title="Extracted via video metadata">Video</span>
+              )}
+            </h3>
             <div className="preview-detail-list">
               {preview.map((m, idx) => (
                 <div key={idx} className="preview-detail-card">
@@ -564,13 +585,17 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                 {socialDetected && (
                   <div className="social-detected-bar">
                     <span className="social-badge">{socialDetected.platform}</span>
-                    <span>Tap Import to extract the recipe automatically.</span>
+                    <span>
+                      {socialDetected.platform === 'YouTube'
+                        ? 'SpiceHub will extract the description and subtitles automatically.'
+                        : 'Tap Import to extract the recipe automatically.'}
+                    </span>
                   </div>
                 )}
 
                 {!socialDetected && (
                   <p className="help-text">
-                    Paste any recipe URL and SpiceHub extracts the recipe automatically.
+                    Paste any recipe URL — blogs, YouTube, Instagram, TikTok, and more. SpiceHub extracts the recipe automatically, including video subtitles when available.
                   </p>
                 )}
 

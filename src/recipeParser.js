@@ -149,13 +149,51 @@ export function parseManualCaption(captionText, sourceUrl) {
   };
 }
 
-// ─── Caption Parser (Paprika-style 4-pass) ────────────────────────────────────
+// ─── Caption Parser (Paprika-style 4-pass, enhanced for video content) ─────────
 export function parseCaption(text) {
   const ingredients = [];
   const directions = [];
   let title = null;
 
   if (!text || !text.trim()) return { title, ingredients, directions };
+
+  // PASS 0: Pre-process video transcript content
+  // Detect and handle "Transcript:" sections from yt-dlp subtitle extraction
+  let hasTranscript = false;
+  const transcriptIdx = text.indexOf('\nTranscript:\n');
+  let descriptionPart = text;
+  let transcriptPart = '';
+  if (transcriptIdx >= 0) {
+    hasTranscript = true;
+    descriptionPart = text.substring(0, transcriptIdx).trim();
+    transcriptPart = text.substring(transcriptIdx + '\nTranscript:\n'.length).trim();
+  }
+
+  // If we have both description and transcript, try to parse description first
+  // (descriptions often have structured ingredients), transcript for directions
+  if (hasTranscript && descriptionPart.length > 30) {
+    const descParsed = parseCaption(descriptionPart);
+    const transParsed = parseSpeechTranscript(transcriptPart);
+
+    // Merge: use description ingredients if found, otherwise transcript
+    const mergedIngredients = descParsed.ingredients.length > 0
+      ? descParsed.ingredients
+      : transParsed.ingredients;
+    const mergedDirections = descParsed.directions.length > 0
+      ? descParsed.directions
+      : transParsed.directions;
+
+    return {
+      title: descParsed.title || transParsed.title,
+      ingredients: mergedIngredients,
+      directions: mergedDirections.length > 0 ? mergedDirections : transParsed.directions,
+    };
+  }
+
+  // If only transcript (no description), parse as spoken content
+  if (hasTranscript && !descriptionPart) {
+    return parseSpeechTranscript(transcriptPart);
+  }
 
   // PASS 1: Clean text
   text = text
@@ -167,6 +205,42 @@ export function parseCaption(text) {
     // Collapse 3+ blank lines to 2
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+
+  // PASS 1.5: Handle YouTube timestamp format (e.g. "2:30 - Add the garlic")
+  // Convert timestamps into step separators
+  text = text.replace(/^(\d{1,2}:\d{2}(?::\d{2})?)\s*[-–—:]\s*/gm, '');
+  // Also handle "0:00 Intro\n0:30 Ingredients\n2:00 Steps" style descriptions
+  const timestampLines = text.match(/^\d{1,2}:\d{2}(?::\d{2})?\s+.+$/gm);
+  if (timestampLines && timestampLines.length >= 3) {
+    // This looks like a YouTube chapter list — convert to structured text
+    text = text.replace(/^(\d{1,2}:\d{2}(?::\d{2})?)\s+/gm, '');
+  }
+
+  // PASS 1.6: Handle abbreviated social media recipe formats
+  // e.g. "1c flour, 2 eggs, mix & bake 350° 25min"
+  const ABBREV_RE = /^[\d½¼¾⅓⅔][\d./]*\s*[a-z]{1,4}\s+\w+(?:\s*,\s*[\d½¼¾⅓⅔][\d./]*\s*[a-z]{1,4}\s+\w+){2,}/i;
+  if (ABBREV_RE.test(text.trim()) && text.trim().length < 300) {
+    // Entire text is a comma-separated abbreviated recipe
+    const parts = text.split(/\s*,\s*/);
+    for (const part of parts) {
+      const trimmed = part.trim();
+      if (!trimmed) continue;
+      if (looksLikeIngredient(trimmed) && !looksLikeDirection(trimmed)) {
+        ingredients.push(trimmed);
+      } else if (looksLikeDirection(trimmed)) {
+        directions.push(trimmed);
+      } else if (trimmed.length < 40 && NUM_UNIT_RE.test(trimmed)) {
+        ingredients.push(trimmed);
+      } else {
+        directions.push(trimmed);
+      }
+    }
+    return {
+      title: null,
+      ingredients,
+      directions,
+    };
+  }
 
   const lines = text.split('\n');
   let inIngredients = false;
@@ -284,6 +358,57 @@ export function parseCaption(text) {
       } else if (looksLikeDirection(cleanLine)) {
         directions.push(cleaned);
       }
+    }
+  }
+
+  return { title, ingredients, directions };
+}
+
+// ─── Speech transcript parser (for yt-dlp subtitle content) ──────────────────
+// Spoken recipe content is unstructured continuous text. We split it into
+// sentences, then classify each sentence as ingredient-like or direction-like.
+function parseSpeechTranscript(text) {
+  if (!text || text.trim().length < 20) return { title: null, ingredients: [], directions: [] };
+
+  const ingredients = [];
+  const directions = [];
+  let title = null;
+
+  // Split transcript into sentences
+  const sentences = text
+    .replace(/([.!?])\s+/g, '$1\n')
+    .split('\n')
+    .map(s => s.trim())
+    .filter(s => s.length > 3);
+
+  // Filter out common filler/intro phrases
+  const FILLER_RE = /^(hey|hi|hello|what's up|welcome|subscribe|like and subscribe|follow me|link in bio|comment below|check out|don't forget|make sure to|hit that|smash that|thanks for watching|see you|bye|peace)/i;
+
+  for (let i = 0; i < sentences.length; i++) {
+    const s = sentences[i];
+
+    // Skip filler
+    if (FILLER_RE.test(s)) continue;
+
+    // Extract title from first meaningful sentence if short enough
+    if (title === null && s.length < 80 && !looksLikeIngredient(s) && !FILLER_RE.test(s)) {
+      // Check if it sounds like a recipe name: "Today we're making X" / "This is my X recipe"
+      const nameMatch = s.match(/(?:mak(?:e|ing)|cook(?:ing)?|prepar(?:e|ing)|recipe for|showing you|teach you)\s+(?:my\s+|this\s+|a\s+|some\s+)?(.{5,60})/i);
+      if (nameMatch) {
+        title = cleanTitle(nameMatch[1].replace(/[.!?]+$/, ''));
+      } else if (i === 0 && s.length < 60) {
+        title = cleanTitle(s.replace(/[.!?]+$/, ''));
+      }
+      continue;
+    }
+
+    // Classify: ingredient mentions vs cooking steps
+    if (looksLikeIngredient(s) && !looksLikeDirection(s) && s.length < 60) {
+      ingredients.push(s.replace(/^[-•*]\s*/, '').replace(/^\d+[.):\s-]\s*/, '').trim());
+    } else if (looksLikeDirection(s) || s.length > 40) {
+      // Clean up direction-style sentences
+      let cleaned = s.replace(/^\d+[.):\s-]\s*/, '').trim();
+      if (cleaned.length > 5) directions.push(cleaned);
     }
   }
 
@@ -663,33 +788,213 @@ function handleEmbedResult(data, sourceUrl) {
   };
 }
 
+// ── Server API helpers for unified pipeline ──────────────────────────────────
+// The server (server/index.js) provides yt-dlp and headless Chrome capabilities.
+// These are optional — if the server is unavailable, we fall back to client-side.
+
+let _serverBaseUrl = null;
+let _serverChecked = false;
+
+/**
+ * Detect the SpiceHub server URL. Tries common locations.
+ * Returns base URL string or null if server is not available.
+ */
+async function detectServer() {
+  if (_serverChecked) return _serverBaseUrl;
+  _serverChecked = true;
+
+  const candidates = [
+    // Same origin (if deployed together)
+    window.location.origin,
+    // Local dev
+    'http://localhost:3001',
+    'http://127.0.0.1:3001',
+  ];
+
+  for (const base of candidates) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 3000);
+      const resp = await fetch(`${base}/api/status`, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data.ok) {
+          _serverBaseUrl = base;
+          console.log(`[SpiceHub] Server found at ${base} (yt-dlp: ${data.ytdlpAvailable ? 'yes' : 'no'})`);
+          return _serverBaseUrl;
+        }
+      }
+    } catch { /* try next */ }
+  }
+
+  console.log('[SpiceHub] No server found — using client-side only');
+  return null;
+}
+
+/** Reset server detection (e.g. after network change) */
+export function resetServerDetection() {
+  _serverBaseUrl = null;
+  _serverChecked = false;
+}
+
+/**
+ * Try server-side extraction (yt-dlp + headless Chrome).
+ * Returns parsed recipe object or null.
+ */
+async function tryServerExtraction(url, onProgress) {
+  const serverUrl = await detectServer();
+  if (!serverUrl) return null;
+
+  try {
+    if (onProgress) onProgress('Extracting via server (yt-dlp + metadata)...');
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 45000);
+
+    const resp = await fetch(`${serverUrl}/api/extract-url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    if (!data.ok) return null;
+
+    // Handle different response types
+    if (data.type === 'jsonld' && data.recipe) {
+      // Structured recipe data from JSON-LD
+      const recipe = parseRecipeFromServerJsonLd(data.recipe);
+      if (recipe) {
+        recipe.link = data.sourceUrl || url;
+        recipe.imageUrl = recipe.imageUrl || data.imageUrl || '';
+        recipe._extractedVia = data.extractedVia || 'server';
+        return recipe;
+      }
+    }
+
+    if (data.type === 'caption' || data.type === 'video-meta') {
+      // Caption text (from yt-dlp description + subtitles, or headless Chrome)
+      const captionText = data.caption || '';
+      if (captionText.length > 15) {
+        const parsed = parseCaption(captionText);
+        const recipe = {
+          name: data.title ? cleanTitle(data.title) : (parsed.title || 'Imported Recipe'),
+          ingredients: parsed.ingredients.length > 0 ? parsed.ingredients : ['See original post for ingredients'],
+          directions: parsed.directions.length > 0 ? parsed.directions : ['See original post for directions'],
+          imageUrl: data.imageUrl || data.thumbnail || '',
+          link: data.sourceUrl || url,
+          _extractedVia: data.extractedVia || 'server',
+          _hasSubtitles: data.hasSubtitles || false,
+        };
+        return recipe;
+      }
+
+      // Even if caption is minimal, if we got title + image, return what we have
+      if (data.title) {
+        return {
+          name: cleanTitle(data.title),
+          ingredients: ['See original post for ingredients'],
+          directions: ['See original post for directions'],
+          imageUrl: data.imageUrl || data.thumbnail || '',
+          link: data.sourceUrl || url,
+          _extractedVia: data.extractedVia || 'server',
+          _hasSubtitles: false,
+        };
+      }
+    }
+
+    // Login wall or empty result from server
+    if (data.type === 'none') {
+      if (data.isLoginWall) {
+        return { _error: true, reason: 'login-wall', platform: getSocialPlatform(url) };
+      }
+      return null;
+    }
+
+    return null;
+  } catch (e) {
+    console.log(`[SpiceHub] Server extraction error: ${e.message}`);
+    return null;
+  }
+}
+
+/** Parse a JSON-LD recipe object from the server response */
+function parseRecipeFromServerJsonLd(recipe) {
+  if (!recipe || !recipe.name) return null;
+
+  let ingredients = [];
+  if (Array.isArray(recipe.recipeIngredient)) {
+    ingredients = recipe.recipeIngredient.map(i => i.toString().trim()).filter(Boolean);
+  }
+
+  let directions = parseInstructionsFlexible(recipe.recipeInstructions);
+
+  const imageUrl = selectBestImage(recipe.image);
+
+  return {
+    name: cleanTitle(recipe.name),
+    ingredients: ingredients.length ? ingredients : ['See recipe for ingredients'],
+    directions: directions.length ? directions : ['See recipe for directions'],
+    imageUrl: imageUrl || '',
+  };
+}
+
 /**
  * Main entry: parse recipe from a URL.
- * FULLY CLIENT-SIDE — no backend server required.
+ * Mealie-inspired unified pipeline — tries multiple strategies automatically.
  *
- * Strategy:
- *   1. Instagram URLs → embed page extraction via CORS proxy
- *   2. All URLs → CORS proxy fetch → JSON-LD / microdata / CSS heuristic parse
- *   3. Social media → guide user to Paste Text tab
+ * Strategy (in order):
+ *   1. Instagram URLs → embed extraction, then server (yt-dlp + Chrome)
+ *   2. Video/Social URLs → server (yt-dlp metadata + subtitles), then CORS proxy
+ *   3. Recipe blogs → CORS proxy + JSON-LD / microdata / CSS heuristics
+ *   4. All strategies exhausted → guide user to Paste Text
  *
+ * @param {string} url - The URL to import from
+ * @param {function} onProgress - Optional callback for progress updates
  * Returns { name, ingredients, directions, link, imageUrl }
  *      or { _error: true, reason } on failure
  *      or null if completely failed
  */
-export async function parseFromUrl(url) {
+export async function parseFromUrl(url, onProgress) {
 
-  // ── 1. Instagram: skip auto-extraction, go straight to BrowserAssist ──
-  // Auto-extraction via embed/CORS proxy produces garbage results (placeholder
-  // ingredients/directions from OG meta). BrowserAssist lets the user see the
-  // actual post content and extract from the visible DOM.
+  // ── 1. Instagram: try embed first, then server extraction ──
   if (isInstagramUrl(url)) {
-    console.log('[SpiceHub] Instagram URL — skipping auto-extraction, routing to BrowserAssist');
+    console.log('[SpiceHub] Instagram URL — trying embed extraction...');
+    if (onProgress) onProgress('Trying Instagram embed extraction...');
+
+    // Try client-side embed extraction first (fastest)
+    const embedResult = await extractInstagramEmbed(url);
+    if (embedResult && embedResult.ok && embedResult.caption && embedResult.caption.length > 20) {
+      const recipe = handleEmbedResult(embedResult, url);
+      if (recipe && recipe.ingredients[0] !== 'See original post for ingredients') {
+        return recipe;
+      }
+    }
+
+    // Try server-side extraction (yt-dlp + headless Chrome)
+    if (onProgress) onProgress('Trying server extraction (yt-dlp)...');
+    const serverResult = await tryServerExtraction(url, onProgress);
+    if (serverResult && !serverResult._error) return serverResult;
+
+    // Instagram server failed — route to BrowserAssist
+    console.log('[SpiceHub] Instagram extraction failed — routing to BrowserAssist');
     return null;
   }
 
-  // ── 2. Other social media: try CORS proxy (sometimes works for TikTok, YouTube, etc.) ──
+  // ── 2. Video/Social URLs: try server first (yt-dlp), then CORS proxy ──
   if (isSocialMediaUrl(url)) {
-    console.log('[SpiceHub] Social media URL, trying CORS proxy...');
+    console.log('[SpiceHub] Social/video URL — trying server extraction...');
+
+    // Server-side: yt-dlp metadata + subtitles + headless Chrome
+    if (onProgress) onProgress('Extracting video metadata and subtitles...');
+    const serverResult = await tryServerExtraction(url, onProgress);
+    if (serverResult && !serverResult._error) return serverResult;
+
+    // Fallback: CORS proxy (sometimes works for public pages)
+    if (onProgress) onProgress('Trying direct extraction...');
     try {
       const html = await fetchHtmlViaProxy(url);
       if (html) {
@@ -699,11 +1004,13 @@ export async function parseFromUrl(url) {
     } catch {
       console.log('[SpiceHub] Social media CORS proxy failed');
     }
+
     return { _error: true, reason: 'social-fetch-failed', platform: getSocialPlatform(url) };
   }
 
-  // ── 3. Recipe blogs and other URLs: CORS proxy + full HTML parsing ──
+  // ── 3. Recipe blogs: CORS proxy first (fast), server fallback ──
   console.log('[SpiceHub] Fetching recipe via CORS proxy...');
+  if (onProgress) onProgress('Extracting recipe from page...');
   try {
     const html = await fetchHtmlViaProxy(url);
     if (html) {
@@ -713,6 +1020,11 @@ export async function parseFromUrl(url) {
   } catch (e) {
     console.log('[SpiceHub] CORS proxy failed:', e.message);
   }
+
+  // CORS proxy failed — try server-side extraction as fallback
+  if (onProgress) onProgress('Trying server-side extraction...');
+  const serverResult = await tryServerExtraction(url, onProgress);
+  if (serverResult && !serverResult._error) return serverResult;
 
   // ── 4. All methods exhausted ──
   return null;
