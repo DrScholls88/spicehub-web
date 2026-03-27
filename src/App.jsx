@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import db, { seedIfEmpty, SEED_DRINKS, importPaprikaMeals, logCook, logMix } from './db';
+import db, { seedIfEmpty, SEED_DRINKS, importPaprikaMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getCookingLog } from './db';
 import { PAPRIKA_MEALS } from './paprika_import_data';
 import WeekView from './components/WeekView';
 import MealLibrary from './components/MealLibrary';
@@ -14,6 +14,7 @@ import MixMode from './components/MixMode';
 import MealStats from './components/MealStats';
 import BarShelf from './components/BarShelf';
 import BarFridgeMode from './components/BarFridgeMode';
+import MealSpinner from './components/MealSpinner';
 import { ThemeSettings } from './components/ThemeProvider';
 import { isMobileDevice } from './isMobile';
 import './App.css';
@@ -51,6 +52,8 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showBarShelf, setShowBarShelf] = useState(false);
   const [showBarFridge, setShowBarFridge] = useState(false);
+  const [showSpinner, setShowSpinner] = useState(false);
+  const [cookingStats, setCookingStats] = useState({ streak: 0, totalCooked: 0, topMeal: null });
 
   const showToast = useCallback((message, type = 'success', duration = 2500) => {
     setToast({ message, type });
@@ -83,7 +86,24 @@ export default function App() {
   useEffect(() => {
     loadMeals();
     loadDrinks();
+    // Restore persisted week plan and grocery list
+    loadWeekPlan().then(plan => { if (plan) setWeekPlan(plan); });
+    loadGroceryList().then(items => { if (items) setGroceryItems(items); });
   }, [loadMeals, loadDrinks]);
+
+  // Persist week plan whenever it changes (debounced)
+  useEffect(() => {
+    if (!weekPlan.some(Boolean)) return; // Don't save empty plans
+    const t = setTimeout(() => saveWeekPlan(weekPlan), 300);
+    return () => clearTimeout(t);
+  }, [weekPlan]);
+
+  // Persist grocery list whenever it changes
+  useEffect(() => {
+    if (groceryItems.length === 0) return;
+    const t = setTimeout(() => saveGroceryList(groceryItems), 300);
+    return () => clearTimeout(t);
+  }, [groceryItems]);
 
   // Load store memory on startup
   useEffect(() => {
@@ -92,6 +112,37 @@ export default function App() {
       if (mem) window._storeMemory = JSON.parse(mem);
     } catch {}
   }, []);
+
+  // Compute cooking stats for dashboard
+  const computeStats = useCallback(async () => {
+    try {
+      const log = await getCookingLog();
+      const totalCooked = log.filter(e => e.type !== 'mix').length;
+
+      // Calculate streak: consecutive days with at least one cook
+      let streak = 0;
+      if (log.length > 0) {
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        const cookDays = new Set(log.filter(e => e.type !== 'mix').map(e => {
+          const d = new Date(e.cookedAt); d.setHours(0, 0, 0, 0); return d.getTime();
+        }));
+        for (let i = 0; i < 365; i++) {
+          const check = new Date(today); check.setDate(check.getDate() - i);
+          check.setHours(0, 0, 0, 0);
+          if (cookDays.has(check.getTime())) streak++;
+          else if (i > 0) break; // Allow today to be uncounted
+        }
+      }
+
+      // Top meal by cook count
+      const allMeals = await db.meals.toArray();
+      const topMeal = allMeals.filter(m => m.cookCount > 0).sort((a, b) => (b.cookCount || 0) - (a.cookCount || 0))[0] || null;
+
+      setCookingStats({ streak, totalCooked, topMeal });
+    } catch {}
+  }, []);
+
+  useEffect(() => { computeStats(); }, [computeStats]);
 
   // Handle PWA install prompt
   useEffect(() => {
@@ -132,20 +183,18 @@ export default function App() {
 
   // ── Week plan ─────────────────────────────────────────────────────────────────
   const generateWeek = useCallback(() => {
-    // Only pull from "Dinners" category (meals without a category default to Dinners)
-    const dinners = meals.filter(m => !m.category || m.category === 'Dinners');
-    const pool = dinners.length >= 5 ? dinners : meals; // Fallback to all if < 5 dinners
-    if (pool.length < 5) {
-      alert('Need at least 5 meals (ideally tagged as Dinners) to generate a week!');
+    if (meals.length < 5) {
+      alert('Need at least 5 meals to generate a week!');
       return;
     }
-    const shuffled = [...pool].sort(() => Math.random() - 0.5);
-    const plan = [];
-    for (let i = 0; i < 7; i++) {
-      plan.push(shuffled[i % shuffled.length]);
-    }
-    setWeekPlan(plan);
+    setShowSpinner(true);
   }, [meals]);
+
+  const handleSpinnerComplete = useCallback((plan) => {
+    setWeekPlan(plan);
+    setShowSpinner(false);
+    showToast('Week plan generated!');
+  }, [showToast]);
 
   const respinDay = useCallback((dayIndex) => {
     const current = weekPlan[dayIndex];
@@ -331,6 +380,7 @@ export default function App() {
             onSetSpecial={setDaySpecial}
             onViewDetail={setDetailItem}
             onBuildGrocery={buildGroceryList}
+            cookingStats={cookingStats}
           />
         )}
         {tab === 'library' && (
@@ -463,6 +513,13 @@ export default function App() {
           drink={mixModeDrink.drink}
           scaleFactor={mixModeDrink.scaleFactor}
           onClose={finishMixMode}
+        />
+      )}
+      {showSpinner && (
+        <MealSpinner
+          meals={meals}
+          onComplete={handleSpinnerComplete}
+          onClose={() => setShowSpinner(false)}
         />
       )}
       {showStats && (

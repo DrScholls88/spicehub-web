@@ -59,6 +59,7 @@ function formatMonth(monday) {
 export default function WeekView({
   days, weekPlan, meals, specialDays,
   onGenerate, onRespin, onSetDay, onSetSpecial, onViewDetail, onBuildGrocery,
+  cookingStats = {},
 }) {
   const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
   const thisMonday = useMemo(() => getMonday(today), [today]);
@@ -152,6 +153,38 @@ export default function WeekView({
           );
         })}
       </div>
+
+      {/* ── Stats dashboard strip ── */}
+      {(cookingStats.streak > 0 || cookingStats.totalCooked > 0) && (
+        <div className="wv-stats-strip">
+          {cookingStats.streak > 0 && (
+            <div className="wv-stat-chip fire">
+              <span className="wv-stat-num">{cookingStats.streak}</span>
+              <span className="wv-stat-label">day streak</span>
+            </div>
+          )}
+          <div className="wv-stat-chip">
+            <span className="wv-stat-num">{weekPlan.filter(Boolean).length}/7</span>
+            <span className="wv-stat-label">planned</span>
+          </div>
+          {cookingStats.totalCooked > 0 && (
+            <div className="wv-stat-chip">
+              <span className="wv-stat-num">{cookingStats.totalCooked}</span>
+              <span className="wv-stat-label">cooked</span>
+            </div>
+          )}
+          {cookingStats.topMeal && (
+            <div className="wv-stat-chip fav">
+              <span className="wv-stat-num" title={cookingStats.topMeal.name}>
+                {cookingStats.topMeal.name.length > 12
+                  ? cookingStats.topMeal.name.substring(0, 12) + '...'
+                  : cookingStats.topMeal.name}
+              </span>
+              <span className="wv-stat-label">top pick</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Selected day hero card ── */}
       <div className="wv-hero" ref={contentRef}>

@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react';
-import { parseFromUrl, isSocialMediaUrl, getSocialPlatform, parseCaption, isInstagramUrl, resetServerDetection, extractWithBrowserAPI } from '../recipeParser';
+import { useState, useRef, useEffect } from 'react';
+import { parseFromUrl, isSocialMediaUrl, getSocialPlatform, parseCaption, isInstagramUrl, resetServerDetection, extractWithBrowserAPI, resolveShortUrl, isShortUrl, extractUrlsFromText } from '../recipeParser';
 import BrowserAssist from './BrowserAssist';
 
 /**
@@ -32,6 +32,13 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   const imageRef = useRef(null);
   const cameraRef = useRef(null);
 
+  // ── Lock body scroll while modal is open ────────────────────────────────────
+  useEffect(() => {
+    const origOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = origOverflow; };
+  }, []);
+
   // ── URL field change ──────────────────────────────────────────────────────────
   const handleUrlChange = (e) => {
     const val = e.target.value;
@@ -47,7 +54,31 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   // ── Import from ANY URL ───────────────────────────────────────────────────────
   const handleUrlImport = async () => {
     if (!url.trim()) return;
-    const trimmedUrl = url.trim();
+    let trimmedUrl = url.trim();
+
+    // ── Multi-URL detection: if user pasted multiple URLs, batch import ──
+    const detectedUrls = extractUrlsFromText(trimmedUrl);
+    if (detectedUrls.length > 1) {
+      handleBatchImport(detectedUrls);
+      return;
+    }
+
+    // ── URL shortener resolution ──
+    if (isShortUrl(trimmedUrl)) {
+      setImporting(true);
+      setImportProgress('Resolving shortened URL...');
+      try {
+        const resolved = await resolveShortUrl(trimmedUrl, setImportProgress);
+        if (resolved !== trimmedUrl) {
+          trimmedUrl = resolved;
+          setUrl(resolved); // Update the input to show the resolved URL
+          // Re-check for social media after resolving
+          if (isSocialMediaUrl(resolved)) {
+            setSocialDetected({ platform: getSocialPlatform(resolved) });
+          }
+        }
+      } catch { /* continue with original URL */ }
+    }
 
     // Instagram → try unified pipeline first (embed + yt-dlp), then BrowserAssist as last resort
     if (isInstagramUrl(trimmedUrl)) {
@@ -156,6 +187,72 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     setMode('paste');
     setPasteLink(url); // Pre-fill the source URL so user doesn't lose it
   };
+
+  // ── Multi-URL batch import ──────────────────────────────────────────────────
+  const [batchProgress, setBatchProgress] = useState(null); // { current, total, results[] }
+
+  const handleBatchImport = async (urls) => {
+    setError('');
+    setImporting(true);
+    setBatchProgress({ current: 0, total: urls.length, results: [] });
+
+    const results = [];
+    for (let i = 0; i < urls.length; i++) {
+      setBatchProgress(prev => ({ ...prev, current: i + 1 }));
+      setImportProgress(`Importing ${i + 1} of ${urls.length}...`);
+
+      try {
+        // Resolve short URLs first
+        let resolvedUrl = urls[i];
+        if (isShortUrl(resolvedUrl)) {
+          try { resolvedUrl = await resolveShortUrl(resolvedUrl); } catch {}
+        }
+
+        const result = await parseFromUrl(resolvedUrl, () => {});
+        if (result && !result._error) {
+          results.push(result);
+        }
+      } catch { /* skip failed URLs */ }
+
+      // Small delay between requests to avoid rate limiting
+      if (i < urls.length - 1) await new Promise(r => setTimeout(r, 500));
+    }
+
+    setBatchProgress(null);
+    setImporting(false);
+    setImportProgress('');
+
+    if (results.length > 0) {
+      setPreview(results);
+    } else {
+      setError(`Could not extract recipes from any of the ${urls.length} URLs. Try pasting recipe text instead.`);
+    }
+  };
+
+  // ── Clipboard paste auto-detection ──────────────────────────────────────────
+  useEffect(() => {
+    if (mode !== 'url') return;
+    const handlePaste = (e) => {
+      const pasted = e.clipboardData?.getData('text')?.trim();
+      if (!pasted) return;
+
+      // Auto-detect pasted URLs
+      const pastedUrls = extractUrlsFromText(pasted);
+      if (pastedUrls.length === 1) {
+        // Single URL pasted — auto-fill and start import
+        setUrl(pastedUrls[0]);
+        if (isSocialMediaUrl(pastedUrls[0])) {
+          setSocialDetected({ platform: getSocialPlatform(pastedUrls[0]) });
+        }
+      } else if (pastedUrls.length > 1) {
+        // Multiple URLs pasted — set the raw text and let handleUrlImport detect batch
+        setUrl(pasted);
+      }
+    };
+
+    document.addEventListener('paste', handlePaste);
+    return () => document.removeEventListener('paste', handlePaste);
+  }, [mode]);
 
   // ── Paste caption/text import (Mealie-style fallback) ────────────────────────
   const handlePasteImport = () => {
@@ -621,8 +718,25 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
 
                 {!socialDetected && (
                   <p className="help-text">
-                    Paste any recipe URL — blogs, YouTube, Instagram, TikTok, and more. SpiceHub extracts the recipe automatically, including video subtitles when available.
+                    Paste any recipe URL — blogs, YouTube, Instagram, TikTok, and more.
+                    Shortened links (bit.ly, t.co, etc.) are auto-resolved.
+                    Paste multiple URLs to batch-import several recipes at once.
                   </p>
+                )}
+
+                {/* Batch progress indicator */}
+                {batchProgress && (
+                  <div className="batch-progress">
+                    <div className="batch-progress-header">
+                      <span>Importing {batchProgress.current} of {batchProgress.total} recipes…</span>
+                    </div>
+                    <div className="batch-progress-bar">
+                      <div
+                        className="batch-progress-fill"
+                        style={{ width: `${(batchProgress.current / batchProgress.total) * 100}%` }}
+                      />
+                    </div>
+                  </div>
                 )}
 
                 <button

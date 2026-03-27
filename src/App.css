@@ -494,11 +494,15 @@ body {
   position: fixed; inset: 0; background: rgba(0,0,0,0.55);
   display: flex; align-items: flex-end; justify-content: center;
   z-index: 1000; padding: 0;
+  overflow: hidden;
+  overscroll-behavior: contain;
 }
 .modal-content {
   background: var(--card); border-radius: 20px 20px 0 0;
   width: 100%; max-width: 600px; max-height: 92vh; overflow-y: auto;
   padding: 20px 20px 32px;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .modal-header {
   display: flex; justify-content: space-between; align-items: flex-start;
@@ -560,11 +564,13 @@ body {
 /* ── Import Modal ── */
 .import-modal { }
 
+/* Expand modal when BrowserAssist is active */
 .import-browser-assist {
   padding: 12px;
   background: #f9f9f9;
   border-radius: var(--radius);
   margin-bottom: 12px;
+  min-height: 50vh;
 }
 
 .import-tabs {
@@ -774,7 +780,8 @@ body {
 /* ── Responsive desktop ── */
 @media (min-width: 480px) {
   .modal-overlay { align-items: center; padding: 20px; }
-  .modal-content { border-radius: 20px; max-height: 88vh; }
+  .modal-content { border-radius: 20px; max-height: 90vh; }
+  .import-modal { max-width: 650px; }
   .app-header h1 { font-size: 32px; }
 }
 /* (removed old day-cards grid — calendar grid handles layout now) */
@@ -966,6 +973,25 @@ body {
 .server-hint code {
   background: rgba(0,0,0,0.08); padding: 1px 5px; border-radius: 4px;
   font-family: monospace; font-size: 11px;
+}
+
+/* ── Batch Import Progress ── */
+.batch-progress {
+  margin-top: 10px; padding: 12px 14px;
+  background: #f0f7ff; border-radius: 10px;
+  border: 1px solid #bbdefb;
+}
+.batch-progress-header {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  margin-bottom: 8px;
+}
+.batch-progress-bar {
+  height: 6px; background: #e0e0e0; border-radius: 3px;
+  overflow: hidden;
+}
+.batch-progress-fill {
+  height: 100%; background: linear-gradient(90deg, #42a5f5, #1e88e5);
+  border-radius: 3px; transition: width 0.3s ease;
 }
 
 /* ── Toast Notification ── */
@@ -4387,7 +4413,8 @@ body {
 }
 
 .browser-assist-iframe-container {
-  height: 420px;
+  height: 55vh;
+  min-height: 400px;
   overflow: hidden;
   background: #f5f5f5;
   border-bottom: 1px solid var(--border);
@@ -4472,4 +4499,148 @@ body {
   background: var(--surface);
   border-radius: var(--radius);
   line-height: 1.4;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Meal Spinner — Slot Machine Animation
+   ═══════════════════════════════════════════════════════════════════ */
+.spinner-overlay {
+  position: fixed; inset: 0; z-index: 2000;
+  background: rgba(0,0,0,0.7);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+  backdrop-filter: blur(4px);
+}
+.spinner-container {
+  background: var(--card); border-radius: 20px;
+  width: 100%; max-width: 420px;
+  padding: 24px 20px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+  animation: spinnerSlideIn 0.3s ease-out;
+}
+@keyframes spinnerSlideIn {
+  from { transform: scale(0.9) translateY(20px); opacity: 0; }
+  to { transform: scale(1) translateY(0); opacity: 1; }
+}
+.spinner-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 20px;
+}
+.spinner-title {
+  font-size: 22px; font-weight: 800;
+  background: linear-gradient(135deg, var(--primary), var(--primary-light));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.spinner-close {
+  width: 32px; height: 32px; border: none; background: var(--bg);
+  border-radius: 50%; font-size: 16px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-light);
+}
+.spinner-slots {
+  display: flex; flex-direction: column; gap: 6px;
+  margin-bottom: 20px;
+}
+.spinner-slot {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  background: var(--bg); border-radius: 12px;
+  border: 2px solid transparent;
+  transition: all 0.3s ease;
+  min-height: 48px;
+}
+.spinner-slot.resolved {
+  border-color: var(--primary);
+  background: linear-gradient(135deg, rgba(230, 81, 0, 0.06), rgba(255, 131, 58, 0.06));
+}
+.spinner-slot.spinning {
+  border-color: var(--border);
+}
+.spinner-slot-day {
+  font-size: 12px; font-weight: 700; color: var(--text-light);
+  min-width: 32px; text-transform: uppercase; letter-spacing: 0.5px;
+}
+.spinner-slot-reel {
+  flex: 1; overflow: hidden; height: 24px;
+}
+.spinner-slot-reel.cycling .spinner-slot-meal {
+  animation: reelCycle 0.12s steps(1) infinite;
+}
+.spinner-slot-meal {
+  font-size: 14px; font-weight: 600; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  display: block;
+}
+@keyframes reelCycle {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+.spinner-slot-img {
+  width: 36px; height: 36px; border-radius: 8px; object-fit: cover;
+  flex-shrink: 0;
+  animation: imgPopIn 0.3s ease-out;
+}
+@keyframes imgPopIn {
+  from { transform: scale(0); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+.spinner-actions {
+  display: flex; gap: 10px; justify-content: center;
+}
+.spinner-btn {
+  padding: 14px 32px; border: none; border-radius: 14px;
+  font-size: 16px; font-weight: 700; cursor: pointer;
+  transition: transform 0.15s ease;
+}
+.spinner-btn:active { transform: scale(0.95); }
+.spinner-btn.primary {
+  background: linear-gradient(135deg, var(--primary), var(--primary-light));
+  color: white; flex: 1;
+  box-shadow: 0 4px 16px rgba(230, 81, 0, 0.3);
+}
+.spinner-btn.secondary {
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border);
+}
+.spinner-waiting {
+  display: flex; justify-content: center; padding: 8px 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Dashboard Stats Strip
+   ═══════════════════════════════════════════════════════════════════ */
+.wv-stats-strip {
+  display: flex; gap: 8px; padding: 0 16px 8px;
+  overflow-x: auto; -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.wv-stats-strip::-webkit-scrollbar { display: none; }
+.wv-stat-chip {
+  display: flex; flex-direction: column; align-items: center;
+  padding: 8px 14px; border-radius: 12px;
+  background: var(--bg); border: 1px solid var(--border);
+  min-width: 64px; flex-shrink: 0;
+}
+.wv-stat-chip.fire {
+  background: linear-gradient(135deg, #fff3e0, #ffe0b2);
+  border-color: #ffcc80;
+}
+.wv-stat-chip.fire .wv-stat-num::before {
+  content: '\1F525 ';
+}
+.wv-stat-chip.fav {
+  background: linear-gradient(135deg, #fce4ec, #f8bbd0);
+  border-color: #f48fb1;
+}
+.wv-stat-chip.fav .wv-stat-num::before {
+  content: '\2B50 ';
+}
+.wv-stat-num {
+  font-size: 14px; font-weight: 800; color: var(--text);
+  white-space: nowrap;
+}
+.wv-stat-label {
+  font-size: 10px; color: var(--text-light); text-transform: uppercase;
+  letter-spacing: 0.5px; font-weight: 600; margin-top: 2px;
 }

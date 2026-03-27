@@ -25,6 +25,46 @@ db.version(4).stores({
 
 export default db;
 
+// ── Week plan persistence ─────────────────────────────────────────────────────
+export async function saveWeekPlan(weekPlan) {
+  await db.weekPlan.clear();
+  const entries = weekPlan.map((meal, i) => ({
+    dayIndex: i,
+    meal: meal || null,
+  }));
+  await db.weekPlan.bulkPut(entries);
+}
+
+export async function loadWeekPlan() {
+  const entries = await db.weekPlan.toArray();
+  if (entries.length === 0) return null; // No saved plan
+  const plan = Array(7).fill(null);
+  for (const entry of entries) {
+    if (entry.dayIndex >= 0 && entry.dayIndex < 7) {
+      plan[entry.dayIndex] = entry.meal;
+    }
+  }
+  // Only return if there's at least one non-null entry
+  return plan.some(Boolean) ? plan : null;
+}
+
+// ── Grocery list persistence ──────────────────────────────────────────────────
+export async function saveGroceryList(items) {
+  await db.groceryItems.clear();
+  if (items.length > 0) {
+    await db.groceryItems.bulkAdd(items.map(item => ({
+      name: item.name,
+      checked: item.checked || false,
+      store: item.store || '',
+    })));
+  }
+}
+
+export async function loadGroceryList() {
+  const items = await db.groceryItems.toArray();
+  return items.length > 0 ? items : null;
+}
+
 // Helper functions for store memory persistence
 export async function getStoreMemory() {
   const records = await db.storeMemory.toArray();

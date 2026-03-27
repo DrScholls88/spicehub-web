@@ -291,6 +291,17 @@ export function parseCaption(text) {
         // Remove emoji from title candidates
         titleCandidate = titleCandidate.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{1FA00}-\u{1FA9F}\u{200D}]/gu, '').trim();
 
+        // Skip lines that look like social media usernames/handles:
+        //   - Single word with no spaces (e.g. "sweetsimplevegan")
+        //   - Lines that are just numbers + "likes"/"comments"/"views"
+        //   - Lines matching @username pattern
+        const looksLikeUsername = /^[a-zA-Z0-9._]{3,30}$/.test(titleCandidate) && !titleCandidate.includes(' ');
+        const looksLikeSocialMeta = /^\d[\d,.]*\s*(likes?|comments?|views?|followers?|shares?|saves?)\s*$/i.test(titleCandidate);
+        const looksLikeHandle = /^@\w+$/.test(titleCandidate);
+        if (looksLikeUsername || looksLikeSocialMeta || looksLikeHandle) {
+          continue; // Skip — not a recipe title
+        }
+
         // Long lines — try to extract just the recipe name part
         if (titleCandidate.length >= 80) {
           // Try pipe delimiter first
@@ -340,10 +351,12 @@ export function parseCaption(text) {
     }
 
     // Clean prefix markers
+    // First strip bullet markers (but preserve what follows, including leading numbers)
     let cleaned = cleanLine
-      .replace(/^[-•*▪▸►◦‣⁃✓✔]\s*/, '')
-      .replace(/^\d+[.):\s-]\s*/, '')
-      .trim();
+      .replace(/^[-•*▪▸►◦‣⁃✓✔]\s*/, '');
+    // Only strip leading numbers when followed by punctuation delimiter (step numbers like "1." or "2)")
+    // NOT when followed by a space + unit (ingredient quantities like "2 tbsp")
+    cleaned = cleaned.replace(/^\d+[.):-]\s*/, '').trim();
     if (!cleaned) continue;
 
     // PASS 4: Route to correct list
@@ -404,10 +417,10 @@ function parseSpeechTranscript(text) {
 
     // Classify: ingredient mentions vs cooking steps
     if (looksLikeIngredient(s) && !looksLikeDirection(s) && s.length < 60) {
-      ingredients.push(s.replace(/^[-•*]\s*/, '').replace(/^\d+[.):\s-]\s*/, '').trim());
+      ingredients.push(s.replace(/^[-•*]\s*/, '').replace(/^\d+[.):-]\s*/, '').trim());
     } else if (looksLikeDirection(s) || s.length > 40) {
-      // Clean up direction-style sentences
-      let cleaned = s.replace(/^\d+[.):\s-]\s*/, '').trim();
+      // Clean up direction-style sentences (strip step numbers like "1." but not quantities like "2 cups")
+      let cleaned = s.replace(/^\d+[.):-]\s*/, '').trim();
       if (cleaned.length > 5) directions.push(cleaned);
     }
   }
@@ -1721,8 +1734,8 @@ export function parseIngredientLine(text) {
   // Remove bullet points and list markers
   text = text.replace(/^[-•*▪▸►◦‣⁃✓✔]\s*/, '').trim();
 
-  // Remove numbered list markers (1), 1., 1) etc.
-  text = text.replace(/^\d+[.):\s-]\s*/, '').trim();
+  // Remove numbered list markers (1., 1), 1:) but NOT bare numbers followed by space+unit (quantities)
+  text = text.replace(/^\d+[.):-]\s*/, '').trim();
 
   // Match quantity + unit pattern
   // Quantity: decimal numbers, fractions (1/2, ⅓), unicode fractions
@@ -1965,3 +1978,109 @@ export function extractWithBrowserAPI(pageContent) {
   return null;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// URL SHORTCUT RESOLVER
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Known URL shortener / redirect domains.
+ * These wrap the real recipe URL and need to be resolved before extraction.
+ */
+const SHORTENER_HOSTS = [
+  'bit.ly', 'bitly.com', 't.co', 'tinyurl.com', 'goo.gl', 'ow.ly',
+  'buff.ly', 'is.gd', 'v.gd', 'soo.gd', 'rb.gy', 'cutt.ly',
+  'linktr.ee', 'linkin.bio', 'lnk.bio', 'beacons.ai', 'stan.store',
+  'tap.bio', 'campsite.bio', 'hoo.be', 'snip.ly', 'dub.sh',
+  'amzn.to', 'amzn.com', 'youtu.be', // YouTube short URLs pass through
+  'fb.me', 'fb.watch',
+  'vm.tiktok.com', // TikTok short URLs
+];
+
+/**
+ * Check if a URL is a known shortener / redirect that needs resolving.
+ */
+export function isShortUrl(url) {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '');
+    return SHORTENER_HOSTS.some(d => host === d || host.endsWith('.' + d));
+  } catch { return false; }
+}
+
+/**
+ * Resolve a shortened URL to its final destination.
+ * Uses HEAD request via CORS proxies to follow redirects.
+ * Returns the final URL, or the original if resolution fails.
+ */
+export async function resolveShortUrl(url, onProgress) {
+  if (!isShortUrl(url)) return url;
+
+  if (onProgress) onProgress('Resolving shortened URL...');
+
+  // Try multiple CORS proxies to follow the redirect
+  const proxies = [
+    (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+    (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+  ];
+
+  for (const makeProxy of proxies) {
+    try {
+      const proxyUrl = makeProxy(url);
+      const resp = await fetch(proxyUrl, {
+        method: 'GET',
+        redirect: 'follow',
+        headers: { 'Accept': 'text/html' },
+        signal: AbortSignal.timeout(10000),
+      });
+
+      // Check if we got redirected by looking at the response URL or content
+      const finalUrl = resp.url;
+      const text = await resp.text();
+
+      // Look for canonical URL in HTML
+      const canonMatch = text.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i)
+        || text.match(/<meta[^>]+property=["']og:url["'][^>]+content=["']([^"']+)["']/i);
+      if (canonMatch && canonMatch[1] && canonMatch[1] !== url) {
+        if (onProgress) onProgress('URL resolved!');
+        return canonMatch[1];
+      }
+
+      // Check for meta refresh redirects
+      const refreshMatch = text.match(/<meta[^>]+http-equiv=["']refresh["'][^>]+content=["']\d+;\s*url=([^"']+)["']/i);
+      if (refreshMatch && refreshMatch[1]) {
+        return refreshMatch[1];
+      }
+
+      // If allorigins gave us a different URL in the response
+      if (finalUrl && finalUrl !== proxyUrl && !finalUrl.includes('allorigins') && !finalUrl.includes('corsproxy')) {
+        return finalUrl;
+      }
+
+      // If we got real HTML content, the proxy resolved it — return the detected canonical
+      if (text.length > 1000) {
+        // The proxy successfully fetched the page — the URL itself might be the final one
+        // Return original if we can't find a better one
+        return url;
+      }
+    } catch { /* try next proxy */ }
+  }
+
+  return url; // Couldn't resolve — return original
+}
+
+/**
+ * Extract all URLs from a block of text.
+ * Supports one URL per line, or URLs mixed into text.
+ */
+export function extractUrlsFromText(text) {
+  const urlPattern = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi;
+  const matches = text.match(urlPattern) || [];
+  // Deduplicate and clean trailing punctuation
+  const seen = new Set();
+  return matches
+    .map(url => url.replace(/[.,;:!?)]+$/, '')) // strip trailing punctuation
+    .filter(url => {
+      if (seen.has(url)) return false;
+      seen.add(url);
+      return true;
+    });
+}
