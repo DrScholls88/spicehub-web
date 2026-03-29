@@ -1,9 +1,11 @@
 import { useState, useMemo, useCallback } from 'react';
+import useSwipeDismiss from '../hooks/useSwipeDismiss';
 
 /**
  * "What's in My Fridge?" — type ingredients you have, see what you can make.
  */
 export default function FridgeMode({ meals, onViewDetail, onClose }) {
+  const { sheetRef, handleTouchStart, handleTouchMove, handleTouchEnd } = useSwipeDismiss(onClose);
   const [inputValue, setInputValue] = useState('');
   const [pantryItems, setPantryItems] = useState([]);
   const [matchMode, setMatchMode] = useState('best'); // 'best' | 'strict'
@@ -81,7 +83,8 @@ export default function FridgeMode({ meals, onViewDetail, onClose }) {
 
   return (
     <div className="fm-overlay" onClick={onClose}>
-      <div className="fm-sheet" onClick={e => e.stopPropagation()}>
+      <div className="fm-sheet" ref={sheetRef} onClick={e => e.stopPropagation()}
+        onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
         <div className="fm-handle" />
 
         {/* Header */}

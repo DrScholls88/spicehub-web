@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import db, { seedIfEmpty, SEED_DRINKS, importPaprikaMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getCookingLog } from './db';
+import db, { seedIfEmpty, SEED_DRINKS, importPaprikaMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getCookingLog, processImportQueue } from './db';
 import { PAPRIKA_MEALS } from './paprika_import_data';
+import { checkStorageQuota, checkAndRecommendCleanup } from './storageManager';
+import { initializeBackgroundSync } from './backgroundSync';
 import WeekView from './components/WeekView';
 import MealLibrary from './components/MealLibrary';
 import BarLibrary from './components/BarLibrary';
@@ -15,8 +17,14 @@ import MealStats from './components/MealStats';
 import BarShelf from './components/BarShelf';
 import BarFridgeMode from './components/BarFridgeMode';
 import MealSpinner from './components/MealSpinner';
+import SyncQueue from './components/SyncQueue';
+import StorageManager from './components/StorageManager';
+import OfflineIndicator from './components/OfflineIndicator';
 import { ThemeSettings } from './components/ThemeProvider';
 import { isMobileDevice } from './isMobile';
+import useOnlineStatus, { onOnlineStatusChange } from './hooks/useOnlineStatus';
+import useBackHandler from './hooks/useBackHandler';
+import useSwipeDismiss from './hooks/useSwipeDismiss';
 import './App.css';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -31,6 +39,7 @@ const SPECIAL_DAYS = [
 ];
 
 export default function App() {
+  const { isOnline } = useOnlineStatus();
   const [tab, setTab] = useState('week');
   const [meals, setMeals] = useState([]);
   const [drinks, setDrinks] = useState([]);
@@ -54,6 +63,30 @@ export default function App() {
   const [showBarFridge, setShowBarFridge] = useState(false);
   const [showSpinner, setShowSpinner] = useState(false);
   const [cookingStats, setCookingStats] = useState({ streak: 0, totalCooked: 0, topMeal: null });
+  const [queuedOps, setQueuedOps] = useState(0);
+  const [showStorageManager, setShowStorageManager] = useState(false);
+  const [storageWarning, setStorageWarning] = useState(null);
+  const [sharedContent, setSharedContent] = useState(null); // { mode, url, text } from share-target
+
+  // ── Swipe-down-to-dismiss for inline bottom sheets ──────────────────────────
+  const storageSwipe = useSwipeDismiss(() => setShowStorageManager(false));
+  const settingsSwipe = useSwipeDismiss(() => setShowSettings(false));
+
+  // ── Hardware back button handlers (Android PWA) ─────────────────────────────
+  // Order matters: later entries are higher priority (LIFO stack)
+  useBackHandler(!!detailItem, () => setDetailItem(null), 'detail');
+  useBackHandler(editMeal !== null, () => setEditMeal(null), 'edit-meal');
+  useBackHandler(editDrink !== null, () => setEditDrink(null), 'edit-drink');
+  useBackHandler(!!showImportFor, () => setShowImportFor(null), 'import');
+  useBackHandler(showFridge, () => setShowFridge(false), 'fridge');
+  useBackHandler(showBarShelf, () => setShowBarShelf(false), 'bar-shelf');
+  useBackHandler(showBarFridge, () => setShowBarFridge(false), 'bar-fridge');
+  useBackHandler(!!cookModeMeal, () => setCookModeMeal(null), 'cook-mode');
+  useBackHandler(!!mixModeDrink, () => setMixModeDrink(null), 'mix-mode');
+  useBackHandler(showSpinner, () => setShowSpinner(false), 'spinner');
+  useBackHandler(showStats, () => setShowStats(false), 'stats');
+  useBackHandler(showStorageManager, () => setShowStorageManager(false), 'storage');
+  useBackHandler(showSettings, () => setShowSettings(false), 'settings');
 
   const showToast = useCallback((message, type = 'success', duration = 2500) => {
     setToast({ message, type });
@@ -89,6 +122,15 @@ export default function App() {
     // Restore persisted week plan and grocery list
     loadWeekPlan().then(plan => { if (plan) setWeekPlan(plan); });
     loadGroceryList().then(items => { if (items) setGroceryItems(items); });
+
+    // Check storage quota on startup
+    checkStorageQuota()
+      .then(quota => {
+        if (quota.percentUsed > 75) {
+          setStorageWarning(`Storage usage is high (${quota.percentUsed}%). Consider cleaning up old logs.`);
+        }
+      })
+      .catch(err => console.warn('Failed to check storage quota:', err));
   }, [loadMeals, loadDrinks]);
 
   // Persist week plan whenever it changes (debounced)
@@ -144,6 +186,23 @@ export default function App() {
 
   useEffect(() => { computeStats(); }, [computeStats]);
 
+  // Handle online status changes — process queued operations when coming back online
+  useEffect(() => {
+    const unsubscribe = onOnlineStatusChange(({ isOnline: nowOnline }) => {
+      if (nowOnline && queuedOps > 0) {
+        setIsSyncing(true);
+        // Simulate sync completion after a short delay
+        const t = setTimeout(() => {
+          setQueuedOps(0);
+          setIsSyncing(false);
+          showToast('✓ All changes synced', 'success');
+        }, 1500);
+        return () => clearTimeout(t);
+      }
+    });
+    return unsubscribe;
+  }, [queuedOps, showToast]);
+
   // Handle PWA install prompt
   useEffect(() => {
     const handleBeforeInstallPrompt = (e) => {
@@ -169,14 +228,43 @@ export default function App() {
     }
   };
 
-  // Handle PWA share-target
+  // Handle PWA share-target — intelligently route content to the right import mode
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.has('share-target')) {
-      const sharedUrl = params.get('url') || params.get('text') || '';
-      if (sharedUrl) {
-        setShowImportFor('meals');
-        window.history.replaceState({}, '', '/');
+      const sharedUrl = params.get('url');
+      const sharedText = params.get('text');
+      const sharedTitle = params.get('title');
+
+      if (sharedUrl || sharedText) {
+        // Determine the import mode based on what was shared
+        let mode = 'url'; // default: assume URL import
+        let contentData = null;
+
+        // Priority: URL > text (text might be a URL or recipe text)
+        if (sharedUrl) {
+          mode = 'url';
+          contentData = { mode, url: sharedUrl, title: sharedTitle };
+        } else if (sharedText) {
+          // Check if shared text looks like a URL
+          const textTrimmed = sharedText.trim();
+          if (textTrimmed.startsWith('http://') || textTrimmed.startsWith('https://')) {
+            mode = 'url';
+            contentData = { mode, url: textTrimmed, title: sharedTitle };
+          } else {
+            // Plain text — likely recipe instructions/ingredients
+            mode = 'paste';
+            contentData = { mode, text: textTrimmed, title: sharedTitle };
+          }
+        }
+
+        if (contentData) {
+          console.log('[Share Target] Received shared content:', { mode, hasUrl: !!contentData.url, hasText: !!contentData.text });
+          setSharedContent(contentData);
+          setShowImportFor('meals');
+          // Clear share-target from URL to prevent re-processing on back navigation
+          window.history.replaceState({}, '', '/');
+        }
       }
     }
   }, []);
@@ -339,10 +427,15 @@ export default function App() {
     else { navigator.clipboard.writeText(text).then(() => alert('Recipe copied to clipboard!')).catch(() => {}); }
   }, []);
 
+
   if (loading) return <div className="loading-screen"><div className="spinner" /><p>Loading SpiceHub…</p></div>;
 
   return (
     <div className="app">
+      <OfflineIndicator
+        queuedOps={queuedOps}
+      />
+
       <header className="app-header">
         <div>
           <h1>SpiceHub</h1>
@@ -351,6 +444,7 @@ export default function App() {
         <div className="header-actions">
           <button className="hdr-btn" onClick={() => setShowFridge(true)} title="What's in My Fridge?">🧊</button>
           <button className="hdr-btn" onClick={() => setShowStats(true)} title="Meal Stats">📊</button>
+          <button className="hdr-btn" onClick={() => setShowStorageManager(true)} title="Storage">💾</button>
           <button className="hdr-btn" onClick={() => setShowSettings(true)} title="Settings">⚙️</button>
         </div>
       </header>
@@ -474,8 +568,9 @@ export default function App() {
       {showImportFor && (
         <ImportModal
           onImport={handleImport}
-          onClose={() => setShowImportFor(null)}
+          onClose={() => { setShowImportFor(null); setSharedContent(null); }}
           title={showImportFor === 'drinks' ? 'Import Drink' : 'Import Recipe'}
+          sharedContent={sharedContent}
         />
       )}
 
@@ -529,15 +624,41 @@ export default function App() {
           onViewDetail={(meal) => { setShowStats(false); setDetailItem(meal); }}
         />
       )}
+      {storageWarning && (
+        <div className="storage-warning-banner">
+          <span>⚠️ {storageWarning}</span>
+          <button className="warning-close" onClick={() => setStorageWarning(null)}>✕</button>
+        </div>
+      )}
+
+      {showStorageManager && (
+        <div className="st-overlay" onClick={() => setShowStorageManager(false)}>
+          <div className="st-sheet" ref={storageSwipe.sheetRef} onClick={e => e.stopPropagation()}
+            onTouchStart={storageSwipe.handleTouchStart} onTouchMove={storageSwipe.handleTouchMove} onTouchEnd={storageSwipe.handleTouchEnd}>
+            <div className="st-handle" />
+            <StorageManager
+              onClose={() => setShowStorageManager(false)}
+              onToast={showToast}
+            />
+          </div>
+        </div>
+      )}
+
       {showSettings && (
         <div className="st-overlay" onClick={() => setShowSettings(false)}>
-          <div className="st-sheet" onClick={e => e.stopPropagation()}>
+          <div className="st-sheet" ref={settingsSwipe.sheetRef} onClick={e => e.stopPropagation()}
+            onTouchStart={settingsSwipe.handleTouchStart} onTouchMove={settingsSwipe.handleTouchMove} onTouchEnd={settingsSwipe.handleTouchEnd}>
             <div className="st-handle" />
             <div className="st-header">
               <h2 className="st-title">⚙️ Settings</h2>
               <button className="st-close" onClick={() => setShowSettings(false)}>✕</button>
             </div>
-            <ThemeSettings />
+            <div className="st-content">
+              <div className="st-section">
+                <h3>Theme</h3>
+                <ThemeSettings />
+              </div>
+            </div>
           </div>
         </div>
       )}

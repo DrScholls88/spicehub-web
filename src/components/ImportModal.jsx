@@ -6,15 +6,17 @@ import BrowserAssist from './BrowserAssist';
  * ImportModal — four import paths:
  *   1. From URL (recipe blogs, Instagram, TikTok)
  *   2. From Image (screenshot, photo of index card/cookbook — OCR)
- *   3. Spreadsheet (CSV / Excel)
- *   4. Paprika (.paprikarecipes bundle)
+ *   3. Paste Text (recipe instructions/ingredients)
+ *   4. Spreadsheet (CSV / Excel)
+ *   5. Paprika (.paprikarecipes bundle)
  *
  * Props:
- *   onImport(recipes[])  — called with parsed recipe array; caller decides where to save
+ *   onImport(recipes[])    — called with parsed recipe array; caller decides where to save
  *   onClose()
- *   title                — optional modal title (e.g. "Import Recipe" vs "Import Drink")
+ *   title                  — optional modal title (e.g. "Import Recipe" vs "Import Drink")
+ *   sharedContent          — optional { mode, url, text, title } from share-target
  */
-export default function ImportModal({ onImport, onClose, title = 'Import Recipe' }) {
+export default function ImportModal({ onImport, onClose, title = 'Import Recipe', sharedContent = null }) {
   const [mode, setMode] = useState('url');         // 'url' | 'image' | 'paste' | 'spreadsheet' | 'paprika'
   const [url, setUrl] = useState('');
   const [importing, setImporting] = useState(false);
@@ -32,12 +34,49 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   const imageRef = useRef(null);
   const cameraRef = useRef(null);
 
+  // ── Drag and drop state for reorganizing ingredients/directions ────────────
+  const [dragSource, setDragSource] = useState(null); // { field, index, recipeIdx }
+  const [dragOverField, setDragOverField] = useState(null); // { field, recipeIdx } — shows which field is drop target
+
   // ── Lock body scroll while modal is open ────────────────────────────────────
   useEffect(() => {
     const origOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = origOverflow; };
   }, []);
+
+  // ── Handle shared content from share-target (Android/iOS share sheet) ────────
+  useEffect(() => {
+    if (sharedContent) {
+      if (sharedContent.mode === 'url' && sharedContent.url) {
+        setMode('url');
+        setUrl(sharedContent.url);
+        setError('');
+        // Auto-detect social media if applicable
+        if (isSocialMediaUrl(sharedContent.url)) {
+          setSocialDetected({ platform: getSocialPlatform(sharedContent.url) });
+        }
+      } else if (sharedContent.mode === 'paste' && sharedContent.text) {
+        setMode('paste');
+        setPasteText(sharedContent.text);
+        setError('');
+      }
+    }
+  }, [sharedContent]);
+
+  // ── Auto-extract when shared URL is set and modal opens ──
+  useEffect(() => {
+    if (sharedContent?.mode === 'url' && sharedContent?.url && !preview.length && !importing) {
+      console.log('[ImportModal] Auto-triggering extraction for shared URL:', sharedContent.url);
+      setImporting(true);
+      setImportProgress('Extracting recipe...');
+      // Defer to avoid blocking render
+      const timer = setTimeout(() => {
+        performUrlExtraction(sharedContent.url);
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [sharedContent?.url, preview.length, importing]);
 
   // ── URL field change ──────────────────────────────────────────────────────────
   const handleUrlChange = (e) => {
@@ -63,94 +102,97 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       return;
     }
 
-    // ── URL shortener resolution ──
-    if (isShortUrl(trimmedUrl)) {
-      setImporting(true);
-      setImportProgress('Resolving shortened URL...');
-      try {
-        const resolved = await resolveShortUrl(trimmedUrl, setImportProgress);
-        if (resolved !== trimmedUrl) {
-          trimmedUrl = resolved;
-          setUrl(resolved); // Update the input to show the resolved URL
-          // Re-check for social media after resolving
-          if (isSocialMediaUrl(resolved)) {
-            setSocialDetected({ platform: getSocialPlatform(resolved) });
-          }
-        }
-      } catch { /* continue with original URL */ }
+    setImporting(true);
+    await performUrlExtraction(trimmedUrl);
+  };
+
+  // ── Extract URL (reusable for auto-extraction on share-target) ──────────────────
+  const performUrlExtraction = async (urlToExtract) => {
+    if (!urlToExtract?.trim()) {
+      setImporting(false);
+      setImportProgress('');
+      return;
     }
+    let trimmedUrl = urlToExtract.trim();
 
-    // Instagram → try unified pipeline first (embed + yt-dlp), then BrowserAssist as last resort
-    if (isInstagramUrl(trimmedUrl)) {
-      setError('');
-      setImporting(true);
-      setImportProgress('Trying Instagram extraction...');
-      try {
-        const result = await parseFromUrl(trimmedUrl, (progress) => {
-          setImportProgress(progress);
-        });
-        if (result && !result._error) {
-          setPreview([result]);
-          setImporting(false);
-          setImportProgress('');
-          return;
-        }
-      } catch { /* fall through */ }
+    try {
+      // ── URL shortener resolution ──
+      if (isShortUrl(trimmedUrl)) {
+        setImportProgress('Resolving shortened URL...');
+        try {
+          const resolved = await resolveShortUrl(trimmedUrl, setImportProgress);
+          if (resolved !== trimmedUrl) {
+            trimmedUrl = resolved;
+            setUrl(resolved);
+            if (isSocialMediaUrl(resolved)) {
+              setSocialDetected({ platform: getSocialPlatform(resolved) });
+            }
+          }
+        } catch { /* continue with original URL */ }
+      }
 
-      // parseFromUrl failed — try BrowserAssist auto-extraction before showing iframe
-      setImportProgress('Trying embedded page extraction...');
-      try {
-        const { fetchHtmlViaProxy } = await import('../api');
-        const shortcodeMatch = trimmedUrl.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
-        const embedUrl = shortcodeMatch
-          ? `https://www.instagram.com/p/${shortcodeMatch[1]}/embed/captioned/`
-          : trimmedUrl;
-        const html = await fetchHtmlViaProxy(embedUrl, 40000);
-        if (html && html.length > 500) {
-          const extracted = extractWithBrowserAPI({
-            html,
-            visibleText: '',
-            imageUrls: [],
-            sourceUrl: trimmedUrl,
+      // ── Instagram special handling ──
+      if (isInstagramUrl(trimmedUrl)) {
+        setImportProgress('Trying Instagram extraction...');
+        try {
+          const result = await parseFromUrl(trimmedUrl, (progress) => {
+            setImportProgress(progress);
           });
-          if (extracted && extracted.ingredients?.length > 1) {
-            setPreview([extracted]);
+          if (result && !result._error) {
+            setPreview([result]);
             setImporting(false);
             setImportProgress('');
             return;
           }
-        }
-      } catch { /* fall through to BrowserAssist */ }
+        } catch { /* fall through */ }
 
-      setImporting(false);
-      setImportProgress('');
-      // All automatic methods failed — fall back to BrowserAssist interactive view
-      setBrowserAssistUrl(trimmedUrl);
-      setBrowserAssistMode('showing');
-      return;
-    }
+        setImportProgress('Trying embedded page extraction...');
+        try {
+          const { fetchHtmlViaProxy } = await import('../api');
+          const shortcodeMatch = trimmedUrl.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
+          const embedUrl = shortcodeMatch
+            ? `https://www.instagram.com/p/${shortcodeMatch[1]}/embed/captioned/`
+            : trimmedUrl;
+          const html = await fetchHtmlViaProxy(embedUrl, 40000);
+          if (html && html.length > 500) {
+            const extracted = extractWithBrowserAPI({
+              html,
+              visibleText: '',
+              imageUrls: [],
+              sourceUrl: trimmedUrl,
+            });
+            if (extracted && extracted.ingredients?.length > 1) {
+              setPreview([extracted]);
+              setImporting(false);
+              setImportProgress('');
+              return;
+            }
+          }
+        } catch { /* fall through to BrowserAssist */ }
 
-    // Non-Instagram URLs → try auto-extraction (unified pipeline)
-    setImporting(true);
-    setError('');
-    setBrowserAssistMode('off');
-    setImportProgress('Extracting recipe...');
-    try {
+        setImporting(false);
+        setImportProgress('');
+        setBrowserAssistUrl(trimmedUrl);
+        setBrowserAssistMode('showing');
+        return;
+      }
+
+      // ── Non-Instagram URLs ──
+      setError('');
+      setBrowserAssistMode('off');
+      setImportProgress('Extracting recipe...');
       const result = await parseFromUrl(trimmedUrl, (progress) => {
         setImportProgress(progress);
       });
 
       if (!result || result._error) {
-        // Auto-extraction failed — try BrowserAssist for any URL as interactive fallback
         if (isSocialMediaUrl(trimmedUrl)) {
-          // Social URLs: go to BrowserAssist interactive mode
           setImporting(false);
           setImportProgress('');
           setBrowserAssistUrl(trimmedUrl);
           setBrowserAssistMode('showing');
           return;
         }
-        // Non-social: show error with helpful message
         if (result?._error && result.reason === 'login-wall') {
           setError(
             `This ${result.platform || 'social media'} post requires login to view. ` +
@@ -465,6 +507,48 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     })));
   };
 
+  // ── Drag and drop handlers for reordering ingredients/directions ────────────
+  const handleDragStart = (field, index, recipeIdx, e) => {
+    setDragSource({ field, index, recipeIdx });
+    e.dataTransfer.effectAllowed = 'move';
+    e.currentTarget.style.opacity = '0.5';
+  };
+
+  const handleDragOver = (field, recipeIdx, e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverField({ field, recipeIdx });
+  };
+
+  const handleDrop = (field, index, recipeIdx, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!dragSource) return;
+
+    const { field: srcField, index: srcIdx, recipeIdx: srcRecipeIdx } = dragSource;
+    const updated = [...preview];
+
+    // Move between different fields or within same field
+    const sourceItems = [...(updated[srcRecipeIdx][srcField] || [])];
+    const [movedItem] = sourceItems.splice(srcIdx, 1);
+    updated[srcRecipeIdx] = { ...updated[srcRecipeIdx], [srcField]: sourceItems };
+
+    // Insert into target field
+    const targetItems = [...(updated[recipeIdx][field] || [])];
+    targetItems.splice(index, 0, movedItem);
+    updated[recipeIdx] = { ...updated[recipeIdx], [field]: targetItems };
+
+    setPreview(updated);
+    setDragSource(null);
+    setDragOverField(null);
+  };
+
+  const handleDragEnd = (e) => {
+    e.currentTarget.style.opacity = '1';
+    setDragSource(null);
+    setDragOverField(null);
+  };
+
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -542,7 +626,16 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                   </div>
 
                   {/* Ingredients (editable list) */}
-                  <div className="preview-detail-section">
+                  <div
+                    className="preview-detail-section"
+                    onDragOver={(e) => handleDragOver('ingredients', idx, e)}
+                    onDrop={(e) => handleDrop('ingredients', (m.ingredients || []).length, idx, e)}
+                    onDragLeave={() => setDragOverField(null)}
+                    style={{
+                      background: dragOverField?.field === 'ingredients' && dragOverField?.recipeIdx === idx ? '#fffde7' : 'transparent',
+                      transition: 'background-color 0.2s'
+                    }}
+                  >
                     <label className="preview-label">
                       Ingredients ({m.ingredients?.length ?? 0})
                       <button
@@ -556,7 +649,19 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                     </label>
                     <div className="preview-editable-list">
                       {(m.ingredients || []).map((ing, ingIdx) => (
-                        <div key={ingIdx} className="preview-editable-row">
+                        <div
+                          key={ingIdx}
+                          className="preview-editable-row"
+                          draggable
+                          onDragStart={(e) => handleDragStart('ingredients', ingIdx, idx, e)}
+                          onDragOver={(e) => handleDragOver('ingredients', idx, e)}
+                          onDrop={(e) => handleDrop('ingredients', ingIdx, idx, e)}
+                          onDragEnd={handleDragEnd}
+                          style={{
+                            cursor: dragSource?.recipeIdx === idx ? 'grabbing' : 'grab',
+                            opacity: dragSource?.field === 'ingredients' && dragSource?.recipeIdx === idx && dragSource?.index === ingIdx ? 0.5 : 1
+                          }}
+                        >
                           <input
                             type="text"
                             value={ing}
@@ -586,7 +691,16 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                   </div>
 
                   {/* Directions (editable list) */}
-                  <div className="preview-detail-section">
+                  <div
+                    className="preview-detail-section"
+                    onDragOver={(e) => handleDragOver('directions', idx, e)}
+                    onDrop={(e) => handleDrop('directions', (m.directions || []).length, idx, e)}
+                    onDragLeave={() => setDragOverField(null)}
+                    style={{
+                      background: dragOverField?.field === 'directions' && dragOverField?.recipeIdx === idx ? '#fffde7' : 'transparent',
+                      transition: 'background-color 0.2s'
+                    }}
+                  >
                     <label className="preview-label">
                       Steps ({m.directions?.length ?? 0})
                       <button
@@ -600,7 +714,19 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                     </label>
                     <div className="preview-editable-list">
                       {(m.directions || []).map((step, stepIdx) => (
-                        <div key={stepIdx} className="preview-editable-row preview-step-row">
+                        <div
+                          key={stepIdx}
+                          className="preview-editable-row preview-step-row"
+                          draggable
+                          onDragStart={(e) => handleDragStart('directions', stepIdx, idx, e)}
+                          onDragOver={(e) => handleDragOver('directions', idx, e)}
+                          onDrop={(e) => handleDrop('directions', stepIdx, idx, e)}
+                          onDragEnd={handleDragEnd}
+                          style={{
+                            cursor: dragSource?.recipeIdx === idx ? 'grabbing' : 'grab',
+                            opacity: dragSource?.field === 'directions' && dragSource?.recipeIdx === idx && dragSource?.index === stepIdx ? 0.5 : 1
+                          }}
+                        >
                           <span className="preview-step-num">{stepIdx + 1}</span>
                           <textarea
                             value={step}

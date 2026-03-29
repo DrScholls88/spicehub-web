@@ -1,10 +1,12 @@
 import { useState, useMemo, useCallback } from 'react';
+import useSwipeDismiss from '../hooks/useSwipeDismiss';
 
 /**
  * "What's on My Shelf?" — the bar version of Fridge Mode.
  * Type spirits/liqueurs you have, see what cocktails you can make.
  */
 export default function BarFridgeMode({ drinks, onViewDetail, onClose }) {
+  const { sheetRef, handleTouchStart, handleTouchMove, handleTouchEnd } = useSwipeDismiss(onClose);
   const [inputValue, setInputValue] = useState('');
   const [shelfItems, setShelfItems] = useState([]);
   const [matchMode, setMatchMode] = useState('best'); // 'best' | 'strict'
@@ -86,7 +88,8 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose }) {
 
   return (
     <div className="bfm-overlay" onClick={onClose}>
-      <div className="bfm-sheet" onClick={e => e.stopPropagation()}>
+      <div className="bfm-sheet" ref={sheetRef} onClick={e => e.stopPropagation()}
+        onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
         <div className="bfm-handle" />
 
         {/* Header */}

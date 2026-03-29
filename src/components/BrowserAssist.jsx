@@ -1,18 +1,21 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins } from '../recipeParser';
 import { fetchHtmlViaProxy, proxyImageUrl } from '../api';
+import { queueRecipeImport } from '../db';
+import useOnlineStatus from '../hooks/useOnlineStatus';
 
 /**
  * BrowserAssist — Enhanced interactive embedded view for recipe extraction.
  *
  * Strategy (fully automatic, iframe as last resort):
- *   1. Fetch the page HTML via CORS proxy
+ *   1. If ONLINE: Fetch the page HTML via CORS proxy
  *   2. Run extractWithBrowserAPI() — tries plugin detection, caption parsing, smart classification
  *   3. Also try regex extraction on raw HTML (caption, image, title)
  *   4. If auto-extraction finds a recipe → show editable preview (no iframe needed)
  *   5. If auto-extraction fails → show iframe with manual "Extract Recipe" button
  *   6. User scrolls, reads the content, clicks "Extract Recipe"
- *   7. Fallback: "Paste Text Instead" switches to manual paste tab
+ *   7. If OFFLINE: Show message and offer manual paste (can still add to queue)
+ *   8. Fallback: "Paste Text Instead" switches to manual paste tab
  *
  * Props:
  *   url                 - Page URL (Instagram or any recipe URL)
@@ -20,12 +23,15 @@ import { fetchHtmlViaProxy, proxyImageUrl } from '../api';
  *   onFallbackToText    - callback() when user wants Paste Text
  */
 export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText }) {
-  const [phase, setPhase] = useState('loading');     // 'loading' | 'preview' | 'iframe' | 'extracting' | 'error'
+  const { isOnline } = useOnlineStatus();
+  const [phase, setPhase] = useState('loading');     // 'loading' | 'preview' | 'iframe' | 'extracting' | 'error' | 'offline' | 'queued'
   const [errorMsg, setErrorMsg] = useState('');
   const [htmlContent, setHtmlContent] = useState('');
   const [rawHtml, setRawHtml] = useState('');
   const [autoRecipe, setAutoRecipe] = useState(null); // auto-extracted recipe for preview
   const [loadingDots, setLoadingDots] = useState('');
+  const [queuedRecipe, setQueuedRecipe] = useState(null); // offline queued recipe
+  const [iframeZoom, setIframeZoom] = useState(100); // zoom level percentage
   const iframeRef = useRef(null);
   const extractionRef = useRef(null);
 
@@ -48,8 +54,56 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
     return () => clearInterval(interval);
   }, [phase]);
 
+  // ── Pinch-to-zoom support for mobile ─────────────────────────────────────
+  useEffect(() => {
+    const container = document.querySelector('.browser-assist-iframe-container');
+    if (!container) return;
+
+    let lastDistance = 0;
+
+    const handleTouchMove = (e) => {
+      if (e.touches.length !== 2) return;
+      e.preventDefault();
+
+      const touch1 = e.touches[0];
+      const touch2 = e.touches[1];
+      const distance = Math.hypot(
+        touch1.clientX - touch2.clientX,
+        touch1.clientY - touch2.clientY
+      );
+
+      if (lastDistance > 0) {
+        const scale = distance / lastDistance;
+        const newZoom = Math.round(Math.max(50, Math.min(200, iframeZoom * scale)));
+        if (newZoom !== iframeZoom) {
+          setIframeZoom(newZoom);
+        }
+      }
+      lastDistance = distance;
+    };
+
+    const handleTouchEnd = () => {
+      lastDistance = 0;
+    };
+
+    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    container.addEventListener('touchend', handleTouchEnd);
+
+    return () => {
+      container.removeEventListener('touchmove', handleTouchMove);
+      container.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [iframeZoom]);
+
   // ── Fetch and auto-extract ─────────────────────────────────────────────────
   useEffect(() => {
+    // Check offline status immediately
+    if (!isOnline) {
+      setErrorMsg('You are offline. You can still paste recipe text manually.');
+      setPhase('offline');
+      return;
+    }
+
     let cancelled = false;
     const timeout = setTimeout(() => {
       if (!cancelled && phase === 'loading') {
@@ -132,7 +186,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
     })();
 
     return () => { cancelled = true; clearTimeout(timeout); };
-  }, [url]);
+  }, [url, isOnline]);
 
   // ── After iframe renders, inject extraction button ───────────────────────────
   const handleIframeLoad = useCallback(() => {
@@ -298,11 +352,65 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
     });
   }, []);
 
+  // ── Queue recipe for offline import ────────────────────────────────────────
+  const handleQueueOfflineRecipe = useCallback(async (recipe) => {
+    try {
+      const result = await queueRecipeImport(url, recipe);
+      if (result.isDuplicate) {
+        setErrorMsg('Recipe with this name already exists. Not queuing.');
+        setPhase('error');
+      } else {
+        setQueuedRecipe(recipe);
+        setPhase('queued');
+        // Auto-close after 3 seconds
+        setTimeout(() => {
+          if (onRecipeExtracted) {
+            onRecipeExtracted(recipe);
+          }
+        }, 2500);
+      }
+    } catch (err) {
+      console.error('[BrowserAssist] Queue error:', err);
+      setErrorMsg('Failed to queue recipe: ' + err.message);
+      setPhase('error');
+    }
+  }, [url, onRecipeExtracted]);
+
   // ── Render ───────────────────────────────────────────────────────────────────
   return (
     <div className="browser-assist-container">
+      {/* ── Offline state ── */}
+      {phase === 'offline' && (
+        <div className="browser-assist-offline">
+          <div className="offline-icon">🔌</div>
+          <h3>Offline Mode</h3>
+          <p>Cannot fetch recipe from the web while offline.</p>
+          <p className="offline-help-text">
+            Use "Paste Text Instead" to manually add recipe content, and it will be saved locally and imported when you're back online.
+          </p>
+          <button className="btn-primary" onClick={onFallbackToText}>
+            Paste Recipe Text Instead
+          </button>
+        </div>
+      )}
+
+      {/* ── Queued for offline import ── */}
+      {phase === 'queued' && queuedRecipe && (
+        <div className="browser-assist-queued">
+          <div className="queued-icon">⏱️</div>
+          <h3>Recipe Queued</h3>
+          <p><strong>{queuedRecipe.name}</strong> will be imported when you're back online.</p>
+          <p className="queued-help-text">
+            You can view the import queue in Settings → Queued Imports
+          </p>
+          <button className="btn-primary" onClick={() => onRecipeExtracted && onRecipeExtracted(queuedRecipe)}>
+            Close
+          </button>
+        </div>
+      )}
+
       {/* ── Loading state ── */}
-      {phase === 'loading' && (
+      {isOnline && phase === 'loading' && (
         <div className="browser-assist-loading">
           <div className="browser-spinner large" />
           <p className="browser-assist-pulse-text">{loadingDots || 'Fetching page content...'}</p>
@@ -404,15 +512,43 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
           <p className="browser-assist-fallback-note">
             Auto-extraction couldn't find the recipe. Browse the page below and tap "Extract Recipe" when you see the recipe content.
           </p>
+          <div className="browser-assist-zoom-controls">
+            <button
+              className="browser-assist-zoom-btn"
+              onClick={() => setIframeZoom(Math.max(50, iframeZoom - 10))}
+              title="Zoom out"
+              disabled={iframeZoom <= 50}
+            >
+              −
+            </button>
+            <span className="browser-assist-zoom-display">{iframeZoom}%</span>
+            <button
+              className="browser-assist-zoom-btn"
+              onClick={() => setIframeZoom(Math.min(200, iframeZoom + 10))}
+              title="Zoom in"
+              disabled={iframeZoom >= 200}
+            >
+              +
+            </button>
+            <button
+              className="browser-assist-zoom-btn"
+              onClick={() => setIframeZoom(100)}
+              title="Reset zoom"
+            >
+              Reset
+            </button>
+          </div>
           <div className="browser-assist-iframe-container">
-            <iframe
-              ref={iframeRef}
-              title="Recipe Page"
-              className="browser-assist-iframe"
-              srcDoc={htmlContent}
-              sandbox="allow-same-origin"
-              onLoad={handleIframeLoad}
-            />
+            <div style={{ transform: `scale(${iframeZoom / 100})`, transformOrigin: 'top center', transition: 'transform 0.1s ease-out' }}>
+              <iframe
+                ref={iframeRef}
+                title="Recipe Page"
+                className="browser-assist-iframe"
+                srcDoc={htmlContent}
+                sandbox="allow-same-origin"
+                onLoad={handleIframeLoad}
+              />
+            </div>
           </div>
           <div className="browser-assist-actions">
             <button className="btn-primary" onClick={handleExtraction} disabled={phase === 'extracting'}>
