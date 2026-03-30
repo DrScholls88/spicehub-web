@@ -33,6 +33,11 @@ db.version(6).stores({
   storageMetadata: 'key',
 });
 
+// v7: Added weekHistory for past week plans
+db.version(7).stores({
+  weekHistory: '++id, weekStart',
+});
+
 export default db;
 
 // ── Week plan persistence ─────────────────────────────────────────────────────
@@ -320,6 +325,48 @@ export async function clearQueueItem(id) {
 
 export async function clearCompletedImports() {
   await db.importQueue.where('status').equals('done').delete();
+}
+
+// ── Rotation helpers ─────────────────────────────────────────────────────────
+export async function toggleRotation(mealId, inRotation) {
+  await db.meals.update(mealId, { inRotation });
+}
+
+export async function getRotationMeals() {
+  const all = await db.meals.toArray();
+  return all.filter(m => m.inRotation);
+}
+
+export async function bulkSetRotation(mealIds, inRotation) {
+  await db.transaction('rw', db.meals, async () => {
+    for (const id of mealIds) {
+      await db.meals.update(id, { inRotation });
+    }
+  });
+}
+
+// ── Week History helpers ─────────────────────────────────────────────────────
+export async function saveWeekToHistory(weekStart, weekPlan) {
+  // weekStart is ISO string of the Monday of that week
+  // Only save if there are actual meals
+  if (!weekPlan.some(Boolean)) return;
+
+  // Check if we already have this week
+  const existing = await db.weekHistory.where('weekStart').equals(weekStart).first();
+  if (existing) {
+    await db.weekHistory.update(existing.id, { meals: weekPlan, savedAt: new Date().toISOString() });
+  } else {
+    await db.weekHistory.add({ weekStart, meals: weekPlan, savedAt: new Date().toISOString() });
+  }
+}
+
+export async function getWeekHistory(limit = 12) {
+  const all = await db.weekHistory.orderBy('weekStart').reverse().toArray();
+  return all.slice(0, limit);
+}
+
+export async function deleteWeekFromHistory(id) {
+  await db.weekHistory.delete(id);
 }
 
 // Seed data

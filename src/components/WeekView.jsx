@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 
-// Helper: image component with proper fallback (doesn't permanently hide on transient errors)
+// Helper: image component with proper fallback
 function MealImage({ src, alt, className, fallbackEmoji = '🍽️', fallbackClass }) {
   const [status, setStatus] = useState(src ? 'loading' : 'fallback');
   const imgRef = useRef(null);
@@ -21,7 +21,7 @@ function MealImage({ src, alt, className, fallbackEmoji = '🍽️', fallbackCla
       className={className}
       onLoad={() => setStatus('loaded')}
       onError={() => setStatus('fallback')}
-      style={status === 'loading' ? { minHeight: 60, background: '#f5f5f5' } : undefined}
+      style={status === 'loading' ? { minHeight: 60, background: 'var(--surface-2, #f5f5f5)' } : undefined}
     />
   );
 }
@@ -54,12 +54,32 @@ function formatMonth(monday) {
   return `${monday.toLocaleDateString('en-US', { month: 'short' })} – ${sunday.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`;
 }
 
+function formatWeekRange(weekStart) {
+  const mon = new Date(weekStart);
+  const sun = addDays(mon, 6);
+  const opts = { month: 'short', day: 'numeric' };
+  return `${mon.toLocaleDateString('en-US', opts)} – ${sun.toLocaleDateString('en-US', opts)}`;
+}
+
+function getWeeksAgoLabel(weekStart) {
+  const now = getMonday(new Date());
+  const then = new Date(weekStart);
+  const diffWeeks = Math.round((now - then) / (7 * 24 * 60 * 60 * 1000));
+  if (diffWeeks === 0) return 'This week';
+  if (diffWeeks === 1) return 'Last week';
+  return `${diffWeeks} weeks ago`;
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function WeekView({
   days, weekPlan, meals, specialDays,
   onGenerate, onRespin, onSetDay, onSetSpecial, onViewDetail, onBuildGrocery,
   cookingStats = {},
+  weekHistory = [],
+  onRestoreWeek,
+  onRestoreMeal,
+  rotationCount = 0,
 }) {
   const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
   const thisMonday = useMemo(() => getMonday(today), [today]);
@@ -71,14 +91,14 @@ export default function WeekView({
   });
   const [pickerDay, setPickerDay] = useState(null);
   const [swipeStart, setSwipeStart] = useState(null);
-
-  const contentRef = useRef(null);
+  const [showHistory, setShowHistory] = useState(false);
 
   const activeMonday = useMemo(() => addDays(thisMonday, weekOffset * 7), [thisMonday, weekOffset]);
   const weekDates = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(activeMonday, i)), [activeMonday]);
 
   const isCurrentWeek = weekOffset === 0;
   const hasWeek = weekPlan.some(Boolean);
+  const plannedCount = weekPlan.filter(Boolean).length;
 
   const todayIdx = useMemo(() => {
     const d = today.getDay();
@@ -94,8 +114,8 @@ export default function WeekView({
     if (swipeStart === null) return;
     const diff = swipeStart - e.changedTouches[0].clientX;
     if (Math.abs(diff) > 60) {
-      if (diff > 0) setWeekOffset(o => o + 1); // swipe left = next week
-      else setWeekOffset(o => o - 1);           // swipe right = prev week
+      if (diff > 0) setWeekOffset(o => o + 1);
+      else setWeekOffset(o => o - 1);
     }
     setSwipeStart(null);
   }, [swipeStart]);
@@ -106,33 +126,31 @@ export default function WeekView({
 
   const closePicker = useCallback(() => setPickerDay(null), []);
 
-  // Build the cards to show: selected day expanded + remaining days compact
   const selectedEntry = weekPlan[selectedDay];
   const selectedIsSpecial = selectedEntry && selectedEntry._special;
 
   return (
     <div
-      className="wv"
+      className="wv2"
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
-
-      {/* ── Week nav + month label ── */}
-      <div className="wv-topbar">
-        <button className="wv-nav-btn" onClick={() => setWeekOffset(o => o - 1)}>‹</button>
-        <div className="wv-month-area">
-          <span className="wv-month">{formatMonth(activeMonday)}</span>
+      {/* ── Compact header with week nav ── */}
+      <div className="wv2-header">
+        <button className="wv2-nav" onClick={() => setWeekOffset(o => o - 1)} aria-label="Previous week">‹</button>
+        <div className="wv2-header-center">
+          <span className="wv2-month">{formatMonth(activeMonday)}</span>
           {!isCurrentWeek && (
-            <button className="wv-today-btn" onClick={() => { setWeekOffset(0); setSelectedDay(todayIdx); }}>
-              Today
+            <button className="wv2-today-link" onClick={() => { setWeekOffset(0); setSelectedDay(todayIdx); }}>
+              Back to today
             </button>
           )}
         </div>
-        <button className="wv-nav-btn" onClick={() => setWeekOffset(o => o + 1)}>›</button>
+        <button className="wv2-nav" onClick={() => setWeekOffset(o => o + 1)} aria-label="Next week">›</button>
       </div>
 
-      {/* ── Horizontal day strip (like iOS Calendar) ── */}
-      <div className="wv-day-strip">
+      {/* ── Day strip (clean pills) ── */}
+      <div className="wv2-strip">
         {DAY_LABELS.map((label, i) => {
           const date = weekDates[i];
           const isToday = isCurrentWeek && i === todayIdx;
@@ -141,119 +159,77 @@ export default function WeekView({
           return (
             <button
               key={i}
-              className={`wv-day-pill ${isSelected ? 'selected' : ''} ${isToday ? 'today' : ''}`}
+              className={`wv2-pill${isSelected ? ' sel' : ''}${isToday ? ' today' : ''}`}
               onClick={() => setSelectedDay(i)}
             >
-              <span className="wv-day-lbl">{label}</span>
-              <span className={`wv-day-num ${isToday && !isSelected ? 'today-ring' : ''}`}>
-                {date.getDate()}
-              </span>
-              {hasContent && <span className="wv-day-dot" />}
+              <span className="wv2-pill-lbl">{label}</span>
+              <span className="wv2-pill-num">{date.getDate()}</span>
+              {hasContent && <span className="wv2-pill-dot" />}
             </button>
           );
         })}
       </div>
 
-      {/* ── Stats dashboard strip ── */}
-      {(cookingStats.streak > 0 || cookingStats.totalCooked > 0) && (
-        <div className="wv-stats-strip">
-          {cookingStats.streak > 0 && (
-            <div className="wv-stat-chip fire">
-              <span className="wv-stat-num">{cookingStats.streak}</span>
-              <span className="wv-stat-label">day streak</span>
-            </div>
-          )}
-          <div className="wv-stat-chip">
-            <span className="wv-stat-num">{weekPlan.filter(Boolean).length}/7</span>
-            <span className="wv-stat-label">planned</span>
-          </div>
-          {cookingStats.totalCooked > 0 && (
-            <div className="wv-stat-chip">
-              <span className="wv-stat-num">{cookingStats.totalCooked}</span>
-              <span className="wv-stat-label">cooked</span>
-            </div>
-          )}
-          {cookingStats.topMeal && (
-            <div className="wv-stat-chip fav">
-              <span className="wv-stat-num" title={cookingStats.topMeal.name}>
-                {cookingStats.topMeal.name.length > 12
-                  ? cookingStats.topMeal.name.substring(0, 12) + '...'
-                  : cookingStats.topMeal.name}
-              </span>
-              <span className="wv-stat-label">top pick</span>
-            </div>
-          )}
+      {/* ── Progress bar ── */}
+      <div className="wv2-progress-wrap">
+        <div className="wv2-progress-bar">
+          <div className="wv2-progress-fill" style={{ width: `${(plannedCount / 7) * 100}%` }} />
         </div>
-      )}
+        <span className="wv2-progress-label">{plannedCount}/7 planned</span>
+      </div>
 
-      {/* ── Selected day hero card ── */}
-      <div className="wv-hero" ref={contentRef}>
-        <div className="wv-hero-hdr">
-          <h2 className="wv-hero-day">
+      {/* ── Selected day card ── */}
+      <div className="wv2-hero">
+        <div className="wv2-hero-hdr">
+          <h2 className="wv2-hero-day">
             {DAY_FULL[selectedDay]}
-            {isCurrentWeek && selectedDay === todayIdx && <span className="wv-today-chip">Today</span>}
+            {isCurrentWeek && selectedDay === todayIdx && <span className="wv2-badge">Today</span>}
           </h2>
-          <span className="wv-hero-date">
+          <span className="wv2-hero-date">
             {weekDates[selectedDay].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
           </span>
         </div>
 
         {selectedIsSpecial ? (
-          <div className="wv-hero-special">
-            <span className="wv-hero-special-icon">{selectedEntry.icon}</span>
-            <span className="wv-hero-special-name">{selectedEntry.name}</span>
-            <button className="wv-clear-btn" onClick={() => onSetSpecial(selectedDay, null)}>Clear</button>
+          <div className="wv2-hero-special">
+            <span className="wv2-hero-special-icon">{selectedEntry.icon}</span>
+            <span className="wv2-hero-special-name">{selectedEntry.name}</span>
+            <button className="wv2-clear-btn" onClick={() => onSetSpecial(selectedDay, null)}>Clear</button>
           </div>
         ) : selectedEntry ? (
-          <div className="wv-hero-meal">
-            <div className="wv-hero-img-wrap">
+          <div className="wv2-hero-meal">
+            <div className="wv2-hero-img-wrap">
               <MealImage
                 src={selectedEntry.imageUrl}
                 alt={selectedEntry.name}
-                className="wv-hero-img"
-                fallbackClass="wv-hero-img-ph"
+                className="wv2-hero-img"
+                fallbackClass="wv2-hero-img-ph"
               />
             </div>
-            <div className="wv-hero-info">
-              <h3 className="wv-hero-name">{selectedEntry.name}</h3>
-              <p className="wv-hero-meta">
+            <div className="wv2-hero-body">
+              <h3 className="wv2-hero-name">{selectedEntry.name}</h3>
+              <p className="wv2-hero-meta">
                 {selectedEntry.ingredients?.length || 0} ingredients
                 {selectedEntry.category ? ` · ${selectedEntry.category}` : ''}
               </p>
-            </div>
-            {/* Action buttons */}
-            <div className="wv-hero-actions">
-              <button className="wv-action" onClick={() => onViewDetail(selectedEntry)}>
-                <span className="wv-action-icon">📖</span>
-                <span>View</span>
-              </button>
-              <button className="wv-action" onClick={() => onRespin(selectedDay)}>
-                <span className="wv-action-icon">🔄</span>
-                <span>Respin</span>
-              </button>
-              <button className="wv-action" onClick={() => openPicker(selectedDay)}>
-                <span className="wv-action-icon">✏️</span>
-                <span>Change</span>
-              </button>
-              <button className="wv-action danger" onClick={() => onSetSpecial(selectedDay, null)}>
-                <span className="wv-action-icon">✕</span>
-                <span>Clear</span>
-              </button>
+              <div className="wv2-hero-actions">
+                <button className="wv2-act" onClick={() => onViewDetail(selectedEntry)}>📖 View</button>
+                <button className="wv2-act" onClick={() => onRespin(selectedDay)}>🔄 Respin</button>
+                <button className="wv2-act" onClick={() => openPicker(selectedDay)}>✏️ Change</button>
+                <button className="wv2-act danger" onClick={() => onSetSpecial(selectedDay, null)}>✕</button>
+              </div>
             </div>
           </div>
         ) : (
-          <div className="wv-hero-empty" onClick={() => openPicker(selectedDay)}>
-            <div className="wv-empty-circle">
-              <span>+</span>
-            </div>
+          <div className="wv2-hero-empty" onClick={() => openPicker(selectedDay)}>
+            <div className="wv2-empty-plus">+</div>
             <p>Tap to add a meal</p>
           </div>
         )}
       </div>
 
-      {/* ── Rest of week summary (compact cards) ── */}
-      <div className="wv-rest">
-        <h4 className="wv-rest-title">This Week</h4>
+      {/* ── Week overview (compact list) ── */}
+      <div className="wv2-week-list">
         {DAY_LABELS.map((label, i) => {
           if (i === selectedDay) return null;
           const entry = weekPlan[i];
@@ -262,56 +238,124 @@ export default function WeekView({
           return (
             <div
               key={i}
-              className={`wv-mini ${isToday ? 'today' : ''} ${entry ? 'filled' : 'empty'}`}
+              className={`wv2-row${isToday ? ' today' : ''}${entry ? ' filled' : ''}`}
               onClick={() => setSelectedDay(i)}
             >
-              <div className="wv-mini-day">
-                <span className="wv-mini-label">{label}</span>
-                <span className="wv-mini-date">{weekDates[i].getDate()}</span>
+              <div className="wv2-row-day">
+                <span className="wv2-row-lbl">{label}</span>
+                <span className="wv2-row-date">{weekDates[i].getDate()}</span>
               </div>
               {isSpecial ? (
-                <div className="wv-mini-content">
-                  <span>{entry.icon}</span>
-                  <span className="wv-mini-name">{entry.name}</span>
+                <div className="wv2-row-content">
+                  <span className="wv2-row-icon">{entry.icon}</span>
+                  <span className="wv2-row-name">{entry.name}</span>
                 </div>
               ) : entry ? (
-                <div className="wv-mini-content">
+                <div className="wv2-row-content">
                   {entry.imageUrl && (
                     <MealImage
                       src={entry.imageUrl}
                       alt=""
-                      className="wv-mini-img"
+                      className="wv2-row-img"
                       fallbackEmoji=""
-                      fallbackClass="wv-mini-img-ph"
+                      fallbackClass="wv2-row-img-ph"
                     />
                   )}
-                  <span className="wv-mini-name">{entry.name}</span>
+                  <span className="wv2-row-name">{entry.name}</span>
                 </div>
               ) : (
-                <div className="wv-mini-content empty">
-                  <span className="wv-mini-plus">+</span>
-                  <span className="wv-mini-name empty">No meal</span>
+                <div className="wv2-row-content empty">
+                  <span className="wv2-row-plus">+</span>
+                  <span className="wv2-row-name empty">No meal</span>
                 </div>
               )}
-              <span className="wv-mini-arrow">›</span>
+              <span className="wv2-row-chevron">›</span>
             </div>
           );
         })}
       </div>
 
-      {/* ── Bottom action bar (thumb zone) ── */}
-      <div className="wv-bottom-bar">
-        <button className="wv-bottom-btn primary" onClick={onGenerate}>
-          <span>🎰</span> Generate Week
+      {/* ── Action buttons (thumb zone) ── */}
+      <div className="wv2-actions-bar">
+        <button className="wv2-btn primary" onClick={onGenerate}>
+          🎰 Spin the Week{rotationCount > 0 ? ` (${rotationCount})` : ''}
         </button>
         {hasWeek && (
-          <button className="wv-bottom-btn secondary" onClick={onBuildGrocery}>
-            <span>🛒</span> Grocery
+          <button className="wv2-btn secondary" onClick={onBuildGrocery}>
+            🛒 Grocery List
+          </button>
+        )}
+        {weekHistory.length > 0 && (
+          <button className="wv2-btn tertiary" onClick={() => setShowHistory(h => !h)}>
+            📅 Past Weeks {showHistory ? '▾' : '▸'}
           </button>
         )}
       </div>
 
-      {/* ── Full-screen meal picker (bottom sheet) ── */}
+      {/* ── Past Weeks panel ── */}
+      {showHistory && weekHistory.length > 0 && (
+        <div className="wv2-history">
+          <h4 className="wv2-history-title">Past Weeks</h4>
+          {weekHistory.map((hw) => {
+            const mealNames = (hw.meals || []).filter(m => m && !m._special).map(m => m.name);
+            return (
+              <div key={hw.id} className="wv2-history-card">
+                <div className="wv2-history-hdr">
+                  <span className="wv2-history-range">{formatWeekRange(hw.weekStart)}</span>
+                  <span className="wv2-history-ago">{getWeeksAgoLabel(hw.weekStart)}</span>
+                </div>
+                <div className="wv2-history-meals">
+                  {mealNames.slice(0, 4).map((name, i) => (
+                    <span key={i} className="wv2-history-chip">{name}</span>
+                  ))}
+                  {mealNames.length > 4 && (
+                    <span className="wv2-history-chip more">+{mealNames.length - 4}</span>
+                  )}
+                </div>
+                <div className="wv2-history-actions">
+                  <button
+                    className="wv2-history-btn"
+                    onClick={() => onRestoreWeek?.(hw.meals)}
+                    title="Restore this entire week"
+                  >
+                    ↩ Restore Week
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Stats strip (condensed) ── */}
+      {(cookingStats.streak > 0 || cookingStats.totalCooked > 0) && (
+        <div className="wv2-stats">
+          {cookingStats.streak > 0 && (
+            <div className="wv2-stat fire">
+              <span className="wv2-stat-n">{cookingStats.streak}</span>
+              <span className="wv2-stat-l">streak</span>
+            </div>
+          )}
+          {cookingStats.totalCooked > 0 && (
+            <div className="wv2-stat">
+              <span className="wv2-stat-n">{cookingStats.totalCooked}</span>
+              <span className="wv2-stat-l">cooked</span>
+            </div>
+          )}
+          {cookingStats.topMeal && (
+            <div className="wv2-stat fav">
+              <span className="wv2-stat-n" title={cookingStats.topMeal.name}>
+                {cookingStats.topMeal.name.length > 10
+                  ? cookingStats.topMeal.name.substring(0, 10) + '…'
+                  : cookingStats.topMeal.name}
+              </span>
+              <span className="wv2-stat-l">top pick</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Meal picker bottom sheet ── */}
       {pickerDay !== null && (
         <div className="pk-overlay" onClick={closePicker}>
           <div className="pk-sheet" onClick={e => e.stopPropagation()}>
@@ -361,6 +405,7 @@ export default function WeekView({
                       <span className="pk-meta">
                         {meal.ingredients?.length || 0} ingredients
                         {meal.category ? ` · ${meal.category}` : ''}
+                        {meal.inRotation && ' · 🔄'}
                       </span>
                     </div>
                     {isCurrent && <span className="pk-badge">current</span>}

@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
-import db, { seedIfEmpty, SEED_DRINKS, importPaprikaMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getCookingLog, processImportQueue } from './db';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import db, { seedIfEmpty, SEED_DRINKS, importPaprikaMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getCookingLog, processImportQueue, getWeekHistory, saveWeekToHistory } from './db';
 import { PAPRIKA_MEALS } from './paprika_import_data';
 import { checkStorageQuota, checkAndRecommendCleanup } from './storageManager';
 import { initializeBackgroundSync } from './backgroundSync';
@@ -67,6 +67,7 @@ export default function App() {
   const [showStorageManager, setShowStorageManager] = useState(false);
   const [storageWarning, setStorageWarning] = useState(null);
   const [sharedContent, setSharedContent] = useState(null); // { mode, url, text } from share-target
+  const [weekHistory, setWeekHistory] = useState([]); // past week plans
 
   // ── Swipe-down-to-dismiss for inline bottom sheets ──────────────────────────
   const storageSwipe = useSwipeDismiss(() => setShowStorageManager(false));
@@ -122,6 +123,7 @@ export default function App() {
     // Restore persisted week plan and grocery list
     loadWeekPlan().then(plan => { if (plan) setWeekPlan(plan); });
     loadGroceryList().then(items => { if (items) setGroceryItems(items); });
+    getWeekHistory().then(history => setWeekHistory(history));
 
     // Check storage quota on startup
     checkStorageQuota()
@@ -136,9 +138,23 @@ export default function App() {
   // Persist week plan whenever it changes (debounced)
   useEffect(() => {
     if (!weekPlan.some(Boolean)) return; // Don't save empty plans
-    const t = setTimeout(() => saveWeekPlan(weekPlan), 300);
+    const t = setTimeout(() => {
+      saveWeekPlan(weekPlan);
+      // Also save to history for the current week
+      const now = new Date();
+      const day = now.getDay();
+      const diff = day === 0 ? -6 : 1 - day;
+      const monday = new Date(now);
+      monday.setDate(monday.getDate() + diff);
+      monday.setHours(0, 0, 0, 0);
+      saveWeekToHistory(monday.toISOString(), weekPlan)
+        .then(() => getWeekHistory().then(h => setWeekHistory(h)));
+    }, 300);
     return () => clearTimeout(t);
   }, [weekPlan]);
+
+  // Compute rotation meals
+  const rotationMeals = useMemo(() => meals.filter(m => m.inRotation), [meals]);
 
   // Persist grocery list whenever it changes
   useEffect(() => {
@@ -292,6 +308,12 @@ export default function App() {
     setWeekPlan(plan);
     setShowSpinner(false);
     showToast('Week plan generated!');
+  }, [showToast]);
+
+  const restoreWeek = useCallback((weekMeals) => {
+    if (!weekMeals || weekMeals.length !== 7) return;
+    setWeekPlan(weekMeals);
+    showToast('Week restored!');
   }, [showToast]);
 
   const respinDay = useCallback((dayIndex) => {
@@ -485,6 +507,9 @@ export default function App() {
             onViewDetail={setDetailItem}
             onBuildGrocery={buildGroceryList}
             cookingStats={cookingStats}
+            weekHistory={weekHistory}
+            onRestoreWeek={restoreWeek}
+            rotationCount={rotationMeals.length}
           />
         )}
         {tab === 'library' && (
@@ -623,6 +648,7 @@ export default function App() {
       {showSpinner && (
         <MealSpinner
           meals={meals}
+          rotationMeals={rotationMeals}
           onComplete={handleSpinnerComplete}
           onClose={() => setShowSpinner(false)}
         />

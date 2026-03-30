@@ -6,32 +6,40 @@ import { useState, useEffect, useRef, useCallback } from 'react';
  * Shows 7 spinning columns (one per day) that resolve to meals.
  * Each column cycles through meal names with easing, stopping sequentially.
  *
+ * Now uses "The Rotation" meals only. Falls back to all meals if rotation is empty.
+ *
  * Props:
- *   meals       - Array of all meals to sample from
- *   onComplete  - callback(plan[7]) when spin finishes — array of 7 meals
- *   onClose     - callback() to dismiss without applying
+ *   meals         - Array of all meals
+ *   rotationMeals - Array of meals in The Rotation (preferred pool)
+ *   onComplete    - callback(plan[7]) when spin finishes — array of 7 meals
+ *   onClose       - callback() to dismiss without applying
  */
-export default function MealSpinner({ meals, onComplete, onClose }) {
+export default function MealSpinner({ meals, rotationMeals, onComplete, onClose }) {
   const [phase, setPhase] = useState('ready');     // 'ready' | 'spinning' | 'done'
   const [columns, setColumns] = useState(Array(7).fill(null)); // final picks
   const [displayNames, setDisplayNames] = useState(Array(7).fill('')); // cycling display
   const intervalsRef = useRef([]);
   const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+  // Determine the pool: rotation meals if we have enough, else all meals
+  const pool = (rotationMeals && rotationMeals.length >= 5)
+    ? rotationMeals
+    : meals;
+
+  const usingRotation = rotationMeals && rotationMeals.length >= 5;
+
   // Build the final plan
   const buildPlan = useCallback(() => {
-    const dinners = meals.filter(m => !m.category || m.category === 'Dinners');
-    const pool = dinners.length >= 5 ? dinners : meals;
     const shuffled = [...pool].sort(() => Math.random() - 0.5);
     return Array.from({ length: 7 }, (_, i) => shuffled[i % shuffled.length]);
-  }, [meals]);
+  }, [pool]);
 
   const startSpin = useCallback(() => {
-    if (meals.length < 5) return;
+    if (pool.length < 5) return;
     setPhase('spinning');
 
     const plan = buildPlan();
-    const names = meals.map(m => m.name);
+    const names = pool.map(m => m.name);
     const newDisplay = Array(7).fill('');
 
     // Clear any existing intervals
@@ -41,13 +49,12 @@ export default function MealSpinner({ meals, onComplete, onClose }) {
     // Start each column spinning, stopping sequentially
     for (let col = 0; col < 7; col++) {
       let tick = 0;
-      const speed = 60 + col * 8; // slightly slower each column
-      const stopAt = 15 + col * 8; // staggered stop times
+      const speed = 60 + col * 8;
+      const stopAt = 15 + col * 8;
 
       const interval = setInterval(() => {
         tick++;
         if (tick >= stopAt) {
-          // Stop this column — show final result
           clearInterval(interval);
           setDisplayNames(prev => {
             const next = [...prev];
@@ -59,12 +66,10 @@ export default function MealSpinner({ meals, onComplete, onClose }) {
             next[col] = plan[col];
             return next;
           });
-          // If last column, mark done
           if (col === 6) {
             setTimeout(() => setPhase('done'), 400);
           }
         } else {
-          // Cycle through random names
           const randomName = names[Math.floor(Math.random() * names.length)];
           setDisplayNames(prev => {
             const next = [...prev];
@@ -76,7 +81,7 @@ export default function MealSpinner({ meals, onComplete, onClose }) {
 
       intervalsRef.current.push(interval);
     }
-  }, [meals, buildPlan]);
+  }, [pool, buildPlan]);
 
   // Cleanup intervals on unmount
   useEffect(() => {
@@ -100,6 +105,19 @@ export default function MealSpinner({ meals, onComplete, onClose }) {
             {phase === 'done' && 'Your Week!'}
           </h2>
           <button className="spinner-close" onClick={onClose}>&#10005;</button>
+        </div>
+
+        {/* Source indicator */}
+        <div className="spinner-source">
+          {usingRotation ? (
+            <span className="spinner-source-badge rotation">🔄 From The Rotation ({rotationMeals.length} meals)</span>
+          ) : (
+            <span className="spinner-source-badge all">
+              {rotationMeals && rotationMeals.length > 0 && rotationMeals.length < 5
+                ? `⚠️ Need 5+ in Rotation (have ${rotationMeals.length}) — using all meals`
+                : '📚 Using all meals (add 5+ to The Rotation to filter)'}
+            </span>
+          )}
         </div>
 
         {/* Slot machine display */}
@@ -131,8 +149,8 @@ export default function MealSpinner({ meals, onComplete, onClose }) {
         {/* Actions */}
         <div className="spinner-actions">
           {phase === 'ready' && (
-            <button className="spinner-btn primary" onClick={startSpin}>
-              Spin!
+            <button className="spinner-btn primary" onClick={startSpin} disabled={pool.length < 5}>
+              {pool.length < 5 ? `Need ${5 - pool.length} more meals` : 'Spin!'}
             </button>
           )}
           {phase === 'spinning' && (

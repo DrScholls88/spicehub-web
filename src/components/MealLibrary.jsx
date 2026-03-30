@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { downloadMealsFile, importMealsFromJson, shareMealsFile } from '../sync';
 import { proxyImageUrl } from '../api';
+import { toggleRotation, bulkSetRotation } from '../db';
 
 // Image component with CORS proxy fallback for expired CDN URLs
 function CardImage({ src, alt, className, phClass }) {
@@ -28,7 +29,7 @@ function CardImage({ src, alt, className, phClass }) {
   );
 }
 
-export const MEAL_CATEGORIES = ['All', 'Dinners', 'Breakfasts', 'Lunches', 'Desserts', 'Sides', 'Tailgate', 'Snacks'];
+export const MEAL_CATEGORIES = ['All', '🔄 The Rotation', 'Dinners', 'Breakfasts', 'Lunches', 'Desserts', 'Sides', 'Tailgate', 'Snacks'];
 
 export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDetail, onShare, onImport, onReload, onToast, onToggleFavorite, onRate }) {
   const [search, setSearch] = useState('');
@@ -44,9 +45,14 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
 
   const filtered = meals.filter(m => {
     const matchSearch = m.name.toLowerCase().includes(search.toLowerCase());
-    const matchCat = category === 'All' || (m.category || 'Dinners').toLowerCase() === category.toLowerCase();
+    let matchCat;
+    if (category === 'All') matchCat = true;
+    else if (category === '🔄 The Rotation') matchCat = !!m.inRotation;
+    else matchCat = (m.category || 'Dinners').toLowerCase() === category.toLowerCase();
     return matchSearch && matchCat;
   });
+
+  const rotationCount = meals.filter(m => m.inRotation).length;
 
   // Sort with favorites first
   const sorted = [...filtered].sort((a, b) => {
@@ -163,6 +169,22 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
     }, 500);
   };
 
+  // ── Rotation handler ─────────────────────────────────────────────────────────
+  const handleToggleRotation = useCallback(async (meal) => {
+    const newVal = !meal.inRotation;
+    await toggleRotation(meal.id, newVal);
+    onReload?.();
+    onToast?.(newVal ? `Added "${meal.name}" to The Rotation` : `Removed "${meal.name}" from The Rotation`);
+  }, [onReload, onToast]);
+
+  const handleBatchAddToRotation = useCallback(async () => {
+    if (selectedIds.size === 0) return;
+    await bulkSetRotation([...selectedIds], true);
+    onReload?.();
+    onToast?.(`Added ${selectedIds.size} meal${selectedIds.size !== 1 ? 's' : ''} to The Rotation`);
+    exitSelectMode();
+  }, [selectedIds, onReload, onToast]);
+
   return (
     <div className="ml">
       {/* ── Search bar with pill style ── */}
@@ -182,10 +204,10 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
           {MEAL_CATEGORIES.map(c => (
             <button
               key={c}
-              className={`ml-category-chip${category === c ? ' ml-active' : ''}`}
+              className={`ml-category-chip${category === c ? ' ml-active' : ''}${c === '🔄 The Rotation' ? ' ml-rotation-chip' : ''}`}
               onClick={() => setCategory(c)}
             >
-              {c}
+              {c}{c === '🔄 The Rotation' && rotationCount > 0 ? ` (${rotationCount})` : ''}
             </button>
           ))}
         </div>
@@ -197,6 +219,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
           <button className="ml-select-toolbar-btn" onClick={exitSelectMode}>✕ Cancel</button>
           <span className="ml-select-count">{selectedIds.size} selected</span>
           <button className="ml-select-toolbar-btn" onClick={handleSelectAll}>Select All</button>
+          <button className="ml-select-toolbar-btn" onClick={handleBatchAddToRotation} disabled={selectedIds.size === 0}>🔄 Add to Rotation</button>
           <button className="ml-select-toolbar-btn" onClick={handleBatchShare} disabled={selectedIds.size === 0}>📤 Share</button>
           <button className="ml-select-toolbar-btn ml-select-delete" onClick={handleBatchDelete} disabled={selectedIds.size === 0}>🗑️ Delete</button>
         </div>
@@ -245,6 +268,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
               <div className="ml-tile-image">
                 <CardImage src={meal.imageUrl} alt={meal.name} className="ml-tile-img" phClass="ml-tile-placeholder" />
                 {meal.isFavorite && <span className="ml-tile-fav">❤️</span>}
+                {meal.inRotation && <span className="ml-tile-rotation">🔄</span>}
                 {meal.category && meal.category !== 'Dinners' && (
                   <span className="ml-tile-cat">{meal.category}</span>
                 )}
@@ -317,6 +341,9 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
               </button>
               <button onClick={() => { onShare(quickPreview); }}>
                 Share
+              </button>
+              <button onClick={() => { handleToggleRotation(quickPreview); setQuickPreview(null); }}>
+                {quickPreview.inRotation ? '🔄 Remove from Rotation' : '🔄 Add to Rotation'}
               </button>
               {onToggleFavorite && (
                 <button onClick={() => { onToggleFavorite(quickPreview); setQuickPreview(null); }}>
