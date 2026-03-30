@@ -246,15 +246,25 @@ export default function App() {
           mode = 'url';
           contentData = { mode, url: sharedUrl, title: sharedTitle };
         } else if (sharedText) {
-          // Check if shared text looks like a URL
           const textTrimmed = sharedText.trim();
+          // Check if shared text IS a URL or CONTAINS a URL
           if (textTrimmed.startsWith('http://') || textTrimmed.startsWith('https://')) {
+            // Text starts with URL — extract the first URL
+            const urlMatch = textTrimmed.match(/https?:\/\/[^\s]+/);
             mode = 'url';
-            contentData = { mode, url: textTrimmed, title: sharedTitle };
+            contentData = { mode, url: urlMatch ? urlMatch[0] : textTrimmed, title: sharedTitle };
           } else {
-            // Plain text — likely recipe instructions/ingredients
-            mode = 'paste';
-            contentData = { mode, text: textTrimmed, title: sharedTitle };
+            // Check if text contains a URL mixed with other text
+            // (common on Android: "Check out this recipe https://instagram.com/reel/...")
+            const urlMatch = textTrimmed.match(/https?:\/\/[^\s]+/);
+            if (urlMatch) {
+              mode = 'url';
+              contentData = { mode, url: urlMatch[0], title: sharedTitle };
+            } else {
+              // Pure text — likely recipe instructions/ingredients
+              mode = 'paste';
+              contentData = { mode, text: textTrimmed, title: sharedTitle };
+            }
           }
         }
 

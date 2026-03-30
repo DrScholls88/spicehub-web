@@ -494,8 +494,9 @@ body {
   position: fixed; inset: 0; background: rgba(0,0,0,0.55);
   display: flex; align-items: flex-end; justify-content: center;
   z-index: 1000; padding: 0;
-  overflow: hidden;
+  overflow-y: auto;
   overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .modal-content {
   background: var(--card); border-radius: 20px 20px 0 0;
@@ -503,6 +504,8 @@ body {
   padding: 20px 20px 32px;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+  /* Ensure modal always has a minimum render area */
+  min-height: 200px;
 }
 .modal-header {
   display: flex; justify-content: space-between; align-items: flex-start;
@@ -566,11 +569,13 @@ body {
 
 /* Expand modal when BrowserAssist is active */
 .import-browser-assist {
-  padding: 12px;
+  padding: 8px;
   background: #f9f9f9;
   border-radius: var(--radius);
-  margin-bottom: 12px;
-  min-height: 50vh;
+  margin-bottom: 8px;
+  min-height: 55vh;
+  /* Allow the BrowserAssist container to use as much space as possible */
+  flex: 1;
 }
 
 .import-tabs {
@@ -1099,7 +1104,8 @@ body {
 /* ── Editable Import Preview ── */
 .preview-detail-list {
   display: flex; flex-direction: column; gap: 16px;
-  max-height: 65vh; overflow-y: auto; overflow-x: hidden; padding: 4px 0;
+  overflow-x: hidden; padding: 4px 0;
+  /* Let the parent .modal-content handle scrolling to avoid nested scroll conflicts on mobile */
   -webkit-overflow-scrolling: touch;
   scroll-behavior: smooth;
   scrollbar-width: thin;
@@ -1391,6 +1397,13 @@ body {
 
 .modal-slide-up {
   animation: modal-slide-up 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ── Swipe-to-dismiss handle (pill indicator on bottom sheets) ── */
+.detail-swipe-handle {
+  width: 36px; height: 5px;
+  background: rgba(0,0,0,0.15); border-radius: 3px;
+  margin: -8px auto 10px; flex-shrink: 0;
 }
 
 /* ── Button hover micro-interactions ── */
@@ -1779,6 +1792,7 @@ body {
 
 /* ── Individual gallery tile ── */
 .ml-tile {
+  position: relative;
   background: var(--card);
   border-radius: 12px;
   overflow: hidden;
@@ -2019,6 +2033,47 @@ body {
   background: rgba(0, 0, 0, 0.06);
   transform: scale(0.93);
 }
+
+/* ── Multi-select mode ── */
+.ml-select-toolbar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; margin: 0 -12px 8px;
+  background: var(--primary); color: white;
+  border-radius: 10px; flex-wrap: wrap;
+  position: sticky; top: 0; z-index: 95;
+}
+.ml-select-toolbar-btn {
+  background: rgba(255,255,255,0.2); border: none; color: white;
+  padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+.ml-select-toolbar-btn:active { background: rgba(255,255,255,0.35); }
+.ml-select-toolbar-btn:disabled { opacity: 0.4; }
+.ml-select-delete { background: rgba(255,60,60,0.6); }
+.ml-select-delete:active { background: rgba(255,60,60,0.8); }
+.ml-select-count { font-size: 13px; font-weight: 700; flex: 1; text-align: center; }
+
+.ml-tile-selected {
+  outline: 3px solid var(--primary);
+  outline-offset: -3px;
+  border-radius: 12px;
+}
+.ml-tile-selected .ml-tile-image::after {
+  content: ''; position: absolute; inset: 0;
+  background: rgba(230,81,0,0.12); border-radius: 12px 12px 0 0;
+  pointer-events: none;
+}
+.ml-tile-check {
+  position: absolute; top: 8px; left: 8px; z-index: 5;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: var(--primary); color: white;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 700;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+  border: 2px solid white;
+}
+.ml-tile-check:empty { background: rgba(255,255,255,0.7); border: 2px solid rgba(0,0,0,0.25); }
 
 /* ── Bottom sheet overlay (shared for both dialogs) ── */
 .ml-overlay {
@@ -4478,8 +4533,8 @@ body {
 }
 
 .browser-assist-iframe-container {
-  height: 70vh;
-  min-height: 500px;
+  height: 75vh;
+  min-height: 550px;
   overflow: auto;
   background: #f5f5f5;
   border-bottom: 1px solid var(--border);
@@ -4503,17 +4558,17 @@ body {
   user-select: text;
 }
 
-/* Mobile: increase iframe height even more */
+/* Mobile: maximize iframe height for better content visibility */
 @media (max-width: 768px) {
   .browser-assist-iframe-container {
-    height: 75vh;
+    height: 80vh;
     min-height: 600px;
   }
 }
 
 @media (max-width: 480px) {
   .browser-assist-iframe-container {
-    height: 80vh;
+    height: 85vh;
     min-height: 650px;
   }
 }
@@ -4634,8 +4689,9 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 400px;
+  max-height: 55vh;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding: 4px 0;
 }
 

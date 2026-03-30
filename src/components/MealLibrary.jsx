@@ -36,6 +36,8 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [showOptionsSheet, setShowOptionsSheet] = useState(false);
   const [quickPreview, setQuickPreview] = useState(null); // meal object for popup
+  const [selectMode, setSelectMode] = useState(false); // multi-select mode
+  const [selectedIds, setSelectedIds] = useState(new Set()); // selected meal IDs
   const restoreRef = useRef(null);
   const categoryScrollRef = useRef(null);
   const longPressTimer = useRef(null);
@@ -92,6 +94,75 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
     }
   };
 
+  // ── Multi-select handlers ──────────────────────────────────────────────────
+  const toggleSelect = (mealId) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(mealId)) next.delete(mealId);
+      else next.add(mealId);
+      // Exit select mode if nothing is selected
+      if (next.size === 0) setSelectMode(false);
+      return next;
+    });
+  };
+
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+  };
+
+  const handleSelectAll = () => {
+    setSelectedIds(new Set(sorted.map(m => m.id)));
+  };
+
+  const handleBatchDelete = () => {
+    if (selectedIds.size === 0) return;
+    const count = selectedIds.size;
+    if (!window.confirm(`Delete ${count} meal${count !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+    for (const id of selectedIds) {
+      onDelete(id);
+    }
+    onToast?.(`Deleted ${count} meal${count !== 1 ? 's' : ''}`);
+    exitSelectMode();
+  };
+
+  const handleBatchShare = async () => {
+    if (selectedIds.size === 0) return;
+    const selected = meals.filter(m => selectedIds.has(m.id));
+    if (selected.length === 1) {
+      onShare(selected[0]);
+    } else {
+      // Share as JSON for multiple meals
+      const shareData = selected.map(m => ({
+        name: m.name,
+        ingredients: m.ingredients,
+        directions: m.directions,
+        category: m.category,
+        imageUrl: m.imageUrl,
+      }));
+      const text = selected.map(m => `${m.name}\n\nIngredients:\n${m.ingredients.join('\n')}\n\nDirections:\n${m.directions.join('\n')}`).join('\n\n---\n\n');
+      if (navigator.share) {
+        try {
+          await navigator.share({ title: `${selected.length} SpiceHub Recipes`, text });
+        } catch { /* cancelled */ }
+      } else {
+        await navigator.clipboard?.writeText(text);
+        onToast?.(`${selected.length} recipes copied to clipboard`);
+      }
+    }
+    exitSelectMode();
+  };
+
+  // Enter multi-select via long-press on a tile (when not already in select mode)
+  const handleLongPressSelect = (meal) => {
+    longPressTimer.current = setTimeout(() => {
+      if (!selectMode) {
+        setSelectMode(true);
+        setSelectedIds(new Set([meal.id]));
+      }
+    }, 500);
+  };
+
   return (
     <div className="ml">
       {/* ── Search bar with pill style ── */}
@@ -120,6 +191,17 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
         </div>
       </div>
 
+      {/* ── Multi-select toolbar ── */}
+      {selectMode && (
+        <div className="ml-select-toolbar">
+          <button className="ml-select-toolbar-btn" onClick={exitSelectMode}>✕ Cancel</button>
+          <span className="ml-select-count">{selectedIds.size} selected</span>
+          <button className="ml-select-toolbar-btn" onClick={handleSelectAll}>Select All</button>
+          <button className="ml-select-toolbar-btn" onClick={handleBatchShare} disabled={selectedIds.size === 0}>📤 Share</button>
+          <button className="ml-select-toolbar-btn ml-select-delete" onClick={handleBatchDelete} disabled={selectedIds.size === 0}>🗑️ Delete</button>
+        </div>
+      )}
+
       {/* ── Gallery grid (Notion-style tiles) ── */}
       <div className="ml-gallery">
         {filtered.length === 0 ? (
@@ -135,14 +217,30 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
           sorted.map((meal, idx) => (
             <div
               key={meal.id}
-              className="ml-tile"
+              className={`ml-tile${selectMode && selectedIds.has(meal.id) ? ' ml-tile-selected' : ''}`}
               style={{ animationDelay: `${idx * 30}ms` }}
-              onClick={() => onViewDetail(meal)}
-              onTouchStart={() => handleTouchStart(meal)}
+              onClick={() => {
+                if (selectMode) {
+                  toggleSelect(meal.id);
+                } else {
+                  onViewDetail(meal);
+                }
+              }}
+              onTouchStart={() => selectMode ? null : handleLongPressSelect(meal)}
               onTouchEnd={handleTouchEnd}
               onTouchCancel={handleTouchEnd}
-              onContextMenu={e => { e.preventDefault(); setQuickPreview(meal); }}
+              onContextMenu={e => {
+                e.preventDefault();
+                if (selectMode) { toggleSelect(meal.id); }
+                else { setQuickPreview(meal); }
+              }}
             >
+              {/* Select checkbox overlay in select mode */}
+              {selectMode && (
+                <div className="ml-tile-check">
+                  <span>{selectedIds.has(meal.id) ? '✓' : ''}</span>
+                </div>
+              )}
               {/* Image */}
               <div className="ml-tile-image">
                 <CardImage src={meal.imageUrl} alt={meal.name} className="ml-tile-img" phClass="ml-tile-placeholder" />

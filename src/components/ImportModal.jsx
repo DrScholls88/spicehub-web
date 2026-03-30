@@ -22,7 +22,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState('');
   const [error, setError] = useState('');
-  const [preview, setPreview] = useState(null);
+  const [preview, setPreview] = useState(null);  // null = not yet, [] would mean "checked, found nothing"
   const [socialDetected, setSocialDetected] = useState(null);
   const [pasteText, setPasteText] = useState('');
   const [pasteLink, setPasteLink] = useState('');
@@ -66,17 +66,22 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
 
   // ── Auto-extract when shared URL is set and modal opens ──
   useEffect(() => {
-    if (sharedContent?.mode === 'url' && sharedContent?.url && !preview.length && !importing) {
+    if (sharedContent?.mode === 'url' && sharedContent?.url && !preview && !importing) {
       console.log('[ImportModal] Auto-triggering extraction for shared URL:', sharedContent.url);
+      setUrl(sharedContent.url);
+      // Auto-detect social platform for badge display
+      if (isSocialMediaUrl(sharedContent.url)) {
+        setSocialDetected({ platform: getSocialPlatform(sharedContent.url) });
+      }
       setImporting(true);
       setImportProgress('Extracting recipe...');
       // Defer to avoid blocking render
       const timer = setTimeout(() => {
         performUrlExtraction(sharedContent.url);
-      }, 0);
+      }, 100);
       return () => clearTimeout(timer);
     }
-  }, [sharedContent?.url, preview.length, importing]);
+  }, [sharedContent?.url, preview, importing]);
 
   // ── URL field change ──────────────────────────────────────────────────────────
   const handleUrlChange = (e) => {

@@ -4,9 +4,15 @@ import { useEffect, useRef, useCallback } from 'react';
 const backStack = [];
 let isHandlingPopstate = false;
 
+// Track whether we're programmatically calling history.back() (to prevent double-fire)
+let isProgrammaticBack = false;
+
 // Initialize global popstate listener (runs once at module load)
 if (typeof window !== 'undefined') {
   window.addEventListener('popstate', (e) => {
+    // Skip if this popstate was triggered by our own programmatic history.back()
+    if (isProgrammaticBack) return;
+
     // Check if this is a SpiceHub modal state
     if (backStack.length > 0) {
       isHandlingPopstate = true;
@@ -17,7 +23,7 @@ if (typeof window !== 'undefined') {
       // Small delay to let React state update before allowing new popstate
       setTimeout(() => {
         isHandlingPopstate = false;
-      }, 50);
+      }, 100);
     }
   });
 }
@@ -56,7 +62,11 @@ export default function useBackHandler(active, onBack, id = 'modal') {
       const idx = backStack.findIndex((h) => h.pushId === pushIdRef.current);
       if (idx !== -1) {
         backStack.splice(idx, 1);
+        // Flag that this history.back() is ours so popstate listener skips it
+        isProgrammaticBack = true;
         history.back(); // Pop our state — won't trigger callback
+        // Reset after browser processes the history change
+        setTimeout(() => { isProgrammaticBack = false; }, 100);
       }
       pushIdRef.current = null;
     }

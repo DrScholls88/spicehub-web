@@ -31,7 +31,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
   const [autoRecipe, setAutoRecipe] = useState(null); // auto-extracted recipe for preview
   const [loadingDots, setLoadingDots] = useState('');
   const [queuedRecipe, setQueuedRecipe] = useState(null); // offline queued recipe
-  const [iframeZoom, setIframeZoom] = useState(100); // zoom level percentage
+  const [iframeZoom, setIframeZoom] = useState(80); // zoom level percentage — start zoomed out so users can see more text
   const iframeRef = useRef(null);
   const extractionRef = useRef(null);
 
@@ -456,15 +456,32 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
           </div>
 
           <div className="browser-assist-preview-card">
-            {/* Title */}
-            <div className="preview-detail-title-zone">
-              <label className="preview-label">Recipe Name</label>
-              <input
-                type="text"
-                className="preview-title-input"
-                value={autoRecipe.name || ''}
-                onChange={e => updatePreviewField('name', e.target.value)}
-              />
+            {/* Image + Title header */}
+            <div className="preview-detail-header">
+              {autoRecipe.imageUrl ? (
+                <img
+                  src={autoRecipe.imageUrl}
+                  alt=""
+                  className="preview-detail-thumb"
+                  onError={e => {
+                    if (!e.target.dataset.proxied) {
+                      e.target.dataset.proxied = '1';
+                      e.target.src = proxyImageUrl(autoRecipe.imageUrl);
+                    } else {
+                      e.target.style.display = 'none';
+                    }
+                  }}
+                />
+              ) : null}
+              <div className="preview-detail-title-zone">
+                <label className="preview-label">Recipe Name</label>
+                <input
+                  type="text"
+                  className="preview-title-input"
+                  value={autoRecipe.name || ''}
+                  onChange={e => updatePreviewField('name', e.target.value)}
+                />
+              </div>
             </div>
 
             {/* Ingredients */}
