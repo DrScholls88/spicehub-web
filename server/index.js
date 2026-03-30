@@ -724,39 +724,114 @@ app.get('/api/ytdlp-status', async (req, res) => {
 // Uses yt-dlp to get metadata and subtitles without downloading the video.
 // Zero cost — no AI, no API keys required.
 //
-// Returns:
-//   { ok, title, description, thumbnail, subtitles (cleaned text), sourceUrl }
+// Returns structured data optimized for recipe parsing:
+//   { ok, type, title, description, thumbnail, uploader, duration,
+//     subtitleText, combinedText, hasSubtitles, sourceUrl,
+//     platform, isShortForm, parsedRecipe }
+//
+// Optional Whisper path (progressive enhancement):
+//   If WHISPER_ENABLED=true and no subtitles found, could transcribe audio.
+//   Currently stubbed — uncomment when Whisper integration is desired.
 app.post('/api/extract-video', async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ ok: false, error: 'URL required' });
 
   console.log(`[extract-video] Processing: ${url}`);
 
-  // 1. Get metadata
+  // Detect platform for frontend UX hints
+  let platform = 'unknown';
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '');
+    if (host.includes('instagram')) platform = 'instagram';
+    else if (host.includes('tiktok')) platform = 'tiktok';
+    else if (host.includes('youtube') || host === 'youtu.be') platform = 'youtube';
+    else if (host.includes('facebook') || host === 'fb.watch') platform = 'facebook';
+    else if (host.includes('vimeo')) platform = 'vimeo';
+  } catch {}
+
+  // 1. For Instagram, try embed page first (fast, no yt-dlp needed)
+  if (platform === 'instagram') {
+    const embedResult = await extractInstagramEmbed(url);
+    if (embedResult && embedResult.ok && embedResult.caption && embedResult.caption.length > 30) {
+      console.log(`[extract-video] Instagram embed succeeded — ${embedResult.caption.length} chars`);
+      return res.json({
+        ok: true,
+        type: 'video-meta',
+        title: embedResult.title || '',
+        description: embedResult.caption || '',
+        thumbnail: embedResult.imageUrl || '',
+        uploader: '',
+        duration: 0,
+        subtitleText: '',
+        combinedText: embedResult.caption || '',
+        hasSubtitles: false,
+        sourceUrl: url,
+        platform,
+        isShortForm: true,
+        extractedVia: 'instagram-embed',
+      });
+    }
+  }
+
+  // 2. Get metadata via yt-dlp
   const meta = await extractVideoMeta(url);
   if (!meta) {
     return res.json({
       ok: false,
       error: 'Could not extract video metadata. yt-dlp may not be installed or the URL may not be supported.',
+      platform,
     });
   }
 
   console.log(`[extract-video] Metadata: "${meta.title}" by ${meta.uploader} (${meta.duration}s)`);
 
-  // 2. Try to download subtitles
+  // Detect short-form video (Reels, Shorts, TikTok — typically < 3 min)
+  const isShortForm = meta.duration > 0 && meta.duration < 180;
+
+  // 3. Try to download subtitles
   const subtitleText = await downloadSubtitles(url, meta);
 
-  // 3. Combine description + subtitles for best results
-  // The description often has ingredients, subtitles have spoken directions
+  // ── Optional: Whisper audio transcription (progressive enhancement) ──
+  // Uncomment the block below to enable audio-only + Whisper transcription
+  // when no subtitles are available. Requires:
+  //   - WHISPER_ENABLED=true in environment
+  //   - Either: OpenAI API key (OPENAI_API_KEY) for cloud Whisper
+  //   - Or: local whisper binary (whisper.cpp or openai-whisper)
+  //
+  // let whisperText = null;
+  // if (!subtitleText && process.env.WHISPER_ENABLED === 'true') {
+  //   try {
+  //     console.log('[extract-video] No subtitles — trying Whisper transcription...');
+  //     const audioPath = await downloadAudioOnly(url); // yt-dlp -x --audio-format mp3
+  //     if (audioPath) {
+  //       if (process.env.OPENAI_API_KEY) {
+  //         // Cloud Whisper via OpenAI API
+  //         whisperText = await transcribeWithOpenAI(audioPath);
+  //       } else {
+  //         // Local Whisper binary fallback
+  //         whisperText = await transcribeWithLocalWhisper(audioPath);
+  //       }
+  //       // Cleanup audio file
+  //       try { fs.unlinkSync(audioPath); } catch {}
+  //     }
+  //   } catch (e) {
+  //     console.log(`[extract-video] Whisper transcription failed: ${e.message}`);
+  //   }
+  // }
+  // const transcriptText = subtitleText || whisperText || '';
+  const transcriptText = subtitleText || '';
+
+  // 4. Combine description + transcript for best results
+  // Mealie pattern: description has ingredients, transcript has spoken directions
   let combinedText = '';
   if (meta.description && meta.description.length > 30) {
-    combinedText = meta.description;
+    combinedText = stripSocialMetaPrefix(meta.description);
   }
-  if (subtitleText) {
+  if (transcriptText) {
     if (combinedText) {
-      combinedText += '\n\nTranscript:\n' + subtitleText;
+      combinedText += '\n\nTranscript:\n' + transcriptText;
     } else {
-      combinedText = subtitleText;
+      combinedText = transcriptText;
     }
   }
 
@@ -764,14 +839,17 @@ app.post('/api/extract-video', async (req, res) => {
     ok: true,
     type: 'video-meta',
     title: meta.title || '',
-    description: meta.description || '',
+    description: stripSocialMetaPrefix(meta.description || ''),
     thumbnail: meta.thumbnail || '',
     uploader: meta.uploader || '',
     duration: meta.duration || 0,
-    subtitleText: subtitleText || '',
-    combinedText: combinedText || meta.description || '',
-    hasSubtitles: !!subtitleText,
+    subtitleText: transcriptText,
+    combinedText: combinedText || stripSocialMetaPrefix(meta.description || ''),
+    hasSubtitles: !!transcriptText,
     sourceUrl: meta.webpage_url || url,
+    platform,
+    isShortForm,
+    extractedVia: transcriptText ? 'yt-dlp-subtitles' : 'yt-dlp-metadata',
   });
 });
 

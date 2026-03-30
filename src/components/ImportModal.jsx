@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { parseFromUrl, isSocialMediaUrl, getSocialPlatform, parseCaption, isInstagramUrl, resetServerDetection, extractWithBrowserAPI, resolveShortUrl, isShortUrl, extractUrlsFromText } from '../recipeParser';
+import { parseFromUrl, isSocialMediaUrl, getSocialPlatform, parseCaption, isInstagramUrl, resetServerDetection, extractWithBrowserAPI, resolveShortUrl, isShortUrl, extractUrlsFromText, tryVideoExtraction } from '../recipeParser';
 import BrowserAssist from './BrowserAssist';
 
 /**
@@ -180,6 +180,24 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       // ── Non-Instagram URLs ──
       setError('');
       setBrowserAssistMode('off');
+
+      // For social/video URLs, try the dedicated video extraction endpoint first
+      // This gives faster results via yt-dlp metadata + subtitles
+      if (isSocialMediaUrl(trimmedUrl)) {
+        setImportProgress('Extracting video metadata...');
+        try {
+          const videoResult = await tryVideoExtraction(trimmedUrl, (progress) => {
+            setImportProgress(progress);
+          });
+          if (videoResult && !videoResult._error && videoResult.ingredients?.[0] !== 'See original post for ingredients') {
+            setPreview([videoResult]);
+            setImporting(false);
+            setImportProgress('');
+            return;
+          }
+        } catch { /* fall through to parseFromUrl */ }
+      }
+
       setImportProgress('Extracting recipe...');
       const result = await parseFromUrl(trimmedUrl, (progress) => {
         setImportProgress(progress);

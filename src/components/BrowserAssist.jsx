@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins } from '../recipeParser';
+import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins, isSocialMediaUrl, tryVideoExtraction } from '../recipeParser';
 import { fetchHtmlViaProxy, proxyImageUrl } from '../api';
 import { queueRecipeImport } from '../db';
 import useOnlineStatus from '../hooks/useOnlineStatus';
@@ -114,6 +114,33 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
 
     (async () => {
       try {
+        // ── NEW: Try dedicated video extraction endpoint first for social/video URLs ──
+        // This is faster than HTML fetch + parsing for platforms yt-dlp supports
+        if (isSocialMediaUrl(url)) {
+          try {
+            const videoResult = await tryVideoExtraction(url);
+            if (!cancelled && videoResult && !videoResult._error) {
+              // If we got real ingredients (not just "See original post"), use it
+              if (videoResult.ingredients?.[0] !== 'See original post for ingredients') {
+                setAutoRecipe({
+                  name: videoResult.name || 'Imported Recipe',
+                  ingredients: videoResult.ingredients || [],
+                  directions: videoResult.directions || [],
+                  imageUrl: videoResult.imageUrl || '',
+                  link: videoResult.link || url,
+                });
+                setPhase('preview');
+                return;
+              }
+              // Partial result — continue to HTML extraction but keep video data as fallback
+            }
+          } catch {
+            // Video endpoint not available or failed — continue to HTML extraction
+            console.log('[BrowserAssist] Video extraction unavailable, falling back to HTML fetch');
+          }
+          if (cancelled) return;
+        }
+
         // Build URL variants to try
         const urls = [url];
         const shortcodeMatch = url.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);

@@ -206,14 +206,25 @@ export function parseCaption(text) {
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
-  // PASS 1.5: Handle YouTube timestamp format (e.g. "2:30 - Add the garlic")
-  // Convert timestamps into step separators
+  // PASS 1.5: Handle video timestamp formats from multiple platforms
+  // YouTube: "2:30 - Add the garlic" / "2:30 Add the garlic"
+  // TikTok: timestamps in descriptions
+  // Also handles "0:00 Intro\n0:30 Ingredients\n2:00 Steps" style chapter lists
   text = text.replace(/^(\d{1,2}:\d{2}(?::\d{2})?)\s*[-–—:]\s*/gm, '');
-  // Also handle "0:00 Intro\n0:30 Ingredients\n2:00 Steps" style descriptions
   const timestampLines = text.match(/^\d{1,2}:\d{2}(?::\d{2})?\s+.+$/gm);
   if (timestampLines && timestampLines.length >= 3) {
-    // This looks like a YouTube chapter list — convert to structured text
+    // This looks like a chapter list — convert to structured text
     text = text.replace(/^(\d{1,2}:\d{2}(?::\d{2})?)\s+/gm, '');
+  }
+  // Strip inline timestamps within sentences (common in auto-generated descriptions)
+  // e.g. "at 2:30 add the garlic" → "add the garlic"
+  text = text.replace(/\bat\s+\d{1,2}:\d{2}(?::\d{2})?\s*/gi, '');
+
+  // PASS 1.55: Strip common video description filler (social links, credits, music)
+  // These often appear at the end of video descriptions and pollute recipe parsing
+  const fillerIdx = text.search(/\n\s*(?:follow me|subscribe|music:|song:|audio:|outfit:|shop:|affiliate|use code|discount|sponsored|#\w+\s*\n)/i);
+  if (fillerIdx > 50) {
+    text = text.substring(0, fillerIdx).trim();
   }
 
   // PASS 1.6: Handle abbreviated social media recipe formats
@@ -387,15 +398,30 @@ function parseSpeechTranscript(text) {
   const directions = [];
   let title = null;
 
-  // Split transcript into sentences
+  // Pre-process: clean up common transcript artifacts
+  text = text
+    // Remove [Music], [Applause], etc. markers that survive subtitle cleaning
+    .replace(/\[[\w\s]+\]/g, '')
+    // Normalize whitespace
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  // Split transcript into sentences — handle both period-separated and natural speech
   const sentences = text
     .replace(/([.!?])\s+/g, '$1\n')
+    // Also split on "so" / "and then" / "now" when they start a new thought after a pause
+    .replace(/\.\s*(so|and then|now|next|then|after that|once)\s/gi, '.\n$1 ')
     .split('\n')
     .map(s => s.trim())
     .filter(s => s.length > 3);
 
-  // Filter out common filler/intro phrases
-  const FILLER_RE = /^(hey|hi|hello|what's up|welcome|subscribe|like and subscribe|follow me|link in bio|comment below|check out|don't forget|make sure to|hit that|smash that|thanks for watching|see you|bye|peace)/i;
+  // Filter out common filler/intro phrases (expanded for video content)
+  const FILLER_RE = /^(hey|hi|hello|what's up|welcome|subscribe|like and subscribe|follow me|link in bio|comment below|check out|don't forget|make sure to|hit that|smash that|thanks for watching|see you|bye|peace|what's going on|how's it going|good morning|good evening|today I'm|today we're going|in this video|in today's video|let me know|drop a comment|tag a friend|save this|share this|if you enjoyed|if you liked|new video|go ahead and)/i;
+
+  // Phase 1: Extract ingredient mentions from spoken content
+  // Spoken recipes often embed ingredients within instructions like
+  // "grab two cups of flour and a teaspoon of salt"
+  const SPOKEN_INGREDIENT_RE = /(\d[\d./]*\s+(?:cups?|tbsp|tsp|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|grams?|g\b|kg|ml|liters?|pinch|dash|cloves?|cans?|packages?|sticks?|slices?|pieces?)\s+(?:of\s+)?[\w\s]+?)(?:[,.]|\s+and\s+|\s+then\s+|$)/gi;
 
   for (let i = 0; i < sentences.length; i++) {
     const s = sentences[i];
@@ -403,10 +429,13 @@ function parseSpeechTranscript(text) {
     // Skip filler
     if (FILLER_RE.test(s)) continue;
 
+    // Skip very short non-content fragments
+    if (s.length < 5) continue;
+
     // Extract title from first meaningful sentence if short enough
     if (title === null && s.length < 80 && !looksLikeIngredient(s) && !FILLER_RE.test(s)) {
       // Check if it sounds like a recipe name: "Today we're making X" / "This is my X recipe"
-      const nameMatch = s.match(/(?:mak(?:e|ing)|cook(?:ing)?|prepar(?:e|ing)|recipe for|showing you|teach you)\s+(?:my\s+|this\s+|a\s+|some\s+)?(.{5,60})/i);
+      const nameMatch = s.match(/(?:mak(?:e|ing)|cook(?:ing)?|prepar(?:e|ing)|recipe for|showing you|teach you|how (?:to|I) (?:make|cook|prepare))\s+(?:my\s+|this\s+|a\s+|an?\s+|some\s+|the\s+)?(.{5,60})/i);
       if (nameMatch) {
         title = cleanTitle(nameMatch[1].replace(/[.!?]+$/, ''));
       } else if (i === 0 && s.length < 60) {
@@ -415,13 +444,45 @@ function parseSpeechTranscript(text) {
       continue;
     }
 
-    // Classify: ingredient mentions vs cooking steps
+    // Try to extract inline ingredient mentions from spoken sentences
+    // e.g. "So grab two cups of flour and a teaspoon of salt"
+    const inlineIngredients = [];
+    let match;
+    const reClone = new RegExp(SPOKEN_INGREDIENT_RE.source, SPOKEN_INGREDIENT_RE.flags);
+    while ((match = reClone.exec(s)) !== null) {
+      const ing = match[1].trim().replace(/\s+/g, ' ');
+      if (ing.length > 3 && ing.length < 80) {
+        inlineIngredients.push(ing);
+      }
+    }
+
+    // If we found inline ingredients, add them AND add the sentence as a direction
+    if (inlineIngredients.length > 0) {
+      for (const ing of inlineIngredients) {
+        // Avoid duplicates
+        if (!ingredients.some(existing => existing.toLowerCase() === ing.toLowerCase())) {
+          ingredients.push(ing);
+        }
+      }
+      // The whole sentence is still a direction (the cooking step)
+      let cleaned = s.replace(/^\d+[.):-]\s*/, '').trim();
+      if (cleaned.length > 10 && looksLikeDirection(cleaned)) {
+        directions.push(cleaned);
+      }
+      continue;
+    }
+
+    // Standard classification: ingredient mentions vs cooking steps
     if (looksLikeIngredient(s) && !looksLikeDirection(s) && s.length < 60) {
       ingredients.push(s.replace(/^[-•*]\s*/, '').replace(/^\d+[.):-]\s*/, '').trim());
-    } else if (looksLikeDirection(s) || s.length > 40) {
-      // Clean up direction-style sentences (strip step numbers like "1." but not quantities like "2 cups")
+    } else if (looksLikeDirection(s) || s.length > 30) {
+      // Clean up direction-style sentences
       let cleaned = s.replace(/^\d+[.):-]\s*/, '').trim();
-      if (cleaned.length > 5) directions.push(cleaned);
+      // Capitalize first letter for cleaner display
+      if (cleaned.length > 5) {
+        cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+        directions.push(cleaned);
+      }
     }
   }
 
@@ -852,6 +913,83 @@ export function resetServerDetection() {
 }
 
 /**
+ * Try dedicated video extraction endpoint (/api/extract-video).
+ * This uses yt-dlp metadata + subtitles — faster and more targeted than
+ * the general /api/extract-url endpoint for video/social URLs.
+ * Returns parsed recipe object or null.
+ */
+export async function tryVideoExtraction(url, onProgress) {
+  const serverUrl = await detectServer();
+  if (!serverUrl) return null;
+
+  try {
+    if (onProgress) onProgress('Extracting video metadata and subtitles...');
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 35000);
+
+    const resp = await fetch(`${serverUrl}/api/extract-video`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    if (!data.ok) return null;
+
+    // Parse the combined text through our caption/transcript parser
+    const captionText = data.combinedText || data.description || '';
+    if (captionText.length > 15) {
+      const parsed = parseCaption(captionText);
+
+      const recipe = {
+        name: data.title ? cleanTitle(data.title) : (parsed.title || 'Imported Recipe'),
+        ingredients: parsed.ingredients.length > 0
+          ? parsed.ingredients
+          : ['See original post for ingredients'],
+        directions: parsed.directions.length > 0
+          ? parsed.directions
+          : ['See original post for directions'],
+        imageUrl: data.thumbnail || '',
+        link: data.sourceUrl || url,
+        _extractedVia: data.extractedVia || 'video-endpoint',
+        _hasSubtitles: data.hasSubtitles || false,
+        _platform: data.platform || '',
+        _isShortForm: data.isShortForm || false,
+      };
+
+      // If we got subtitles, the recipe is likely higher quality
+      if (data.hasSubtitles) {
+        console.log(`[SpiceHub] Video extraction succeeded with subtitles (${data.subtitleText.length} chars)`);
+      }
+
+      return recipe;
+    }
+
+    // Even if text is minimal, if we have title + thumbnail, return partial result
+    if (data.title) {
+      return {
+        name: cleanTitle(data.title),
+        ingredients: ['See original post for ingredients'],
+        directions: ['See original post for directions'],
+        imageUrl: data.thumbnail || '',
+        link: data.sourceUrl || url,
+        _extractedVia: data.extractedVia || 'video-endpoint',
+        _hasSubtitles: false,
+        _platform: data.platform || '',
+      };
+    }
+
+    return null;
+  } catch (e) {
+    console.log(`[SpiceHub] Video extraction error: ${e.message}`);
+    return null;
+  }
+}
+
+/**
  * Try server-side extraction (yt-dlp + headless Chrome).
  * Returns parsed recipe object or null.
  */
@@ -987,24 +1125,46 @@ export async function parseFromUrl(url, onProgress) {
       }
     }
 
-    // Try server-side extraction (yt-dlp + headless Chrome)
-    if (onProgress) onProgress('Trying server extraction (yt-dlp)...');
+    // Try dedicated video endpoint first (yt-dlp + embed fallback on server)
+    if (onProgress) onProgress('Trying video extraction (yt-dlp)...');
+    const videoResult = await tryVideoExtraction(url, onProgress);
+    if (videoResult && !videoResult._error && videoResult.ingredients?.[0] !== 'See original post for ingredients') {
+      return videoResult;
+    }
+
+    // Try general server-side extraction (headless Chrome)
+    if (onProgress) onProgress('Trying server extraction...');
     const serverResult = await tryServerExtraction(url, onProgress);
     if (serverResult && !serverResult._error) return serverResult;
 
-    // Instagram server failed — route to BrowserAssist
+    // Use partial video result if available
+    if (videoResult && !videoResult._error) return videoResult;
+
+    // Instagram all paths failed — route to BrowserAssist
     console.log('[SpiceHub] Instagram extraction failed — routing to BrowserAssist');
     return null;
   }
 
-  // ── 2. Video/Social URLs: try server first (yt-dlp), then CORS proxy ──
+  // ── 2. Video/Social URLs: try dedicated video endpoint, then general server, then CORS proxy ──
   if (isSocialMediaUrl(url)) {
-    console.log('[SpiceHub] Social/video URL — trying server extraction...');
+    console.log('[SpiceHub] Social/video URL — trying video extraction pipeline...');
 
-    // Server-side: yt-dlp metadata + subtitles + headless Chrome
+    // Step A: Try dedicated /api/extract-video endpoint (yt-dlp metadata + subtitles)
+    // This is faster and cheaper than the general extract-url endpoint
     if (onProgress) onProgress('Extracting video metadata and subtitles...');
+    const videoResult = await tryVideoExtraction(url, onProgress);
+    if (videoResult && !videoResult._error && videoResult.ingredients?.[0] !== 'See original post for ingredients') {
+      return videoResult;
+    }
+
+    // Step B: If video endpoint returned partial data (title+thumbnail but no recipe text),
+    // still try the general server endpoint which includes headless Chrome fallback
+    if (onProgress) onProgress('Trying full server extraction...');
     const serverResult = await tryServerExtraction(url, onProgress);
     if (serverResult && !serverResult._error) return serverResult;
+
+    // Step C: If video endpoint returned at least partial data, use that as last resort
+    if (videoResult && !videoResult._error) return videoResult;
 
     // Fallback: CORS proxy (sometimes works for public pages)
     if (onProgress) onProgress('Trying direct extraction...');
@@ -1806,12 +1966,28 @@ export function smartClassifyLines(lines, sourceElement = null) {
   const NUMBERED_STEP = /^\d+[.):\s-]/;
   const BULLET_POINT = /^[-•*▪▸►◦‣⁃]/;
 
+  // Timestamp pattern: "2:30" or "0:00:15" — strip these from lines (common in video descriptions)
+  const TIMESTAMP_PREFIX = /^(\d{1,2}:\d{2}(?::\d{2})?)\s*[-–—:.]?\s*/;
+
+  // Filler lines common in video descriptions
+  const VIDEO_FILLER_RE = /^(follow me|subscribe|like and subscribe|link in bio|comment below|tag a friend|save this|share this|check out|don't forget|make sure to|music:|song:|audio:|outfit:|shop:|affiliate|#\w+\s*$|@\w+\s*$)/i;
+
   let inIngredientsSection = false;
   let inDirectionsSection = false;
 
   for (const line of lines) {
-    const trimmed = line.trim();
+    let trimmed = line.trim();
     if (!trimmed) continue;
+
+    // Strip timestamp prefixes (e.g. "2:30 Add the garlic" → "Add the garlic")
+    trimmed = trimmed.replace(TIMESTAMP_PREFIX, '').trim();
+    if (!trimmed) continue;
+
+    // Skip video filler lines
+    if (VIDEO_FILLER_RE.test(trimmed)) continue;
+
+    // Skip lines that are just hashtags or mentions
+    if (/^[#@]/.test(trimmed) && !trimmed.includes(' ')) continue;
 
     const lower = trimmed.toLowerCase();
 
