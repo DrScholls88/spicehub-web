@@ -989,15 +989,78 @@ function tryCommaDelimitedParse(text) {
   return { ingredients, directions };
 }
 
+/**
+ * Parse spoken-word subtitle/transcript text into ingredients and directions.
+ * Subtitles from yt-dlp are spoken format like:
+ *   "you're going to need two cups of flour a cup of sugar some butter..."
+ *   "first preheat your oven to 350 then mix all the dry ingredients..."
+ * This extracts structure from spoken prose that parseCaption can't handle.
+ */
+function parseSpokenTranscript(text) {
+  if (!text || text.length < 30) return null;
+
+  const ingredients = [];
+  const directions = [];
+
+  // Split into sentences on periods, then also on common spoken transitions
+  const sentences = text
+    .replace(/\s+/g, ' ')
+    .split(/(?<=[.!?])\s+|(?:\s+(?:and then|then|next|after that|now|so then|okay so)\s+)/i)
+    .map(s => s.trim())
+    .filter(s => s.length > 10);
+
+  // Spoken ingredient patterns: "you'll need X", "grab your X", "X of Y"
+  const SPOKEN_ING_RE = /(?:you(?:'re| are| will)? (?:going to )?need|you(?:'ll| will) need|grab(?: your)?|take|get|add|use|put in)\s+(.+)/i;
+  const QUANTITY_MENTION_RE = /\b(?:cup|tablespoon|teaspoon|tbsp|tsp|ounce|oz|pound|lb|pinch|dash|handful|bunch|clove|can|jar|package|stick|piece)s?\b/i;
+  const SPOKEN_DIRECTION_RE = /\b(?:preheat|mix|stir|cook|bake|fry|saut[ée]|boil|simmer|chop|dice|slice|fold|whisk|pour|drain|season|sprinkle|spread|roll|knead|let it|set aside|cover|flip|turn|remove|place|combine|toss|serve|plate|garnish)\b/i;
+
+  for (const sentence of sentences) {
+    const lc = sentence.toLowerCase();
+
+    // Check if it mentions ingredient quantities
+    const hasQuantity = QUANTITY_MENTION_RE.test(sentence) ||
+      /\b\d+\s*(?:\/\d+)?\s*(?:cup|tsp|tbsp|oz|lb|g|ml)\b/i.test(sentence);
+
+    // Check for cooking action verbs
+    const hasAction = SPOKEN_DIRECTION_RE.test(sentence);
+
+    // Extract ingredient mentions from "you'll need" patterns
+    const ingMatch = sentence.match(SPOKEN_ING_RE);
+    if (ingMatch) {
+      // Split by "and" or comma for multiple ingredients
+      const items = ingMatch[1].split(/\s*(?:,|and)\s*/i).filter(i => i.length > 2);
+      for (const item of items) {
+        const clean = item.replace(/\s+/g, ' ').trim();
+        if (clean.length > 2 && clean.length < 80) ingredients.push(clean);
+      }
+    } else if (hasQuantity && !hasAction) {
+      // Sentence mentions quantities but no cooking verbs — likely ingredient listing
+      const clean = sentence.replace(/^(?:and\s+|also\s+|plus\s+)/i, '').trim();
+      if (clean.length > 3 && clean.length < 120) ingredients.push(clean);
+    } else if (hasAction) {
+      // Sentence has cooking verbs — it's a direction
+      const clean = sentence
+        .replace(/^(?:and\s+then\s+|then\s+|next\s+|now\s+|so\s+)/i, '')
+        .replace(/^\w/, c => c.toUpperCase())
+        .trim();
+      if (clean.length > 10) directions.push(clean);
+    }
+  }
+
+  if (ingredients.length === 0 && directions.length === 0) return null;
+  return { ingredients, directions };
+}
+
 export async function tryVideoExtraction(url, onProgress) {
   const serverUrl = await detectServer();
   if (!serverUrl) return null;
 
   try {
-    if (onProgress) onProgress('Extracting video metadata and subtitles...');
+    if (onProgress) onProgress('Connecting to extraction server...');
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 35000);
 
+    if (onProgress) onProgress('Downloading video metadata & subtitles...');
     const resp = await fetch(`${serverUrl}/api/extract-video`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1010,27 +1073,70 @@ export async function tryVideoExtraction(url, onProgress) {
     const data = await resp.json();
     if (!data.ok) return null;
 
-    // Parse the combined text through our caption/transcript parser
+    if (onProgress) {
+      if (data.hasSubtitles) onProgress('Parsing subtitles for recipe...');
+      else onProgress('Parsing video description for recipe...');
+    }
+
+    // ── Priority 1: Subtitle text (spoken transcript from video) ──
+    // Subtitles are the richest source — the creator speaks the full recipe
+    let parsed = { ingredients: [], directions: [], title: '' };
+    let source = 'description';
+
+    if (data.subtitleText && data.subtitleText.length > 30) {
+      source = 'subtitles';
+      if (onProgress) onProgress('Extracting recipe from subtitles...');
+
+      // Try structured parsing first (works if subtitles have some structure)
+      parsed = parseCaption(data.subtitleText);
+
+      // Spoken-word transcripts need special handling
+      if (parsed.ingredients.length <= 1 || parsed.directions.length <= 1) {
+        const spoken = parseSpokenTranscript(data.subtitleText);
+        if (spoken) {
+          if (spoken.ingredients.length > parsed.ingredients.length) parsed.ingredients = spoken.ingredients;
+          if (spoken.directions.length > parsed.directions.length) parsed.directions = spoken.directions;
+        }
+      }
+
+      // smartClassifyLines as another fallback
+      if (parsed.ingredients.length === 0 || parsed.directions.length === 0) {
+        const lines = data.subtitleText.split('\n').map(l => l.trim()).filter(Boolean);
+        if (lines.length >= 3) {
+          const classified = smartClassifyLines(lines);
+          if (classified.ingredients.length > parsed.ingredients.length) parsed.ingredients = classified.ingredients;
+          if (classified.directions.length > parsed.directions.length) parsed.directions = classified.directions;
+        }
+      }
+    }
+
+    // ── Priority 2: Caption/description text ──
     const captionText = data.combinedText || data.description || '';
     if (captionText.length > 15) {
-      let parsed = parseCaption(captionText);
+      if (onProgress && source !== 'subtitles') onProgress('Parsing caption text...');
 
-      // If parseCaption didn't find good structure, try smartClassifyLines as fallback
-      // This helps with Instagram captions that have informal formatting
+      const captionParsed = parseCaption(captionText);
+
+      // Merge: prefer whichever source gave more results
+      if (captionParsed.ingredients.length > parsed.ingredients.length) {
+        parsed.ingredients = captionParsed.ingredients;
+      }
+      if (captionParsed.directions.length > parsed.directions.length) {
+        parsed.directions = captionParsed.directions;
+      }
+      if (!parsed.title && captionParsed.title) parsed.title = captionParsed.title;
+
+      // smartClassifyLines fallback on caption
       if (parsed.ingredients.length === 0 || parsed.directions.length === 0) {
         const lines = captionText.split('\n').map(l => l.trim()).filter(Boolean);
         if (lines.length >= 3) {
           const classified = smartClassifyLines(lines);
-          if (classified.ingredients.length > parsed.ingredients.length) {
-            parsed.ingredients = classified.ingredients;
-          }
-          if (classified.directions.length > parsed.directions.length) {
-            parsed.directions = classified.directions;
-          }
+          if (classified.ingredients.length > parsed.ingredients.length) parsed.ingredients = classified.ingredients;
+          if (classified.directions.length > parsed.directions.length) parsed.directions = classified.directions;
         }
       }
 
-      // Also try splitting comma-separated ingredient lists common in Instagram
+      // Comma-delimited ingredients (common in Instagram)
       if (parsed.ingredients.length <= 1 && parsed.directions.length <= 1) {
         const commaParsed = tryCommaDelimitedParse(captionText);
         if (commaParsed) {
@@ -1038,7 +1144,10 @@ export async function tryVideoExtraction(url, onProgress) {
           if (commaParsed.directions.length > parsed.directions.length) parsed.directions = commaParsed.directions;
         }
       }
+    }
 
+    // Build recipe if we have any content
+    if (parsed.ingredients.length > 0 || parsed.directions.length > 0 || captionText.length > 15) {
       const recipe = {
         name: data.title ? cleanTitle(data.title) : (parsed.title || 'Imported Recipe'),
         ingredients: parsed.ingredients.length > 0
@@ -1049,21 +1158,20 @@ export async function tryVideoExtraction(url, onProgress) {
           : ['See original post for directions'],
         imageUrl: data.thumbnail || '',
         link: data.sourceUrl || url,
-        _extractedVia: data.extractedVia || 'video-endpoint',
+        _extractedVia: data.hasSubtitles ? 'yt-dlp-subtitles' : (data.extractedVia || 'video-endpoint'),
         _hasSubtitles: data.hasSubtitles || false,
         _platform: data.platform || '',
         _isShortForm: data.isShortForm || false,
       };
 
-      // If we got subtitles, the recipe is likely higher quality
       if (data.hasSubtitles) {
-        console.log(`[SpiceHub] Video extraction succeeded with subtitles (${data.subtitleText.length} chars)`);
+        console.log(`[SpiceHub] Subtitle-first extraction: ${data.subtitleText.length} chars → ${parsed.ingredients.length} ing, ${parsed.directions.length} dir`);
       }
 
       return recipe;
     }
 
-    // Even if text is minimal, if we have title + thumbnail, return partial result
+    // Partial result: title + thumbnail but no recipe text
     if (data.title) {
       return {
         name: cleanTitle(data.title),

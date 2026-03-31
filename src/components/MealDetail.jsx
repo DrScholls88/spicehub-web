@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 
-export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, onRate, onStartCook, onStartMix, isDrink = false }) {
+export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, onRate, onStartCook, onStartMix, onToggleRotation, isDrink = false }) {
   // ── Swipe-down-to-dismiss ──
   const sheetRef = useRef(null);
   const dragStartY = useRef(null);
@@ -146,6 +146,15 @@ export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, o
                 </button>
               ))}
             </div>
+          )}
+          {onToggleRotation && (
+            <button
+              className={`rotation-toggle-btn ${meal.inRotation ? 'in-rotation' : ''}`}
+              onClick={() => onToggleRotation(meal)}
+              title={meal.inRotation ? 'Remove from The Rotation' : 'Add to The Rotation'}
+            >
+              🔄 {meal.inRotation ? 'In Rotation' : 'Add to Rotation'}
+            </button>
           )}
           <div className="detail-meta">
             {meal.category && (

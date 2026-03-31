@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import db, { seedIfEmpty, SEED_DRINKS, importPaprikaMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getCookingLog, processImportQueue, getWeekHistory, saveWeekToHistory } from './db';
+import db, { seedIfEmpty, SEED_DRINKS, importPaprikaMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getCookingLog, processImportQueue, getWeekHistory, saveWeekToHistory, toggleRotation } from './db';
 import { PAPRIKA_MEALS } from './paprika_import_data';
 import { checkStorageQuota, checkAndRecommendCleanup } from './storageManager';
 import { initializeBackgroundSync } from './backgroundSync';
@@ -358,6 +358,15 @@ export default function App() {
     await loadMeals();
   }, [loadMeals]);
 
+  const handleToggleRotation = useCallback(async (meal) => {
+    const newVal = !meal.inRotation;
+    await toggleRotation(meal.id, newVal);
+    // Update the detailItem in-place so UI reflects immediately
+    setDetailItem(prev => prev && prev.id === meal.id ? { ...prev, inRotation: newVal } : prev);
+    await loadMeals();
+    showToast(newVal ? `Added "${meal.name}" to The Rotation` : `Removed "${meal.name}" from The Rotation`);
+  }, [loadMeals, showToast]);
+
   const rateMeal = useCallback(async (meal, rating) => {
     await db.meals.update(meal.id, { rating });
     await loadMeals();
@@ -580,6 +589,7 @@ export default function App() {
           onClose={() => setDetailItem(null)}
           onShare={() => shareItem(detailItem)}
           onToggleFavorite={isDrink(detailItem) ? null : toggleFavorite}
+          onToggleRotation={isDrink(detailItem) ? null : handleToggleRotation}
           onRate={isDrink(detailItem) ? null : rateMeal}
           onStartCook={isDrink(detailItem) ? null : startCookMode}
           onStartMix={isDrink(detailItem) ? startMixMode : null}

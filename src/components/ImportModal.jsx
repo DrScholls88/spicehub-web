@@ -606,7 +606,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
               {preview.some(m => m._hasSubtitles) && (
                 <span className="subtitle-badge" title="Recipe extracted from video subtitles">CC</span>
               )}
-              {preview.some(m => m._extractedVia === 'yt-dlp') && (
+              {preview.some(m => m._extractedVia?.startsWith('yt-dlp')) && (
                 <span className="extraction-badge" title="Extracted via video metadata">Video</span>
               )}
             </h3>

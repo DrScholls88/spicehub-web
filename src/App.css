@@ -2101,6 +2101,28 @@ body {
   font-size: 18px;
 }
 
+/* ── Rotation toggle button ── */
+.rotation-toggle-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 700;
+  cursor: pointer; transition: all 0.2s; border: 2px solid var(--border);
+  background: var(--card); color: var(--text-light);
+  -webkit-tap-highlight-color: transparent;
+}
+.rotation-toggle-btn:active { transform: scale(0.95); }
+.rotation-toggle-btn.in-rotation {
+  background: linear-gradient(135deg, var(--primary), var(--primary-light, #81c784));
+  color: white; border-color: transparent;
+  box-shadow: 0 2px 8px rgba(102,187,106,0.3);
+}
+[data-theme="dark"] .rotation-toggle-btn {
+  background: #2a2a2a; border-color: #444; color: var(--text-light);
+}
+[data-theme="dark"] .rotation-toggle-btn.in-rotation {
+  background: linear-gradient(135deg, #2e7d32, #388e3c);
+  color: white; border-color: transparent;
+}
+
 /* ── Detail meta styling ── */
 .detail-meta {
   display: flex;
@@ -5056,6 +5078,8 @@ body {
   position: absolute; bottom: 8px; left: 0;
   z-index: 10; pointer-events: none;
   will-change: transform;
+  /* 3x scale bartender: offset so feet touch bottom */
+  margin-bottom: -10px;
 }
 .bs-bartender-svg {
   image-rendering: pixelated;
@@ -5101,19 +5125,19 @@ body {
 }
 /* Speech bubble */
 .bs-bt-speech {
-  position: absolute; top: -28px; left: 50%;
+  position: absolute; top: -36px; left: 50%;
   transform: translateX(-50%);
-  background: #fff; color: #333; font-size: 7px;
-  padding: 4px 8px; border-radius: 6px; white-space: nowrap;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  background: #fff; color: #333; font-size: 9px;
+  padding: 6px 12px; border-radius: 8px; white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
   animation: bsBtSpeechIn 0.3s ease-out;
   font-family: 'Press Start 2P', monospace;
   pointer-events: none;
 }
 .bs-bt-speech::after {
-  content: ''; position: absolute; bottom: -4px; left: 50%;
+  content: ''; position: absolute; bottom: -5px; left: 50%;
   transform: translateX(-50%);
-  border: 4px solid transparent; border-top-color: #fff;
+  border: 5px solid transparent; border-top-color: #fff;
 }
 .bs-bt-speech-idle {
   opacity: 0.7;

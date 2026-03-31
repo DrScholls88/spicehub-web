@@ -142,7 +142,7 @@ function NeonText({ text, color = '#ff4081' }) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 function PixelBartender({ state, targetX, holdingBottle, facingRight }) {
-  // The bartender is ~40px wide, 56px tall pixel art character
+  // The bartender is 120px wide, 168px tall (3x scale pixel art character)
   const flip = facingRight ? '' : 'scale(-1,1)';
   const isWalking = state === 'walking' || state === 'returning';
   const isGrabbing = state === 'grabbing';
@@ -151,7 +151,7 @@ function PixelBartender({ state, targetX, holdingBottle, facingRight }) {
 
   return (
     <svg
-      width="40" height="56" viewBox="0 0 40 56"
+      width="120" height="168" viewBox="0 0 40 56"
       className={`bs-bartender-svg ${isWalking ? 'bs-bt-walk' : ''} ${isPresenting ? 'bs-bt-present' : ''}`}
       style={{ imageRendering: 'pixelated' }}
     >
@@ -258,8 +258,8 @@ function PixelBartender({ state, targetX, holdingBottle, facingRight }) {
 export default function BarShelf({ drinks, onViewDetail, onClose }) {
   const [selectedDrink, setSelectedDrink] = useState(null);
   const [bartenderState, setBartenderState] = useState('idle'); // idle, walking, grabbing, presenting, returning
-  const [bartenderX, setBartenderX] = useState(40); // X position in px from left
-  const [bartenderTargetX, setBartenderTargetX] = useState(40);
+  const [bartenderX, setBartenderX] = useState(20); // X position in px from left
+  const [bartenderTargetX, setBartenderTargetX] = useState(20);
   const [facingRight, setFacingRight] = useState(true);
   const [holdingBottle, setHoldingBottle] = useState(null);
   const [swipeStartY, setSwipeStartY] = useState(null);
@@ -290,10 +290,11 @@ export default function BarShelf({ drinks, onViewDetail, onClose }) {
   const getBottlePosition = useCallback((drinkId) => {
     const slotEl = bottleSlotsRef.current[drinkId];
     const areaEl = shelfAreaRef.current;
-    if (!slotEl || !areaEl) return 40;
+    if (!slotEl || !areaEl) return 20;
     const slotRect = slotEl.getBoundingClientRect();
     const areaRect = areaEl.getBoundingClientRect();
-    return slotRect.left - areaRect.left + slotRect.width / 2 - 20;
+    // Center the 120px-wide bartender on the bottle slot
+    return slotRect.left - areaRect.left + slotRect.width / 2 - 60;
   }, []);
 
   const handleBottleTap = useCallback((drink) => {
@@ -343,8 +344,8 @@ export default function BarShelf({ drinks, onViewDetail, onClose }) {
           setSelectedDrink(drink);
           // Move bartender to center-ish
           const centerX = shelfAreaRef.current
-            ? shelfAreaRef.current.clientWidth / 2 - 20
-            : 140;
+            ? shelfAreaRef.current.clientWidth / 2 - 60
+            : 100;
           setFacingRight(true);
 
           const grabX = targetPos;
@@ -395,7 +396,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose }) {
         setBartenderState('walking');
         setFacingRight(40 < returnPos);
 
-        const restPos = 40;
+        const restPos = 20;
         const idleStart = performance.now();
         const idleTime = Math.min(600, Math.max(200, Math.abs(restPos - returnPos) * 3));
 
