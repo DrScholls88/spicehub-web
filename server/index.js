@@ -9,6 +9,7 @@
  *   PORT               — server port (default 3001)
  *   SPICEHUB_MODE      — 'cloud' to use bundled Chromium (default: 'local')
  *   ALLOWED_ORIGINS    — comma-separated origins for CORS (default: allow all)
+ *   YTDLP_VERSION      — pin yt-dlp version (e.g. '2025.03.31'). Auto-installs on startup if mismatched.
  *
  * Start locally:  node index.js
  * Start on cloud: SPICEHUB_MODE=cloud node index.js
@@ -516,17 +517,112 @@ app.get('/api/image-proxy', async (req, res) => {
 // Uses yt-dlp to extract video metadata and subtitles from social media URLs.
 // This replaces the fragile headless Chrome approach for platforms yt-dlp supports.
 // Zero API cost — subtitles are free, no AI/transcription needed.
+//
+// Version pinning: Set YTDLP_VERSION env var to pin a specific release.
+// Startup check will auto-install/upgrade if version mismatches.
 
-/** Check if yt-dlp is available on the system */
+const YTDLP_VERSION = process.env.YTDLP_VERSION || null; // e.g. '2025.03.31'
 let _ytdlpAvailable = null;
+let _ytdlpVersion = null;
+
+/**
+ * Lightweight yt-dlp wrapper — runs yt-dlp with given args.
+ * Handles timeout, buffer limits, and error logging consistently.
+ * Inspired by social-to-mealie yt-dlp.ts pattern.
+ *
+ * @param {string[]} args - Command-line arguments for yt-dlp
+ * @param {object} opts - { timeout?: number, maxBuffer?: number, label?: string }
+ * @returns {Promise<{ stdout: string, stderr: string } | null>} null on error
+ */
+function runYtdlp(args, opts = {}) {
+  const {
+    timeout = 30000,
+    maxBuffer = 10 * 1024 * 1024,
+    label = 'yt-dlp',
+  } = opts;
+
+  return new Promise((resolve) => {
+    execFile('yt-dlp', args, { timeout, maxBuffer }, (err, stdout, stderr) => {
+      if (err) {
+        console.log(`[${label}] error: ${err.message}`);
+        resolve(null);
+        return;
+      }
+      resolve({ stdout: stdout || '', stderr: stderr || '' });
+    });
+  });
+}
+
+/**
+ * Check if yt-dlp is available and optionally verify/install pinned version.
+ * Called at startup and cached thereafter.
+ */
 async function isYtdlpAvailable() {
   if (_ytdlpAvailable !== null) return _ytdlpAvailable;
+
+  // Step 1: Check if yt-dlp exists
+  const result = await runYtdlp(['--version'], { timeout: 5000, label: 'yt-dlp-check' });
+  if (!result || !result.stdout.trim()) {
+    // Not installed — attempt install if version is pinned
+    if (YTDLP_VERSION) {
+      console.log(`   yt-dlp not found — attempting install v${YTDLP_VERSION}...`);
+      const installed = await installYtdlp(YTDLP_VERSION);
+      if (installed) {
+        _ytdlpAvailable = true;
+        return true;
+      }
+    }
+    console.log('   yt-dlp not found — video metadata extraction disabled');
+    _ytdlpAvailable = false;
+    return false;
+  }
+
+  _ytdlpVersion = result.stdout.trim();
+  console.log(`   yt-dlp found: v${_ytdlpVersion}`);
+
+  // Step 2: If version is pinned, check for mismatch
+  if (YTDLP_VERSION && _ytdlpVersion !== YTDLP_VERSION) {
+    console.log(`   yt-dlp version mismatch: have v${_ytdlpVersion}, want v${YTDLP_VERSION}`);
+    const upgraded = await installYtdlp(YTDLP_VERSION);
+    if (upgraded) {
+      console.log(`   yt-dlp upgraded to v${YTDLP_VERSION}`);
+    } else {
+      console.log(`   yt-dlp upgrade failed — continuing with v${_ytdlpVersion}`);
+    }
+  }
+
+  _ytdlpAvailable = true;
+  return true;
+}
+
+/**
+ * Install or upgrade yt-dlp to a specific version via pip.
+ * Returns true on success, false on failure.
+ */
+function installYtdlp(version) {
   return new Promise((resolve) => {
-    exec('yt-dlp --version', { timeout: 5000 }, (err, stdout) => {
-      _ytdlpAvailable = !err && !!stdout.trim();
-      if (_ytdlpAvailable) console.log(`   yt-dlp found: v${stdout.trim()}`);
-      else console.log('   yt-dlp not found — video metadata extraction disabled');
-      resolve(_ytdlpAvailable);
+    const pkg = version ? `yt-dlp==${version}` : 'yt-dlp';
+    console.log(`   Installing ${pkg} via pip...`);
+    exec(`pip install --break-system-packages "${pkg}" 2>&1 || pip install "${pkg}" 2>&1 || pip3 install "${pkg}" 2>&1`, {
+      timeout: 120000, // 2 min for install
+    }, (err, stdout) => {
+      if (err) {
+        console.log(`   yt-dlp install failed: ${err.message}`);
+        resolve(false);
+        return;
+      }
+      // Verify installation
+      exec('yt-dlp --version', { timeout: 5000 }, (err2, stdout2) => {
+        if (err2 || !stdout2.trim()) {
+          console.log('   yt-dlp install verification failed');
+          resolve(false);
+        } else {
+          _ytdlpVersion = stdout2.trim();
+          _ytdlpAvailable = true;
+          console.log(`   yt-dlp installed: v${_ytdlpVersion}`);
+          resolve(true);
+        }
+      });
     });
   });
 }
@@ -538,46 +634,37 @@ async function isYtdlpAvailable() {
 async function extractVideoMeta(url) {
   if (!await isYtdlpAvailable()) return null;
 
-  return new Promise((resolve) => {
-    const args = [
-      '--dump-json',
-      '--no-download',
-      '--no-playlist',
-      '--socket-timeout', '15',
-      url,
-    ];
+  const result = await runYtdlp([
+    '--dump-json',
+    '--no-download',
+    '--no-playlist',
+    '--socket-timeout', '15',
+    url,
+  ], { timeout: 30000, label: 'yt-dlp-meta' });
 
-    const child = execFile('yt-dlp', args, {
-      timeout: 30000,
-      maxBuffer: 10 * 1024 * 1024, // 10MB for large JSON
-    }, (err, stdout) => {
-      if (err) {
-        console.log(`[yt-dlp] metadata error: ${err.message}`);
-        resolve(null);
-        return;
-      }
-      try {
-        const info = JSON.parse(stdout);
-        resolve({
-          title: info.title || info.fulltitle || '',
-          description: info.description || '',
-          thumbnail: info.thumbnail || info.thumbnails?.[info.thumbnails.length - 1]?.url || '',
-          uploader: info.uploader || info.channel || '',
-          duration: info.duration || 0,
-          subtitles: info.subtitles || {},       // manual subs
-          autoSubs: info.automatic_captions || {}, // auto-generated subs
-          webpage_url: info.webpage_url || url,
-        });
-      } catch (e) {
-        console.log(`[yt-dlp] JSON parse error: ${e.message}`);
-        resolve(null);
-      }
-    });
-  });
+  if (!result) return null;
+
+  try {
+    const info = JSON.parse(result.stdout);
+    return {
+      title: info.title || info.fulltitle || '',
+      description: info.description || '',
+      thumbnail: info.thumbnail || info.thumbnails?.[info.thumbnails.length - 1]?.url || '',
+      uploader: info.uploader || info.channel || '',
+      duration: info.duration || 0,
+      subtitles: info.subtitles || {},       // manual subs
+      autoSubs: info.automatic_captions || {}, // auto-generated subs
+      webpage_url: info.webpage_url || url,
+    };
+  } catch (e) {
+    console.log(`[yt-dlp-meta] JSON parse error: ${e.message}`);
+    return null;
+  }
 }
 
 /**
  * Download subtitles/captions for a video URL via yt-dlp.
+ * Subtitle-only mode: --skip-download for minimal bandwidth.
  * Priority: manual English subs > auto-generated English subs.
  * Returns subtitle text string or null.
  */
@@ -610,63 +697,56 @@ async function downloadSubtitles(url, metaInfo = null) {
   const tmpDir = path.join(os.tmpdir(), '.spicehub-subs-' + Date.now());
   fs.mkdirSync(tmpDir, { recursive: true });
 
-  return new Promise((resolve) => {
-    const args = [
-      '--skip-download',
-      '--no-playlist',
-      '--write-subs',
-      '--write-auto-subs',
-      '--sub-lang', 'en.*,en',
-      '--sub-format', 'vtt/srt/best',
-      '--convert-subs', 'srt',
-      '-o', path.join(tmpDir, 'subs.%(ext)s'),
-      '--socket-timeout', '15',
-      url,
-    ];
+  const args = [
+    '--skip-download',
+    '--no-playlist',
+    '--write-subs',
+    '--write-auto-subs',
+    '--sub-lang', 'en.*,en',
+    '--sub-format', 'vtt/srt/best',
+    '--convert-subs', 'srt',
+    '-o', path.join(tmpDir, 'subs.%(ext)s'),
+    '--socket-timeout', '15',
+    url,
+  ];
 
-    execFile('yt-dlp', args, { timeout: 30000, maxBuffer: 5 * 1024 * 1024 }, (err) => {
-      if (err) {
-        console.log(`[yt-dlp] subtitle download error: ${err.message}`);
-        cleanup();
-        resolve(null);
-        return;
-      }
+  const result = await runYtdlp(args, { timeout: 30000, maxBuffer: 5 * 1024 * 1024, label: 'yt-dlp-subs' });
+  if (!result) {
+    cleanup();
+    return null;
+  }
 
-      // Find the subtitle file that was created
-      try {
-        const files = fs.readdirSync(tmpDir).filter(f => f.endsWith('.srt') || f.endsWith('.vtt'));
-        if (files.length === 0) {
-          console.log('[yt-dlp] No subtitle file created');
-          cleanup();
-          resolve(null);
-          return;
-        }
-
-        const subFile = path.join(tmpDir, files[0]);
-        const raw = fs.readFileSync(subFile, 'utf8');
-        cleanup();
-
-        // Clean SRT/VTT format to plain text
-        const plainText = cleanSubtitleText(raw);
-        if (plainText.length < 20) {
-          console.log('[yt-dlp] Subtitle text too short after cleaning');
-          resolve(null);
-          return;
-        }
-
-        console.log(`[yt-dlp] Subtitles extracted: ${plainText.length} chars`);
-        resolve(plainText);
-      } catch (e) {
-        console.log(`[yt-dlp] subtitle read error: ${e.message}`);
-        cleanup();
-        resolve(null);
-      }
-    });
-
-    function cleanup() {
-      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  // Find the subtitle file that was created
+  try {
+    const files = fs.readdirSync(tmpDir).filter(f => f.endsWith('.srt') || f.endsWith('.vtt'));
+    if (files.length === 0) {
+      console.log('[yt-dlp] No subtitle file created');
+      cleanup();
+      return null;
     }
-  });
+
+    const subFile = path.join(tmpDir, files[0]);
+    const raw = fs.readFileSync(subFile, 'utf8');
+    cleanup();
+
+    // Clean SRT/VTT format to plain text
+    const plainText = cleanSubtitleText(raw);
+    if (plainText.length < 20) {
+      console.log('[yt-dlp] Subtitle text too short after cleaning');
+      return null;
+    }
+
+    console.log(`[yt-dlp] Subtitles extracted: ${plainText.length} chars`);
+    return plainText;
+  } catch (e) {
+    console.log(`[yt-dlp] subtitle read error: ${e.message}`);
+    cleanup();
+    return null;
+  }
+
+  function cleanup() {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+  }
 }
 
 /**
@@ -674,28 +754,61 @@ async function downloadSubtitles(url, metaInfo = null) {
  * Removes timestamps, sequence numbers, HTML tags, and deduplicates lines.
  */
 function cleanSubtitleText(raw) {
-  return raw
-    // Remove VTT header
+  let cleaned = raw
+    // Remove VTT header and metadata block
     .replace(/^WEBVTT[\s\S]*?\n\n/, '')
+    // Remove NOTE blocks (VTT comments)
+    .replace(/^NOTE[\s\S]*?\n\n/gm, '')
+    // Remove STYLE blocks
+    .replace(/^STYLE[\s\S]*?\n\n/gm, '')
+    // Remove SRT sequence numbers (standalone digit lines)
+    .replace(/^\d+\s*\n(?=[\d:.,-]+\s*-->)/gm, '')
     // Remove timestamp lines (SRT: "00:00:01,000 --> 00:00:03,000" / VTT: "00:00:01.000 --> 00:00:03.000")
-    .replace(/^\d+\s*\n/gm, '')
     .replace(/^[\d:.,-]+\s*-->\s*[\d:.,-]+.*$/gm, '')
-    // Remove VTT position/alignment cues
-    .replace(/^(position|align|size|line):.*$/gm, '')
-    // Remove HTML-like tags (<c>, <b>, etc.) and VTT cue tags
-    .replace(/<[^>]+>/g, '')
-    // Remove [Music], [Applause], etc.
+    // Remove VTT position/alignment/line cues
+    .replace(/^(position|align|size|line|vertical|region):.*$/gm, '')
+    // Remove HTML-like tags (<c>, <b>, <i>, <font>, etc.) and VTT cue tags
+    .replace(/<\/?[^>]+>/g, '')
+    // Remove VTT voice tags like <v Speaker Name>
+    .replace(/<v\s+[^>]*>/g, '')
+    // Remove [Music], [Applause], [Laughter], [MUSIC PLAYING], etc.
     .replace(/\[[\w\s]+\]/g, '')
+    // Remove (music), (applause), etc.
+    .replace(/\([\w\s]+\)/g, '')
+    // Remove speaker labels like "SPEAKER 1:" or ">> "
+    .replace(/^(?:SPEAKER\s*\d*|>>)\s*:?\s*/gmi, '')
+    // Remove ♪ music note markers
+    .replace(/[♪♫♬]+/g, '')
     // Collapse whitespace
-    .replace(/\n{2,}/g, '\n')
-    .split('\n')
+    .replace(/\n{2,}/g, '\n');
+
+  // Split into lines, clean, deduplicate
+  const lines = cleaned.split('\n')
     .map(l => l.trim())
     .filter(l => l.length > 0)
     // Deduplicate consecutive identical lines (common in auto-subs)
     .filter((line, i, arr) => i === 0 || line !== arr[i - 1])
-    .join(' ')
+    // Remove near-duplicate lines where one is a prefix of the next
+    // (YouTube auto-subs often show partial → full line pairs)
+    .filter((line, i, arr) => {
+      if (i === 0) return true;
+      // If previous line is a strict prefix of this line, keep only this (the longer one)
+      if (arr[i - 1] && line.startsWith(arr[i - 1]) && line.length > arr[i - 1].length + 3) {
+        return true; // keep — but we need to mark the previous as skip
+      }
+      // If THIS line is a strict prefix of the next line, skip it
+      if (i + 1 < arr.length && arr[i + 1] && arr[i + 1].startsWith(line) && arr[i + 1].length > line.length + 3) {
+        return false; // skip — the next line has the full text
+      }
+      return true;
+    });
+
+  return lines.join(' ')
     // Collapse multiple spaces
     .replace(/\s{2,}/g, ' ')
+    // Fix common punctuation issues from concatenation
+    .replace(/\s+([.,!?;:])/g, '$1')
+    .replace(/([.!?])\s*([A-Z])/g, '$1 $2')
     .trim();
 }
 
@@ -1955,7 +2068,8 @@ app.listen(PORT, async () => {
       ? `   Chrome found: ${chromePath}`
       : '   ⚠️  Chrome not found — install from google.com/chrome');
   }
-  // Check yt-dlp availability on startup
+  // Check yt-dlp availability on startup (installs/upgrades if YTDLP_VERSION is set)
+  if (YTDLP_VERSION) console.log(`   yt-dlp pinned version: ${YTDLP_VERSION}`);
   await isYtdlpAvailable();
   console.log('');
 });

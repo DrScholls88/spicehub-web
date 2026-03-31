@@ -138,10 +138,25 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
 
       // ── Instagram special handling ──
       if (isInstagramUrl(trimmedUrl)) {
-        setImportProgress('Trying Instagram extraction...');
+        // Try yt-dlp video extraction first (best for Reels with subtitles)
+        setImportProgress('Step 1/3 — Checking for video subtitles...');
+        try {
+          const videoResult = await tryVideoExtraction(trimmedUrl, (progress) => {
+            setImportProgress(`Step 1/3 — ${progress}`);
+          });
+          if (videoResult && !videoResult._error && videoResult.ingredients?.[0] !== 'See original post for ingredients') {
+            setPreview([videoResult]);
+            setImporting(false);
+            setImportProgress('');
+            return;
+          }
+        } catch { /* fall through */ }
+
+        // Try server-side extraction (embed page + yt-dlp metadata)
+        setImportProgress('Step 2/3 — Reading post caption...');
         try {
           const result = await parseFromUrl(trimmedUrl, (progress) => {
-            setImportProgress(progress);
+            setImportProgress(`Step 2/3 — ${progress}`);
           });
           if (result && !result._error) {
             setPreview([result]);
@@ -151,7 +166,8 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
           }
         } catch { /* fall through */ }
 
-        setImportProgress('Trying embedded page extraction...');
+        // Try embedded page via CORS proxy
+        setImportProgress('Step 3/3 — Trying Instagram embed...');
         try {
           const { fetchHtmlViaProxy } = await import('../api');
           const shortcodeMatch = trimmedUrl.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
@@ -189,10 +205,10 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       // For social/video URLs, try the dedicated video extraction endpoint first
       // This gives faster results via yt-dlp metadata + subtitles
       if (isSocialMediaUrl(trimmedUrl)) {
-        setImportProgress('Extracting video metadata...');
+        setImportProgress('Step 1/2 — Extracting video subtitles & metadata...');
         try {
           const videoResult = await tryVideoExtraction(trimmedUrl, (progress) => {
-            setImportProgress(progress);
+            setImportProgress(`Step 1/2 — ${progress}`);
           });
           if (videoResult && !videoResult._error && videoResult.ingredients?.[0] !== 'See original post for ingredients') {
             setPreview([videoResult]);
@@ -203,9 +219,9 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
         } catch { /* fall through to parseFromUrl */ }
       }
 
-      setImportProgress('Extracting recipe...');
+      setImportProgress(isSocialMediaUrl(trimmedUrl) ? 'Step 2/2 — Extracting recipe page...' : 'Extracting recipe...');
       const result = await parseFromUrl(trimmedUrl, (progress) => {
-        setImportProgress(progress);
+        setImportProgress(isSocialMediaUrl(trimmedUrl) ? `Step 2/2 — ${progress}` : progress);
       });
 
       if (!result || result._error) {
