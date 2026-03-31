@@ -10,6 +10,10 @@ const STORES = [
   { id: 'other',      name: 'Other',         color: '#666',    logo: '' },
 ];
 
+// "In Pantry" is a special status meaning "already have it"
+const PANTRY_ID = '__pantry__';
+const PANTRY_STORE = { id: PANTRY_ID, name: 'In Pantry', color: '#4caf50', logo: '' };
+
 // ── Store memory: remembers which store each ingredient was last assigned to ──
 async function rememberStore(ingredientName, storeId) {
   const key = ingredientName.toLowerCase().trim();
@@ -48,6 +52,20 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
   const toggleCheck = (index) => {
     setItems(prev => prev.map((item, i) => i === index ? { ...item, checked: !item.checked } : item));
   };
+
+  const removeItem = useCallback((index) => {
+    setItems(prev => prev.filter((_, i) => i !== index));
+  }, [setItems]);
+
+  const markAsPantry = useCallback((index) => {
+    rememberStore(items[index].name, PANTRY_ID);
+    setItems(prev => prev.map((item, i) => i === index ? { ...item, store: PANTRY_ID } : item));
+  }, [setItems, items]);
+
+  const unmarkPantry = useCallback((index) => {
+    rememberStore(items[index].name, '');
+    setItems(prev => prev.map((item, i) => i === index ? { ...item, store: '' } : item));
+  }, [setItems, items]);
 
   const setStore = useCallback((index, storeId) => {
     rememberStore(items[index].name, storeId); // Save to IndexedDB
@@ -103,6 +121,10 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
     items.map((item, i) => ({ ...item, _idx: i })).filter(i => !i.store),
   [items]);
 
+  const pantryItems = useMemo(() =>
+    items.map((item, i) => ({ ...item, _idx: i })).filter(i => i.store === PANTRY_ID),
+  [items]);
+
   const byStore = useMemo(() =>
     STORES.map(s => ({
       ...s,
@@ -110,8 +132,12 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
     })).filter(g => g.items.length > 0),
   [items]);
 
-  const checkedCount = items.filter(i => i.checked).length;
-  const progressPercent = Math.round((checkedCount / items.length) * 100);
+  // Items that need to be purchased (not pantry)
+  const activeItems = items.filter(i => i.store !== PANTRY_ID);
+  const checkedCount = activeItems.filter(i => i.checked).length;
+  const progressPercent = activeItems.length > 0
+    ? Math.round((checkedCount / activeItems.length) * 100)
+    : 0;
 
   // ── Export text builders ──────────────────────────────────────────────────────
   const buildStoreText = (storeId) => {
@@ -127,7 +153,7 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
       ...s,
       items: items.filter(i => i.store === s.id && !i.checked),
     })).filter(g => g.items.length > 0);
-    const unsortedItems = items.filter(i => !i.store && !i.checked);
+    const unsortedItems = items.filter(i => !i.store && !i.checked && i.store !== PANTRY_ID);
     for (const group of storeGroups) {
       lines.push(`\n--- ${group.name} ---`);
       for (const item of group.items) lines.push(item.name);
@@ -187,7 +213,10 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
         <div className="gl-progress-bar">
           <div className="gl-progress-fill" style={{ width: `${progressPercent}%` }}></div>
         </div>
-        <div className="gl-progress-text">{checkedCount}/{items.length} items completed</div>
+        <div className="gl-progress-text">
+          {checkedCount}/{activeItems.length} items
+          {pantryItems.length > 0 && <span className="gl-pantry-badge"> · {pantryItems.length} in pantry</span>}
+        </div>
       </div>
 
       {/* ── Top toolbar (sticky) ── */}
@@ -245,6 +274,15 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
               <button className="gl-sheet-close" onClick={() => setBatchStoreOverlayOpen(false)}>✕</button>
             </div>
             <div className="gl-sheet-content">
+              <button
+                className="gl-store-option"
+                style={{ borderLeftColor: '#4caf50' }}
+                onClick={() => batchAssignStore(PANTRY_ID)}
+              >
+                <span className="gl-store-logo-letter" style={{ background: '#4caf50', width: 28, height: 28, fontSize: 15, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', color: 'white', fontWeight: 700, flexShrink: 0 }}>✓</span>
+                <span className="gl-store-option-name">In Pantry</span>
+                <span className="gl-store-option-arrow">›</span>
+              </button>
               {STORES.map(s => (
                 <button
                   key={s.id}
@@ -278,6 +316,8 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
               onToggleCheck={() => toggleCheck(item._idx)}
               onToggleSelect={() => toggleSelect(item._idx)}
               onSetStore={(storeId) => setStore(item._idx, storeId)}
+              onMarkPantry={() => markAsPantry(item._idx)}
+              onRemove={() => removeItem(item._idx)}
               stores={STORES}
             />
           ))}
@@ -312,12 +352,51 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
               onToggleCheck={() => toggleCheck(item._idx)}
               onToggleSelect={() => toggleSelect(item._idx)}
               onSetStore={(storeId) => setStore(item._idx, storeId)}
+              onMarkPantry={() => markAsPantry(item._idx)}
+              onRemove={() => removeItem(item._idx)}
               stores={STORES}
               isAssigned
             />
           ))}
         </div>
       ))}
+
+      {/* ── Pantry section (items already in stock) ── */}
+      {pantryItems.length > 0 && (
+        <div className="gl-section gl-pantry-section">
+          <div className="gl-section-header">
+            <div className="gl-section-title" style={{ borderLeftColor: '#4caf50' }}>
+              <span className="gl-store-logo-letter" style={{ background: '#4caf50', width: 20, height: 20, fontSize: 11 }}>✓</span>
+              In Pantry
+            </div>
+            <span className="gl-section-count">{pantryItems.length}</span>
+          </div>
+          {pantryItems.map(item => (
+            <div key={item._idx} className="gl-item gl-item-pantry">
+              <div className="gl-item-content">
+                <span className="gl-pantry-check">✓</span>
+                <span className="gl-item-text gl-item-text-pantry">{item.name}</span>
+              </div>
+              <div className="gl-item-actions">
+                <button
+                  className="gl-btn-unpantry"
+                  onClick={() => unmarkPantry(item._idx)}
+                  title="Move back to grocery list"
+                >
+                  ↩
+                </button>
+                <button
+                  className="gl-btn-remove"
+                  onClick={() => removeItem(item._idx)}
+                  title="Remove from list"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Bottom padding for floating action bar */}
       <div style={{ height: '80px' }}></div>
@@ -326,7 +405,7 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
 }
 
 // ── Individual grocery item ─────────────────────────────────────────────────
-function GroceryItem({ item, batchMode, isSelected, onToggleCheck, onToggleSelect, onSetStore, stores, isAssigned }) {
+function GroceryItem({ item, batchMode, isSelected, onToggleCheck, onToggleSelect, onSetStore, onMarkPantry, onRemove, stores, isAssigned }) {
   const [pickerOpen, setPickerOpen] = useState(false);
 
   return (
@@ -361,6 +440,15 @@ function GroceryItem({ item, batchMode, isSelected, onToggleCheck, onToggleSelec
 
       {!batchMode && (
         <div className="gl-item-actions">
+          {onMarkPantry && (
+            <button
+              className="gl-btn-pantry"
+              onClick={onMarkPantry}
+              title="Mark as In Pantry (already have it)"
+            >
+              ✓
+            </button>
+          )}
           <button
             className={`gl-btn-store ${isAssigned ? 'gl-btn-store-assigned' : ''}`}
             onClick={() => setPickerOpen(!pickerOpen)}
@@ -369,11 +457,28 @@ function GroceryItem({ item, batchMode, isSelected, onToggleCheck, onToggleSelec
           >
             {isAssigned ? '◈' : '◇'}
           </button>
+          {onRemove && (
+            <button
+              className="gl-btn-remove"
+              onClick={onRemove}
+              title="Remove from list"
+            >
+              ✕
+            </button>
+          )}
 
           {pickerOpen && (
             <>
               <div className="gl-picker-backdrop" onClick={() => setPickerOpen(false)}></div>
               <div className="gl-item-picker">
+                <button
+                  className="gl-picker-option gl-picker-pantry"
+                  style={{ borderLeftColor: '#4caf50' }}
+                  onClick={() => { onMarkPantry?.(); setPickerOpen(false); }}
+                >
+                  <span className="gl-store-logo-letter" style={{ background: '#4caf50', width: 20, height: 20, fontSize: 11, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', color: 'white', fontWeight: 700, flexShrink: 0 }}>✓</span>
+                  In Pantry
+                </button>
                 {stores.map(s => (
                   <button
                     key={s.id}

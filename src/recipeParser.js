@@ -91,7 +91,7 @@ function selectBestImage(imageField) {
 
 // ─── Ingredient / Direction heuristics ────────────────────────────────────────
 const UNITS_RE = /\b(cups?|tbsp|tsp|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|grams?|g\b|kg|ml|liters?|litres?|pinch|dash|bunch|cloves?|cans?|jars?|packages?|pkg|sticks?|slices?|handful|sprigs?|heads?|stalks?|fillets?|breasts?|thighs?|inches?|inch|pieces?|pcs?|medium|large|small|whole|half|to taste|chopped|diced|minced|sliced|crushed|grated|shredded|fresh|dried|frozen)\b/i;
-const BULLET_RE = /^[-•*▪▸►◦‣⁃✓✔]\s*/;
+const BULLET_RE = /^[-•*▪▸►◦‣⁃✓✔🔸🔹◽◾▫▪️🥄🥕🧅🧄🍳🥚🧈🥛🍗🥩🧀🍅🫒🌿🫑🥦🍋]\s*/;
 const FRACTION_RE = /^[½¼¾⅓⅔⅛⅜⅝⅞\d]/;
 const NUM_UNIT_RE = /^[\d½¼¾⅓⅔⅛⅜⅝⅞][\d./\s]*\s*(cups?|tbsp|tsp|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|grams?|kg|ml|liters?|pinch|dash|bunch|cloves?|cans?|jars?|packages?|pkg|sticks?|slices?|handful|sprigs?|heads?|stalks?)/i;
 const STEP_NUM_RE = /^\d+[.):\s-]/;
@@ -121,6 +121,10 @@ const INGREDIENTS_HEADERS = [
   'ingredients', 'you will need', "you'll need", 'what you need',
   "what you'll need", 'shopping list', 'what you\'ll need',
   'for the', 'for this recipe', 'recipe ingredients',
+  // Instagram-style informal headers
+  'what u need', 'what you\'ll need', 'grab these', 'grocery list',
+  'heres what you need', "here's what you need", 'recipe below',
+  'whats in it', "what's in it", 'you need',
 ];
 const DIRECTIONS_HEADERS = [
   'directions', 'instructions', 'method', 'steps', 'preparation',
@@ -128,13 +132,19 @@ const DIRECTIONS_HEADERS = [
   'the process', 'process', 'let\'s make', "let's make",
   'how to cook', 'cooking instructions', 'recipe instructions',
   'procedure', 'directions:', 'instructions:',
+  // Instagram-style informal headers
+  'how i made it', 'how i make it', 'heres how', "here's how",
+  'the recipe', 'recipe', 'how to',
 ];
 
 function isIngredientsHeader(lower) {
-  return INGREDIENTS_HEADERS.some(h => lower === h || lower.startsWith(h + ':') || lower.startsWith(h + ' -'));
+  // Strip emoji and common Instagram punctuation for matching
+  const cleaned = lower.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{1FA00}-\u{1FA9F}\u{200D}👇⬇️↓📝✨💫🍽️🥘🍲]/gu, '').trim();
+  return INGREDIENTS_HEADERS.some(h => cleaned === h || cleaned.startsWith(h + ':') || cleaned.startsWith(h + ' -') || lower === h || lower.startsWith(h + ':') || lower.startsWith(h + ' -'));
 }
 function isDirectionsHeader(lower) {
-  return DIRECTIONS_HEADERS.some(h => lower === h || lower.startsWith(h + ':') || lower.startsWith(h + ' -'));
+  const cleaned = lower.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{1FA00}-\u{1FA9F}\u{200D}👇⬇️↓📝✨💫🍽️🥘🍲]/gu, '').trim();
+  return DIRECTIONS_HEADERS.some(h => cleaned === h || cleaned.startsWith(h + ':') || cleaned.startsWith(h + ' -') || lower === h || lower.startsWith(h + ':') || lower.startsWith(h + ' -'));
 }
 
 // ─── Caption Parser wrapper (used by BrowserImport) ─────────────────────────
@@ -205,6 +215,15 @@ export function parseCaption(text) {
     // Collapse 3+ blank lines to 2
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+
+  // PASS 1.1: Normalize Instagram-style emoji bullet lines
+  // Convert "🥕 2 carrots" into "- 2 carrots" for better bullet detection
+  text = text.replace(/^([\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}])\s+/gmu, '- ');
+  // Strip trailing hashtag blocks (common at end of Instagram captions)
+  const hashtagBlockIdx = text.search(/\n\s*(?:#\w+\s*){3,}$/);
+  if (hashtagBlockIdx > 30) {
+    text = text.substring(0, hashtagBlockIdx).trim();
+  }
 
   // PASS 1.5: Handle video timestamp formats from multiple platforms
   // YouTube: "2:30 - Add the garlic" / "2:30 Add the garlic"
@@ -918,6 +937,58 @@ export function resetServerDetection() {
  * the general /api/extract-url endpoint for video/social URLs.
  * Returns parsed recipe object or null.
  */
+/**
+ * Try to parse comma-delimited Instagram-style ingredient lists.
+ * Instagram captions often list ingredients as: "2 eggs, 1 cup flour, butter, salt"
+ * or use emoji separators: "🥚 2 eggs 🧈 butter 🧀 cheese"
+ */
+function tryCommaDelimitedParse(text) {
+  if (!text || text.length < 20) return null;
+
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const ingredients = [];
+  const directions = [];
+
+  for (const line of lines) {
+    // Check if line looks like a comma-separated ingredient list
+    const commaItems = line.split(/\s*[,;]\s*/);
+    if (commaItems.length >= 3 && commaItems.every(item => item.length < 50)) {
+      const allLookLikeIngredients = commaItems.filter(item =>
+        item.length > 1 && (NUM_UNIT_RE.test(item) || FOOD_RE.test(item) || UNITS_RE.test(item))
+      ).length >= commaItems.length * 0.5;
+
+      if (allLookLikeIngredients) {
+        for (const item of commaItems) {
+          const trimmed = item.trim();
+          if (trimmed.length > 1) ingredients.push(trimmed);
+        }
+        continue;
+      }
+    }
+
+    // Check for emoji-separated ingredients (🥚 2 eggs 🧈 butter)
+    const emojiParts = line.split(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}]/u).filter(p => p.trim().length > 1);
+    if (emojiParts.length >= 3) {
+      const foodCount = emojiParts.filter(p => FOOD_RE.test(p.trim()) || NUM_UNIT_RE.test(p.trim())).length;
+      if (foodCount >= emojiParts.length * 0.4) {
+        for (const part of emojiParts) {
+          const trimmed = part.trim();
+          if (trimmed.length > 1) ingredients.push(trimmed);
+        }
+        continue;
+      }
+    }
+
+    // If the line has cooking verbs, it's a direction
+    if (COOKING_VERBS_RE.test(line) && line.length > 15) {
+      directions.push(line.replace(/^[-•*▪▸►◦‣⁃✓✔🔸🔹]\s*/, '').replace(/^\d+[.):-]\s*/, '').trim());
+    }
+  }
+
+  if (ingredients.length === 0 && directions.length === 0) return null;
+  return { ingredients, directions };
+}
+
 export async function tryVideoExtraction(url, onProgress) {
   const serverUrl = await detectServer();
   if (!serverUrl) return null;
@@ -942,7 +1013,31 @@ export async function tryVideoExtraction(url, onProgress) {
     // Parse the combined text through our caption/transcript parser
     const captionText = data.combinedText || data.description || '';
     if (captionText.length > 15) {
-      const parsed = parseCaption(captionText);
+      let parsed = parseCaption(captionText);
+
+      // If parseCaption didn't find good structure, try smartClassifyLines as fallback
+      // This helps with Instagram captions that have informal formatting
+      if (parsed.ingredients.length === 0 || parsed.directions.length === 0) {
+        const lines = captionText.split('\n').map(l => l.trim()).filter(Boolean);
+        if (lines.length >= 3) {
+          const classified = smartClassifyLines(lines);
+          if (classified.ingredients.length > parsed.ingredients.length) {
+            parsed.ingredients = classified.ingredients;
+          }
+          if (classified.directions.length > parsed.directions.length) {
+            parsed.directions = classified.directions;
+          }
+        }
+      }
+
+      // Also try splitting comma-separated ingredient lists common in Instagram
+      if (parsed.ingredients.length <= 1 && parsed.directions.length <= 1) {
+        const commaParsed = tryCommaDelimitedParse(captionText);
+        if (commaParsed) {
+          if (commaParsed.ingredients.length > parsed.ingredients.length) parsed.ingredients = commaParsed.ingredients;
+          if (commaParsed.directions.length > parsed.directions.length) parsed.directions = commaParsed.directions;
+        }
+      }
 
       const recipe = {
         name: data.title ? cleanTitle(data.title) : (parsed.title || 'Imported Recipe'),
