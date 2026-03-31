@@ -160,7 +160,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
 
         if (!html || html.length < 500) {
           if (!cancelled) {
-            setErrorMsg('Could not load the page. Try "Paste Text Instead".');
+            setErrorMsg('Could not load the page. Go back and try another method.');
             setPhase('error');
           }
           return;
@@ -324,7 +324,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
       setPhase('iframe');
     } catch (err) {
       console.error('[BrowserAssist] Extraction error:', err);
-      setErrorMsg('Could not read page content. Try "Paste Text Instead".');
+      setErrorMsg('Could not read page content. Go back and try another method.');
       setPhase('error');
     }
   }, [url, rawHtml, onRecipeExtracted]);
@@ -413,10 +413,10 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
           <h3>Offline Mode</h3>
           <p>Cannot fetch recipe from the web while offline.</p>
           <p className="offline-help-text">
-            Use "Paste Text Instead" to manually add recipe content, and it will be saved locally and imported when you're back online.
+            Go back and use "Paste Text" to manually add recipe content. It will be saved locally and imported when you're back online.
           </p>
           <button className="btn-primary" onClick={onFallbackToText}>
-            Paste Recipe Text Instead
+            ← Back to Import
           </button>
         </div>
       )}
@@ -442,7 +442,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
           <div className="browser-spinner large" />
           <p className="browser-assist-pulse-text">{loadingDots || 'Fetching page content...'}</p>
           <button className="btn-secondary" onClick={onFallbackToText} style={{ marginTop: 12 }}>
-            Skip — Paste Text Instead
+            Skip — Enter Manually
           </button>
         </div>
       )}
@@ -543,9 +543,6 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
             <button className="btn-secondary" onClick={handleTryManual}>
               Not right? Try manual extraction
             </button>
-            <button className="btn-secondary" onClick={onFallbackToText}>
-              Paste Text Instead
-            </button>
           </div>
         </div>
       )}
@@ -601,7 +598,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
                 : '\u{1F4E5} Extract Recipe'}
             </button>
             <button className="btn-secondary" onClick={onFallbackToText} disabled={phase === 'extracting'}>
-              Paste Text Instead
+              ← Back
             </button>
           </div>
         </div>
@@ -612,7 +609,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
         <div className="browser-assist-error">
           <p className="error-text">{errorMsg}</p>
           <button className="btn-primary" onClick={onFallbackToText}>
-            Use Paste Text Instead
+            ← Back to Import
           </button>
         </div>
       )}

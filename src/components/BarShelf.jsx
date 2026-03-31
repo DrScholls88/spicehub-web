@@ -1,8 +1,8 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 
 /**
- * Retro 16-bit style back-bar bottle shelf with animated bartender.
- * Displays all drinks as pixel-art style bottles on wooden shelves.
+ * Retro 16-bit style back-bar with animated bartender behind a bar top.
+ * Layout: Backbar (paginated bottle shelves) → Bar Top (bartender stands behind, wipes)
  * Tap a bottle → bartender shuffles over, grabs it, presents the detail card.
  * Dismiss → bartender puts it back and returns to wiping the bar.
  */
@@ -20,6 +20,9 @@ const BOTTLE_STYLES = [
   { keywords: ['bitters', 'angostura'], shape: 'mini', color: '#ffcc02', label: '#e65100', cap: '#5d4037' },
   { keywords: ['vermouth'], shape: 'tall', color: '#a5d6a7', label: '#1b5e20', cap: '#2e7d32' },
   { keywords: ['soda', 'tonic', 'ginger beer', 'juice', 'syrup', 'grenadine'], shape: 'can', color: '#e0e0e0', label: '#424242', cap: '#9e9e9e' },
+  { keywords: ['cognac', 'brandy'], shape: 'round', color: '#a1887f', label: '#e65100', cap: '#5d4037' },
+  { keywords: ['absinthe'], shape: 'tall', color: '#a5d6a7', label: '#2e7d32', cap: '#1b5e20' },
+  { keywords: ['coffee', 'espresso', 'irish'], shape: 'round', color: '#5d4037', label: '#ffcc02', cap: '#3e2723' },
 ];
 
 function getBottleStyle(drink) {
@@ -141,8 +144,7 @@ function NeonText({ text, color = '#ff4081' }) {
 // States: idle (wiping bar), walking, grabbing, presenting, returning
 // ══════════════════════════════════════════════════════════════════════════════
 
-function PixelBartender({ state, targetX, holdingBottle, facingRight }) {
-  // The bartender is 120px wide, 168px tall (3x scale pixel art character)
+function PixelBartender({ state, holdingBottle, facingRight }) {
   const flip = facingRight ? '' : 'scale(-1,1)';
   const isWalking = state === 'walking' || state === 'returning';
   const isGrabbing = state === 'grabbing';
@@ -169,6 +171,9 @@ function PixelBartender({ state, targetX, holdingBottle, facingRight }) {
         {/* Eye shine */}
         <rect x="16" y="11" width="1" height="1" fill="#fff" />
         <rect x="23" y="11" width="1" height="1" fill="#fff" />
+        {/* Blink animation on idle */}
+        {isIdle && <rect x="15" y="11" width="3" height="1" fill="#e8b88a" className="bs-bt-blink" />}
+        {isIdle && <rect x="22" y="11" width="3" height="1" fill="#e8b88a" className="bs-bt-blink" />}
         {/* Mustache */}
         <rect x="14" y="15" width="5" height="2" fill="#4a3520" />
         <rect x="21" y="15" width="5" height="2" fill="#4a3520" />
@@ -252,61 +257,108 @@ function PixelBartender({ state, targetX, holdingBottle, facingRight }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// BOTTLES PER PAGE — responsive
+// ══════════════════════════════════════════════════════════════════════════════
+const BOTTLES_PER_SHELF = 5;
+const SHELVES_PER_PAGE = 3;
+const BOTTLES_PER_PAGE = BOTTLES_PER_SHELF * SHELVES_PER_PAGE; // 15
+
+// ══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ══════════════════════════════════════════════════════════════════════════════
 
 export default function BarShelf({ drinks, onViewDetail, onClose }) {
   const [selectedDrink, setSelectedDrink] = useState(null);
-  const [bartenderState, setBartenderState] = useState('idle'); // idle, walking, grabbing, presenting, returning
-  const [bartenderX, setBartenderX] = useState(20); // X position in px from left
+  const [bartenderState, setBartenderState] = useState('idle');
+  const [bartenderX, setBartenderX] = useState(20);
   const [bartenderTargetX, setBartenderTargetX] = useState(20);
   const [facingRight, setFacingRight] = useState(true);
   const [holdingBottle, setHoldingBottle] = useState(null);
   const [swipeStartY, setSwipeStartY] = useState(null);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [pageDirection, setPageDirection] = useState('none'); // 'left' | 'right' | 'none'
+  const [idleQuip, setIdleQuip] = useState(0); // cycle through idle quips
 
   const bottleSlotsRef = useRef({});
-  const shelfAreaRef = useRef(null);
+  const barTopRef = useRef(null);
   const animationRef = useRef(null);
   const timeoutRef = useRef(null);
+  const idleTimerRef = useRef(null);
 
-  // Organize drinks into shelf rows (max 6 per shelf)
+  // Idle quips the bartender says
+  const QUIPS = useMemo(() => [
+    'Pick a bottle!',
+    'What\'ll it be?',
+    'Top shelf?',
+    'Try somethin\' new!',
+    'Thirsty?',
+    'Name your poison!',
+    'Happy hour!',
+  ], []);
+
+  // Cycle idle quips
+  useEffect(() => {
+    if (bartenderState !== 'idle') return;
+    idleTimerRef.current = setInterval(() => {
+      setIdleQuip(q => (q + 1) % QUIPS.length);
+    }, 5000);
+    return () => clearInterval(idleTimerRef.current);
+  }, [bartenderState, QUIPS.length]);
+
+  // Paginate drinks into pages of shelves
+  const totalPages = Math.max(1, Math.ceil(drinks.length / BOTTLES_PER_PAGE));
+  const currentPageDrinks = useMemo(() => {
+    const start = currentPage * BOTTLES_PER_PAGE;
+    return drinks.slice(start, start + BOTTLES_PER_PAGE);
+  }, [drinks, currentPage]);
+
   const shelves = useMemo(() => {
     const rows = [];
-    for (let i = 0; i < drinks.length; i += 6) {
-      rows.push(drinks.slice(i, i + 6));
+    for (let i = 0; i < currentPageDrinks.length; i += BOTTLES_PER_SHELF) {
+      rows.push(currentPageDrinks.slice(i, i + BOTTLES_PER_SHELF));
     }
-    while (rows.length < 3) rows.push([]);
+    // Pad to at least SHELVES_PER_PAGE rows
+    while (rows.length < SHELVES_PER_PAGE) rows.push([]);
     return rows;
-  }, [drinks]);
+  }, [currentPageDrinks]);
 
   // Clean up timeouts on unmount
   useEffect(() => {
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      if (idleTimerRef.current) clearInterval(idleTimerRef.current);
     };
   }, []);
 
+  // Page navigation
+  const goToPage = useCallback((newPage) => {
+    if (newPage < 0 || newPage >= totalPages || newPage === currentPage) return;
+    if (bartenderState !== 'idle') return;
+    setPageDirection(newPage > currentPage ? 'right' : 'left');
+    setTimeout(() => {
+      setCurrentPage(newPage);
+      setPageDirection('none');
+    }, 200);
+  }, [totalPages, currentPage, bartenderState]);
+
   const getBottlePosition = useCallback((drinkId) => {
     const slotEl = bottleSlotsRef.current[drinkId];
-    const areaEl = shelfAreaRef.current;
+    const areaEl = barTopRef.current;
     if (!slotEl || !areaEl) return 20;
     const slotRect = slotEl.getBoundingClientRect();
     const areaRect = areaEl.getBoundingClientRect();
-    // Center the 120px-wide bartender on the bottle slot
     return slotRect.left - areaRect.left + slotRect.width / 2 - 60;
   }, []);
 
   const handleBottleTap = useCallback((drink) => {
     if (bartenderState !== 'idle' && bartenderState !== 'presenting') return;
 
-    // If tapping the same drink, dismiss
     if (selectedDrink?.id === drink.id) {
       dismissDrink();
       return;
     }
 
-    // If already presenting another drink, put it back first then fetch new
     if (bartenderState === 'presenting' && selectedDrink) {
       setSelectedDrink(null);
       setBartenderState('idle');
@@ -318,33 +370,27 @@ export default function BarShelf({ drinks, onViewDetail, onClose }) {
     setBartenderTargetX(targetPos);
     setBartenderState('walking');
 
-    // Phase 1: Walk to bottle (animate over ~600ms)
     const walkTime = Math.min(800, Math.max(300, Math.abs(targetPos - bartenderX) * 3));
-
-    // Animate bartender position
     const startX = bartenderX;
     const startTime = performance.now();
+
     const animateWalk = (now) => {
       const elapsed = now - startTime;
       const progress = Math.min(1, elapsed / walkTime);
-      // Ease-out cubic
       const eased = 1 - Math.pow(1 - progress, 3);
       setBartenderX(startX + (targetPos - startX) * eased);
 
       if (progress < 1) {
         animationRef.current = requestAnimationFrame(animateWalk);
       } else {
-        // Phase 2: Grab bottle
         setBartenderState('grabbing');
         setHoldingBottle(bottleStyle);
 
         timeoutRef.current = setTimeout(() => {
-          // Phase 3: Present (slide to center and show detail)
           setBartenderState('presenting');
           setSelectedDrink(drink);
-          // Move bartender to center-ish
-          const centerX = shelfAreaRef.current
-            ? shelfAreaRef.current.clientWidth / 2 - 60
+          const centerX = barTopRef.current
+            ? barTopRef.current.clientWidth / 2 - 60
             : 100;
           setFacingRight(true);
 
@@ -378,7 +424,6 @@ export default function BarShelf({ drinks, onViewDetail, onClose }) {
     setFacingRight(returnPos > bartenderX);
     setBartenderState('returning');
 
-    // Animate return
     const returnStart = performance.now();
     const returnTime = Math.min(700, Math.max(300, Math.abs(returnPos - startX) * 3));
 
@@ -391,7 +436,6 @@ export default function BarShelf({ drinks, onViewDetail, onClose }) {
       if (progress < 1) {
         animationRef.current = requestAnimationFrame(animateReturn);
       } else {
-        // Put bottle back, return to idle position
         setHoldingBottle(null);
         setBartenderState('walking');
         setFacingRight(40 < returnPos);
@@ -442,7 +486,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose }) {
             <span className="bs-pixel-arrow">&larr;</span> BACK
           </button>
           <h1 className="bs-title">
-            <NeonText text="MY BAR SHELF" color="#ff4081" />
+            <NeonText text="MY BAR" color="#ff4081" />
           </h1>
           <div className="bs-bottle-count">
             <span className="bs-count-num">{drinks.length}</span>
@@ -450,43 +494,91 @@ export default function BarShelf({ drinks, onViewDetail, onClose }) {
           </div>
         </div>
 
-        {/* Shelf display */}
-        <div className="bs-shelf-area" ref={shelfAreaRef}>
+        {/* ═══ BACKBAR DISPLAY — Paginated bottle shelves ═══ */}
+        <div className="bs-backbar">
           {/* Ambient back-bar glow */}
           <div className="bs-backbar-glow" />
 
-          {shelves.map((row, shelfIdx) => (
-            <div key={shelfIdx} className="bs-shelf-row">
-              <div className="bs-bottles-row">
-                {row.map((drink) => {
-                  const bottleStyle = getBottleStyle(drink);
-                  const isSelected = selectedDrink?.id === drink.id;
-                  return (
-                    <button
-                      key={drink.id}
-                      ref={(el) => { if (el) bottleSlotsRef.current[drink.id] = el; }}
-                      className={`bs-bottle-slot ${isSelected ? 'bs-selected' : ''}`}
-                      onClick={() => handleBottleTap(drink)}
-                      title={drink.name}
-                    >
-                      <div style={{ opacity: isSelected && holdingBottle ? 0.2 : 1, transition: 'opacity 0.3s' }}>
-                        <PixelBottle style={bottleStyle} size={56} glow={isSelected} />
-                      </div>
-                      <span className="bs-bottle-label">{drink.name.length > 8 ? drink.name.slice(0, 7) + '…' : drink.name}</span>
-                    </button>
-                  );
-                })}
-                {row.length < 6 && Array.from({ length: 6 - row.length }).map((_, i) => (
-                  <div key={`empty-${i}`} className="bs-bottle-slot bs-empty-slot">
-                    <div className="bs-empty-bottle" />
-                  </div>
+          {/* Mirror / decorative top */}
+          <div className="bs-backbar-mirror">
+            <NeonText text="COCKTAILS" color="#ffcc02" />
+          </div>
+
+          {/* Bottle shelves with page transition */}
+          <div className={`bs-backbar-shelves ${pageDirection !== 'none' ? `bs-page-${pageDirection}` : ''}`}>
+            {shelves.map((row, shelfIdx) => (
+              <div key={shelfIdx} className={`bs-shelf-row bs-shelf-wobble-${shelfIdx}`}>
+                <div className="bs-bottles-row">
+                  {row.map((drink) => {
+                    const bottleStyle = getBottleStyle(drink);
+                    const isSelected = selectedDrink?.id === drink.id;
+                    return (
+                      <button
+                        key={drink.id}
+                        ref={(el) => { if (el) bottleSlotsRef.current[drink.id] = el; }}
+                        className={`bs-bottle-slot ${isSelected ? 'bs-selected' : ''}`}
+                        onClick={() => handleBottleTap(drink)}
+                        title={drink.name}
+                      >
+                        <div className="bs-bottle-idle" style={{ opacity: isSelected && holdingBottle ? 0.2 : 1 }}>
+                          <PixelBottle style={bottleStyle} size={52} glow={isSelected} />
+                        </div>
+                        <span className="bs-bottle-label">{drink.name.length > 9 ? drink.name.slice(0, 8) + '…' : drink.name}</span>
+                      </button>
+                    );
+                  })}
+                  {row.length < BOTTLES_PER_SHELF && Array.from({ length: BOTTLES_PER_SHELF - row.length }).map((_, i) => (
+                    <div key={`empty-${i}`} className="bs-bottle-slot bs-empty-slot">
+                      <div className="bs-empty-bottle" />
+                    </div>
+                  ))}
+                </div>
+                <div className="bs-shelf-plank" />
+              </div>
+            ))}
+          </div>
+
+          {/* Page navigation */}
+          {totalPages > 1 && (
+            <div className="bs-page-nav">
+              <button
+                className="bs-page-btn"
+                onClick={() => goToPage(currentPage - 1)}
+                disabled={currentPage === 0}
+              >
+                ◀
+              </button>
+              <div className="bs-page-dots">
+                {Array.from({ length: totalPages }).map((_, i) => (
+                  <button
+                    key={i}
+                    className={`bs-page-dot ${i === currentPage ? 'active' : ''}`}
+                    onClick={() => goToPage(i)}
+                  />
                 ))}
               </div>
-              <div className="bs-shelf-plank" />
+              <button
+                className="bs-page-btn"
+                onClick={() => goToPage(currentPage + 1)}
+                disabled={currentPage === totalPages - 1}
+              >
+                ▶
+              </button>
             </div>
-          ))}
+          )}
+        </div>
 
-          {/* ── BARTENDER ── */}
+        {/* ═══ BAR TOP — Bartender stands behind here ═══ */}
+        <div className="bs-bar-top" ref={barTopRef}>
+          {/* Bar surface (wood grain) */}
+          <div className="bs-bar-surface">
+            {/* Coasters and decorations */}
+            <div className="bs-bar-coaster bs-bar-coaster-1" />
+            <div className="bs-bar-coaster bs-bar-coaster-2" />
+            <div className="bs-bar-napkin" />
+          </div>
+
+          {/* Bartender behind the bar */}
           <div
             className="bs-bartender-wrap"
             style={{
@@ -496,7 +588,6 @@ export default function BarShelf({ drinks, onViewDetail, onClose }) {
           >
             <PixelBartender
               state={bartenderState}
-              targetX={bartenderTargetX}
               holdingBottle={holdingBottle}
               facingRight={facingRight}
             />
@@ -508,10 +599,13 @@ export default function BarShelf({ drinks, onViewDetail, onClose }) {
             )}
             {bartenderState === 'idle' && !selectedDrink && (
               <div className="bs-bt-speech bs-bt-speech-idle">
-                <span>Pick a bottle!</span>
+                <span>{QUIPS[idleQuip]}</span>
               </div>
             )}
           </div>
+
+          {/* Bar rail (front edge) */}
+          <div className="bs-bar-rail" />
         </div>
 
         {/* Selected bottle detail card */}

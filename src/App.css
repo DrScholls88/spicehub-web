@@ -572,13 +572,25 @@ body {
 
 /* Expand modal when BrowserAssist is active */
 .import-browser-assist {
-  padding: 8px;
-  background: #f9f9f9;
+  padding: 0;
+  background: var(--card);
   border-radius: var(--radius);
-  margin-bottom: 8px;
-  min-height: 55vh;
-  /* Allow the BrowserAssist container to use as much space as possible */
+  margin: -20px -20px -32px; /* Stretch to fill modal edges */
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0; /* allow flex shrink */
+}
+.import-browser-assist .browser-assist-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+/* When BrowserAssist is showing, modal content needs flex layout */
+.modal-content:has(.import-browser-assist) {
+  display: flex;
+  flex-direction: column;
 }
 
 .import-tabs {
@@ -4869,24 +4881,30 @@ body {
    BAR SHELF — Retro 16-bit Pixel Art Back Bar (bs-*)
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* ═══════════════════════════════════════════════════════════════════════════════
+   BarShelf — Immersive retro bar with backbar + bar top layout
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
 .bs-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 550;
+  position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 550;
   animation: fadeIn 0.2s ease-out;
 }
 .bs-container {
   position: fixed; inset: 0; display: flex; flex-direction: column;
-  overflow: hidden; background: linear-gradient(180deg, #1a0a2e 0%, #0d0d1a 40%, #1a0f0a 100%);
+  overflow: hidden;
+  background: linear-gradient(180deg, #0d0520 0%, #1a0a2e 25%, #0d0d1a 55%, #1a0f0a 100%);
   max-width: 600px; margin: 0 auto;
 }
 
 /* Pixel font for retro vibe */
 .bs-container * { font-family: 'Press Start 2P', monospace; }
 
-/* Top bar */
+/* ── Top bar ── */
 .bs-topbar {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 12px 16px; flex-shrink: 0; z-index: 2;
+  padding: 10px 16px; flex-shrink: 0; z-index: 2;
   border-bottom: 2px solid #3a1f5e;
+  background: linear-gradient(180deg, rgba(26,10,46,0.9) 0%, transparent 100%);
 }
 .bs-back-btn {
   background: none; border: 2px solid #4caf50; padding: 6px 12px;
@@ -4899,7 +4917,7 @@ body {
 .bs-title { font-size: 14px; margin: 0; }
 .bs-neon-text {
   font-family: 'Press Start 2P', monospace;
-  animation: bsNeonFlicker 3s ease-in-out infinite;
+  animation: bsNeonFlicker 4s ease-in-out infinite;
 }
 .bs-bottle-count {
   display: flex; flex-direction: column; align-items: center;
@@ -4907,39 +4925,73 @@ body {
 .bs-count-num { font-size: 16px; color: #ffcc02; }
 .bs-count-label { font-size: 7px; color: #888; margin-top: 2px; }
 
-/* Shelf area */
-.bs-shelf-area {
-  flex: 1; overflow-y: auto; padding: 12px 8px 80px; position: relative;
-  -webkit-overflow-scrolling: touch;
+/* ═══ BACKBAR — Paginated bottle display ═══ */
+.bs-backbar {
+  flex: 1; overflow: hidden; position: relative;
+  display: flex; flex-direction: column;
+  background: linear-gradient(180deg,
+    rgba(30,15,50,0.6) 0%,
+    rgba(20,10,30,0.8) 50%,
+    rgba(40,25,15,0.4) 100%
+  );
 }
 .bs-backbar-glow {
-  position: absolute; top: 0; left: 10%; right: 10%; height: 60%;
-  background: radial-gradient(ellipse at center, rgba(156,39,176,0.08) 0%, transparent 70%);
-  pointer-events: none;
+  position: absolute; top: 0; left: 5%; right: 5%; height: 70%;
+  background: radial-gradient(ellipse at center top, rgba(156,39,176,0.1) 0%, rgba(255,64,129,0.03) 40%, transparent 70%);
+  pointer-events: none; z-index: 0;
+}
+
+/* Decorative mirror / neon sign above shelves */
+.bs-backbar-mirror {
+  text-align: center; padding: 8px 0 4px; flex-shrink: 0;
+  position: relative; z-index: 1;
+  font-size: 10px;
+}
+.bs-backbar-mirror::after {
+  content: ''; display: block; width: 60%; height: 1px; margin: 6px auto 0;
+  background: linear-gradient(90deg, transparent, rgba(255,204,2,0.3), transparent);
+}
+
+/* Shelves container with page transitions */
+.bs-backbar-shelves {
+  flex: 1; display: flex; flex-direction: column;
+  justify-content: center; padding: 0 4px;
+  position: relative; z-index: 1;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.bs-backbar-shelves.bs-page-left {
+  animation: bsPageSlideLeft 0.35s ease-out;
+}
+.bs-backbar-shelves.bs-page-right {
+  animation: bsPageSlideRight 0.35s ease-out;
+}
+@keyframes bsPageSlideLeft {
+  0% { opacity: 0; transform: translateX(40px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+@keyframes bsPageSlideRight {
+  0% { opacity: 0; transform: translateX(-40px); }
+  100% { opacity: 1; transform: translateX(0); }
 }
 
 /* Individual shelf row */
 .bs-shelf-row {
-  margin-bottom: 4px; position: relative;
+  margin-bottom: 2px; position: relative;
   animation: bsShelfSlideIn 0.4s ease-out both;
 }
-.bs-shelf-row:nth-child(1) { animation-delay: 0.1s; }
-.bs-shelf-row:nth-child(2) { animation-delay: 0.2s; }
-.bs-shelf-row:nth-child(3) { animation-delay: 0.3s; }
-.bs-shelf-row:nth-child(4) { animation-delay: 0.4s; }
+.bs-shelf-row:nth-child(1) { animation-delay: 0.05s; }
+.bs-shelf-row:nth-child(2) { animation-delay: 0.15s; }
+.bs-shelf-row:nth-child(3) { animation-delay: 0.25s; }
 
 .bs-bottles-row {
   display: flex; justify-content: center; gap: 2px;
-  padding: 6px 4px 0; min-height: 72px; align-items: flex-end;
+  padding: 4px 4px 0; min-height: 66px; align-items: flex-end;
 }
 
 /* Wooden shelf plank */
 .bs-shelf-plank {
-  height: 8px; margin: 0 4px;
-  background: linear-gradient(
-    180deg,
-    #8d6e4c 0%, #6d4c33 30%, #5a3d28 60%, #4a3220 100%
-  );
+  height: 8px; margin: 0 8px;
+  background: linear-gradient(180deg, #8d6e4c 0%, #6d4c33 30%, #5a3d28 60%, #4a3220 100%);
   border-radius: 0 0 2px 2px;
   box-shadow: 0 3px 6px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1);
   position: relative;
@@ -4947,6 +4999,33 @@ body {
 .bs-shelf-plank::before {
   content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
   background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
+}
+
+/* Page navigation */
+.bs-page-nav {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  padding: 6px 0 4px; flex-shrink: 0; position: relative; z-index: 1;
+}
+.bs-page-btn {
+  background: none; border: 2px solid #555; color: #aaa;
+  font-size: 12px; padding: 4px 10px; cursor: pointer;
+  font-family: 'Press Start 2P', monospace;
+  -webkit-tap-highlight-color: transparent;
+  transition: all 0.15s;
+}
+.bs-page-btn:disabled { opacity: 0.2; cursor: default; }
+.bs-page-btn:active:not(:disabled) { background: #ffffff10; color: #fff; }
+.bs-page-dots {
+  display: flex; gap: 6px; align-items: center;
+}
+.bs-page-dot {
+  width: 8px; height: 8px; border-radius: 50%; border: 2px solid #555;
+  background: none; cursor: pointer; padding: 0;
+  transition: all 0.2s; -webkit-tap-highlight-color: transparent;
+}
+.bs-page-dot.active {
+  background: #ff4081; border-color: #ff4081;
+  box-shadow: 0 0 6px #ff408180;
 }
 
 /* Bottle slot */
@@ -4957,9 +5036,7 @@ body {
   min-width: 48px; position: relative;
 }
 .bs-bottle-slot:active { transform: scale(0.92); }
-.bs-bottle-slot.bs-selected {
-  filter: brightness(1.2);
-}
+.bs-bottle-slot.bs-selected { filter: brightness(1.2); }
 .bs-bottle-slot.bs-selected::after {
   content: ''; position: absolute; bottom: -2px; left: 50%;
   transform: translateX(-50%); width: 6px; height: 6px;
@@ -4968,8 +5045,21 @@ body {
 }
 .bs-empty-slot { cursor: default; opacity: 0.15; }
 .bs-empty-bottle {
-  width: 20px; height: 48px; border: 1px dashed #555; border-radius: 2px;
-  opacity: 0.3;
+  width: 20px; height: 48px; border: 1px dashed #555; border-radius: 2px; opacity: 0.3;
+}
+
+/* Bottle idle wobble animation */
+.bs-bottle-idle {
+  transition: opacity 0.3s;
+  animation: bsBottleIdleWobble 4s ease-in-out infinite;
+}
+.bs-shelf-wobble-0 .bs-bottle-idle { animation-delay: 0s; }
+.bs-shelf-wobble-1 .bs-bottle-idle { animation-delay: 1.3s; }
+.bs-shelf-wobble-2 .bs-bottle-idle { animation-delay: 2.6s; }
+@keyframes bsBottleIdleWobble {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(0.4deg); }
+  75% { transform: rotate(-0.4deg); }
 }
 
 /* Bottle SVG */
@@ -4984,12 +5074,141 @@ body {
 }
 
 .bs-bottle-label {
-  font-size: 6px; color: #aaa; margin-top: 2px;
-  max-width: 52px; text-align: center; white-space: nowrap;
+  font-size: 5.5px; color: #aaa; margin-top: 2px;
+  max-width: 56px; text-align: center; white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis;
 }
 
-/* Detail card */
+/* ═══ BAR TOP — Bartender stands behind here ═══ */
+.bs-bar-top {
+  flex-shrink: 0; position: relative;
+  height: 200px; overflow: hidden;
+}
+
+/* Bar surface (wood grain counter) */
+.bs-bar-surface {
+  position: absolute; bottom: 0; left: 0; right: 0; height: 40px;
+  background: linear-gradient(180deg,
+    #a07850 0%, #8d6e4c 15%, #7a5c3a 40%, #6d4c33 70%, #5a3d28 100%
+  );
+  box-shadow: 0 -2px 8px rgba(0,0,0,0.4), inset 0 2px 0 rgba(255,255,255,0.1);
+  z-index: 5;
+}
+.bs-bar-surface::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: linear-gradient(90deg,
+    rgba(255,255,255,0.05), rgba(255,255,255,0.12), rgba(255,255,255,0.05)
+  );
+}
+/* Coasters on bar */
+.bs-bar-coaster {
+  position: absolute; width: 20px; height: 20px; border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: radial-gradient(circle, rgba(100,70,40,0.6) 0%, rgba(80,50,30,0.3) 100%);
+  top: 10px;
+}
+.bs-bar-coaster-1 { left: 15%; }
+.bs-bar-coaster-2 { right: 20%; }
+.bs-bar-napkin {
+  position: absolute; width: 16px; height: 10px; background: rgba(255,255,255,0.12);
+  border-radius: 1px; top: 14px; right: 12%;
+}
+
+/* Bar rail (brass foot rail) */
+.bs-bar-rail {
+  position: absolute; bottom: 0; left: 5%; right: 5%; height: 4px;
+  background: linear-gradient(180deg, #c9a84c 0%, #b8942e 50%, #a07820 100%);
+  border-radius: 2px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.3);
+  z-index: 6;
+}
+
+/* ── Bartender character (stands behind bar top) ── */
+.bs-bartender-wrap {
+  position: absolute; bottom: 32px; left: 0;
+  z-index: 4; pointer-events: none;
+  will-change: transform;
+}
+.bs-bartender-svg {
+  image-rendering: pixelated;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+}
+/* Walk bob animation */
+.bs-bt-walk {
+  animation: bsBtBob 0.2s ease-in-out infinite alternate;
+}
+@keyframes bsBtBob {
+  from { transform: translateY(0); }
+  to { transform: translateY(-3px); }
+}
+/* Present bounce */
+.bs-bt-present {
+  animation: bsBtBounce 0.6s ease-out;
+}
+@keyframes bsBtBounce {
+  0% { transform: translateY(0); }
+  30% { transform: translateY(-6px); }
+  50% { transform: translateY(0); }
+  70% { transform: translateY(-3px); }
+  100% { transform: translateY(0); }
+}
+/* Blink animation (eyes) */
+.bs-bt-blink {
+  animation: bsBtBlink 4s ease-in-out infinite;
+}
+@keyframes bsBtBlink {
+  0%, 92%, 96%, 100% { opacity: 0; }
+  93%, 95% { opacity: 1; }
+}
+/* Wiping arm animation */
+.bs-bt-wipe-arm {
+  animation: bsBtWipe 1.2s ease-in-out infinite;
+  transform-origin: 8px 26px;
+}
+@keyframes bsBtWipe {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(6px); }
+}
+/* Held bottle wobble */
+.bs-bt-held-bottle {
+  animation: bsBtBottleWobble 0.5s ease-out;
+}
+@keyframes bsBtBottleWobble {
+  0% { transform: rotate(-10deg); }
+  40% { transform: rotate(5deg); }
+  70% { transform: rotate(-3deg); }
+  100% { transform: rotate(0deg); }
+}
+/* Speech bubble */
+.bs-bt-speech {
+  position: absolute; top: -36px; left: 50%;
+  transform: translateX(-50%);
+  background: #fff; color: #333; font-size: 8px;
+  padding: 6px 10px; border-radius: 8px; white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  animation: bsBtSpeechIn 0.3s ease-out;
+  font-family: 'Press Start 2P', monospace;
+  pointer-events: none;
+}
+.bs-bt-speech::after {
+  content: ''; position: absolute; bottom: -5px; left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent; border-top-color: #fff;
+}
+.bs-bt-speech-idle {
+  opacity: 0.7;
+  animation: bsBtSpeechPulse 5s ease-in-out infinite;
+}
+@keyframes bsBtSpeechIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+@keyframes bsBtSpeechPulse {
+  0%, 100% { opacity: 0; }
+  12%, 88% { opacity: 0.7; }
+}
+
+/* ── Detail card ── */
 .bs-detail-card {
   position: fixed; bottom: 0; left: 0; right: 0;
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
@@ -5008,16 +5227,13 @@ body {
 }
 .bs-detail-info { flex: 1; min-width: 0; }
 .bs-detail-name {
-  font-size: 11px; font-weight: 700; color: #e0e0e0; margin: 0;
-  line-height: 1.4;
+  font-size: 11px; font-weight: 700; color: #e0e0e0; margin: 0; line-height: 1.4;
 }
 .bs-detail-meta {
-  display: flex; gap: 8px; align-items: center; margin-top: 4px;
-  flex-wrap: wrap;
+  display: flex; gap: 8px; align-items: center; margin-top: 4px; flex-wrap: wrap;
 }
 .bs-detail-cat {
-  font-size: 7px; background: #7b1fa2; color: white;
-  padding: 3px 8px; border-radius: 0;
+  font-size: 7px; background: #7b1fa2; color: white; padding: 3px 8px; border-radius: 0;
 }
 .bs-detail-ing-count { font-size: 7px; color: #999; }
 .bs-detail-close {
@@ -5050,7 +5266,18 @@ body {
 }
 .bs-action-view:active { background: rgba(255,64,129,0.25); }
 
-/* Empty bar */
+/* Detail card swipe hint */
+.bs-detail-swipe-hint {
+  display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 0 8px;
+}
+.bs-detail-swipe-bar {
+  width: 36px; height: 4px; background: #555; border-radius: 2px;
+}
+.bs-detail-swipe-text {
+  font-size: 7px; color: #666; font-family: 'Press Start 2P', monospace;
+}
+
+/* ── Empty bar ── */
 .bs-empty-bar {
   display: flex; flex-direction: column; align-items: center;
   justify-content: center; padding: 60px 20px; text-align: center;
@@ -5058,9 +5285,12 @@ body {
 .bs-empty-neon { font-size: 24px; margin-bottom: 16px; }
 .bs-empty-msg { font-size: 8px; color: #888; line-height: 1.8; }
 
-/* Animations */
+/* ── Animations ── */
 @keyframes bsNeonFlicker {
   0%, 100% { opacity: 1; }
+  88% { opacity: 1; }
+  89% { opacity: 0.5; }
+  90% { opacity: 1; }
   92% { opacity: 1; }
   93% { opacity: 0.6; }
   94% { opacity: 1; }
@@ -5073,100 +5303,9 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* ── Bartender character ── */
-.bs-bartender-wrap {
-  position: absolute; bottom: 8px; left: 0;
-  z-index: 10; pointer-events: none;
-  will-change: transform;
-  /* 3x scale bartender: offset so feet touch bottom */
-  margin-bottom: -10px;
-}
-.bs-bartender-svg {
-  image-rendering: pixelated;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
-}
-/* Walk bob animation */
-.bs-bt-walk {
-  animation: bsBtBob 0.2s ease-in-out infinite alternate;
-}
-@keyframes bsBtBob {
-  from { transform: translateY(0); }
-  to { transform: translateY(-3px); }
-}
-/* Present bounce */
-.bs-bt-present {
-  animation: bsBtBounce 0.6s ease-out;
-}
-@keyframes bsBtBounce {
-  0% { transform: translateY(0); }
-  30% { transform: translateY(-6px); }
-  50% { transform: translateY(0); }
-  70% { transform: translateY(-3px); }
-  100% { transform: translateY(0); }
-}
-/* Wiping arm animation */
-.bs-bt-wipe-arm {
-  animation: bsBtWipe 1.2s ease-in-out infinite;
-  transform-origin: 8px 26px;
-}
-@keyframes bsBtWipe {
-  0%, 100% { transform: translateX(0); }
-  50% { transform: translateX(6px); }
-}
-/* Held bottle wobble */
-.bs-bt-held-bottle {
-  animation: bsBtBottleWobble 0.5s ease-out;
-}
-@keyframes bsBtBottleWobble {
-  0% { transform: rotate(-10deg); }
-  40% { transform: rotate(5deg); }
-  70% { transform: rotate(-3deg); }
-  100% { transform: rotate(0deg); }
-}
-/* Speech bubble */
-.bs-bt-speech {
-  position: absolute; top: -36px; left: 50%;
-  transform: translateX(-50%);
-  background: #fff; color: #333; font-size: 9px;
-  padding: 6px 12px; border-radius: 8px; white-space: nowrap;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-  animation: bsBtSpeechIn 0.3s ease-out;
-  font-family: 'Press Start 2P', monospace;
-  pointer-events: none;
-}
-.bs-bt-speech::after {
-  content: ''; position: absolute; bottom: -5px; left: 50%;
-  transform: translateX(-50%);
-  border: 5px solid transparent; border-top-color: #fff;
-}
-.bs-bt-speech-idle {
-  opacity: 0.7;
-  animation: bsBtSpeechPulse 3s ease-in-out infinite;
-}
-@keyframes bsBtSpeechIn {
-  from { opacity: 0; transform: translateX(-50%) translateY(6px); }
-  to { opacity: 1; transform: translateX(-50%) translateY(0); }
-}
-@keyframes bsBtSpeechPulse {
-  0%, 100% { opacity: 0; }
-  15%, 85% { opacity: 0.7; }
-}
-
-/* Detail card swipe hint */
-.bs-detail-swipe-hint {
-  display: flex; flex-direction: column; align-items: center;
-  gap: 4px; padding: 6px 0 8px;
-}
-.bs-detail-swipe-bar {
-  width: 36px; height: 4px; background: #555; border-radius: 2px;
-}
-.bs-detail-swipe-text {
-  font-size: 7px; color: #666; font-family: 'Press Start 2P', monospace;
-}
-
-/* Dark theme refinements */
+/* ── Dark theme refinements ── */
 [data-theme="dark"] .bs-container {
-  background: linear-gradient(180deg, #0a0515 0%, #050508 40%, #0f0a05 100%);
+  background: linear-gradient(180deg, #050210 0%, #0a0515 25%, #050508 55%, #0f0a05 100%);
 }
 [data-theme="dark"] .bs-bt-speech {
   background: #2a2a2a; color: #e0e0e0;
@@ -5175,10 +5314,11 @@ body {
   border-top-color: #2a2a2a;
 }
 
-/* Desktop */
+/* ── Desktop ── */
 @media (min-width: 640px) {
   .bs-bottle-slot:hover .bs-bottle-svg { transform: translateY(-4px); }
   .bs-action-btn:hover { opacity: 0.85; }
+  .bs-page-btn:hover:not(:disabled) { border-color: #aaa; color: #fff; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -5372,11 +5512,13 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  flex: 1;
+  min-height: 0;
 }
 
 .browser-assist-iframe-container {
-  height: 75vh;
-  min-height: 550px;
+  flex: 1;
+  min-height: 300px;
   overflow: auto;
   background: #f5f5f5;
   border-bottom: 1px solid var(--border);
@@ -5388,31 +5530,17 @@ body {
 .browser-assist-iframe-container > div {
   position: relative;
   width: 100%;
+  min-height: 100%;
 }
 
 .browser-assist-iframe {
   width: 100%;
-  height: 100%;
+  min-height: 60vh;
   border: none;
   background: white;
   display: block;
   -webkit-user-select: text;
   user-select: text;
-}
-
-/* Mobile: maximize iframe height for better content visibility */
-@media (max-width: 768px) {
-  .browser-assist-iframe-container {
-    height: 80vh;
-    min-height: 600px;
-  }
-}
-
-@media (max-width: 480px) {
-  .browser-assist-iframe-container {
-    height: 85vh;
-    min-height: 650px;
-  }
 }
 
 .browser-assist-zoom-controls {
