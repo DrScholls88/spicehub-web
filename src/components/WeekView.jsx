@@ -487,11 +487,9 @@ export default function WeekView({
               🛒 Grocery List
             </button>
           )}
-          {pastWeeks.length > 0 && (
-            <button className="wv2-btn tertiary" onClick={() => setShowHistory(true)}>
-              📅 Past Weeks ({pastWeeks.length})
-            </button>
-          )}
+          <button className="wv2-btn tertiary" onClick={() => setShowHistory(true)}>
+            📅 Past Weeks{pastWeeks.length > 0 ? ` (${pastWeeks.length})` : ''}
+          </button>
         </div>
       </div>
 

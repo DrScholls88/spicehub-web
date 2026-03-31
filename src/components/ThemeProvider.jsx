@@ -43,10 +43,12 @@ const ThemeProvider = ({ children }) => {
     }
   }, [theme]);
 
-  // Apply theme to DOM
+  // Apply theme to DOM + set data-system-dark for auto mode CSS selectors
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
-  }, [theme]);
+    // Set data-system-dark so CSS selector [data-theme="auto"][data-system-dark="true"] works
+    document.documentElement.setAttribute('data-system-dark', String(isDark && theme === 'auto'));
+  }, [theme, isDark]);
 
   // Apply accent to DOM
   useEffect(() => {
