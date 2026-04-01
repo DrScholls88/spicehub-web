@@ -109,12 +109,12 @@ export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, o
         onTouchEnd={handleSwipeEnd}
       >
         {/* ── Swipe handle (visual indicator for drag-down-to-close) ── */}
-        <div className="detail-swipe-handle" />
+        <div className="detail-swipe-handle" aria-hidden="true" />
         <div className="modal-header">
           <h2>{meal.name}</h2>
           <div className="modal-header-actions">
-            <button className="btn-icon" onClick={onShare} title="Share">📤</button>
-            <button className="btn-icon" onClick={onClose}>✕</button>
+            <button className="btn-icon" onClick={onShare} title="Share" aria-label="Share recipe">📤</button>
+            <button className="btn-icon" onClick={onClose} aria-label="Close">✕</button>
           </div>
         </div>
 
