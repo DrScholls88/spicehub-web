@@ -31,7 +31,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
   const [autoRecipe, setAutoRecipe] = useState(null); // auto-extracted recipe for preview
   const [loadingDots, setLoadingDots] = useState('');
   const [queuedRecipe, setQueuedRecipe] = useState(null); // offline queued recipe
-  const [iframeZoom, setIframeZoom] = useState(80); // zoom level percentage — start zoomed out so users can see more text
+  const [iframeZoom, setIframeZoom] = useState(70); // zoom level percentage — zoomed out more for mobile readability
   const iframeRef = useRef(null);
   const extractionRef = useRef(null);
 
@@ -550,15 +550,19 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
       {/* ── Iframe fallback (manual extraction) ── */}
       {(phase === 'iframe' || phase === 'extracting') && (
         <div className="browser-assist-ready">
-          <p className="browser-assist-fallback-note">
-            Auto-extraction couldn't find the recipe. Browse the page below and tap "Extract Recipe" when you see the recipe content.
-          </p>
+          <div className="browser-assist-fallback-banner">
+            <span className="fallback-banner-icon">👆</span>
+            <div>
+              <strong>Scroll the page below</strong>
+              <p>Find the recipe content, then tap the green Extract button. Pinch to zoom.</p>
+            </div>
+          </div>
           <div className="browser-assist-zoom-controls">
             <button
               className="browser-assist-zoom-btn"
-              onClick={() => setIframeZoom(Math.max(50, iframeZoom - 10))}
+              onClick={() => setIframeZoom(Math.max(40, iframeZoom - 10))}
               title="Zoom out"
-              disabled={iframeZoom <= 50}
+              disabled={iframeZoom <= 40}
             >
               −
             </button>
@@ -576,11 +580,11 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
               onClick={() => setIframeZoom(100)}
               title="Reset zoom"
             >
-              Reset
+              1:1
             </button>
           </div>
           <div className="browser-assist-iframe-container">
-            <div style={{ transform: `scale(${iframeZoom / 100})`, transformOrigin: 'top center', transition: 'transform 0.1s ease-out' }}>
+            <div style={{ transform: `scale(${iframeZoom / 100})`, transformOrigin: 'top left', width: `${10000 / iframeZoom}%`, transition: 'transform 0.15s ease-out, width 0.15s ease-out' }}>
               <iframe
                 ref={iframeRef}
                 title="Recipe Page"
@@ -592,7 +596,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
             </div>
           </div>
           <div className="browser-assist-actions">
-            <button className="btn-primary" onClick={handleExtraction} disabled={phase === 'extracting'}>
+            <button className="btn-primary browser-assist-extract-btn" onClick={handleExtraction} disabled={phase === 'extracting'}>
               {phase === 'extracting'
                 ? '\u23F3 Analyzing…'
                 : '\u{1F4E5} Extract Recipe'}

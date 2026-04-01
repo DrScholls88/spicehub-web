@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from 'react';
-import { parseFromUrl, isSocialMediaUrl, getSocialPlatform, parseCaption, isInstagramUrl, resetServerDetection, extractWithBrowserAPI, resolveShortUrl, isShortUrl, extractUrlsFromText, tryVideoExtraction } from '../recipeParser';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { parseFromUrl, isSocialMediaUrl, getSocialPlatform, parseCaption, isInstagramUrl, resetServerDetection, extractWithBrowserAPI, resolveShortUrl, isShortUrl, extractUrlsFromText, tryVideoExtraction, smartClassifyLines } from '../recipeParser';
 import BrowserAssist from './BrowserAssist';
 
 /**
@@ -37,6 +37,45 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   // ── Drag and drop state for reorganizing ingredients/directions ────────────
   const [dragSource, setDragSource] = useState(null); // { field, index, recipeIdx }
   const [dragOverField, setDragOverField] = useState(null); // { field, recipeIdx } — shows which field is drop target
+  const [touchDrag, setTouchDrag] = useState(null); // { field, index, recipeIdx, startY }
+  const [autoSorting, setAutoSorting] = useState(false);
+
+  // ── Move item between ingredients ↔ directions ─────────────────────────────
+  const moveItemBetweenSections = useCallback((fromField, index, recipeIdx) => {
+    if (!preview) return;
+    const toField = fromField === 'ingredients' ? 'directions' : 'ingredients';
+    const updated = [...preview];
+    const sourceList = [...(updated[recipeIdx][fromField] || [])];
+    const [item] = sourceList.splice(index, 1);
+    const targetList = [...(updated[recipeIdx][toField] || []), item];
+    updated[recipeIdx] = { ...updated[recipeIdx], [fromField]: sourceList, [toField]: targetList };
+    setPreview(updated);
+  }, [preview]);
+
+  // ── Auto-sort: re-classify all items using smartClassifyLines ──────────────
+  const handleAutoSort = useCallback((recipeIdx) => {
+    if (!preview) return;
+    setAutoSorting(true);
+    const recipe = preview[recipeIdx];
+    const allItems = [
+      ...(recipe.ingredients || []),
+      ...(recipe.directions || []),
+    ].filter(item => item.trim());
+
+    if (allItems.length === 0) { setAutoSorting(false); return; }
+
+    // Use the parser's classification
+    const classified = smartClassifyLines(allItems);
+
+    const updated = [...preview];
+    updated[recipeIdx] = {
+      ...updated[recipeIdx],
+      ingredients: classified.ingredients.length > 0 ? classified.ingredients : recipe.ingredients,
+      directions: classified.directions.length > 0 ? classified.directions : recipe.directions,
+    };
+    setPreview(updated);
+    setTimeout(() => setAutoSorting(false), 600);
+  }, [preview]);
 
   // ── Lock body scroll while modal is open ────────────────────────────────────
   useEffect(() => {
@@ -617,15 +656,27 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
         ) : /* ── Preview screen (full detail + editable) ──────────────────────── */
         preview ? (
           <div className="import-preview">
-            <h3>
-              Preview — {preview.length} recipe{preview.length !== 1 ? 's' : ''} found
-              {preview.some(m => m._hasSubtitles) && (
-                <span className="subtitle-badge" title="Recipe extracted from video subtitles">CC</span>
+            <div className="preview-header-bar">
+              <h3>
+                Preview — {preview.length} recipe{preview.length !== 1 ? 's' : ''} found
+                {preview.some(m => m._hasSubtitles) && (
+                  <span className="subtitle-badge" title="Recipe extracted from video subtitles">CC</span>
+                )}
+                {preview.some(m => m._extractedVia?.startsWith('yt-dlp')) && (
+                  <span className="extraction-badge" title="Extracted via video metadata">Video</span>
+                )}
+              </h3>
+              {preview.length === 1 && (
+                <button
+                  className={`btn-auto-sort ${autoSorting ? 'sorting' : ''}`}
+                  onClick={() => handleAutoSort(0)}
+                  disabled={autoSorting}
+                  title="Re-classify items into ingredients vs. directions"
+                >
+                  {autoSorting ? '✓ Sorted!' : '⚡ Auto-Sort'}
+                </button>
               )}
-              {preview.some(m => m._extractedVia?.startsWith('yt-dlp')) && (
-                <span className="extraction-badge" title="Extracted via video metadata">Video</span>
-              )}
-            </h3>
+            </div>
             <div className="preview-detail-list">
               {preview.map((m, idx) => (
                 <div key={idx} className="preview-detail-card">
@@ -637,17 +688,26 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                         alt=""
                         className="preview-detail-thumb"
                         onError={e => {
-                          // Try CORS proxy fallback (no backend server needed)
-                          if (!e.target.dataset.proxied) {
-                            e.target.dataset.proxied = '1';
-                            e.target.src = `https://api.allorigins.win/raw?url=${encodeURIComponent(m.imageUrl)}`;
+                          // Multi-proxy fallback chain for social media images
+                          const attempt = parseInt(e.target.dataset.proxied || '0');
+                          const proxies = [
+                            `https://api.allorigins.win/raw?url=${encodeURIComponent(m.imageUrl)}`,
+                            `https://corsproxy.io/?${encodeURIComponent(m.imageUrl)}`,
+                            `https://images.weserv.nl/?url=${encodeURIComponent(m.imageUrl)}&default=placeholder`,
+                          ];
+                          if (attempt < proxies.length) {
+                            e.target.dataset.proxied = String(attempt + 1);
+                            e.target.src = proxies[attempt];
                           } else {
+                            // All proxies failed — show placeholder
                             e.target.style.display = 'none';
+                            e.target.nextElementSibling?.classList?.remove('hidden');
                           }
                         }}
                       />
-                    ) : (
-                      <div className="preview-detail-no-img">No image</div>
+                    ) : null}
+                    {!m.imageUrl && (
+                      <div className="preview-detail-no-img">📷</div>
                     )}
                     <div className="preview-detail-title-zone">
                       <label className="preview-label">Recipe Name</label>
@@ -664,18 +724,15 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                     </div>
                   </div>
 
-                  {/* Ingredients (editable list) */}
+                  {/* Ingredients (editable list with move buttons) */}
                   <div
-                    className="preview-detail-section"
+                    className={`preview-detail-section ${dragOverField?.field === 'ingredients' && dragOverField?.recipeIdx === idx ? 'drop-active' : ''}`}
                     onDragOver={(e) => handleDragOver('ingredients', idx, e)}
                     onDrop={(e) => handleDrop('ingredients', (m.ingredients || []).length, idx, e)}
                     onDragLeave={() => setDragOverField(null)}
-                    style={{
-                      background: dragOverField?.field === 'ingredients' && dragOverField?.recipeIdx === idx ? '#fffde7' : 'transparent',
-                      transition: 'background-color 0.2s'
-                    }}
                   >
                     <label className="preview-label">
+                      <span className="preview-label-icon">🥕</span>
                       Ingredients ({m.ingredients?.length ?? 0})
                       <button
                         className="preview-add-btn"
@@ -697,10 +754,10 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                           onDrop={(e) => handleDrop('ingredients', ingIdx, idx, e)}
                           onDragEnd={handleDragEnd}
                           style={{
-                            cursor: dragSource?.recipeIdx === idx ? 'grabbing' : 'grab',
-                            opacity: dragSource?.field === 'ingredients' && dragSource?.recipeIdx === idx && dragSource?.index === ingIdx ? 0.5 : 1
+                            opacity: dragSource?.field === 'ingredients' && dragSource?.recipeIdx === idx && dragSource?.index === ingIdx ? 0.4 : 1
                           }}
                         >
+                          <span className="drag-handle" title="Drag to reorder">⠿</span>
                           <input
                             type="text"
                             value={ing}
@@ -713,6 +770,11 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                               setPreview(updated);
                             }}
                           />
+                          <button
+                            className="preview-move-btn"
+                            onClick={() => moveItemBetweenSections('ingredients', ingIdx, idx)}
+                            title="Move to Steps"
+                          >↓</button>
                           <button
                             className="preview-remove-btn"
                             onClick={() => {
@@ -727,20 +789,20 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                         </div>
                       ))}
                     </div>
+                    {(m.ingredients || []).length === 0 && (
+                      <div className="preview-empty-drop">Drop items here or tap + Add</div>
+                    )}
                   </div>
 
-                  {/* Directions (editable list) */}
+                  {/* Directions (editable list with move buttons) */}
                   <div
-                    className="preview-detail-section"
+                    className={`preview-detail-section ${dragOverField?.field === 'directions' && dragOverField?.recipeIdx === idx ? 'drop-active' : ''}`}
                     onDragOver={(e) => handleDragOver('directions', idx, e)}
                     onDrop={(e) => handleDrop('directions', (m.directions || []).length, idx, e)}
                     onDragLeave={() => setDragOverField(null)}
-                    style={{
-                      background: dragOverField?.field === 'directions' && dragOverField?.recipeIdx === idx ? '#fffde7' : 'transparent',
-                      transition: 'background-color 0.2s'
-                    }}
                   >
                     <label className="preview-label">
+                      <span className="preview-label-icon">📝</span>
                       Steps ({m.directions?.length ?? 0})
                       <button
                         className="preview-add-btn"
@@ -762,10 +824,10 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                           onDrop={(e) => handleDrop('directions', stepIdx, idx, e)}
                           onDragEnd={handleDragEnd}
                           style={{
-                            cursor: dragSource?.recipeIdx === idx ? 'grabbing' : 'grab',
-                            opacity: dragSource?.field === 'directions' && dragSource?.recipeIdx === idx && dragSource?.index === stepIdx ? 0.5 : 1
+                            opacity: dragSource?.field === 'directions' && dragSource?.recipeIdx === idx && dragSource?.index === stepIdx ? 0.4 : 1
                           }}
                         >
+                          <span className="drag-handle" title="Drag to reorder">⠿</span>
                           <span className="preview-step-num">{stepIdx + 1}</span>
                           <textarea
                             value={step}
@@ -780,6 +842,11 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                             }}
                           />
                           <button
+                            className="preview-move-btn"
+                            onClick={() => moveItemBetweenSections('directions', stepIdx, idx)}
+                            title="Move to Ingredients"
+                          >↑</button>
+                          <button
                             className="preview-remove-btn"
                             onClick={() => {
                               const updated = [...preview];
@@ -793,6 +860,9 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                         </div>
                       ))}
                     </div>
+                    {(m.directions || []).length === 0 && (
+                      <div className="preview-empty-drop">Drop items here or tap + Add</div>
+                    )}
                   </div>
 
                   {/* Source URL (editable) */}
