@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { parseFromUrl, isSocialMediaUrl, getSocialPlatform, parseCaption, isInstagramUrl, resetServerDetection, extractWithBrowserAPI, resolveShortUrl, isShortUrl, extractUrlsFromText, tryVideoExtraction, smartClassifyLines } from '../recipeParser';
+import { parseFromUrl, isSocialMediaUrl, getSocialPlatform, parseCaption, isInstagramUrl, resetServerDetection, extractWithBrowserAPI, resolveShortUrl, isShortUrl, extractUrlsFromText, tryVideoExtraction, smartClassifyLines, scoreExtractionConfidence, normalizeAndDedupe, classifyWithConfidence } from '../recipeParser';
 import BrowserAssist from './BrowserAssist';
 
 /**
@@ -37,8 +37,26 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   // ── Drag and drop state for reorganizing ingredients/directions ────────────
   const [dragSource, setDragSource] = useState(null); // { field, index, recipeIdx }
   const [dragOverField, setDragOverField] = useState(null); // { field, recipeIdx } — shows which field is drop target
-  const [touchDrag, setTouchDrag] = useState(null); // { field, index, recipeIdx, startY }
+  const [touchDrag, setTouchDrag] = useState(null); // { field, index, recipeIdx, el, startY, currentY }
   const [autoSorting, setAutoSorting] = useState(false);
+
+  // ── Inline misclassification suggestion using classifyWithConfidence ────────
+  const getMisplacedHint = useCallback((text, currentField) => {
+    if (!text || !text.trim()) return null;
+    const [result] = classifyWithConfidence([text]);
+    if (!result || result.category === 'skip') return null;
+    const expectedField = result.category === 'ingredient' ? 'ingredients' : 'directions';
+    // Only suggest if item is in the wrong section AND confidence is meaningful
+    if (expectedField !== currentField && result.confidence >= 60) {
+      return {
+        suggestedField: expectedField,
+        confidence: result.confidence,
+        reason: result.reason,
+        label: expectedField === 'ingredients' ? 'Ingredient?' : 'Step?',
+      };
+    }
+    return null;
+  }, []);
 
   // ── Move item between ingredients ↔ directions ─────────────────────────────
   const moveItemBetweenSections = useCallback((fromField, index, recipeIdx) => {
@@ -66,16 +84,61 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
 
     // Use the parser's classification
     const classified = smartClassifyLines(allItems);
+    const cleanIngs = normalizeAndDedupe(classified.ingredients);
+    const cleanDirs = normalizeAndDedupe(classified.directions);
 
     const updated = [...preview];
     updated[recipeIdx] = {
       ...updated[recipeIdx],
-      ingredients: classified.ingredients.length > 0 ? classified.ingredients : recipe.ingredients,
-      directions: classified.directions.length > 0 ? classified.directions : recipe.directions,
+      ingredients: cleanIngs.length > 0 ? cleanIngs : recipe.ingredients,
+      directions: cleanDirs.length > 0 ? cleanDirs : recipe.directions,
     };
     setPreview(updated);
-    setTimeout(() => setAutoSorting(false), 600);
+    requestAnimationFrame(() => setTimeout(() => setAutoSorting(false), 400));
   }, [preview]);
+
+  // ── Touch-based drag for mobile ───────────────────────────────────────────
+  const handleTouchDragStart = useCallback((e, field, index, recipeIdx) => {
+    const touch = e.touches[0];
+    const el = e.currentTarget.closest('.preview-editable-row');
+    if (el) {
+      el.style.opacity = '0.6';
+      el.style.transform = 'scale(0.97)';
+    }
+    setTouchDrag({ field, index, recipeIdx, el, startY: touch.clientY, currentY: touch.clientY });
+    setDragSource({ field, index, recipeIdx });
+  }, []);
+
+  const handleTouchDragMove = useCallback((e) => {
+    if (!touchDrag) return;
+    const touch = e.touches[0];
+    setTouchDrag(prev => prev ? { ...prev, currentY: touch.clientY } : null);
+    // Determine which section we're over
+    const els = document.querySelectorAll('.preview-detail-section');
+    els.forEach(section => {
+      const rect = section.getBoundingClientRect();
+      if (touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+        const field = section.dataset.field;
+        const recipeIdx = parseInt(section.dataset.recipeIdx || '0');
+        if (field) setDragOverField({ field, recipeIdx });
+      }
+    });
+  }, [touchDrag]);
+
+  const handleTouchDragEnd = useCallback(() => {
+    if (!touchDrag) return;
+    if (touchDrag.el) {
+      touchDrag.el.style.opacity = '';
+      touchDrag.el.style.transform = '';
+    }
+    // If dragged to a different section, move the item
+    if (dragOverField && dragSource && dragOverField.field !== dragSource.field) {
+      moveItemBetweenSections(dragSource.field, dragSource.index, dragSource.recipeIdx);
+    }
+    setTouchDrag(null);
+    setDragSource(null);
+    setDragOverField(null);
+  }, [touchDrag, dragOverField, dragSource, moveItemBetweenSections]);
 
   // ── Lock body scroll while modal is open ────────────────────────────────────
   useEffect(() => {
@@ -667,14 +730,25 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                 )}
               </h3>
               {preview.length === 1 && (
-                <button
-                  className={`btn-auto-sort ${autoSorting ? 'sorting' : ''}`}
-                  onClick={() => handleAutoSort(0)}
-                  disabled={autoSorting}
-                  title="Re-classify items into ingredients vs. directions"
-                >
-                  {autoSorting ? '✓ Sorted!' : '⚡ Auto-Sort'}
-                </button>
+                <>
+                  <button
+                    className={`btn-auto-sort ${autoSorting ? 'sorting' : ''}`}
+                    onClick={() => handleAutoSort(0)}
+                    disabled={autoSorting}
+                    title="Re-classify items into ingredients vs. directions"
+                  >
+                    {autoSorting ? '✓ Sorted!' : '⚡ Auto-Sort'}
+                  </button>
+                  {(() => {
+                    const conf = scoreExtractionConfidence(preview[0]);
+                    const level = conf >= 70 ? 'high' : conf >= 40 ? 'medium' : 'low';
+                    return (
+                      <span className={`confidence-badge confidence-${level}`} title={`Extraction confidence: ${conf}%`}>
+                        {conf >= 70 ? '✓ High' : conf >= 40 ? '~ Good' : '⚠ Low'} match
+                      </span>
+                    );
+                  })()}
+                </>
               )}
             </div>
             <div className="preview-detail-list">
@@ -727,6 +801,8 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                   {/* Ingredients (editable list with move buttons) */}
                   <div
                     className={`preview-detail-section ${dragOverField?.field === 'ingredients' && dragOverField?.recipeIdx === idx ? 'drop-active' : ''}`}
+                    data-field="ingredients"
+                    data-recipe-idx={idx}
                     onDragOver={(e) => handleDragOver('ingredients', idx, e)}
                     onDrop={(e) => handleDrop('ingredients', (m.ingredients || []).length, idx, e)}
                     onDragLeave={() => setDragOverField(null)}
@@ -757,7 +833,13 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                             opacity: dragSource?.field === 'ingredients' && dragSource?.recipeIdx === idx && dragSource?.index === ingIdx ? 0.4 : 1
                           }}
                         >
-                          <span className="drag-handle" title="Drag to reorder">⠿</span>
+                          <span
+                            className="drag-handle"
+                            title="Drag to reorder"
+                            onTouchStart={(e) => handleTouchDragStart(e, 'ingredients', ingIdx, idx)}
+                            onTouchMove={handleTouchDragMove}
+                            onTouchEnd={handleTouchDragEnd}
+                          >⠿</span>
                           <input
                             type="text"
                             value={ing}
@@ -770,6 +852,17 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                               setPreview(updated);
                             }}
                           />
+                          {(() => {
+                            const hint = getMisplacedHint(ing, 'ingredients');
+                            if (!hint) return null;
+                            return (
+                              <button
+                                className={`misplaced-hint misplaced-hint-${hint.confidence >= 80 ? 'high' : 'medium'}`}
+                                title={`${hint.reason} (${hint.confidence}% confidence)`}
+                                onClick={() => moveItemBetweenSections('ingredients', ingIdx, idx)}
+                              >{hint.label} ↓</button>
+                            );
+                          })()}
                           <button
                             className="preview-move-btn"
                             onClick={() => moveItemBetweenSections('ingredients', ingIdx, idx)}
@@ -797,6 +890,8 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                   {/* Directions (editable list with move buttons) */}
                   <div
                     className={`preview-detail-section ${dragOverField?.field === 'directions' && dragOverField?.recipeIdx === idx ? 'drop-active' : ''}`}
+                    data-field="directions"
+                    data-recipe-idx={idx}
                     onDragOver={(e) => handleDragOver('directions', idx, e)}
                     onDrop={(e) => handleDrop('directions', (m.directions || []).length, idx, e)}
                     onDragLeave={() => setDragOverField(null)}
@@ -827,7 +922,13 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                             opacity: dragSource?.field === 'directions' && dragSource?.recipeIdx === idx && dragSource?.index === stepIdx ? 0.4 : 1
                           }}
                         >
-                          <span className="drag-handle" title="Drag to reorder">⠿</span>
+                          <span
+                            className="drag-handle"
+                            title="Drag to reorder"
+                            onTouchStart={(e) => handleTouchDragStart(e, 'directions', stepIdx, idx)}
+                            onTouchMove={handleTouchDragMove}
+                            onTouchEnd={handleTouchDragEnd}
+                          >⠿</span>
                           <span className="preview-step-num">{stepIdx + 1}</span>
                           <textarea
                             value={step}
@@ -841,6 +942,17 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                               setPreview(updated);
                             }}
                           />
+                          {(() => {
+                            const hint = getMisplacedHint(step, 'directions');
+                            if (!hint) return null;
+                            return (
+                              <button
+                                className={`misplaced-hint misplaced-hint-${hint.confidence >= 80 ? 'high' : 'medium'}`}
+                                title={`${hint.reason} (${hint.confidence}% confidence)`}
+                                onClick={() => moveItemBetweenSections('directions', stepIdx, idx)}
+                              >{hint.label} ↑</button>
+                            );
+                          })()}
                           <button
                             className="preview-move-btn"
                             onClick={() => moveItemBetweenSections('directions', stepIdx, idx)}

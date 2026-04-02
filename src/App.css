@@ -4930,6 +4930,11 @@ body {
 [data-theme="dark"] .preview-empty-drop { border-color: #444; color: #666; }
 [data-theme="dark"] .btn-auto-sort { background: linear-gradient(135deg, #3d2600, #4d3000); border-color: var(--primary); color: #ffb74d; }
 [data-theme="dark"] .btn-auto-sort.sorting { background: var(--accent); color: white; }
+[data-theme="dark"] .confidence-high { background: rgba(102, 187, 106, 0.15); color: #66bb6a; }
+[data-theme="dark"] .confidence-medium { background: rgba(255, 152, 0, 0.15); color: #ffb74d; }
+[data-theme="dark"] .confidence-low { background: rgba(239, 83, 80, 0.15); color: #ef5350; }
+[data-theme="dark"] .progress-step .step-dot { background: #444; }
+[data-theme="dark"] .progress-step .step-line { background: #444; }
 
 /* ── Pantry + grocery extras dark ── */
 [data-theme="dark"] .grocery-pantry-section { background: #1b331b; border-color: #2e7d32; }
@@ -5661,6 +5666,154 @@ body {
   font-size: 14px;
   color: var(--danger);
   margin: 0;
+}
+
+/* ── Extraction Progress Stepper ─────────────────────────────────────────── */
+.extraction-progress-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin: 8px 0 4px;
+}
+
+.progress-step {
+  display: flex;
+  align-items: center;
+}
+
+.progress-step .step-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--border);
+  transition: background var(--duration-fast, 200ms) ease, transform var(--duration-fast, 200ms) ease;
+  flex-shrink: 0;
+}
+
+.progress-step.active .step-dot {
+  background: var(--primary);
+  transform: scale(1.3);
+  box-shadow: 0 0 0 4px rgba(230, 81, 0, 0.15);
+}
+
+.progress-step.done .step-dot {
+  background: var(--accent);
+}
+
+.progress-step .step-line {
+  width: 32px;
+  height: 2px;
+  background: var(--border);
+  transition: background var(--duration-fast, 200ms) ease;
+}
+
+.progress-step.done .step-line {
+  background: var(--accent);
+}
+
+/* ── Confidence Badge ────────────────────────────────────────────────────── */
+.confidence-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: var(--radius-pill, 100px);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.confidence-high {
+  background: rgba(46, 125, 50, 0.12);
+  color: var(--accent);
+}
+
+.confidence-medium {
+  background: rgba(255, 152, 0, 0.12);
+  color: #e65100;
+}
+
+.confidence-low {
+  background: rgba(211, 47, 47, 0.12);
+  color: var(--danger);
+}
+
+/* ── Misplaced Item Suggestion Pills ────────────────────────────────────── */
+.misplaced-hint {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: var(--radius-pill, 100px);
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+  line-height: 1.4;
+}
+
+.misplaced-hint:active {
+  transform: scale(0.95);
+}
+
+.misplaced-hint-high {
+  background: rgba(255, 152, 0, 0.15);
+  color: #e65100;
+}
+
+.misplaced-hint-high:hover {
+  background: rgba(255, 152, 0, 0.25);
+}
+
+.misplaced-hint-medium {
+  background: rgba(255, 193, 7, 0.12);
+  color: #f57f17;
+}
+
+.misplaced-hint-medium:hover {
+  background: rgba(255, 193, 7, 0.22);
+}
+
+[data-theme="dark"] .misplaced-hint-high {
+  background: rgba(255, 152, 0, 0.18);
+  color: #ffb74d;
+}
+
+[data-theme="dark"] .misplaced-hint-high:hover {
+  background: rgba(255, 152, 0, 0.3);
+}
+
+[data-theme="dark"] .misplaced-hint-medium {
+  background: rgba(255, 193, 7, 0.15);
+  color: #ffd54f;
+}
+
+[data-theme="dark"] .misplaced-hint-medium:hover {
+  background: rgba(255, 193, 7, 0.25);
+}
+
+/* ── Touch Drag Enhancements ─────────────────────────────────────────────── */
+.drag-handle {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.preview-editable-row.touch-dragging {
+  opacity: 0.5;
+  transform: scale(0.97);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.preview-detail-section.drop-active {
+  background: rgba(230, 81, 0, 0.06);
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 2px rgba(230, 81, 0, 0.15);
 }
 
 .browser-assist-ready {

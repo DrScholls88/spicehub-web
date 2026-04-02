@@ -77,11 +77,20 @@ function selectBestImage(imageField) {
 
   function scoreUrl(url) {
     let score = 0;
+    // Prefer images with explicit dimensions in URL
     const sizeMatch = url.match(/(\d{3,4})x(\d{3,4})/);
-    if (sizeMatch) score = parseInt(sizeMatch[1]) * parseInt(sizeMatch[2]);
-    if (/\b(full|large|original|hero|featured)\b/i.test(url)) score += 500000;
-    if (/\b(thumb|small|tiny|icon|avatar|s150|s320|150x150|320x320)\b/i.test(url)) score -= 1000000;
-    score += url.length;
+    if (sizeMatch) {
+      const w = parseInt(sizeMatch[1]), h = parseInt(sizeMatch[2]);
+      score = w * h;
+      // Penalize extreme aspect ratios (likely banners or strips)
+      const ratio = Math.max(w, h) / Math.min(w, h);
+      if (ratio > 3) score *= 0.3;
+    }
+    // Keyword bonuses/penalties
+    if (/\b(full|large|original|hero|featured|1080|1200|1440)\b/i.test(url)) score += 500000;
+    if (/\b(thumb|small|tiny|icon|avatar|emoji|s150|s320|150x150|320x320|profile_pic)\b/i.test(url)) score -= 1000000;
+    // Prefer shorter URLs (cleaner, fewer query params = more likely direct image)
+    score -= url.length * 0.5;
     return score;
   }
 
@@ -2243,17 +2252,23 @@ export function smartClassifyLines(lines, sourceElement = null) {
       ingredients.push(trimmed);
     } else if (hasDirectionKeyword) {
       directions.push(trimmed);
-    } else if (length > 60) {
-      // Long lines without clear cooking signal are probably directions
+    } else if (length > 80 && !FOOD_RE.test(trimmed)) {
+      // Very long lines without food words are probably directions
       directions.push(trimmed);
     } else if (length < 50 && FOOD_RE.test(trimmed)) {
       // Short line with food keywords → ingredient
       ingredients.push(trimmed);
     } else if (hasNumberedStep) {
       directions.push(trimmed);
+    } else if (length > 60 && /[,.]/.test(trimmed) && FOOD_RE.test(trimmed)) {
+      // Long line WITH food words and punctuation — could be ingredient list
+      ingredients.push(trimmed);
+    } else if (length > 60) {
+      // Long lines default to directions
+      directions.push(trimmed);
     } else {
       // Default: short unknown lines → ingredients, long ones → directions
-      if (length < 50) {
+      if (length < 45) {
         ingredients.push(trimmed);
       } else {
         directions.push(trimmed);
@@ -2262,6 +2277,125 @@ export function smartClassifyLines(lines, sourceElement = null) {
   }
 
   return { ingredients, directions };
+}
+
+/**
+ * Score extraction confidence 0-100.
+ * Used to show users how reliable the auto-extraction was.
+ */
+export function scoreExtractionConfidence(recipe) {
+  if (!recipe) return 0;
+  let score = 0;
+  const ings = recipe.ingredients || [];
+  const dirs = recipe.directions || [];
+
+  // Title quality (0-15)
+  if (recipe.name && recipe.name.length > 3 && !/^(recipe|imported|untitled)/i.test(recipe.name)) {
+    score += 15;
+  } else if (recipe.name && recipe.name.length > 0) {
+    score += 5;
+  }
+
+  // Ingredient count and quality (0-35)
+  const realIngs = ings.filter(i => i && i.trim().length > 2);
+  if (realIngs.length >= 5) score += 25;
+  else if (realIngs.length >= 3) score += 18;
+  else if (realIngs.length >= 1) score += 8;
+  // Bonus: ingredients with quantities
+  const quantifiedIngs = realIngs.filter(i => /^[\d½¼¾⅓⅔⅛⅜⅝⅞]/.test(i.trim()));
+  if (quantifiedIngs.length >= 3) score += 10;
+  else if (quantifiedIngs.length >= 1) score += 5;
+
+  // Direction count and quality (0-35)
+  const realDirs = dirs.filter(d => d && d.trim().length > 10);
+  if (realDirs.length >= 4) score += 25;
+  else if (realDirs.length >= 2) score += 18;
+  else if (realDirs.length >= 1) score += 8;
+  // Bonus: directions with cooking verbs
+  const verbDirs = realDirs.filter(d => COOKING_VERBS_RE.test(d.trim()));
+  if (verbDirs.length >= 2) score += 10;
+  else if (verbDirs.length >= 1) score += 5;
+
+  // Image (0-10)
+  if (recipe.imageUrl && recipe.imageUrl.startsWith('http')) score += 10;
+
+  // Source URL (0-5)
+  if (recipe.link && recipe.link.startsWith('http')) score += 5;
+
+  return Math.min(100, score);
+}
+
+/**
+ * Classify each line with a confidence score and suggested category.
+ * Returns array of { text, category: 'ingredient'|'direction'|'skip', confidence: 0-100, reason }
+ * Used for inline suggestions in the preview UI.
+ */
+export function classifyWithConfidence(lines) {
+  if (!lines || lines.length === 0) return [];
+
+  return lines.map(rawLine => {
+    const line = (typeof rawLine === 'string' ? rawLine : '').trim();
+    if (!line || line.length < 2) return { text: line, category: 'skip', confidence: 0, reason: 'empty' };
+
+    // Video filler
+    if (/^(follow me|subscribe|like and subscribe|link in bio|comment below|tag a friend|save this|share this|check out|don't forget|make sure to|music:|song:|audio:)/i.test(line)) {
+      return { text: line, category: 'skip', confidence: 90, reason: 'social filler' };
+    }
+
+    // Strong ingredient signals
+    if (NUM_UNIT_RE.test(line)) {
+      return { text: line, category: 'ingredient', confidence: 95, reason: 'has quantity + unit' };
+    }
+    if (FRACTION_RE.test(line) && UNITS_RE.test(line) && line.length < 100) {
+      return { text: line, category: 'ingredient', confidence: 90, reason: 'has fraction + unit' };
+    }
+    if (line.length < 40 && FOOD_RE.test(line) && !COOKING_VERBS_RE.test(line)) {
+      return { text: line, category: 'ingredient', confidence: 75, reason: 'short line with food word' };
+    }
+
+    // Strong direction signals
+    if (STEP_NUM_RE.test(line) && line.length > 15) {
+      return { text: line, category: 'direction', confidence: 92, reason: 'numbered step' };
+    }
+    if (COOKING_VERBS_RE.test(line) && line.length > 20) {
+      return { text: line, category: 'direction', confidence: 85, reason: 'starts with cooking verb' };
+    }
+    if (SPOKEN_DIRECTION_RE.test(line)) {
+      return { text: line, category: 'direction', confidence: 80, reason: 'spoken direction pattern' };
+    }
+    if (/\b(\d+\s*(?:minutes?|mins?|hours?|hrs?))\b/i.test(line) && line.length > 25) {
+      return { text: line, category: 'direction', confidence: 78, reason: 'contains time reference' };
+    }
+
+    // Ambiguous — use length and food words as tiebreaker
+    if (line.length < 45 && FOOD_RE.test(line)) {
+      return { text: line, category: 'ingredient', confidence: 55, reason: 'short with food word (uncertain)' };
+    }
+    if (line.length > 70) {
+      return { text: line, category: 'direction', confidence: 50, reason: 'long line (uncertain)' };
+    }
+
+    // Default
+    return { text: line, category: line.length < 45 ? 'ingredient' : 'direction', confidence: 30, reason: 'default by length' };
+  });
+}
+
+/**
+ * Normalize and deduplicate a list of ingredient or direction strings.
+ * Trims whitespace, removes empty lines, deduplicates case-insensitively.
+ */
+export function normalizeAndDedupe(lines) {
+  if (!lines || !Array.isArray(lines)) return [];
+  const seen = new Set();
+  return lines
+    .map(l => (typeof l === 'string' ? l.trim() : ''))
+    .filter(l => {
+      if (!l || l.length < 2) return false;
+      const key = l.toLowerCase().replace(/\s+/g, ' ');
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 /**
@@ -2312,26 +2446,37 @@ export function extractWithBrowserAPI(pageContent) {
         directions: pluginResult.directions.length > 0
           ? pluginResult.directions
           : ['See recipe for directions'],
-        imageUrl: pluginResult.imageUrl || (imageUrls[0] || ''),
+        imageUrl: pluginResult.imageUrl || (imageUrls.length > 0 ? selectBestImage(imageUrls) || imageUrls[0] : ''),
         link: sourceUrl,
         extractedVia: `plugin-${pluginResult.type}`,
       };
     }
   }
 
+  // ── Helper: extract title from HTML meta tags ──
+  function extractTitleFromHtml() {
+    if (!html) return '';
+    const ogTitle = html.match(/<meta[^>]+property\s*=\s*["']og:title["'][^>]+content\s*=\s*["']([^"']*)["']/i);
+    if (ogTitle?.[1]) return ogTitle[1].trim();
+    const titleTag = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+    if (titleTag?.[1]) return titleTag[1].trim();
+    return '';
+  }
+
   // ── Step 2: Try parseCaption on visible text (leverages existing heuristics) ──
   if (visibleText) {
     const parsed = parseCaption(visibleText);
     if (parsed.ingredients.length > 0 || parsed.directions.length > 0) {
+      const bestTitle = parsed.title || extractTitleFromHtml() || 'Recipe';
       return {
-        name: cleanTitle(parsed.title || 'Recipe'),
+        name: cleanTitle(bestTitle),
         ingredients: parsed.ingredients.length > 0
           ? parsed.ingredients
           : ['See recipe for ingredients'],
         directions: parsed.directions.length > 0
           ? parsed.directions
           : ['See recipe for directions'],
-        imageUrl: imageUrls[0] || '',
+        imageUrl: (imageUrls.length > 0 ? selectBestImage(imageUrls) || imageUrls[0] : ''),
         link: sourceUrl,
         extractedVia: 'caption-parsing',
       };
@@ -2354,7 +2499,7 @@ export function extractWithBrowserAPI(pageContent) {
           directions: classified.directions.length > 0
             ? classified.directions
             : ['See recipe for directions'],
-          imageUrl: imageUrls[0] || '',
+          imageUrl: (imageUrls.length > 0 ? selectBestImage(imageUrls) || imageUrls[0] : ''),
           link: sourceUrl,
           extractedVia: 'smart-classification',
         };

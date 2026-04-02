@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins, isSocialMediaUrl, tryVideoExtraction } from '../recipeParser';
+import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins, isSocialMediaUrl, tryVideoExtraction, scoreExtractionConfidence } from '../recipeParser';
 import { fetchHtmlViaProxy, proxyImageUrl } from '../api';
 import { queueRecipeImport } from '../db';
 import useOnlineStatus from '../hooks/useOnlineStatus';
@@ -32,27 +32,21 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
   const [loadingDots, setLoadingDots] = useState('');
   const [queuedRecipe, setQueuedRecipe] = useState(null); // offline queued recipe
   const [iframeZoom, setIframeZoom] = useState(70); // zoom level percentage — zoomed out more for mobile readability
+  const [extractionProgress, setExtractionProgress] = useState({ step: 0, total: 0, message: '' });
   const iframeRef = useRef(null);
   const extractionRef = useRef(null);
 
   // ── Pulsing loading text animation ─────────────────────────────────────────
   useEffect(() => {
     if (phase !== 'loading') return;
-    const messages = [
-      'Fetching page content',
-      'Scanning for recipe data',
-      'Trying plugin detection',
-      'Almost there',
-    ];
-    let idx = 0;
     let dots = 0;
     const interval = setInterval(() => {
       dots = (dots + 1) % 4;
-      if (dots === 0) idx = (idx + 1) % messages.length;
-      setLoadingDots(messages[idx] + '.'.repeat(dots + 1));
-    }, 600);
+      const msg = extractionProgress.message || 'Fetching page content';
+      setLoadingDots(msg + '.'.repeat(dots + 1));
+    }, 500);
     return () => clearInterval(interval);
-  }, [phase]);
+  }, [phase, extractionProgress.message]);
 
   // ── Pinch-to-zoom support for mobile ─────────────────────────────────────
   useEffect(() => {
@@ -63,7 +57,6 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
 
     const handleTouchMove = (e) => {
       if (e.touches.length !== 2) return;
-      e.preventDefault();
 
       const touch1 = e.touches[0];
       const touch2 = e.touches[1];
@@ -71,6 +64,11 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
         touch1.clientX - touch2.clientX,
         touch1.clientY - touch2.clientY
       );
+
+      // Only prevent default scroll if actually pinch-zooming
+      if (lastDistance > 0 && Math.abs(distance - lastDistance) > 5) {
+        e.preventDefault();
+      }
 
       if (lastDistance > 0) {
         const scale = distance / lastDistance;
@@ -116,6 +114,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
       try {
         // ── NEW: Try dedicated video extraction endpoint first for social/video URLs ──
         // This is faster than HTML fetch + parsing for platforms yt-dlp supports
+        setExtractionProgress({ step: 1, total: 3, message: 'Checking for video subtitles' });
         if (isSocialMediaUrl(url)) {
           try {
             const videoResult = await tryVideoExtraction(url);
@@ -140,6 +139,8 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
           }
           if (cancelled) return;
         }
+
+        setExtractionProgress({ step: 2, total: 3, message: 'Fetching page content' });
 
         // Build URL variants to try
         const urls = [url];
@@ -169,6 +170,8 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
         // Store raw HTML
         setRawHtml(html);
 
+        setExtractionProgress({ step: 3, total: 3, message: 'Analyzing recipe content' });
+
         // ── AUTO-EXTRACTION PIPELINE ──
 
         // Pass 1: extractWithBrowserAPI — plugin detection + caption parsing + smart classification
@@ -197,8 +200,19 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
           return;
         }
 
-        // Pass 3: Auto-extraction failed — fall back to iframe view
+        // Pass 3: Try merging partial results from both attempts
         if (!cancelled) {
+          const merged = pickBestRecipe(browserApiResult, regexRecipe);
+          if (merged && (merged.ingredients?.length > 0 || merged.directions?.length > 0)) {
+            // We have partial data — show it as a low-confidence preview instead of iframe
+            const cleaned = cleanRecipe(merged);
+            if (cleaned.ingredients?.length > 0 || cleaned.directions?.length > 0) {
+              setAutoRecipe({ ...cleaned, extractedVia: 'partial-merge' });
+              setPhase('preview');
+              return;
+            }
+          }
+          // Fall back to iframe view
           setHtmlContent(sanitizeHtmlForEmbed(html, url));
           setPhase('iframe');
         }
@@ -440,6 +454,16 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
       {isOnline && phase === 'loading' && (
         <div className="browser-assist-loading">
           <div className="browser-spinner large" />
+          {extractionProgress.total > 0 && (
+            <div className="extraction-progress-stepper">
+              {Array.from({ length: extractionProgress.total }, (_, i) => (
+                <div key={i} className={`progress-step ${i + 1 < extractionProgress.step ? 'done' : i + 1 === extractionProgress.step ? 'active' : ''}`}>
+                  <div className="step-dot" />
+                  {i < extractionProgress.total - 1 && <div className="step-line" />}
+                </div>
+              ))}
+            </div>
+          )}
           <p className="browser-assist-pulse-text">{loadingDots || 'Fetching page content...'}</p>
           <button className="btn-secondary" onClick={onFallbackToText} style={{ marginTop: 12 }}>
             Skip — Enter Manually
@@ -453,6 +477,15 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
           <div className="browser-assist-preview-header">
             <span className="browser-assist-success-icon">&#10003;</span>
             <span>Recipe found automatically{autoRecipe.extractedVia ? ` (${autoRecipe.extractedVia})` : ''}</span>
+            {(() => {
+              const conf = scoreExtractionConfidence(autoRecipe);
+              const level = conf >= 70 ? 'high' : conf >= 40 ? 'medium' : 'low';
+              return (
+                <span className={`confidence-badge confidence-${level}`}>
+                  {conf >= 70 ? 'High' : conf >= 40 ? 'Good' : 'Low'} confidence
+                </span>
+              );
+            })()}
           </div>
 
           <div className="browser-assist-preview-card">
@@ -464,9 +497,15 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
                   alt=""
                   className="preview-detail-thumb"
                   onError={e => {
-                    if (!e.target.dataset.proxied) {
-                      e.target.dataset.proxied = '1';
-                      e.target.src = proxyImageUrl(autoRecipe.imageUrl);
+                    const attempt = parseInt(e.target.dataset.proxied || '0');
+                    const proxies = [
+                      `https://api.allorigins.win/raw?url=${encodeURIComponent(autoRecipe.imageUrl)}`,
+                      `https://corsproxy.io/?${encodeURIComponent(autoRecipe.imageUrl)}`,
+                      `https://images.weserv.nl/?url=${encodeURIComponent(autoRecipe.imageUrl)}&default=placeholder`,
+                    ];
+                    if (attempt < proxies.length) {
+                      e.target.dataset.proxied = String(attempt + 1);
+                      e.target.src = proxies[attempt];
                     } else {
                       e.target.style.display = 'none';
                     }
@@ -584,7 +623,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
             </button>
           </div>
           <div className="browser-assist-iframe-container">
-            <div style={{ transform: `scale(${iframeZoom / 100})`, transformOrigin: 'top left', width: `${10000 / iframeZoom}%`, transition: 'transform 0.15s ease-out, width 0.15s ease-out' }}>
+            <div style={{ transform: `scale(${iframeZoom / 100})`, transformOrigin: 'top left', width: `${10000 / iframeZoom}%`, transition: 'transform 0.15s ease-out, width 0.15s ease-out', willChange: 'transform' }}>
               <iframe
                 ref={iframeRef}
                 title="Recipe Page"
@@ -658,7 +697,7 @@ const PLACEHOLDER_TITLE_PATTERNS = [
 function isPlaceholderLine(line) {
   if (!line || typeof line !== 'string') return true;
   const trimmed = line.trim();
-  if (trimmed.length < 4) return true;
+  if (trimmed.length < 2) return true;
   return PLACEHOLDER_PATTERNS.some(re => re.test(trimmed));
 }
 
@@ -676,8 +715,9 @@ function hasRealContent(recipe) {
   const dirs = recipe.directions || [];
   const realIngs = ings.filter(i => !isPlaceholderLine(i));
   const realDirs = dirs.filter(d => !isPlaceholderLine(d));
-  if (realIngs.length < 2 && realDirs.length < 2) return false;
-  if (isPlaceholderTitle(recipe.name) && realIngs.length < 3 && realDirs.length < 3) return false;
+  // Accept if we have at least 1 real ingredient OR 2 real directions
+  if (realIngs.length < 1 && realDirs.length < 2) return false;
+  if (isPlaceholderTitle(recipe.name) && realIngs.length < 2 && realDirs.length < 2) return false;
   return true;
 }
 
