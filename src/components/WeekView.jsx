@@ -424,7 +424,7 @@ export default function WeekView({
         ) : (
           <div className="wv2-hero-empty" onClick={() => openPicker(selectedDay)}>
             <div className="wv2-empty-plus">+</div>
-            <p>Tap to add a meal</p>
+            <p className="wv2-empty-lbl">Tap to add a meal</p>
           </div>
         )}
       </div>

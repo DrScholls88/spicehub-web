@@ -112,23 +112,46 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
 
     (async () => {
       try {
-        // ── Pass 0: Agent-style auto-extraction (server-side, Phase 2) ──────────
-        // Runs headless Chrome on server with auto-expand caption + carousel images.
-        // This is the most reliable path and short-circuits everything else.
-        setExtractionProgress({ step: 1, total: 4, message: 'Loading post on server…' });
+        // ── Pass 0: Agent Browser auto-extraction (Phase 1 Integration) ──────────
+        // First try Agent Browser with snapshots + element refs to load the post, 
+        // expand caption, extract text and images.
         if (isSocialMediaUrl(url)) {
+          setExtractionProgress({ step: 1, total: 4, message: 'Loading post…' });
           try {
             const agentResult = await extractInstagramAgent(url, (msg) => {
-              if (!cancelled) setExtractionProgress({ step: 1, total: 4, message: msg });
+              if (cancelled) return;
+              let step = 1;
+              const lowerMsg = msg.toLowerCase();
+              if (lowerMsg.includes('expand')) step = 2; // "Expanding caption…"
+              else if (lowerMsg.includes('vision') || lowerMsg.includes('analyz')) step = 3; // "Analyzing images…"
+              else if (lowerMsg.includes('recipe')) step = 4;
+              setExtractionProgress({ step, total: 4, message: msg });
             });
+
             if (!cancelled && agentResult && hasRealContent(agentResult)) {
               const cleaned = cleanRecipe(agentResult);
-              setAutoRecipe({ ...cleaned, extractedVia: 'agent-auto', imageUrls: agentResult.imageUrls || [] });
-              setPhase('preview');
-              return;
+              // Gracefully fall back to iframe if Agent Browser returns low confidence
+              const conf = scoreExtractionConfidence(cleaned);
+
+              if (conf < 40) {
+                console.log(`[BrowserAssist] Agent Browser returned low confidence (${conf}). Falling back to iframe.`);
+              } else {
+                // Use annotated screenshots + vision for best image selection (visionSelectedImage)
+                setAutoRecipe({
+                  ...cleaned,
+                  extractedVia: 'agent-browser',
+                  imageUrls: agentResult.imageUrls || [],
+                  // Favor the explicitly selected best image via vision if available
+                  imageUrl: agentResult.visionSelectedImage || agentResult.imageUrl
+                });
+                setPhase('preview');
+                return;
+              }
+            } else if (!cancelled && agentResult) {
+              console.log('[BrowserAssist] Agent Browser returned empty recipe content. Falling back to iframe.');
             }
-          } catch {
-            console.log('[BrowserAssist] Agent extraction unavailable, continuing…');
+          } catch (err) {
+            console.log('[BrowserAssist] Agent Browser failed gracefully, falling back to existing iframe:', err);
           }
           if (cancelled) return;
         }
@@ -471,19 +494,35 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
       {/* ── Loading state ── */}
       {isOnline && phase === 'loading' && (
         <div className="browser-assist-loading">
-          <div className="browser-spinner large" />
+          <div className="browser-assist-loading-icon">🔍</div>
+          <p className="browser-assist-pulse-text">
+            {extractionProgress.message || 'Fetching page content'}
+          </p>
           {extractionProgress.total > 0 && (
-            <div className="extraction-progress-stepper">
-              {Array.from({ length: extractionProgress.total }, (_, i) => (
-                <div key={i} className={`progress-step ${i + 1 < extractionProgress.step ? 'done' : i + 1 === extractionProgress.step ? 'active' : ''}`}>
-                  <div className="step-dot" />
-                  {i < extractionProgress.total - 1 && <div className="step-line" />}
-                </div>
-              ))}
+            <div className="extraction-progress-stepper" style={{ width: '100%', maxWidth: 240 }}>
+              <div className="extraction-progress-dots">
+                {Array.from({ length: extractionProgress.total }, (_, i) => (
+                  <div key={i} className={`progress-step ${i + 1 < extractionProgress.step ? 'done' : i + 1 === extractionProgress.step ? 'active' : ''}`}>
+                    <div className="step-dot" />
+                    {i < extractionProgress.total - 1 && <div className="step-line" />}
+                  </div>
+                ))}
+              </div>
+              <div className="extraction-progress-bar">
+                <div
+                  className="extraction-progress-fill"
+                  style={{ width: `${Math.round((extractionProgress.step / extractionProgress.total) * 100)}%` }}
+                />
+              </div>
+              <p className="extraction-step-message">
+                Step {extractionProgress.step} of {extractionProgress.total}
+              </p>
             </div>
           )}
-          <p className="browser-assist-pulse-text">{loadingDots || 'Fetching page content...'}</p>
-          <button className="btn-secondary" onClick={onFallbackToText} style={{ marginTop: 12 }}>
+          {!extractionProgress.total && (
+            <p className="browser-assist-pulse-sub">This usually takes a few seconds…</p>
+          )}
+          <button className="btn-secondary" onClick={onFallbackToText} style={{ marginTop: 8 }}>
             Skip — Enter Manually
           </button>
         </div>

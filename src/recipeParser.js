@@ -1435,7 +1435,7 @@ function parseRecipeFromServerJsonLd(recipe) {
  */
 export async function parseFromUrl(url, onProgress) {
 
-  // ── 1. Instagram: try embed first, then server extraction ──
+  // ── 1. Instagram: try embed first, then Agent extraction ──
   if (isInstagramUrl(url)) {
     console.log('[SpiceHub] Instagram URL — trying embed extraction...');
     if (onProgress) onProgress('Trying Instagram embed extraction...');
@@ -1449,46 +1449,44 @@ export async function parseFromUrl(url, onProgress) {
       }
     }
 
-    // Try dedicated video endpoint first (yt-dlp + embed fallback on server)
-    if (onProgress) onProgress('Trying video extraction (yt-dlp)...');
-    const videoResult = await tryVideoExtraction(url, onProgress);
-    if (videoResult && !videoResult._error && videoResult.ingredients?.[0] !== 'See original post for ingredients') {
-      return videoResult;
+    // Try dedicated Agent extraction (agent-browser + vision)
+    if (onProgress) onProgress('Trying Agent Browser extraction...');
+    const agentResult = await extractInstagramAgent(url, onProgress);
+    if (agentResult && !agentResult._error && agentResult.ingredients?.[0] !== 'See original post for ingredients') {
+      return agentResult;
     }
 
-    // Try general server-side extraction (headless Chrome)
-    if (onProgress) onProgress('Trying server extraction...');
-    const serverResult = await tryServerExtraction(url, onProgress);
-    if (serverResult && !serverResult._error) return serverResult;
-
-    // Use partial video result if available
+    // If agent fails or only returns partial, we can try video endpoint (yt-dlp)
+    if (onProgress) onProgress('Trying video extraction (yt-dlp)...');
+    const videoResult = await tryVideoExtraction(url, onProgress);
     if (videoResult && !videoResult._error) return videoResult;
+
+    // Use partial agent result if available
+    if (agentResult && !agentResult._error) return agentResult;
 
     // Instagram all paths failed — route to BrowserAssist
     console.log('[SpiceHub] Instagram extraction failed — routing to BrowserAssist');
     return null;
   }
 
-  // ── 2. Video/Social URLs: try dedicated video endpoint, then general server, then CORS proxy ──
+  // ── 2. Video/Social URLs: try Agent extraction, then yt-dlp, then CORS proxy ──
   if (isSocialMediaUrl(url)) {
-    console.log('[SpiceHub] Social/video URL — trying video extraction pipeline...');
+    console.log('[SpiceHub] Social/video URL — trying extraction pipeline...');
 
-    // Step A: Try dedicated /api/extract-video endpoint (yt-dlp metadata + subtitles)
-    // This is faster and cheaper than the general extract-url endpoint
-    if (onProgress) onProgress('Extracting video metadata and subtitles...');
-    const videoResult = await tryVideoExtraction(url, onProgress);
-    if (videoResult && !videoResult._error && videoResult.ingredients?.[0] !== 'See original post for ingredients') {
-      return videoResult;
+    // Step A: Agent Browser (Full DOM parsing, carousels, subtitles)
+    if (onProgress) onProgress('Trying Agent Browser extraction...');
+    const agentResult = await extractInstagramAgent(url, onProgress);
+    if (agentResult && !agentResult._error && agentResult.ingredients?.[0] !== 'See original post for ingredients') {
+      return agentResult;
     }
 
-    // Step B: If video endpoint returned partial data (title+thumbnail but no recipe text),
-    // still try the general server endpoint which includes headless Chrome fallback
-    if (onProgress) onProgress('Trying full server extraction...');
-    const serverResult = await tryServerExtraction(url, onProgress);
-    if (serverResult && !serverResult._error) return serverResult;
-
-    // Step C: If video endpoint returned at least partial data, use that as last resort
+    // Step B: Try dedicated /api/extract-video endpoint (yt-dlp metadata + subtitles)
+    if (onProgress) onProgress('Extracting video metadata and subtitles...');
+    const videoResult = await tryVideoExtraction(url, onProgress);
     if (videoResult && !videoResult._error) return videoResult;
+
+    // Step C: Fallback to partial agent result
+    if (agentResult && !agentResult._error) return agentResult;
 
     // Fallback: CORS proxy (sometimes works for public pages)
     if (onProgress) onProgress('Trying direct extraction...');
