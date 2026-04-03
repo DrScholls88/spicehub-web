@@ -797,18 +797,17 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                         alt=""
                         className="preview-detail-thumb"
                         onError={e => {
-                          // Multi-proxy fallback chain for social media images
                           const attempt = parseInt(e.target.dataset.proxied || '0');
+                          const enc = encodeURIComponent(m.imageUrl);
                           const proxies = [
-                            `https://api.allorigins.win/raw?url=${encodeURIComponent(m.imageUrl)}`,
-                            `https://corsproxy.io/?${encodeURIComponent(m.imageUrl)}`,
-                            `https://images.weserv.nl/?url=${encodeURIComponent(m.imageUrl)}&default=placeholder`,
+                            `https://images.weserv.nl/?url=${enc}&w=600&output=jpg&q=85`,
+                            `https://corsproxy.io/?url=${enc}`,
+                            `https://api.allorigins.win/raw?url=${enc}`,
                           ];
                           if (attempt < proxies.length) {
                             e.target.dataset.proxied = String(attempt + 1);
                             e.target.src = proxies[attempt];
                           } else {
-                            // All proxies failed — show placeholder
                             e.target.style.display = 'none';
                             e.target.nextElementSibling?.classList?.remove('hidden');
                           }
@@ -832,6 +831,37 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                       />
                     </div>
                   </div>
+
+                  {/* Carousel image picker — shown when multiple images were extracted */}
+                  {m.imageUrls && m.imageUrls.length > 1 && (
+                    <div className="carousel-picker">
+                      <label className="preview-label">
+                        <span className="preview-label-icon">🖼</span>
+                        Choose Photo ({m.imageUrls.length} found)
+                      </label>
+                      <div className="carousel-picker-strip">
+                        {m.imageUrls.map((imgUrl, imgIdx) => (
+                          <button
+                            key={imgIdx}
+                            className={`carousel-picker-thumb ${m.imageUrl === imgUrl ? 'selected' : ''}`}
+                            onClick={() => {
+                              const updated = [...preview];
+                              updated[idx] = { ...updated[idx], imageUrl: imgUrl };
+                              setPreview(updated);
+                            }}
+                            title={`Select photo ${imgIdx + 1}`}
+                          >
+                            <img
+                              src={`https://images.weserv.nl/?url=${encodeURIComponent(imgUrl)}&w=80&h=80&fit=cover&output=jpg`}
+                              alt={`Slide ${imgIdx + 1}`}
+                              onError={e => { e.target.src = ''; e.target.closest('button')?.classList.add('broken'); }}
+                            />
+                            {m.imageUrl === imgUrl && <span className="carousel-check">✓</span>}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Ingredients (editable list with move buttons) */}
                   <div

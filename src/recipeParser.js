@@ -1211,6 +1211,109 @@ export async function tryVideoExtraction(url, onProgress) {
 }
 
 /**
+ * Phase 2: Agent-style automatic extraction via the /api/extract-instagram-agent endpoint.
+ * This runs full headless Chrome server-side with:
+ *   - Mobile viewport for better Instagram rendering
+ *   - Auto-expansion of truncated captions
+ *   - Carousel image extraction (returns imageUrls[])
+ *   - Subtitle extraction via DOM eval for Reels
+ *
+ * Returns a parsed recipe object with imageUrls[] or null on failure.
+ */
+export async function extractInstagramAgent(url, onProgress) {
+  const serverUrl = await detectServer();
+  if (!serverUrl) return null;
+
+  try {
+    if (onProgress) onProgress('Loading post on server...');
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 50000);
+
+    const resp = await fetch(`${serverUrl}/api/extract-instagram-agent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    if (!data.ok || data.type === 'none') return null;
+
+    const rawCaption = data.caption || '';
+    const rawTitle = data.title || '';
+
+    // JSON-LD (recipe blog structured data) — parse directly
+    if (data.type === 'jsonld' && data.recipe) {
+      const r = data.recipe;
+      const ings = normalizeInstructions(r.recipeIngredient || []);
+      const dirs = normalizeInstructions(
+        Array.isArray(r.recipeInstructions)
+          ? r.recipeInstructions.map(s => (typeof s === 'string' ? s : s.text || s.name || ''))
+          : []
+      );
+      return {
+        name: cleanTitle(r.name || rawTitle),
+        ingredients: ings.length > 0 ? ings : [],
+        directions: dirs.length > 0 ? dirs : [],
+        imageUrl: data.imageUrl || '',
+        imageUrls: data.imageUrls || [],
+        link: url,
+        _extractedVia: 'agent-jsonld',
+      };
+    }
+
+    // Caption text — parse with the full pipeline
+    if (onProgress) onProgress('Analyzing recipe content...');
+
+    // Priority: subtitle text first (Reels transcript), then caption
+    const textToparse = (data.subtitleText && data.subtitleText.length > 50)
+      ? `${data.subtitleText}\n${rawCaption}`
+      : rawCaption;
+
+    if (!textToparse || textToparse.length < 15) return null;
+
+    let parsed = parseCaption(textToparse);
+
+    // Spoken-transcript fallback for Reels
+    if (data.subtitleText && (parsed.ingredients.length <= 1 || parsed.directions.length <= 1)) {
+      const spoken = parseSpokenTranscript(data.subtitleText);
+      if (spoken) {
+        if (spoken.ingredients.length > parsed.ingredients.length) parsed.ingredients = spoken.ingredients;
+        if (spoken.directions.length > parsed.directions.length) parsed.directions = spoken.directions;
+      }
+    }
+
+    // smartClassifyLines fallback
+    if (parsed.ingredients.length === 0 || parsed.directions.length === 0) {
+      const lines = textToparse.split('\n').map(l => l.trim()).filter(Boolean);
+      if (lines.length >= 3) {
+        const classified = smartClassifyLines(lines);
+        if (classified.ingredients.length > parsed.ingredients.length) parsed.ingredients = classified.ingredients;
+        if (classified.directions.length > parsed.directions.length) parsed.directions = classified.directions;
+      }
+    }
+
+    const title = parsed.title || rawTitle || sanitizeRecipeTitle(rawCaption.slice(0, 80));
+
+    return {
+      name: cleanTitle(title),
+      ingredients: parsed.ingredients,
+      directions: parsed.directions,
+      imageUrl: data.imageUrl || '',
+      imageUrls: data.imageUrls || [],
+      link: url,
+      _extractedVia: 'agent-auto',
+      _hasSubtitles: !!(data.subtitleText),
+    };
+  } catch (e) {
+    console.log(`[SpiceHub] Agent extraction error: ${e.message}`);
+    return null;
+  }
+}
+
+/**
  * Try server-side extraction (yt-dlp + headless Chrome).
  * Returns parsed recipe object or null.
  */

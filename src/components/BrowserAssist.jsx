@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins, isSocialMediaUrl, tryVideoExtraction, scoreExtractionConfidence } from '../recipeParser';
+import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins, isSocialMediaUrl, tryVideoExtraction, extractInstagramAgent, scoreExtractionConfidence } from '../recipeParser';
 import { fetchHtmlViaProxy, proxyImageUrl } from '../api';
 import { queueRecipeImport } from '../db';
 import useOnlineStatus from '../hooks/useOnlineStatus';
@@ -112,35 +112,53 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
 
     (async () => {
       try {
-        // ── NEW: Try dedicated video extraction endpoint first for social/video URLs ──
-        // This is faster than HTML fetch + parsing for platforms yt-dlp supports
-        setExtractionProgress({ step: 1, total: 3, message: 'Checking for video subtitles' });
+        // ── Pass 0: Agent-style auto-extraction (server-side, Phase 2) ──────────
+        // Runs headless Chrome on server with auto-expand caption + carousel images.
+        // This is the most reliable path and short-circuits everything else.
+        setExtractionProgress({ step: 1, total: 4, message: 'Loading post on server…' });
+        if (isSocialMediaUrl(url)) {
+          try {
+            const agentResult = await extractInstagramAgent(url, (msg) => {
+              if (!cancelled) setExtractionProgress({ step: 1, total: 4, message: msg });
+            });
+            if (!cancelled && agentResult && hasRealContent(agentResult)) {
+              const cleaned = cleanRecipe(agentResult);
+              setAutoRecipe({ ...cleaned, extractedVia: 'agent-auto', imageUrls: agentResult.imageUrls || [] });
+              setPhase('preview');
+              return;
+            }
+          } catch {
+            console.log('[BrowserAssist] Agent extraction unavailable, continuing…');
+          }
+          if (cancelled) return;
+        }
+
+        // ── Pass 1: Dedicated video extraction (yt-dlp subtitles + metadata) ──
+        setExtractionProgress({ step: 2, total: 4, message: 'Checking for video subtitles…' });
         if (isSocialMediaUrl(url)) {
           try {
             const videoResult = await tryVideoExtraction(url);
             if (!cancelled && videoResult && !videoResult._error) {
-              // If we got real ingredients (not just "See original post"), use it
               if (videoResult.ingredients?.[0] !== 'See original post for ingredients') {
                 setAutoRecipe({
                   name: videoResult.name || 'Imported Recipe',
                   ingredients: videoResult.ingredients || [],
                   directions: videoResult.directions || [],
                   imageUrl: videoResult.imageUrl || '',
+                  imageUrls: videoResult.imageUrls || [],
                   link: videoResult.link || url,
                 });
                 setPhase('preview');
                 return;
               }
-              // Partial result — continue to HTML extraction but keep video data as fallback
             }
           } catch {
-            // Video endpoint not available or failed — continue to HTML extraction
             console.log('[BrowserAssist] Video extraction unavailable, falling back to HTML fetch');
           }
           if (cancelled) return;
         }
 
-        setExtractionProgress({ step: 2, total: 3, message: 'Fetching page content' });
+        setExtractionProgress({ step: 3, total: 4, message: 'Fetching page content…' });
 
         // Build URL variants to try
         const urls = [url];
@@ -170,7 +188,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
         // Store raw HTML
         setRawHtml(html);
 
-        setExtractionProgress({ step: 3, total: 3, message: 'Analyzing recipe content' });
+        setExtractionProgress({ step: 4, total: 4, message: 'Analyzing recipe content…' });
 
         // ── AUTO-EXTRACTION PIPELINE ──
 

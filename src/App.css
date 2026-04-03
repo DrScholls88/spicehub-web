@@ -5797,6 +5797,83 @@ body {
   background: rgba(255, 193, 7, 0.25);
 }
 
+/* ── Carousel Image Picker (Phase 3) ─────────────────────────────────────── */
+.carousel-picker {
+  padding: 10px 0 4px;
+}
+
+.carousel-picker-strip {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 6px 2px 10px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.carousel-picker-strip::-webkit-scrollbar { display: none; }
+
+.carousel-picker-thumb {
+  position: relative;
+  flex: 0 0 72px;
+  width: 72px;
+  height: 72px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  background: var(--surface-elevated, #f5f5f5);
+  cursor: pointer;
+  padding: 0;
+  transition: border-color 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+}
+
+.carousel-picker-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.carousel-picker-thumb.selected {
+  border-color: var(--primary, #e65100);
+  box-shadow: 0 0 0 2px rgba(230, 81, 0, 0.25);
+}
+
+.carousel-picker-thumb:active {
+  transform: scale(0.92);
+}
+
+.carousel-picker-thumb .carousel-check {
+  position: absolute;
+  bottom: 3px;
+  right: 3px;
+  background: var(--primary, #e65100);
+  color: #fff;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.carousel-picker-thumb.broken {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+[data-theme="dark"] .carousel-picker-thumb {
+  background: var(--surface-elevated, #2a2a2a);
+}
+
+[data-theme="dark"] .carousel-picker-thumb.selected {
+  border-color: var(--primary, #ff7043);
+  box-shadow: 0 0 0 2px rgba(255, 112, 67, 0.25);
+}
+
 /* ── Touch Drag Enhancements ─────────────────────────────────────────────── */
 .drag-handle {
   touch-action: none;
