@@ -498,10 +498,14 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
                   className="preview-detail-thumb"
                   onError={e => {
                     const attempt = parseInt(e.target.dataset.proxied || '0');
+                    const enc = encodeURIComponent(autoRecipe.imageUrl);
                     const proxies = [
-                      `https://api.allorigins.win/raw?url=${encodeURIComponent(autoRecipe.imageUrl)}`,
-                      `https://corsproxy.io/?${encodeURIComponent(autoRecipe.imageUrl)}`,
-                      `https://images.weserv.nl/?url=${encodeURIComponent(autoRecipe.imageUrl)}&default=placeholder`,
+                      // weserv.nl first — reliable image CDN proxy that handles Instagram/TikTok
+                      `https://images.weserv.nl/?url=${enc}&w=600&output=jpg&q=85`,
+                      // corsproxy.io — correct URL format (url= param required)
+                      `https://corsproxy.io/?url=${enc}`,
+                      // allorigins last — sometimes returns HTML wrappers for binary data
+                      `https://api.allorigins.win/raw?url=${enc}`,
                     ];
                     if (attempt < proxies.length) {
                       e.target.dataset.proxied = String(attempt + 1);
@@ -708,6 +712,8 @@ function isPlaceholderTitle(title) {
 
 /**
  * Check if a recipe has real content (not just placeholders).
+ * Thresholds are intentionally permissive — better to show a partial preview
+ * the user can fix than to silently fall back to iframe.
  */
 function hasRealContent(recipe) {
   if (!recipe) return false;
@@ -715,8 +721,9 @@ function hasRealContent(recipe) {
   const dirs = recipe.directions || [];
   const realIngs = ings.filter(i => !isPlaceholderLine(i));
   const realDirs = dirs.filter(d => !isPlaceholderLine(d));
-  // Accept if we have at least 1 real ingredient OR 2 real directions
-  if (realIngs.length < 1 && realDirs.length < 2) return false;
+  // Accept if we have at least 1 real ingredient OR 1 real direction
+  if (realIngs.length < 1 && realDirs.length < 1) return false;
+  // Reject if title is a placeholder AND content is very thin (both < 2)
   if (isPlaceholderTitle(recipe.name) && realIngs.length < 2 && realDirs.length < 2) return false;
   return true;
 }
@@ -759,35 +766,73 @@ function stripHtmlToText(html) {
 }
 
 /**
+ * Test whether a URL looks like a real food/recipe image worth using.
+ * Rejects tiny thumbnails, avatars, tracking pixels, and UI chrome.
+ */
+function isUsableImageUrl(u) {
+  if (!u || !u.startsWith('http')) return false;
+  if (/profile_pic|avatar|logo|icon|emoji|tracking|pixel|blank|1x1|spinner/i.test(u)) return false;
+  if (/\/s\d{2,3}x\d{2,3}\//.test(u)) return false; // Instagram tiny thumbnails like /s150x150/
+  if (/\.gif$/i.test(u)) return false; // animated gifs are rarely food photos
+  return true;
+}
+
+/**
  * Extract image URLs from raw HTML string.
+ * Accepts images from ANY CDN — Instagram, TikTok, YouTube, recipe blogs, etc.
  */
 function extractImageUrlsFromHtml(html) {
   const urls = [];
   const seen = new Set();
 
-  // OG image
-  const ogM = html.match(/<meta[^>]+property\s*=\s*["']og:image["'][^>]+content\s*=\s*["']([^"']*)["']/i)
-    || html.match(/<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+property\s*=\s*["']og:image["']/i);
-  if (ogM && ogM[1]) {
-    const u = ogM[1].replace(/&amp;/g, '&');
-    if (u.startsWith('http')) { urls.push(u); seen.add(u); }
-  }
-
-  // JSON display_url
-  for (const m of html.matchAll(/"display_url"\s*:\s*"(https:[^"]+)"/g)) {
-    const u = m[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
-    if (!seen.has(u) && u.includes('scontent')) { urls.push(u); seen.add(u); }
-  }
-
-  // img tags with scontent
-  for (const m of html.matchAll(/<img[^>]+src="(https:\/\/[^"]*scontent[^"]*)"/gi)) {
-    const u = m[1].replace(/&amp;/g, '&');
-    if (!seen.has(u) && !/\/s\d{2,3}x\d{2,3}\//.test(u) && !/profile_pic/i.test(u)) {
-      urls.push(u); seen.add(u);
+  function addUrl(u) {
+    const clean = u.replace(/&amp;/g, '&').replace(/\\u0026/g, '&').replace(/\\/g, '');
+    if (isUsableImageUrl(clean) && !seen.has(clean)) {
+      urls.push(clean);
+      seen.add(clean);
     }
   }
 
-  return urls.slice(0, 5);
+  // 1. OG image — highest priority, works on all platforms
+  const ogM = html.match(/<meta[^>]+property\s*=\s*["']og:image["'][^>]+content\s*=\s*["']([^"']*)["']/i)
+    || html.match(/<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+property\s*=\s*["']og:image["']/i);
+  if (ogM?.[1]) addUrl(ogM[1]);
+
+  // 2. Twitter image card (common on recipe blogs)
+  const twM = html.match(/<meta[^>]+name\s*=\s*["']twitter:image["'][^>]+content\s*=\s*["']([^"']*)["']/i)
+    || html.match(/<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+name\s*=\s*["']twitter:image["']/i);
+  if (twM?.[1]) addUrl(twM[1]);
+
+  // 3. JSON-LD / structured data image field
+  for (const m of html.matchAll(/"image"\s*:\s*"(https:[^"]{10,})"/g)) addUrl(m[1]);
+  for (const m of html.matchAll(/"image"\s*:\s*\[\s*"(https:[^"]{10,})"/g)) addUrl(m[1]);
+
+  // 4. Instagram-specific JSON fields (display_url, thumbnail_src, media_url)
+  for (const m of html.matchAll(/"display_url"\s*:\s*"(https:[^"]+)"/g)) addUrl(m[1]);
+  for (const m of html.matchAll(/"thumbnail_src"\s*:\s*"(https:[^"]+)"/g)) addUrl(m[1]);
+  for (const m of html.matchAll(/"thumbnail_url"\s*:\s*"(https:[^"]+)"/g)) addUrl(m[1]);
+  for (const m of html.matchAll(/"media_url"\s*:\s*"(https:[^"]+)"/g)) addUrl(m[1]);
+  for (const m of html.matchAll(/"cover_image_url"\s*:\s*"(https:[^"]+)"/g)) addUrl(m[1]);
+  for (const m of html.matchAll(/"poster"\s*:\s*"(https:[^"]+)"/g)) addUrl(m[1]);
+
+  // 5. EmbedImage class (Instagram embed page)
+  const embedImgM = html.match(/<img[^>]+class="[^"]*EmbedImage[^"]*"[^>]+src="([^"]+)"/i)
+    || html.match(/<img[^>]+src="([^"]+)"[^>]+class="[^"]*EmbedImage[^"]*"/i);
+  if (embedImgM?.[1]) addUrl(embedImgM[1]);
+
+  // 6. Large img tags (any CDN) — prefer ones with size hints
+  for (const m of html.matchAll(/<img[^>]+src="(https:\/\/[^"]{20,})"/gi)) {
+    const u = m[1].replace(/&amp;/g, '&');
+    // Prefer images with size indicators suggesting they're content images
+    if (/\d{3,4}[x_]\d{3,4}|\.(jpg|jpeg|png|webp)(\?|$)/i.test(u)) addUrl(u);
+  }
+
+  // 7. Background images in style attributes (some recipe sites use these)
+  for (const m of html.matchAll(/background(?:-image)?\s*:\s*url\(['"]?(https:\/\/[^'")\s]{20,})['"]?\)/gi)) {
+    addUrl(m[1]);
+  }
+
+  return urls.slice(0, 8);
 }
 
 /**
@@ -797,11 +842,17 @@ function extractImageUrlsFromHtml(html) {
 function extractFromRawHtml(html, sourceUrl) {
   let caption = '';
 
-  // Method 1: Caption div patterns
+  // Method 1: Caption div patterns — multiple Instagram embed class naming schemes
   const captionPatterns = [
+    // Nested span inside caption div (most common current structure)
     /<div\s+class="[^"]*Caption[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
     /<div\s+class="[^"]*EmbedCaption[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    // Span inside any element with Caption in class
     /class="[^"]*[Cc]aption[^"]*"[^>]*>[\s\S]*?<span[^>]*>([\s\S]*?)<\/span>/i,
+    // Any <p> or <span> inside a data-caption element
+    /data-caption[^>]*>([\s\S]*?)<\//i,
+    // Article / section with caption content
+    /<article[^>]*>([\s\S]{100,}?)<\/article>/i,
   ];
   for (const re of captionPatterns) {
     const m = re.exec(html);
@@ -811,11 +862,19 @@ function extractFromRawHtml(html, sourceUrl) {
     }
   }
 
-  // Method 2: JSON data in scripts
+  // Method 2: JSON data in scripts — covers window.__additionalData and newer structures
   if (!caption) {
     const dataPatterns = [
+      // Instagram's edge_media_to_caption
+      /"edge_media_to_caption"\s*:\s*\{\s*"edges"\s*:\s*\[\s*\{\s*"node"\s*:\s*\{\s*"text"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/,
+      // Generic caption.text
       /"caption"\s*:\s*\{\s*"text"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/,
-      /"text"\s*:\s*"([^"]{30,}(?:\\.[^"]*)*)"/,
+      // Direct caption text field
+      /"caption_text"\s*:\s*"([^"]{30,}(?:\\.[^"]*)*)"/,
+      // accessibility_caption
+      /"accessibility_caption"\s*:\s*"([^"]{30,}(?:\\.[^"]*)*)"/,
+      // Any "text" field that's long enough to be a recipe (avoid matching short UI strings)
+      /"text"\s*:\s*"([^"]{80,}(?:\\.[^"]*)*)"/,
     ];
     for (const re of dataPatterns) {
       const m = re.exec(html);
@@ -827,12 +886,21 @@ function extractFromRawHtml(html, sourceUrl) {
     }
   }
 
-  // Method 3: OG description
+  // Method 3: OG description — works on all platforms when embed page is served
   if (!caption) {
     const ogM = html.match(/<meta[^>]+property\s*=\s*["']og:description["'][^>]+content\s*=\s*["']([^"']*)["']/i)
       || html.match(/<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+property\s*=\s*["']og:description["']/i);
     if (ogM && ogM[1] && ogM[1].length > 30) {
       caption = ogM[1].replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+    }
+  }
+
+  // Method 4: Meta description fallback
+  if (!caption) {
+    const metaM = html.match(/<meta[^>]+name\s*=\s*["']description["'][^>]+content\s*=\s*["']([^"']*)["']/i)
+      || html.match(/<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+name\s*=\s*["']description["']/i);
+    if (metaM && metaM[1] && metaM[1].length > 30) {
+      caption = metaM[1].replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
     }
   }
 
@@ -874,48 +942,11 @@ function extractFromRawHtml(html, sourceUrl) {
 }
 
 function extractBestImageFromHtml(html) {
-  const candidates = [];
-
-  const displayUrlMatches = html.matchAll(/"display_url"\s*:\s*"(https:[^"]+)"/g);
-  for (const m of displayUrlMatches) {
-    const url = m[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
-    if (url.includes('scontent')) candidates.push({ url, priority: 1 });
-  }
-
-  const thumbMatches = html.matchAll(/"thumbnail_src"\s*:\s*"(https:[^"]+)"/g);
-  for (const m of thumbMatches) {
-    const url = m[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
-    if (url.includes('scontent')) candidates.push({ url, priority: 2 });
-  }
-
-  const ogImgM = html.match(/<meta[^>]+property\s*=\s*["']og:image["'][^>]+content\s*=\s*["']([^"']*)["']/i)
-    || html.match(/<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+property\s*=\s*["']og:image["']/i);
-  if (ogImgM) {
-    const url = ogImgM[1].replace(/&amp;/g, '&');
-    if (url.startsWith('http')) candidates.push({ url, priority: 3 });
-  }
-
-  const imgTagMatches = html.matchAll(/<img[^>]+src="(https:\/\/[^"]*scontent[^"]*)"/gi);
-  for (const m of imgTagMatches) {
-    const url = m[1].replace(/&amp;/g, '&');
-    candidates.push({ url, priority: 4 });
-  }
-
-  const embedImgM = html.match(/<img[^>]+class="[^"]*EmbedImage[^"]*"[^>]+src="([^"]+)"/i);
-  if (embedImgM) {
-    candidates.push({ url: embedImgM[1].replace(/&amp;/g, '&'), priority: 2 });
-  }
-
-  const filtered = candidates.filter(c => {
-    const url = c.url;
-    if (/\/s\d{2,3}x\d{2,3}\//.test(url)) return false;
-    if (/profile_pic/i.test(url)) return false;
-    if (url.includes('1x1') || url.includes('blank')) return false;
-    return true;
-  });
-
-  filtered.sort((a, b) => a.priority - b.priority);
-  return filtered.length > 0 ? filtered[0].url : '';
+  // Reuse extractImageUrlsFromHtml which now has comprehensive multi-CDN support.
+  // Priority order: OG image > JSON display_url/thumbnail > EmbedImage > generic img tags.
+  // extractImageUrlsFromHtml already returns them in that order.
+  const urls = extractImageUrlsFromHtml(html);
+  return urls.length > 0 ? urls[0] : '';
 }
 
 function stripHtml(html) {

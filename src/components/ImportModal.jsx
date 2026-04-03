@@ -169,17 +169,25 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   // ── Auto-extract when shared URL is set and modal opens ──
   useEffect(() => {
     if (sharedContent?.mode === 'url' && sharedContent?.url && !preview && !importing) {
-      console.log('[ImportModal] Auto-triggering extraction for shared URL:', sharedContent.url);
-      setUrl(sharedContent.url);
-      // Auto-detect social platform for badge display
-      if (isSocialMediaUrl(sharedContent.url)) {
-        setSocialDetected({ platform: getSocialPlatform(sharedContent.url) });
+      const sharedUrl = sharedContent.url;
+      setUrl(sharedUrl);
+      if (isSocialMediaUrl(sharedUrl)) {
+        setSocialDetected({ platform: getSocialPlatform(sharedUrl) });
+        // For social media URLs (Instagram, TikTok, YouTube, etc.) skip the
+        // slow 3-pass chain in performUrlExtraction and go straight to
+        // BrowserAssist, which runs its own optimised extraction pipeline
+        // with live step-by-step progress feedback.
+        const timer = setTimeout(() => {
+          setBrowserAssistUrl(sharedUrl);
+          setBrowserAssistMode('showing');
+        }, 80);
+        return () => clearTimeout(timer);
       }
+      // For non-social shared URLs (recipe blogs, etc.) use the normal path
       setImporting(true);
       setImportProgress('Extracting recipe...');
-      // Defer to avoid blocking render
       const timer = setTimeout(() => {
-        performUrlExtraction(sharedContent.url);
+        performUrlExtraction(sharedUrl);
       }, 100);
       return () => clearTimeout(timer);
     }
@@ -278,13 +286,40 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
             : trimmedUrl;
           const html = await fetchHtmlViaProxy(embedUrl, 40000);
           if (html && html.length > 500) {
+            // Strip HTML to visible text for caption parsing
+            const visibleText = html
+              .replace(/<script[\s\S]*?<\/script>/gi, '')
+              .replace(/<style[\s\S]*?<\/style>/gi, '')
+              .replace(/<br\s*\/?>/gi, '\n')
+              .replace(/<\/(?:p|div|h[1-6]|li)>/gi, '\n')
+              .replace(/<[^>]+>/g, ' ')
+              .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+              .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+              .replace(/\s+/g, ' ').trim();
+
+            // Extract OG image URL(s) from the fetched HTML
+            const imageUrls = [];
+            const ogM = html.match(/<meta[^>]+property\s*=\s*["']og:image["'][^>]+content\s*=\s*["']([^"']*)["']/i)
+              || html.match(/<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+property\s*=\s*["']og:image["']/i);
+            if (ogM?.[1]) imageUrls.push(ogM[1].replace(/&amp;/g, '&'));
+            // Also grab display_url from JSON (Instagram embed page)
+            for (const m of html.matchAll(/"display_url"\s*:\s*"(https:[^"]+)"/g)) {
+              const u = m[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
+              if (u.startsWith('http') && !imageUrls.includes(u)) imageUrls.push(u);
+            }
+            for (const m of html.matchAll(/"thumbnail_src"\s*:\s*"(https:[^"]+)"/g)) {
+              const u = m[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
+              if (u.startsWith('http') && !imageUrls.includes(u)) imageUrls.push(u);
+            }
+
             const extracted = extractWithBrowserAPI({
               html,
-              visibleText: '',
-              imageUrls: [],
+              visibleText,
+              imageUrls,
               sourceUrl: trimmedUrl,
             });
-            if (extracted && extracted.ingredients?.length > 1) {
+            // Accept if we got at least 1 ingredient (not just the old >1 check)
+            if (extracted && (extracted.ingredients?.length >= 1 || extracted.directions?.length >= 2)) {
               setPreview([extracted]);
               setImporting(false);
               setImportProgress('');

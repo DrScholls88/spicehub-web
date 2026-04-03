@@ -349,15 +349,14 @@ async function extractInstagramEmbed(url) {
     }
 
     // ── Extract caption from embed HTML ──
-    // The embed page has the caption in a specific div
     let caption = '';
 
-    // Method 1: Look for the caption div in the embed
+    // Method 1: Caption div patterns — covers multiple Instagram embed class naming schemes
     const captionPatterns = [
       /<div\s+class="[^"]*Caption[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
       /<div\s+class="[^"]*EmbedCaption[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-      // Instagram embed uses class like "CaptionContent" or similar
       /class="[^"]*[Cc]aption[^"]*"[^>]*>[\s\S]*?<span[^>]*>([\s\S]*?)<\/span>/i,
+      /data-caption[^>]*>([\s\S]*?)<\//i,
     ];
     for (const re of captionPatterns) {
       const m = re.exec(html);
@@ -367,27 +366,35 @@ async function extractInstagramEmbed(url) {
       }
     }
 
-    // Method 2: Look for window.__additionalData or shared_data in scripts
+    // Method 2: JSON data in scripts — multiple field names Instagram has used over time
     if (!caption) {
       const dataPatterns = [
-        /window\.__additionalDataLoaded\s*\(\s*['"][^'"]*['"]\s*,\s*({[\s\S]*?})\s*\)/,
-        /"caption"\s*:\s*\{\s*"text"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/,
+        // Current: edge_media_to_caption
         /"edge_media_to_caption"\s*:\s*\{\s*"edges"\s*:\s*\[\s*\{\s*"node"\s*:\s*\{\s*"text"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/,
+        // window.__additionalDataLoaded (older embed pages)
+        /window\.__additionalDataLoaded\s*\(\s*['"][^'"]*['"]\s*,\s*({[\s\S]*?})\s*\)/,
+        // caption.text
+        /"caption"\s*:\s*\{\s*"text"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/,
+        // Direct caption_text
+        /"caption_text"\s*:\s*"([^"]{20,}(?:\\.[^"]*)*)"/,
+        // accessibility_caption (Reels often have this)
+        /"accessibility_caption"\s*:\s*"([^"]{20,}(?:\\.[^"]*)*)"/,
+        // Any long "text" field — likely the caption
+        /"text"\s*:\s*"([^"]{80,}(?:\\.[^"]*)*)"/,
       ];
       for (const re of dataPatterns) {
         const m = re.exec(html);
         if (m) {
           let text = m[1];
-          // If it looks like JSON, parse the caption from it
           if (text.startsWith('{')) {
             try {
               const data = JSON.parse(text);
               const cap = data?.graphql?.shortcode_media?.edge_media_to_caption?.edges?.[0]?.node?.text
-                || data?.shortcode_media?.edge_media_to_caption?.edges?.[0]?.node?.text;
+                || data?.shortcode_media?.edge_media_to_caption?.edges?.[0]?.node?.text
+                || data?.data?.xdt_shortcode_v2?.edge_media_to_caption?.edges?.[0]?.node?.text;
               if (cap) text = cap;
             } catch { /* use raw match */ }
           }
-          // Unescape JSON string escapes
           try { text = JSON.parse(`"${text}"`); } catch {}
           text = text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
           if (text.length > 15) { caption = text; break; }
@@ -395,11 +402,19 @@ async function extractInstagramEmbed(url) {
       }
     }
 
-    // Method 3: Parse OG description from embed page
+    // Method 3: OG description
     if (!caption) {
       const ogDesc = extractMetaFromHtml(html, 'og:description');
       if (ogDesc && ogDesc.length > 15) {
         caption = stripSocialMetaPrefix(ogDesc);
+      }
+    }
+
+    // Method 4: meta description fallback
+    if (!caption) {
+      const metaDesc = extractMetaFromHtml(html, 'description');
+      if (metaDesc && metaDesc.length > 15) {
+        caption = stripSocialMetaPrefix(metaDesc);
       }
     }
 
@@ -439,10 +454,19 @@ async function extractInstagramEmbed(url) {
         }
       }
     }
-    // Also try to find image from __additionalData JSON
+    // Broaden JSON image field search — Instagram has used several field names
     if (!imageUrl) {
-      const dataMatch = html.match(/"display_url"\s*:\s*"(https:[^"]+)"/);
-      if (dataMatch) imageUrl = dataMatch[1].replace(/\\u0026/g, '&')
+      const jsonImgPatterns = [
+        /"display_url"\s*:\s*"(https:[^"]+)"/,
+        /"thumbnail_src"\s*:\s*"(https:[^"]+)"/,
+        /"thumbnail_url"\s*:\s*"(https:[^"]+)"/,
+        /"media_url"\s*:\s*"(https:[^"]+)"/,
+        /"cover_image_url"\s*:\s*"(https:[^"]+)"/,
+      ];
+      for (const re of jsonImgPatterns) {
+        const m = html.match(re);
+        if (m) { imageUrl = m[1].replace(/\\u0026/g, '&').replace(/\\/g, ''); break; }
+      }
     }
 
     // ── Extract title (username / post name) ──
