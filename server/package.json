@@ -11,7 +11,8 @@
     "express": "^4.21.2",
     "puppeteer": "^23.11.1",
     "yt-dlp-wrap": "^2.3.12",
-    "@google/generative-ai": "^0.21.0"
+    "@google/generative-ai": "^0.21.0",
+    "dotenv": "^16.4.7"
   },
   "engines": {
     "node": ">=18"
