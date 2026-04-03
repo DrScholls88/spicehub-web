@@ -1433,6 +1433,305 @@ async function extractWithHeadlessBrowser(url, res) {
   } // end retry loop
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// PHASE 2: Agent-style automatic extraction (Instagram / social media)
+// Runs headless Chrome with full automation — no user button click required.
+//
+// Key additions over extractWithHeadlessBrowser:
+//   1. Mobile viewport (Instagram renders and exposes more on mobile user-agents)
+//   2. Auto-expand truncated captions (clicks "more" / "See more" button)
+//   3. Carousel image extraction (navigates through all slides)
+//   4. Subtitle extraction via DOM JS eval for Reels (faster than yt-dlp)
+//   5. Returns imageUrls[] array for the whole carousel
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function extractWithAgentAuto(url) {
+  let browser = null;
+  try {
+    const launchOpts = getLaunchOptions(true);
+    browser = await puppeteer.launch(launchOpts);
+    const page = await browser.newPage();
+
+    // Mobile user-agent — Instagram serves more complete markup on mobile
+    const mobileUA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Mobile/15E148 Safari/604.1';
+    await page.setUserAgent(mobileUA);
+    await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
+
+    // Anti-detection
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+      delete navigator.__proto__.webdriver;
+      window.chrome = { runtime: {} };
+      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+    });
+
+    console.log(`[agent-auto] Navigating: ${url}`);
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+    // Adaptive wait for content to render
+    try {
+      await page.waitForSelector(
+        'article, [data-e2e="video-desc"], main, ._a9zs, h1',
+        { timeout: 8000 }
+      );
+    } catch { /* continue regardless */ }
+    await new Promise(r => setTimeout(r, 2000));
+
+    // ── Step 1: Auto-expand truncated caption ────────────────────────────────
+    // Instagram shows "...more" link when caption is cut off; TikTok uses "See more"
+    try {
+      const expanded = await page.evaluate(() => {
+        const moreSelectors = [
+          // Instagram "...more" span
+          '._a9zs span[role="button"]',
+          'article span[role="button"]',
+          // Button containing just "more" text
+          'button:not([aria-label])',
+          // TikTok "See more"
+          '[data-e2e="video-desc"] span[role="button"]',
+          '[data-e2e="view-more"]',
+        ];
+        for (const sel of moreSelectors) {
+          const els = document.querySelectorAll(sel);
+          for (const el of els) {
+            const txt = el.textContent?.trim().toLowerCase();
+            if (txt === 'more' || txt === 'see more' || txt === '...more' || txt === '… more') {
+              el.click();
+              return true;
+            }
+          }
+        }
+        return false;
+      });
+      if (expanded) await new Promise(r => setTimeout(r, 600));
+    } catch { /* no expand needed */ }
+
+    // ── Step 2: Subtitle/transcript extraction for Reels via DOM ────────────
+    // Instagram Reels often have CC/subtitle text accessible in the DOM
+    // This is faster than yt-dlp and works for short-form content
+    let subtitleText = '';
+    try {
+      subtitleText = await page.evaluate(() => {
+        const subSelectors = [
+          // Instagram Reels CC / accessibility overlay
+          '[class*="subtitle"]', '[class*="Subtitle"]',
+          '[class*="caption"][class*="reel"]',
+          '[aria-label*="subtitle"]',
+          // YouTube auto-captions
+          '.ytp-caption-segment',
+          '#subtitle span',
+          // TikTok captions
+          '[data-e2e*="caption"]',
+          '[class*="DivVideoSubtitle"]',
+        ];
+        const parts = [];
+        for (const sel of subSelectors) {
+          const els = document.querySelectorAll(sel);
+          if (els.length > 0) {
+            els.forEach(el => {
+              const t = el.textContent?.trim();
+              if (t && t.length > 5) parts.push(t);
+            });
+            if (parts.length > 0) break;
+          }
+        }
+        return parts.join(' ').trim();
+      });
+    } catch { /* no subtitles */ }
+
+    // ── Step 3: Full data extraction ────────────────────────────────────────
+    const data = await page.evaluate(() => {
+      // JSON-LD structured data (recipe blogs)
+      function tryRecipe(obj) {
+        if (!obj || typeof obj !== 'object') return null;
+        if (Array.isArray(obj)) {
+          for (const x of obj) { const r = tryRecipe(x); if (r) return r; }
+          return null;
+        }
+        const t = [].concat(obj['@type'] || []).join(' ').toLowerCase();
+        if (t.includes('recipe')) return obj;
+        if (obj['@graph']) return tryRecipe(obj['@graph']);
+        return null;
+      }
+      for (const s of document.querySelectorAll('script[type="application/ld+json"]')) {
+        try {
+          const r = tryRecipe(JSON.parse(s.textContent));
+          if (r?.name) return { type: 'jsonld', recipe: r };
+        } catch {}
+      }
+
+      // Caption from DOM selectors
+      const captionSelectors = [
+        'h1._ap3a', '._a9zs span', '._a9zs',
+        'article h1', 'article div[dir="auto"]',
+        'div[role="textbox"] span',
+        '[data-bloks-name="igc.components.Text"]',
+        '[data-e2e="video-desc"]', '[data-e2e="browse-video-desc"]',
+        '.video-meta-title',
+        '[data-testid="tweetText"]',
+        '#description-inner',
+      ];
+      let caption = '';
+      for (const sel of captionSelectors) {
+        const el = document.querySelector(sel);
+        const text = el?.innerText?.trim();
+        if (text && text.length > 10) { caption = text; break; }
+      }
+
+      // OG meta fallback
+      const ogTitle = document.querySelector('meta[property="og:title"]')?.content?.trim() || '';
+      const ogDesc  = document.querySelector('meta[property="og:description"]')?.content?.trim() || '';
+      const ogImage = document.querySelector('meta[property="og:image"]')?.content?.trim() || '';
+
+      // Primary image — prefer OG (highest quality), then DOM search
+      let imageUrl = ogImage;
+      if (!imageUrl) {
+        const imgSelectors = [
+          'article img[srcset]', 'article img[src*="scontent"]',
+          'article img[src*="cdninstagram"]', 'article video[poster]',
+          'img._aagt', 'img[style*="object-fit"]', 'article img',
+          'video[poster]',
+        ];
+        for (const sel of imgSelectors) {
+          const el = document.querySelector(sel);
+          if (el) {
+            let src = '';
+            if (el.srcset) {
+              const parts = el.srcset.split(',').map(s => s.trim());
+              src = parts[parts.length - 1].split(/\s+/)[0];
+            }
+            if (!src) src = el.getAttribute('poster') || el.currentSrc || el.src;
+            if (src && src.startsWith('http') && !/profile_pic|s150x150|s320x320/.test(src)) {
+              imageUrl = src; break;
+            }
+          }
+        }
+      }
+
+      const isLoginWall = !caption && !ogDesc &&
+        (document.body?.innerText?.toLowerCase().includes('log in') ||
+         document.body?.innerText?.toLowerCase().includes('sign in')) &&
+        document.body?.innerText?.length < 5000;
+
+      return {
+        type: 'caption',
+        caption: caption || ogDesc || '',
+        title: ogTitle,
+        imageUrl,
+        sourceUrl: window.location.href,
+        isLoginWall,
+        // Detect carousel: Instagram shows navigation arrows on carousel posts
+        isCarousel: !!(
+          document.querySelector('[aria-label="Next"]') ||
+          document.querySelector('button[aria-label*="Next"]') ||
+          document.querySelectorAll('article img').length > 1
+        ),
+      };
+    });
+
+    if (data.isLoginWall && !data.caption) {
+      return { isLoginWall: true };
+    }
+
+    // ── Step 4: Carousel — navigate through slides and collect all images ───
+    const carouselImages = [data.imageUrl].filter(Boolean);
+    if (data.isCarousel) {
+      try {
+        const seen = new Set(carouselImages);
+        for (let slide = 0; slide < 9; slide++) { // max 10 slides
+          const nextBtn = await page.$('[aria-label="Next"], button[aria-label*="Next"]');
+          if (!nextBtn) break;
+
+          await nextBtn.click();
+          await new Promise(r => setTimeout(r, 600));
+
+          const slideImg = await page.evaluate(() => {
+            const selectors = ['article img[srcset]', 'article img', 'article video[poster]'];
+            for (const sel of selectors) {
+              const el = document.querySelector(sel);
+              if (el) {
+                let src = '';
+                if (el.srcset) {
+                  const parts = el.srcset.split(',').map(s => s.trim());
+                  src = parts[parts.length - 1].split(/\s+/)[0];
+                }
+                if (!src) src = el.getAttribute('poster') || el.currentSrc || el.src;
+                if (src && src.startsWith('http') && !/profile_pic|s150x150/.test(src)) return src;
+              }
+            }
+            return null;
+          });
+
+          if (slideImg && !seen.has(slideImg)) {
+            carouselImages.push(slideImg);
+            seen.add(slideImg);
+          } else if (slideImg && seen.has(slideImg)) {
+            break; // wrapped around, done
+          }
+        }
+      } catch { /* carousel extraction failed, use what we have */ }
+    }
+
+    return {
+      ...data,
+      subtitleText: subtitleText || '',
+      imageUrls: carouselImages,
+    };
+
+  } finally {
+    if (browser) {
+      try { await browser.close(); } catch { /* ignore */ }
+    }
+  }
+}
+
+// POST /api/extract-instagram-agent
+// Phase 2 endpoint: automatic, no-click extraction for Instagram / social media.
+// Returns caption, title, primary imageUrl, full imageUrls[] carousel array,
+// and optional subtitleText for Reels.
+app.post('/api/extract-instagram-agent', async (req, res) => {
+  const { url } = req.body;
+  if (!url) return res.status(400).json({ ok: false, error: 'url required' });
+
+  console.log(`[extract-instagram-agent] ${url}`);
+
+  try {
+    const result = await extractWithAgentAuto(url);
+
+    if (!result || result.isLoginWall) {
+      return res.json({
+        ok: true, type: 'none', isLoginWall: !!result?.isLoginWall, sourceUrl: url,
+      });
+    }
+
+    if (!result.caption && !result.title) {
+      return res.json({ ok: false, error: 'No content found' });
+    }
+
+    const caption = stripSocialMetaPrefix(result.caption || '');
+    const title = (result.title || '')
+      .replace(/\s*on\s+(Instagram|TikTok|Facebook|YouTube)\s*$/i, '')
+      .replace(/\s*\(@[\w.]+\)\s*$/i, '')
+      .replace(/#\w[\w.]*/g, '')
+      .trim();
+
+    return res.json({
+      ok: true,
+      type: result.type || 'caption',
+      caption,
+      title,
+      imageUrl: result.imageUrls?.[0] || result.imageUrl || '',
+      imageUrls: result.imageUrls || [],
+      subtitleText: result.subtitleText || '',
+      sourceUrl: result.sourceUrl || url,
+      extractedVia: 'agent-auto',
+    });
+  } catch (e) {
+    console.error('[extract-instagram-agent] Error:', e.message);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 // ── Mealie-inspired browser-like request headers ──────────────────────────────
 // These headers mimic a real browser to avoid 403 blocks from recipe sites.
 // Adapted from Mealie's user_agents_manager.py get_scrape_headers()
