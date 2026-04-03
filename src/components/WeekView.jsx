@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import MealSpinner from './MealSpinner';
 
 // Helper: image component with proper fallback
 function MealImage({ src, alt, className, fallbackEmoji = '🍽️', fallbackClass }) {
@@ -27,7 +28,7 @@ function MealImage({ src, alt, className, fallbackEmoji = '🍽️', fallbackCla
 }
 
 const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const DAY_FULL   = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+const DAY_FULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -130,6 +131,10 @@ export default function WeekView({
   onRestoreWeek,
   onRestoreMeal,
   rotationCount = 0,
+  showSpinner,
+  onCloseSpinner,
+  onSpinnerComplete,
+  rotationMeals,
 }) {
   const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
   const thisMonday = useMemo(() => getMonday(today), [today]);
@@ -379,119 +384,138 @@ export default function WeekView({
         <span className="wv2-progress-label">{plannedCount}/7 planned</span>
       </div>
 
-      {/* ── Selected day card ── */}
-      <div className="wv2-hero">
-        <div className="wv2-hero-hdr">
-          <h2 className="wv2-hero-day">
-            {DAY_FULL[selectedDay]}
-            {isCurrentWeek && selectedDay === todayIdx && <span className="wv2-badge">Today</span>}
-          </h2>
-          <span className="wv2-hero-date">
-            {weekDates[selectedDay].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-          </span>
-        </div>
-
-        {selectedIsSpecial ? (
-          <div className="wv2-hero-special">
-            <span className="wv2-hero-special-icon">{selectedEntry.icon}</span>
-            <span className="wv2-hero-special-name">{selectedEntry.name}</span>
-            <button className="wv2-clear-btn" onClick={() => onSetSpecial(selectedDay, null)}>Clear</button>
-          </div>
-        ) : selectedEntry ? (
-          <div className="wv2-hero-meal">
-            <div className="wv2-hero-img-wrap">
-              <MealImage
-                src={selectedEntry.imageUrl}
-                alt={selectedEntry.name}
-                className="wv2-hero-img"
-                fallbackClass="wv2-hero-img-ph"
-              />
+      {/* ── Meal Spinner or Selected day/Week list ── */}
+      {showSpinner ? (
+        <MealSpinner
+          meals={meals}
+          rotationMeals={rotationMeals}
+          onComplete={onSpinnerComplete}
+          onClose={onCloseSpinner}
+        />
+      ) : (
+        <>
+          <div className={`wv2-hero ${selectedEntry && selectedEntry._locked ? 'locked' : ''}`}>
+            <div className="wv2-hero-hdr">
+              <h2 className="wv2-hero-day">
+                {DAY_FULL[selectedDay]}
+                {isCurrentWeek && selectedDay === todayIdx && <span className="wv2-badge">Today</span>}
+              </h2>
+              <span className="wv2-hero-date">
+                {weekDates[selectedDay].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              </span>
             </div>
-            <div className="wv2-hero-body">
-              <h3 className="wv2-hero-name">{selectedEntry.name}</h3>
-              <p className="wv2-hero-meta">
-                {selectedEntry.ingredients?.length || 0} ingredients
-                {selectedEntry.category ? ` · ${selectedEntry.category}` : ''}
-              </p>
-              <div className="wv2-hero-actions">
-                <button className="wv2-act" onClick={() => onViewDetail(selectedEntry)}>📖 View</button>
-                <button className="wv2-act" onClick={() => onRespin(selectedDay)}>🔄 Respin</button>
-                <button className="wv2-act" onClick={() => openPicker(selectedDay)}>✏️ Change</button>
-                <button className="wv2-act danger" onClick={() => onSetSpecial(selectedDay, null)}>✕</button>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="wv2-hero-empty" onClick={() => openPicker(selectedDay)}>
-            <div className="wv2-empty-plus">+</div>
-            <p className="wv2-empty-lbl">Tap to add a meal</p>
-          </div>
-        )}
-      </div>
 
-      {/* ── Week overview (compact list) ── */}
-      <div className="wv2-week-list">
-        {DAY_LABELS.map((label, i) => {
-          if (i === selectedDay) return null;
-          const entry = weekPlan[i];
-          const isSpecial = entry && entry._special;
-          const isToday = isCurrentWeek && i === todayIdx;
-          return (
-            <div
-              key={i}
-              className={`wv2-row${isToday ? ' today' : ''}${entry ? ' filled' : ''}`}
-              onClick={() => setSelectedDay(i)}
-            >
-              <div className="wv2-row-day">
-                <span className="wv2-row-lbl">{label}</span>
-                <span className="wv2-row-date">{weekDates[i].getDate()}</span>
+            {selectedIsSpecial ? (
+              <div className="wv2-hero-special">
+                <span className="wv2-hero-special-icon">{selectedEntry.icon}</span>
+                <span className="wv2-hero-special-name">{selectedEntry.name}</span>
+                <button className="wv2-clear-btn" onClick={() => onSetSpecial(selectedDay, null)}>Clear</button>
               </div>
-              {isSpecial ? (
-                <div className="wv2-row-content">
-                  <span className="wv2-row-icon">{entry.icon}</span>
-                  <span className="wv2-row-name">{entry.name}</span>
+            ) : selectedEntry ? (
+              <div className="wv2-hero-meal">
+                <div className="wv2-hero-img-wrap">
+                  <MealImage
+                    src={selectedEntry.imageUrl}
+                    alt={selectedEntry.name}
+                    className="wv2-hero-img"
+                    fallbackClass="wv2-hero-img-ph"
+                  />
                 </div>
-              ) : entry ? (
-                <div className="wv2-row-content">
-                  {entry.imageUrl && (
-                    <MealImage
-                      src={entry.imageUrl}
-                      alt=""
-                      className="wv2-row-img"
-                      fallbackEmoji=""
-                      fallbackClass="wv2-row-img-ph"
-                    />
+                <div className="wv2-hero-body">
+                  <h3 className="wv2-hero-name">{selectedEntry.name}</h3>
+                  <p className="wv2-hero-meta">
+                    {selectedEntry.ingredients?.length || 0} ingredients
+                    {selectedEntry.category ? ` · ${selectedEntry.category}` : ''}
+                  </p>
+                  <div className="wv2-hero-actions">
+                    <button className={`wv2-act ${selectedEntry._locked ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); onToggleLock(selectedDay); }}>
+                      {selectedEntry._locked ? '🔒 Locked' : '🔓 Lock'}
+                    </button>
+                    <button className="wv2-act" onClick={() => onViewDetail(selectedEntry)}>📖 View</button>
+                    {!selectedEntry._locked && <button className="wv2-act" onClick={() => onRespin(selectedDay)}>🔄 Respin</button>}
+                    {!selectedEntry._locked && <button className="wv2-act" onClick={() => openPicker(selectedDay)}>✏️ Change</button>}
+                    {!selectedEntry._locked && <button className="wv2-act danger" onClick={() => onSetSpecial(selectedDay, null)}>✕</button>}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="wv2-hero-empty" onClick={() => openPicker(selectedDay)}>
+                <div className="wv-empty-circle"><span>+</span></div>
+                <p className="wv-empty-lbl">Tap to add a meal</p>
+              </div>
+            )}
+          </div>
+
+          <div className="wv2-week-list">
+            {DAY_LABELS.map((label, i) => {
+              if (i === selectedDay) return null;
+              const entry = weekPlan[i];
+              const isSpecial = entry && entry._special;
+              const isToday = isCurrentWeek && i === todayIdx;
+              return (
+                <div
+                  key={i}
+                  className={`wv2-row${isToday ? ' today' : ''}${entry ? ' filled' : ''}${entry && entry._locked ? ' locked' : ''}`}
+                  onClick={() => setSelectedDay(i)}
+                >
+                  <div className="wv2-row-day">
+                    <span className="wv2-row-lbl">{label}</span>
+                    <span className="wv2-row-date">{weekDates[i].getDate()}</span>
+                  </div>
+                  {isSpecial ? (
+                    <div className="wv2-row-content">
+                      <span className="wv2-row-icon">{entry.icon}</span>
+                      <span className="wv2-row-name">{entry.name}</span>
+                    </div>
+                  ) : entry ? (
+                    <div className="wv2-row-content">
+                      {entry.imageUrl && (
+                        <MealImage
+                          src={entry.imageUrl}
+                          alt=""
+                          className="wv2-row-img"
+                          fallbackEmoji=""
+                          fallbackClass="wv2-row-img-ph"
+                        />
+                      )}
+                      <span className="wv2-row-name">{entry.name}</span>
+                    </div>
+                  ) : (
+                    <div className="wv2-row-content empty">
+                      <span className="wv2-row-plus">+</span>
+                      <span className="wv2-row-name empty">No meal</span>
+                    </div>
                   )}
-                  <span className="wv2-row-name">{entry.name}</span>
+                  {entry && entry._locked ? (
+                    <span className="wv2-row-lock-icon">🔒</span>
+                  ) : (
+                    <span className="wv2-row-chevron">›</span>
+                  )}
                 </div>
-              ) : (
-                <div className="wv2-row-content empty">
-                  <span className="wv2-row-plus">+</span>
-                  <span className="wv2-row-name empty">No meal</span>
-                </div>
-              )}
-              <span className="wv2-row-chevron">›</span>
-            </div>
-          );
-        })}
-      </div>
+              );
+            })}
+          </div>
+        </>
+      )}
 
       {/* ── Action buttons (thumb zone) ── */}
-      <div className="wv2-actions-bar">
-        <button className="wv2-btn primary" onClick={onGenerate}>
-          🎰 Spin the Week{rotationCount > 0 ? ` (${rotationCount})` : ''}
-        </button>
-        <div className="wv2-actions-row">
-          {hasWeek && (
-            <button className="wv2-btn secondary" onClick={onBuildGrocery}>
-              🛒 Grocery List
-            </button>
-          )}
-          <button className="wv2-btn tertiary" onClick={() => setShowHistory(true)}>
-            📅 Past Weeks{pastWeeks.length > 0 ? ` (${pastWeeks.length})` : ''}
+      {!showSpinner && (
+        <div className="wv2-actions-bar">
+          <button className="wv2-btn primary" onClick={onGenerate}>
+            🎰 Spin the Week{rotationCount > 0 ? ` (${rotationCount})` : ''}
           </button>
+          <div className="wv2-actions-row">
+            {hasWeek && (
+              <button className="wv2-btn secondary" onClick={onBuildGrocery}>
+                🛒 Grocery List
+              </button>
+            )}
+            <button className="wv2-btn tertiary" onClick={() => setShowHistory(true)}>
+              📅 Past Weeks{pastWeeks.length > 0 ? ` (${pastWeeks.length})` : ''}
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ── Stats strip (condensed) ── */}
       {(cookingStats.streak > 0 || cookingStats.totalCooked > 0) && (

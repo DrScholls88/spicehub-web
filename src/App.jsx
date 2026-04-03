@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import db, { seedIfEmpty, SEED_DRINKS, importPaprikaMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getCookingLog, processImportQueue, getWeekHistory, saveWeekToHistory, toggleRotation } from './db';
+import db, { importPaprikaMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getCookingLog, processImportQueue, getWeekHistory, saveWeekToHistory, toggleRotation } from './db';
 import { PAPRIKA_MEALS } from './paprika_import_data';
 import { checkStorageQuota, checkAndRecommendCleanup } from './storageManager';
 import { initializeBackgroundSync } from './backgroundSync';
@@ -96,7 +96,6 @@ export default function App() {
 
   // ── Data loaders ─────────────────────────────────────────────────────────────
   const loadMeals = useCallback(async () => {
-    await seedIfEmpty();
     // One-time Paprika import (deduplicates automatically)
     const paprikaResult = await importPaprikaMeals(PAPRIKA_MEALS);
     if (paprikaResult.imported > 0) {
@@ -108,11 +107,6 @@ export default function App() {
   }, []);
 
   const loadDrinks = useCallback(async () => {
-    // Seed bar with a few example drinks on first use
-    const count = await db.drinks.count();
-    if (count === 0) {
-      await db.drinks.bulkAdd(SEED_DRINKS);
-    }
     const all = await db.drinks.toArray();
     setDrinks(all);
   }, []);
@@ -168,7 +162,7 @@ export default function App() {
     try {
       const mem = localStorage.getItem('spicehub_store_memory');
       if (mem) window._storeMemory = JSON.parse(mem);
-    } catch {}
+    } catch { }
   }, []);
 
   // Compute cooking stats for dashboard
@@ -197,7 +191,7 @@ export default function App() {
       const topMeal = allMeals.filter(m => m.cookCount > 0).sort((a, b) => (b.cookCount || 0) - (a.cookCount || 0))[0] || null;
 
       setCookingStats({ streak, totalCooked, topMeal });
-    } catch {}
+    } catch { }
   }, []);
 
   useEffect(() => { computeStats(); }, [computeStats]);
@@ -330,6 +324,15 @@ export default function App() {
     setWeekPlan(prev => prev.map((m, i) => i === dayIndex ? meal : m));
   }, []);
 
+  const toggleLockDay = useCallback((dayIndex) => {
+    setWeekPlan(prev => prev.map((m, i) => {
+      if (i === dayIndex && m && !m._special) {
+        return { ...m, _locked: !m._locked };
+      }
+      return m;
+    }));
+  }, []);
+
   const setDaySpecial = useCallback((dayIndex, specialId) => {
     const special = SPECIAL_DAYS.find(s => s.id === specialId);
     if (special) {
@@ -431,7 +434,7 @@ export default function App() {
         await logCook(meal.id, meal.name);
         await loadMeals(); // Refresh to pick up updated cookCount
         showToast(`Nice! Logged "${meal.name}" as cooked 🎉`);
-      } catch {}
+      } catch { }
     }
     setCookModeMeal(null);
   }, [cookModeMeal, loadMeals, showToast]);
@@ -448,7 +451,7 @@ export default function App() {
         await logMix(drink.id, drink.name);
         await loadDrinks();
         showToast(`Cheers! Logged "${drink.name}" as mixed 🍹`);
-      } catch {}
+      } catch { }
     }
     setMixModeDrink(null);
   }, [mixModeDrink, loadDrinks, showToast]);
@@ -464,8 +467,8 @@ export default function App() {
     const text = item.name + '\n\nIngredients:\n' + item.ingredients.map(i => '- ' + i).join('\n') +
       '\n\nDirections:\n' + item.directions.map((d, i) => (i + 1) + '. ' + d).join('\n') +
       (item.link ? '\n\nRecipe: ' + item.link : '');
-    if (navigator.share) { navigator.share({ title: item.name, text }).catch(() => {}); }
-    else { navigator.clipboard.writeText(text).then(() => alert('Recipe copied to clipboard!')).catch(() => {}); }
+    if (navigator.share) { navigator.share({ title: item.name, text }).catch(() => { }); }
+    else { navigator.clipboard.writeText(text).then(() => alert('Recipe copied to clipboard!')).catch(() => { }); }
   }, []);
 
 
@@ -515,10 +518,16 @@ export default function App() {
             onSetSpecial={setDaySpecial}
             onViewDetail={setDetailItem}
             onBuildGrocery={buildGroceryList}
+            onToggleLock={toggleLockDay}
             cookingStats={cookingStats}
             weekHistory={weekHistory}
             onRestoreWeek={restoreWeek}
             rotationCount={rotationMeals.length}
+            showSpinner={showSpinner}
+            onCloseSpinner={() => setShowSpinner(false)}
+            onSpinnerComplete={handleSpinnerComplete}
+            rotationMeals={rotationMeals}
+            currentPlan={weekPlan}
           />
         )}
         {tab === 'library' && (
@@ -655,14 +664,7 @@ export default function App() {
           onClose={finishMixMode}
         />
       )}
-      {showSpinner && (
-        <MealSpinner
-          meals={meals}
-          rotationMeals={rotationMeals}
-          onComplete={handleSpinnerComplete}
-          onClose={() => setShowSpinner(false)}
-        />
-      )}
+
       {showStats && (
         <MealStats
           meals={meals}

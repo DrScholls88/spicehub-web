@@ -14,7 +14,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
  *   onComplete    - callback(plan[7]) when spin finishes — array of 7 meals
  *   onClose       - callback() to dismiss without applying
  */
-export default function MealSpinner({ meals, rotationMeals, onComplete, onClose }) {
+export default function MealSpinner({ meals, rotationMeals, currentPlan, onComplete, onClose }) {
   const [phase, setPhase] = useState('ready');     // 'ready' | 'spinning' | 'done'
   const [columns, setColumns] = useState(Array(7).fill(null)); // final picks
   const [displayNames, setDisplayNames] = useState(Array(7).fill('')); // cycling display
@@ -28,11 +28,16 @@ export default function MealSpinner({ meals, rotationMeals, onComplete, onClose 
 
   const usingRotation = rotationMeals && rotationMeals.length >= 5;
 
-  // Build the final plan
+  // Build the final plan, preserving locked meals
   const buildPlan = useCallback(() => {
     const shuffled = [...pool].sort(() => Math.random() - 0.5);
-    return Array.from({ length: 7 }, (_, i) => shuffled[i % shuffled.length]);
-  }, [pool]);
+    return Array.from({ length: 7 }, (_, i) => {
+      if (currentPlan && currentPlan[i] && currentPlan[i]._locked) {
+        return currentPlan[i];
+      }
+      return shuffled[i % shuffled.length];
+    });
+  }, [pool, currentPlan]);
 
   const startSpin = useCallback(() => {
     if (pool.length < 5) return;
@@ -95,80 +100,78 @@ export default function MealSpinner({ meals, rotationMeals, onComplete, onClose 
   };
 
   return (
-    <div className="spinner-overlay" onClick={phase === 'ready' ? onClose : undefined}>
-      <div className="spinner-container" onClick={e => e.stopPropagation()}>
-        {/* Header */}
-        <div className="spinner-header">
-          <h2 className="spinner-title">
-            {phase === 'ready' && 'Meal Spinner'}
-            {phase === 'spinning' && 'Spinning...'}
-            {phase === 'done' && 'Your Week!'}
-          </h2>
-          <button className="spinner-close" onClick={onClose}>&#10005;</button>
-        </div>
+    <div className="spinner-container inline" onClick={e => e.stopPropagation()}>
+      {/* Header */}
+      <div className="spinner-header">
+        <h2 className="spinner-title">
+          {phase === 'ready' && 'Meal Spinner'}
+          {phase === 'spinning' && 'Spinning...'}
+          {phase === 'done' && 'Your Week!'}
+        </h2>
+        {phase === 'ready' && <button className="spinner-close" onClick={onClose}>&#10005;</button>}
+      </div>
 
-        {/* Source indicator */}
-        <div className="spinner-source">
-          {usingRotation ? (
-            <span className="spinner-source-badge rotation">🔄 From The Rotation ({rotationMeals.length} meals)</span>
-          ) : (
-            <span className="spinner-source-badge all">
-              {rotationMeals && rotationMeals.length > 0 && rotationMeals.length < 5
-                ? `⚠️ Need 5+ in Rotation (have ${rotationMeals.length}) — using all meals`
-                : '📚 Using all meals (add 5+ to The Rotation to filter)'}
-            </span>
-          )}
-        </div>
+      {/* Source indicator */}
+      <div className="spinner-source">
+        {usingRotation ? (
+          <span className="spinner-source-badge rotation">🔄 From The Rotation ({rotationMeals.length} meals)</span>
+        ) : (
+          <span className="spinner-source-badge all">
+            {rotationMeals && rotationMeals.length > 0 && rotationMeals.length < 5
+              ? `⚠️ Need 5+ in Rotation (have ${rotationMeals.length}) — using all meals`
+              : '📚 Using all meals (add 5+ to The Rotation to filter)'}
+          </span>
+        )}
+      </div>
 
-        {/* Slot machine display */}
-        <div className="spinner-slots">
-          {DAY_LABELS.map((day, i) => {
-            const isResolved = phase === 'done' || (columns[i] !== null && phase !== 'ready');
-            const isSpinning = phase === 'spinning' && columns[i] === null;
-            return (
-              <div key={i} className={`spinner-slot ${isResolved ? 'resolved' : ''} ${isSpinning ? 'spinning' : ''}`}>
-                <span className="spinner-slot-day">{day}</span>
-                <div className={`spinner-slot-reel ${isSpinning ? 'cycling' : ''}`}>
-                  <span className="spinner-slot-meal">
-                    {phase === 'ready' ? '?' : (displayNames[i] || '...')}
-                  </span>
-                </div>
-                {isResolved && columns[i]?.imageUrl && (
-                  <img
-                    src={columns[i].imageUrl}
-                    alt=""
-                    className="spinner-slot-img"
-                    onError={e => e.target.style.display = 'none'}
-                  />
-                )}
+      {/* Slot machine display */}
+      <div className="spinner-slots">
+        {DAY_LABELS.map((day, i) => {
+          const isResolved = phase === 'done' || (columns[i] !== null && phase !== 'ready');
+          const isSpinning = phase === 'spinning' && columns[i] === null;
+          return (
+            <div key={i} className={`spinner-slot ${isResolved ? 'resolved' : ''} ${isSpinning ? 'spinning' : ''}`}>
+              <span className="spinner-slot-day">{day}</span>
+              <div className={`spinner-slot-reel ${isSpinning ? 'cycling' : ''}`}>
+                <span className="spinner-slot-meal">
+                  {phase === 'ready' ? '?' : (displayNames[i] || '...')}
+                </span>
               </div>
-            );
-          })}
-        </div>
-
-        {/* Actions */}
-        <div className="spinner-actions">
-          {phase === 'ready' && (
-            <button className="spinner-btn primary" onClick={startSpin} disabled={pool.length < 5}>
-              {pool.length < 5 ? `Need ${5 - pool.length} more meals` : 'Spin!'}
-            </button>
-          )}
-          {phase === 'spinning' && (
-            <div className="spinner-waiting">
-              <div className="browser-spinner large" />
+              {isResolved && columns[i]?.imageUrl && (
+                <img
+                  src={columns[i].imageUrl}
+                  alt=""
+                  className="spinner-slot-img"
+                  onError={e => e.target.style.display = 'none'}
+                />
+              )}
             </div>
-          )}
-          {phase === 'done' && (
-            <>
-              <button className="spinner-btn primary" onClick={handleAccept}>
-                Use This Week
-              </button>
-              <button className="spinner-btn secondary" onClick={() => { setPhase('ready'); setColumns(Array(7).fill(null)); setDisplayNames(Array(7).fill('')); }}>
-                Spin Again
-              </button>
-            </>
-          )}
-        </div>
+          );
+        })}
+      </div>
+
+      {/* Actions */}
+      <div className="spinner-actions">
+        {phase === 'ready' && (
+          <button className="spinner-btn primary" onClick={startSpin} disabled={pool.length < 5}>
+            {pool.length < 5 ? `Need ${5 - pool.length} more meals` : '🎲 Spin My Week!'}
+          </button>
+        )}
+        {phase === 'spinning' && (
+          <div className="spinner-waiting">
+            <div className="browser-spinner large" />
+          </div>
+        )}
+        {phase === 'done' && (
+          <>
+            <button className="spinner-btn primary" onClick={handleAccept}>
+              ✓ Keep These
+            </button>
+            <button className="spinner-btn secondary" onClick={() => { setPhase('ready'); setColumns(Array(7).fill(null)); setDisplayNames(Array(7).fill('')); }}>
+              🔄 Spin Again
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
