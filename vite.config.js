@@ -48,6 +48,7 @@ export default defineConfig({
   define: {
     '__SPICEHUB_BUILD__': JSON.stringify(buildNum),
     '__SPICEHUB_VERSION__': JSON.stringify(BUILD_VERSION),
+    '__SPICEHUB_SERVER__': JSON.stringify(process.env.VITE_SERVER_URL || 'http://localhost:3001'),
   },
   plugins: [
     react(),

@@ -181,7 +181,7 @@ export function parseManualCaption(captionText, sourceUrl) {
 export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '' } = {}) {
   if (!rawText || rawText.trim().length < 20) return null;
   try {
-    const serverBase = window.__SPICEHUB_SERVER__ || 'http://localhost:3001';
+    const serverBase = typeof window !== 'undefined' && window.__SPICEHUB_SERVER__ ? window.__SPICEHUB_SERVER__ : 'http://localhost:3001';
     const res = await fetch(`${serverBase}/api/structure-recipe`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
