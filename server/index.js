@@ -2445,6 +2445,73 @@ async function extractInstagramEmbed(url) {
       res.json({ open: !!activeBrowser, url: activeUrl || null });
     });
 
+    // ── POST /api/structure-recipe ─────────────────────────────────────────────
+    //   Uses Google Gemini Flash to convert messy caption/subtitle text into a
+    //   clean recipe JSON: { title, ingredients:[{name,amount}], directions:[] }
+    //   Requires: GOOGLE_GENERATIVE_AI_API_KEY env var (free tier: 1500 req/day)
+    app.post('/api/structure-recipe', async (req, res) => {
+      const { rawText, title: hintTitle, imageUrl } = req.body;
+      if (!rawText || rawText.trim().length < 20) {
+        return res.status(400).json({ error: 'rawText too short to structure' });
+      }
+      const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+      if (!apiKey) {
+        return res.status(503).json({ error: 'GOOGLE_GENERATIVE_AI_API_KEY not configured on server' });
+      }
+      try {
+        const { GoogleGenerativeAI } = await import('@google/generative-ai');
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+
+        const prompt = `You are a recipe extraction assistant. Convert the following messy social media post (which may include emojis, hashtags, promotional text, timestamps, and filler words) into a clean, structured recipe JSON.
+
+Return ONLY valid JSON matching this exact schema:
+{
+  "title": "string — short recipe name (no hashtags or emojis)",
+  "ingredients": [
+    { "name": "string — ingredient name", "amount": "string — quantity and unit, e.g. '2 cups'" }
+  ],
+  "directions": ["string — one clear step per item"],
+  "servings": "string or null",
+  "cookTime": "string or null",
+  "notes": "string or null — any tips, storage notes, or substitutions"
+}
+
+Rules:
+- Remove all hashtags, @mentions, sponsor text, and filler phrases like "link in bio"
+- Keep measurements precise; do not invent amounts if not given — use "to taste" or "as needed"
+- Split compound steps into separate direction strings
+- If the title hint is provided, use it as a starting point but clean it up
+- If no clear recipe exists, return { "error": "not a recipe" }
+
+${hintTitle ? `Title hint: "${hintTitle}"` : ''}
+
+Raw text:
+---
+${rawText.slice(0, 6000)}
+---`;
+
+        const result = await model.generateContent(prompt);
+        const text = result.response.text().trim();
+
+        // Strip markdown fences if Gemini wraps in ```json ... ```
+        const jsonText = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+        const parsed = JSON.parse(jsonText);
+
+        if (parsed.error) {
+          return res.status(422).json({ error: parsed.error });
+        }
+
+        // Attach the image if we have one
+        if (imageUrl) parsed.image = imageUrl;
+
+        res.json({ ok: true, recipe: parsed });
+      } catch (err) {
+        console.error('[structure-recipe] Gemini error:', err.message);
+        res.status(500).json({ error: 'AI structuring failed', detail: err.message });
+      }
+    });
+
     // ── Health check (for Render / Railway) ──────────────────────────────────────
     app.get('/health', (req, res) => res.json({ ok: true, mode: IS_CLOUD ? 'cloud' : 'local' }));
 

@@ -96,11 +96,6 @@ export default function App() {
 
   // ── Data loaders ─────────────────────────────────────────────────────────────
   const loadMeals = useCallback(async () => {
-    // One-time Paprika import (deduplicates automatically)
-    const paprikaResult = await importPaprikaMeals(PAPRIKA_MEALS);
-    if (paprikaResult.imported > 0) {
-      console.log(`🌶️ Imported ${paprikaResult.imported} Paprika recipes (${paprikaResult.skipped} skipped)`);
-    }
     const all = await db.meals.toArray();
     setMeals(all);
     setLoading(false);

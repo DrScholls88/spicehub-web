@@ -176,6 +176,47 @@ export function parseManualCaption(captionText, sourceUrl) {
   };
 }
 
+// ─── AI-powered structuring via server /api/structure-recipe (Gemini Flash) ───
+// Returns a SpiceHub recipe object on success, null if server unavailable/unconfigured.
+export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '' } = {}) {
+  if (!rawText || rawText.trim().length < 20) return null;
+  try {
+    const serverBase = window.__SPICEHUB_SERVER__ || 'http://localhost:3001';
+    const res = await fetch(`${serverBase}/api/structure-recipe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rawText, title: hintTitle, imageUrl }),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data.ok || !data.recipe) return null;
+    const r = data.recipe;
+    // Normalize ingredients — Gemini returns [{name, amount}], SpiceHub uses strings
+    const ingredients = Array.isArray(r.ingredients)
+      ? r.ingredients.map(ing => {
+        if (typeof ing === 'string') return ing;
+        return [ing.amount, ing.name].filter(Boolean).join(' ').trim();
+      }).filter(Boolean)
+      : [];
+    return {
+      name: r.title || hintTitle || 'Imported Recipe',
+      ingredients: ingredients.length > 0 ? ingredients : ['See original post for ingredients'],
+      directions: Array.isArray(r.directions) && r.directions.length > 0
+        ? r.directions
+        : ['See original post for directions'],
+      servings: r.servings || null,
+      cookTime: r.cookTime || null,
+      notes: r.notes || null,
+      imageUrl: imageUrl || '',
+      link: sourceUrl || '',
+      _aiStructured: true,
+    };
+  } catch {
+    return null;
+  }
+}
+
 // ─── Caption Parser (Paprika-style 4-pass, enhanced for video content) ─────────
 export function parseCaption(text) {
   const ingredients = [];

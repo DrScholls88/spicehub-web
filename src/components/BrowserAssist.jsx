@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins, isSocialMediaUrl, tryVideoExtraction, extractInstagramAgent, scoreExtractionConfidence } from '../recipeParser';
+import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins, isSocialMediaUrl, tryVideoExtraction, extractInstagramAgent, scoreExtractionConfidence, structureWithAI } from '../recipeParser';
 import { fetchHtmlViaProxy, proxyImageUrl } from '../api';
 import { queueRecipeImport } from '../db';
 import useOnlineStatus from '../hooks/useOnlineStatus';
@@ -253,6 +253,28 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
               return;
             }
           }
+
+          // Pass 4: AI structuring via Gemini Flash — last smart attempt before iframe
+          // Feed the full visible page text to Gemini to extract a clean recipe JSON
+          if (isSocialMediaUrl(url)) {
+            setExtractionProgress({ step: 4, total: 5, message: '✨ AI analyzing caption…' });
+            try {
+              const visibleText = stripHtmlToText(html);
+              const imageUrls = extractImageUrlsFromHtml(html);
+              const aiRecipe = await structureWithAI(visibleText, {
+                imageUrl: imageUrls[0] || '',
+                sourceUrl: url,
+              });
+              if (!cancelled && aiRecipe && aiRecipe.ingredients?.[0] !== 'See original post for ingredients') {
+                setAutoRecipe({ ...aiRecipe, extractedVia: 'ai-gemini' });
+                setPhase('preview');
+                return;
+              }
+            } catch {
+              console.log('[BrowserAssist] AI structuring unavailable, falling back to iframe');
+            }
+          }
+
           // Fall back to iframe view
           setHtmlContent(sanitizeHtmlForEmbed(html, url));
           setPhase('iframe');
