@@ -21,9 +21,14 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 import { execFile, exec } from 'child_process';
-import dotenv from 'dotenv';
 
-dotenv.config();
+// Load .env file for local dev (optional; not required in cloud)
+try {
+  const dotenv = await import('dotenv');
+  dotenv.default.config();
+} catch (e) {
+  // dotenv not installed — OK for cloud environments (Render/Railway set env vars via dashboard)
+}
 
 const IS_CLOUD = process.env.SPICEHUB_MODE === 'cloud';
 
