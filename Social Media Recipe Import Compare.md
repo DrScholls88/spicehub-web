@@ -63,7 +63,7 @@ Paprika takes a simpler, more traditional approach focused on its built-in brows
 | **Automation Level**          | High (paste URL → structured recipe)       | Medium (browse + tap Download)              |
 | **Image Grabbing**            | Good (thumbnail + best image logic)        | Very good (page image detection)            |
 | **Offline Capability**        | Partial (needs internet for transcription) | Fully offline after import                  |
-| **Cost**                      | Free + OpenAI API key                      | One-time purchase per platform              |
+| **Cost**                      | Free + Google API key                      | One-time purchase per platform              |
 | **Mobile Experience**         | Web-based (PWA possible)                   | Native apps (iOS, Android, Mac, Windows)    |
 | **AI Structuring**            | Strong (LLM parses spoken text)            | None (heuristic only)                       |
 
@@ -82,7 +82,3 @@ SpiceHub's current approach (client-side `extractWithBrowserAPI` + `parseCaption
 This comparison shows why Instagram import is our keystone feature — users expect modern apps to handle video recipes seamlessly.
 
 ---
-
-Would you like me to expand any section, add a "SpiceHub vs Mealie/Paprika" column, or turn this into a living document with implementation notes for Ruflo? Just let me know. 
-
-This file is now ready to drop into your project and reference during the next Ruflo swarm.
