@@ -901,10 +901,12 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                           <span
                             className="drag-handle"
                             title="Drag to reorder"
+                            aria-label="Drag to reorder"
+                            role="button"
                             onTouchStart={(e) => handleTouchDragStart(e, 'ingredients', ingIdx, idx)}
                             onTouchMove={handleTouchDragMove}
                             onTouchEnd={handleTouchDragEnd}
-                          >⠿</span>
+                          />
                           <input
                             type="text"
                             value={ing}
@@ -948,7 +950,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                       ))}
                     </div>
                     {(m.ingredients || []).length === 0 && (
-                      <div className="preview-empty-drop">Drop items here or tap + Add</div>
+                      <div className="preview-empty-drop">⬇ Drop ingredients here · or tap <strong>+ Add</strong></div>
                     )}
                   </div>
 
@@ -990,10 +992,12 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                           <span
                             className="drag-handle"
                             title="Drag to reorder"
+                            aria-label="Drag to reorder"
+                            role="button"
                             onTouchStart={(e) => handleTouchDragStart(e, 'directions', stepIdx, idx)}
                             onTouchMove={handleTouchDragMove}
                             onTouchEnd={handleTouchDragEnd}
-                          >⠿</span>
+                          />
                           <span className="preview-step-num">{stepIdx + 1}</span>
                           <textarea
                             value={step}
@@ -1038,7 +1042,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                       ))}
                     </div>
                     {(m.directions || []).length === 0 && (
-                      <div className="preview-empty-drop">Drop items here or tap + Add</div>
+                      <div className="preview-empty-drop">⬇ Drop steps here · or tap <strong>+ Add</strong></div>
                     )}
                   </div>
 

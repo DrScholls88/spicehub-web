@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins, isSocialMediaUrl, tryVideoExtraction, extractInstagramAgent, scoreExtractionConfidence, structureWithAI } from '../recipeParser';
+import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins, isSocialMediaUrl, tryVideoExtraction, extractInstagramAgent, scoreExtractionConfidence, structureWithAI, captionToRecipe } from '../recipeParser';
 import { fetchHtmlViaProxy, proxyImageUrl } from '../api';
 import { queueRecipeImport } from '../db';
 import useOnlineStatus from '../hooks/useOnlineStatus';
@@ -7,15 +7,17 @@ import useOnlineStatus from '../hooks/useOnlineStatus';
 /**
  * BrowserAssist — Enhanced interactive embedded view for recipe extraction.
  *
- * Strategy (fully automatic, iframe as last resort):
- *   1. If ONLINE: Fetch the page HTML via CORS proxy
- *   2. Run extractWithBrowserAPI() — tries plugin detection, caption parsing, smart classification
- *   3. Also try regex extraction on raw HTML (caption, image, title)
- *   4. If auto-extraction finds a recipe → show editable preview (no iframe needed)
- *   5. If auto-extraction fails → show iframe with manual "Extract Recipe" button
- *   6. User scrolls, reads the content, clicks "Extract Recipe"
- *   7. If OFFLINE: Show message and offer manual paste (can still add to queue)
- *   8. Fallback: "Paste Text Instead" switches to manual paste tab
+ * Strategy (browser-first for social media):
+ *   1. If ONLINE + social media URL: fetch page HTML and show the browser IMMEDIATELY
+ *      so the user can scroll, zoom, and clear obstructions.
+ *   2. Auto-extraction runs in background; if it finds a recipe it surfaces as a
+ *      floating "Recipe found!" banner — user can accept or ignore it.
+ *   3. "Extract Recipe" button grabs ALL visible text from the page → Google AI
+ *      (Gemini) structures it into a clean, sorted recipe.
+ *   4. "Clear Clutter" removes cookie banners, login walls, and sticky overlays
+ *      so the user can see the actual post.
+ *   5. For non-social URLs: auto-extraction first; iframe only on failure.
+ *   6. If OFFLINE: show offline mode with manual paste option.
  *
  * Props:
  *   url                 - Page URL (Instagram or any recipe URL)
@@ -29,9 +31,12 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
   const [htmlContent, setHtmlContent] = useState('');
   const [rawHtml, setRawHtml] = useState('');
   const [autoRecipe, setAutoRecipe] = useState(null); // auto-extracted recipe for preview
+  const [bannerRecipe, setBannerRecipe] = useState(null); // auto-found recipe shown as banner in browser mode
+  const [clearingClutter, setClearingClutter] = useState(false); // Clear Clutter animation state
   const [loadingDots, setLoadingDots] = useState('');
   const [queuedRecipe, setQueuedRecipe] = useState(null); // offline queued recipe
-  const [iframeZoom, setIframeZoom] = useState(70); // zoom level percentage — zoomed out more for mobile readability
+  const [iframeZoom, setIframeZoom] = useState(85); // zoom level percentage — start at 85% for mobile readability
+  const iframeZoomRef = useRef(85); // mirror for use inside non-reactive event handlers
   const [extractionProgress, setExtractionProgress] = useState({ step: 0, total: 0, message: '' });
   const iframeRef = useRef(null);
   const extractionRef = useRef(null);
@@ -48,12 +53,19 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
     return () => clearInterval(interval);
   }, [phase, extractionProgress.message]);
 
+  // Keep zoom ref in sync with state (prevents stale closure in touch handlers)
+  useEffect(() => { iframeZoomRef.current = iframeZoom; }, [iframeZoom]);
+
   // ── Pinch-to-zoom support for mobile ─────────────────────────────────────
+  // Uses iframeZoomRef (not state) inside the handler to avoid stale closures —
+  // the event listener is registered only once.
   useEffect(() => {
     const container = document.querySelector('.browser-assist-iframe-container');
     if (!container) return;
 
     let lastDistance = 0;
+    let lastMidX = 0;
+    let lastMidY = 0;
 
     const handleTouchMove = (e) => {
       if (e.touches.length !== 2) return;
@@ -64,20 +76,26 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
         touch1.clientX - touch2.clientX,
         touch1.clientY - touch2.clientY
       );
+      const midX = (touch1.clientX + touch2.clientX) / 2;
+      const midY = (touch1.clientY + touch2.clientY) / 2;
 
       // Only prevent default scroll if actually pinch-zooming
-      if (lastDistance > 0 && Math.abs(distance - lastDistance) > 5) {
+      if (lastDistance > 0 && Math.abs(distance - lastDistance) > 3) {
         e.preventDefault();
       }
 
       if (lastDistance > 0) {
         const scale = distance / lastDistance;
-        const newZoom = Math.round(Math.max(50, Math.min(200, iframeZoom * scale)));
-        if (newZoom !== iframeZoom) {
+        const currentZoom = iframeZoomRef.current;
+        const newZoom = Math.round(Math.max(40, Math.min(250, currentZoom * scale)));
+        if (newZoom !== currentZoom) {
+          iframeZoomRef.current = newZoom;
           setIframeZoom(newZoom);
         }
       }
       lastDistance = distance;
+      lastMidX = midX;
+      lastMidY = midY;
     };
 
     const handleTouchEnd = () => {
@@ -91,11 +109,10 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
       container.removeEventListener('touchmove', handleTouchMove);
       container.removeEventListener('touchend', handleTouchEnd);
     };
-  }, [iframeZoom]);
+  }, []); // intentionally empty — uses ref for current zoom
 
-  // ── Fetch and auto-extract ─────────────────────────────────────────────────
+  // ── Fetch, show browser, and auto-extract in background ──────────────────
   useEffect(() => {
-    // Check offline status immediately
     if (!isOnline) {
       setErrorMsg('You are offline. You can still paste recipe text manually.');
       setPhase('offline');
@@ -103,91 +120,66 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
     }
 
     let cancelled = false;
+    const isSocial = isSocialMediaUrl(url);
+
     const timeout = setTimeout(() => {
-      if (!cancelled && phase === 'loading') {
+      if (!cancelled && (phase === 'loading')) {
         setErrorMsg('Page took too long to load. The site may be blocking the request.');
         setPhase('error');
       }
-    }, 45000);
+    }, 50000);
 
     (async () => {
       try {
-        // ── Pass 0: Agent Browser auto-extraction (Phase 1 Integration) ──────────
-        // First try Agent Browser with snapshots + element refs to load the post, 
-        // expand caption, extract text and images.
-        if (isSocialMediaUrl(url)) {
+        // ── Fast paths (social only): Agent Browser + Video extraction ─────────
+        // These run BEFORE HTML fetch because they return quality results quickly.
+        // If they succeed → go to preview directly. If not → browser-first mode.
+        if (isSocial) {
+          // Agent Browser
           setExtractionProgress({ step: 1, total: 4, message: 'Loading post…' });
           try {
             const agentResult = await extractInstagramAgent(url, (msg) => {
               if (cancelled) return;
               let step = 1;
               const lowerMsg = msg.toLowerCase();
-              if (lowerMsg.includes('expand')) step = 2; // "Expanding caption…"
-              else if (lowerMsg.includes('vision') || lowerMsg.includes('analyz')) step = 3; // "Analyzing images…"
+              if (lowerMsg.includes('expand')) step = 2;
+              else if (lowerMsg.includes('vision') || lowerMsg.includes('analyz')) step = 3;
               else if (lowerMsg.includes('recipe')) step = 4;
               setExtractionProgress({ step, total: 4, message: msg });
             });
-
             if (!cancelled && agentResult && hasRealContent(agentResult)) {
               const cleaned = cleanRecipe(agentResult);
-              // Gracefully fall back to iframe if Agent Browser returns low confidence
               const conf = scoreExtractionConfidence(cleaned);
-
-              if (conf < 40) {
-                console.log(`[BrowserAssist] Agent Browser returned low confidence (${conf}). Falling back to iframe.`);
-              } else {
-                // Use annotated screenshots + vision for best image selection (visionSelectedImage)
-                setAutoRecipe({
-                  ...cleaned,
-                  extractedVia: 'agent-browser',
-                  imageUrls: agentResult.imageUrls || [],
-                  // Favor the explicitly selected best image via vision if available
-                  imageUrl: agentResult.visionSelectedImage || agentResult.imageUrl
-                });
+              if (conf >= 40) {
+                setAutoRecipe({ ...cleaned, extractedVia: 'agent-browser', imageUrls: agentResult.imageUrls || [], imageUrl: agentResult.visionSelectedImage || agentResult.imageUrl });
                 setPhase('preview');
                 return;
               }
-            } else if (!cancelled && agentResult) {
-              console.log('[BrowserAssist] Agent Browser returned empty recipe content. Falling back to iframe.');
             }
           } catch (err) {
-            console.log('[BrowserAssist] Agent Browser failed gracefully, falling back to existing iframe:', err);
+            console.log('[BrowserAssist] Agent Browser failed, continuing:', err?.message);
           }
           if (cancelled) return;
-        }
 
-        // ── Pass 1: Dedicated video extraction (yt-dlp subtitles + metadata) ──
-        setExtractionProgress({ step: 2, total: 4, message: 'Checking for video subtitles…' });
-        if (isSocialMediaUrl(url)) {
+          // Video extraction (yt-dlp)
+          setExtractionProgress({ step: 2, total: 4, message: 'Checking for video subtitles…' });
           try {
             const videoResult = await tryVideoExtraction(url);
-            if (!cancelled && videoResult && !videoResult._error) {
-              if (videoResult.ingredients?.[0] !== 'See original post for ingredients') {
-                setAutoRecipe({
-                  name: videoResult.name || 'Imported Recipe',
-                  ingredients: videoResult.ingredients || [],
-                  directions: videoResult.directions || [],
-                  imageUrl: videoResult.imageUrl || '',
-                  imageUrls: videoResult.imageUrls || [],
-                  link: videoResult.link || url,
-                });
-                setPhase('preview');
-                return;
-              }
+            if (!cancelled && videoResult && !videoResult._error &&
+                videoResult.ingredients?.[0] !== 'See original post for ingredients') {
+              setAutoRecipe({ name: videoResult.name || 'Imported Recipe', ingredients: videoResult.ingredients || [], directions: videoResult.directions || [], imageUrl: videoResult.imageUrl || '', imageUrls: videoResult.imageUrls || [], link: videoResult.link || url });
+              setPhase('preview');
+              return;
             }
-          } catch {
-            console.log('[BrowserAssist] Video extraction unavailable, falling back to HTML fetch');
-          }
+          } catch { /* continue */ }
           if (cancelled) return;
         }
 
-        setExtractionProgress({ step: 3, total: 4, message: 'Fetching page content…' });
-
-        // Build URL variants to try
+        // ── Fetch page HTML ──────────────────────────────────────────────────
+        setExtractionProgress({ step: 3, total: 5, message: 'Fetching page…' });
         const urls = [url];
         const shortcodeMatch = url.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
         if (shortcodeMatch) {
-          // Instagram: try embed/captioned first (more text visible)
           urls.unshift(`https://www.instagram.com/p/${shortcodeMatch[1]}/embed/captioned/`);
         }
 
@@ -202,83 +194,95 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
 
         if (!html || html.length < 500) {
           if (!cancelled) {
-            setErrorMsg('Could not load the page. Go back and try another method.');
+            setErrorMsg('Could not load the page. Try "Paste Text" to add recipe content manually.');
             setPhase('error');
           }
           return;
         }
 
-        // Store raw HTML
         setRawHtml(html);
+        const sanitized = sanitizeHtmlForEmbed(html, url);
+        setHtmlContent(sanitized);
 
-        setExtractionProgress({ step: 4, total: 4, message: 'Analyzing recipe content…' });
-
-        // ── AUTO-EXTRACTION PIPELINE ──
-
-        // Pass 1: extractWithBrowserAPI — plugin detection + caption parsing + smart classification
-        const browserApiResult = extractWithBrowserAPI({
-          html,
-          visibleText: stripHtmlToText(html),
-          imageUrls: extractImageUrlsFromHtml(html),
-          sourceUrl: url,
-        });
-
-        if (browserApiResult && hasRealContent(browserApiResult)) {
-          if (!cancelled) {
-            setAutoRecipe(cleanRecipe(browserApiResult));
-            setPhase('preview');
-          }
-          return;
-        }
-
-        // Pass 2: Regex extraction on raw HTML (Instagram-specific patterns)
-        const regexRecipe = extractFromRawHtml(html, url);
-        if (regexRecipe && hasRealContent(regexRecipe)) {
-          if (!cancelled) {
-            setAutoRecipe(cleanRecipe(regexRecipe));
-            setPhase('preview');
-          }
-          return;
-        }
-
-        // Pass 3: Try merging partial results from both attempts
-        if (!cancelled) {
-          const merged = pickBestRecipe(browserApiResult, regexRecipe);
-          if (merged && (merged.ingredients?.length > 0 || merged.directions?.length > 0)) {
-            // We have partial data — show it as a low-confidence preview instead of iframe
-            const cleaned = cleanRecipe(merged);
-            if (cleaned.ingredients?.length > 0 || cleaned.directions?.length > 0) {
-              setAutoRecipe({ ...cleaned, extractedVia: 'partial-merge' });
-              setPhase('preview');
-              return;
-            }
-          }
-
-          // Pass 4: AI structuring via Gemini Flash — last smart attempt before iframe
-          // Feed the full visible page text to Gemini to extract a clean recipe JSON
-          if (isSocialMediaUrl(url)) {
-            setExtractionProgress({ step: 4, total: 5, message: '✨ AI analyzing caption…' });
-            try {
-              const visibleText = stripHtmlToText(html);
-              const imageUrls = extractImageUrlsFromHtml(html);
-              const aiRecipe = await structureWithAI(visibleText, {
-                imageUrl: imageUrls[0] || '',
-                sourceUrl: url,
-              });
-              if (!cancelled && aiRecipe && aiRecipe.ingredients?.[0] !== 'See original post for ingredients') {
-                setAutoRecipe({ ...aiRecipe, extractedVia: 'ai-gemini' });
-                setPhase('preview');
-                return;
-              }
-            } catch {
-              console.log('[BrowserAssist] AI structuring unavailable, falling back to iframe');
-            }
-          }
-
-          // Fall back to iframe view
-          setHtmlContent(sanitizeHtmlForEmbed(html, url));
+        // ── BROWSER-FIRST for social media ───────────────────────────────────
+        // Show the browser immediately so the user can see, scroll, and clear
+        // obstructions. Auto-extraction results bubble up as a banner (bannerRecipe).
+        if (isSocial && !cancelled) {
           setPhase('iframe');
         }
+
+        // Helper: route extraction result — banner in browser mode, preview otherwise
+        const applyResult = (recipe, via) => {
+          if (cancelled || !recipe || !hasRealContent(recipe)) return false;
+          const cleaned = cleanRecipe({ ...recipe, extractedVia: via || recipe.extractedVia });
+          if (isSocial) {
+            setBannerRecipe(cleaned); // surfaces as a floating "Recipe found!" banner
+          } else {
+            setAutoRecipe(cleaned);
+            setPhase('preview');
+          }
+          return true;
+        };
+
+        setExtractionProgress({ step: 4, total: 5, message: 'Analyzing recipe content…' });
+
+        // ── Pass A: Instagram og:description → Gemini AI ─────────────────────
+        if (/instagram\.com/i.test(url)) {
+          const ogMatch = html.match(/<meta[^>]+property\s*=\s*["']og:description["'][^>]+content\s*=\s*["']([^"']*)["']/i)
+            || html.match(/<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+property\s*=\s*["']og:description["']/i);
+          if (ogMatch?.[1]) {
+            let ogCaption = ogMatch[1]
+              .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+              .replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+            ogCaption = ogCaption.replace(/^[\d,.]+[kKmM]?\s+likes?,?\s*[\d,.]+[kKmM]?\s+comments?\s*[-–—]\s*[^:]+:\s*/i, '').trim();
+            if (ogCaption.length > 30 && !/^log[ -]?in/i.test(ogCaption)) {
+              const igImageUrls = extractImageUrlsFromHtml(html);
+              setExtractionProgress({ step: 4, total: 5, message: '✨ AI reading caption…' });
+              try {
+                const igAiRecipe = await captionToRecipe(ogCaption, { imageUrl: igImageUrls[0] || '', sourceUrl: url });
+                if (applyResult(igAiRecipe, 'ig-caption-ai') && !isSocial) return;
+              } catch (e) {
+                console.log('[BrowserAssist] og:description AI pass failed:', e?.message);
+              }
+              if (cancelled) return;
+            }
+          }
+        }
+
+        // ── Pass B: extractWithBrowserAPI (plugin + caption + classification) ─
+        const visibleText = stripHtmlToText(html);
+        const imageUrls = extractImageUrlsFromHtml(html);
+        const browserApiResult = extractWithBrowserAPI({ html, visibleText, imageUrls, sourceUrl: url });
+        if (applyResult(browserApiResult, 'browser-api') && !isSocial) return;
+
+        // ── Pass C: Regex patterns on raw HTML ───────────────────────────────
+        const regexRecipe = extractFromRawHtml(html, url);
+        if (applyResult(regexRecipe, 'regex') && !isSocial) return;
+
+        // ── Pass D: Merge partial results ─────────────────────────────────────
+        const merged = pickBestRecipe(browserApiResult, regexRecipe);
+        if (merged && (merged.ingredients?.length > 0 || merged.directions?.length > 0)) {
+          if (applyResult(merged, 'partial-merge') && !isSocial) return;
+        }
+
+        // ── Pass E: Gemini AI on full visible text ────────────────────────────
+        if (!cancelled) {
+          setExtractionProgress({ step: 5, total: 5, message: '✨ AI analyzing full page…' });
+          try {
+            const aiRecipe = await structureWithAI(visibleText, { imageUrl: imageUrls[0] || '', sourceUrl: url });
+            if (aiRecipe && aiRecipe.ingredients?.[0] !== 'See original post for ingredients') {
+              if (applyResult(aiRecipe, 'ai-gemini') && !isSocial) return;
+            }
+          } catch {
+            console.log('[BrowserAssist] Gemini AI pass unavailable');
+          }
+        }
+
+        // ── Fallback for non-social: show iframe ──────────────────────────────
+        if (!isSocial && !cancelled) {
+          setPhase('iframe');
+        }
+        // For social: already in iframe mode. Extraction done; banner shown if anything found.
 
       } catch (err) {
         if (!cancelled) {
@@ -291,6 +295,82 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
 
     return () => { cancelled = true; clearTimeout(timeout); };
   }, [url, isOnline]);
+
+  // ── Clear Clutter: remove cookie banners, login walls, sticky overlays ──────
+  const handleClearClutter = useCallback(() => {
+    if (clearingClutter) return;
+    setClearingClutter(true);
+
+    try {
+      const doc = iframeRef.current?.contentDocument;
+      if (!doc || !doc.body) { setTimeout(() => setClearingClutter(false), 800); return; }
+
+      const CLUTTER_SELECTORS = [
+        // Dialogs & modals
+        '[role="dialog"]:not([id^="spicehub"])', '[aria-modal="true"]',
+        '.modal', '.overlay', '.popup', '.modal-overlay', '.modal-backdrop',
+        // Cookie / consent banners
+        '[class*="cookie"]', '[class*="consent"]', '[class*="gdpr"]',
+        '[id*="cookie"]', '[id*="consent"]', '[id*="gdpr"]', '[id*="onetrust"]',
+        // Login walls & paywalls
+        '[class*="login-wall"]', '[class*="paywall"]', '[class*="pay-wall"]',
+        '[class*="signup-modal"]', '[class*="register-modal"]',
+        '[class*="subscribe"]', '[class*="subscription-modal"]',
+        '[class*="newsletter-popup"]', '[class*="email-popup"]',
+        // Generic blockers
+        '[class*="blocker"]', '[class*="gate"]', '[class*="interstitial"]',
+        '[id*="paywall"]', '[id*="popup"]', '[id*="overlay"]', '[id*="modal"]',
+        // Instagram-specific
+        '.RnEpo', '._acam', // IG login overlay classes
+      ];
+
+      let removed = 0;
+      CLUTTER_SELECTORS.forEach(sel => {
+        try {
+          doc.querySelectorAll(sel).forEach(el => {
+            // Never remove the main content or the SpiceHub buttons
+            if (['MAIN', 'ARTICLE', 'BODY', 'HTML'].includes(el.tagName)) return;
+            if (el.id === 'spicehub-extract-btn' || el.id === 'spicehub-helper') return;
+            el.remove();
+            removed++;
+          });
+        } catch { /* ignore selector errors */ }
+      });
+
+      // Also remove large fixed/sticky elements that cover the page
+      try {
+        const docWin = iframeRef.current?.contentWindow;
+        Array.from(doc.querySelectorAll('*')).forEach(el => {
+          if (['MAIN', 'ARTICLE', 'BODY', 'HTML'].includes(el.tagName)) return;
+          if (el.id === 'spicehub-extract-btn' || el.id === 'spicehub-helper') return;
+          const style = docWin?.getComputedStyle(el);
+          if (!style) return;
+          const pos = style.position;
+          const zi = parseInt(style.zIndex) || 0;
+          if ((pos === 'fixed' || pos === 'absolute') && zi > 50) {
+            const rect = el.getBoundingClientRect();
+            if (rect.width > doc.body.offsetWidth * 0.55 && rect.height > 80) {
+              el.remove(); removed++;
+            }
+          }
+        });
+      } catch { /* ignore */ }
+
+      // Restore scroll if body was locked
+      try {
+        doc.body.style.overflow = '';
+        doc.documentElement.style.overflow = '';
+        doc.body.style.position = '';
+        doc.body.style.height = '';
+      } catch { /* ignore */ }
+
+      console.log(`[BrowserAssist] Cleared ${removed} clutter element(s)`);
+    } catch (err) {
+      console.warn('[BrowserAssist] Could not clear clutter:', err);
+    }
+
+    setTimeout(() => setClearingClutter(false), 900);
+  }, [clearingClutter]);
 
   // ── After iframe renders, inject extraction button ───────────────────────────
   const handleIframeLoad = useCallback(() => {
@@ -344,67 +424,81 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
     }
   }, []);
 
-  // ── Manual extraction from iframe DOM ──────────────────────────────────────
-  const handleExtraction = useCallback(() => {
+  // ── Manual extraction from iframe DOM + Gemini AI ─────────────────────────
+  // Grabs ALL visible text from the page, runs multiple extraction passes,
+  // sends to Google AI (Gemini) for robust auto-sorted parsing, shows preview.
+  const handleExtraction = useCallback(async () => {
     setPhase('extracting');
+    setBannerRecipe(null); // hide any banner while extracting
     try {
       const doc = iframeRef.current?.contentDocument;
       if (!doc || !doc.body) throw new Error('Cannot read page content');
 
-      // Extract visible text from iframe
       const visibleText = extractVisibleTextFromDoc(doc);
       const imageUrls = extractImageUrlsFromDoc(doc);
-
-      // Try extractWithBrowserAPI on iframe content
       const fullHtml = doc.documentElement?.outerHTML || '';
-      const browserApiResult = extractWithBrowserAPI({
-        html: fullHtml,
-        visibleText,
-        imageUrls,
-        sourceUrl: url,
-      });
 
-      if (browserApiResult && hasRealContent(browserApiResult)) {
-        onRecipeExtracted(cleanRecipe(browserApiResult));
-        return;
-      }
+      // ── Step 1: heuristic passes (fast) ──────────────────────────────────
+      setExtractionProgress({ step: 1, total: 3, message: 'Reading page content…' });
 
-      // Also try regex on raw HTML
+      const browserApiResult = extractWithBrowserAPI({ html: fullHtml, visibleText, imageUrls, sourceUrl: url });
       const regexRecipe = rawHtml ? extractFromRawHtml(rawHtml, url) : null;
-
-      // Try DOM-based extraction
       const domRecipe = extractRecipeFromDOM(visibleText, imageUrls, url);
+      const heuristicResult = pickBestRecipe(pickBestRecipe(browserApiResult, regexRecipe), domRecipe);
 
-      // Pick the best result
-      const recipe = pickBestRecipe(regexRecipe, domRecipe);
+      // ── Step 2: Gemini AI structuring (robust, auto-sorted) ──────────────
+      // Always run AI on the visible text — it auto-sorts ingredients vs directions,
+      // strips Instagram chrome, and returns a clean recipe even from messy captions.
+      setExtractionProgress({ step: 2, total: 3, message: '✨ Google AI parsing text…' });
+      let aiRecipe = null;
+      try {
+        // Prefer og:description if available (cleanest text for Instagram)
+        let textForAI = visibleText;
+        if (rawHtml && /instagram\.com/i.test(url)) {
+          const ogMatch = rawHtml.match(/<meta[^>]+property\s*=\s*["']og:description["'][^>]+content\s*=\s*["']([^"']*)["']/i)
+            || rawHtml.match(/<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+property\s*=\s*["']og:description["']/i);
+          if (ogMatch?.[1]) {
+            const og = ogMatch[1].replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+              .replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
+            if (og.length > 30) textForAI = og + '\n\n' + visibleText; // prepend og for context
+          }
+        }
+        aiRecipe = await captionToRecipe(textForAI.slice(0, 8000), { imageUrl: imageUrls[0] || '', sourceUrl: url });
+      } catch (err) {
+        console.log('[BrowserAssist] Gemini extraction failed:', err?.message);
+      }
 
-      if (recipe && hasRealContent(recipe)) {
-        onRecipeExtracted(cleanRecipe(recipe));
+      // ── Step 3: Pick best result and show as editable preview ────────────
+      setExtractionProgress({ step: 3, total: 3, message: 'Sorting results…' });
+
+      const best = (aiRecipe && hasRealContent(aiRecipe)) ? aiRecipe : heuristicResult;
+
+      if (best && hasRealContent(best)) {
+        setAutoRecipe(cleanRecipe({ ...best, extractedVia: aiRecipe ? 'ai-gemini-manual' : 'heuristic-manual' }));
+        setPhase('preview');
         return;
       }
 
-      // No recipe found
+      // Nothing found — stay in iframe and tell user
+      setPhase('iframe');
+      setExtractionProgress({ step: 0, total: 0, message: '' });
       try {
         const btn = doc.getElementById('spicehub-extract-btn');
         if (btn) {
-          btn.textContent = '\u274C No recipe found — try Paste Text';
+          btn.textContent = '⚠️ No recipe found — try selecting text first';
           btn.style.background = '#f44336';
           setTimeout(() => {
-            if (btn.parentNode) {
-              btn.textContent = '\u{1F4E5} Extract Recipe';
-              btn.style.background = '#4CAF50';
-            }
-          }, 3000);
+            if (btn.parentNode) { btn.textContent = '📥 Extract Recipe'; btn.style.background = '#4CAF50'; }
+          }, 3500);
         }
       } catch { /* ignore */ }
 
-      setPhase('iframe');
     } catch (err) {
       console.error('[BrowserAssist] Extraction error:', err);
-      setErrorMsg('Could not read page content. Go back and try another method.');
+      setErrorMsg('Could not read page content: ' + err.message);
       setPhase('error');
     }
-  }, [url, rawHtml, onRecipeExtracted]);
+  }, [url, rawHtml]);
 
   // Keep extractionRef in sync
   useEffect(() => { extractionRef.current = handleExtraction; }, [handleExtraction]);
@@ -517,11 +611,11 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
       {isOnline && phase === 'loading' && (
         <div className="browser-assist-loading">
           <div className="browser-assist-loading-icon">🔍</div>
-          <p className="browser-assist-pulse-text">
+          <p className="browser-assist-pulse-text" aria-live="polite" aria-atomic="true">
             {extractionProgress.message || 'Fetching page content'}
           </p>
           {extractionProgress.total > 0 && (
-            <div className="extraction-progress-stepper" style={{ width: '100%', maxWidth: 240 }}>
+            <div className="extraction-progress-stepper" style={{ width: '100%', maxWidth: 260 }}>
               <div className="extraction-progress-dots">
                 {Array.from({ length: extractionProgress.total }, (_, i) => (
                   <div key={i} className={`progress-step ${i + 1 < extractionProgress.step ? 'done' : i + 1 === extractionProgress.step ? 'active' : ''}`}>
@@ -537,14 +631,14 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
                 />
               </div>
               <p className="extraction-step-message">
-                Step {extractionProgress.step} of {extractionProgress.total}
+                {extractionProgress.step} / {extractionProgress.total} — {extractionProgress.message || '…'}
               </p>
             </div>
           )}
           {!extractionProgress.total && (
             <p className="browser-assist-pulse-sub">This usually takes a few seconds…</p>
           )}
-          <button className="btn-secondary" onClick={onFallbackToText} style={{ marginTop: 8 }}>
+          <button className="btn-secondary" onClick={onFallbackToText} style={{ marginTop: 12 }}>
             Skip — Enter Manually
           </button>
         </div>
@@ -669,44 +763,68 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
         </div>
       )}
 
-      {/* ── Iframe fallback (manual extraction) ── */}
+      {/* ── Browser view: shown immediately for social media, as fallback for others ── */}
       {(phase === 'iframe' || phase === 'extracting') && (
         <div className="browser-assist-ready">
-          <div className="browser-assist-fallback-banner">
-            <span className="fallback-banner-icon">👆</span>
-            <div>
-              <strong>Scroll the page below</strong>
-              <p>Find the recipe content, then tap the green Extract button. Pinch to zoom.</p>
+
+          {/* ── Auto-found recipe banner (from background extraction) ── */}
+          {bannerRecipe && phase !== 'extracting' && (
+            <div className="browser-assist-auto-banner">
+              <span className="auto-banner-icon">✅</span>
+              <div className="auto-banner-text">
+                <strong>Recipe auto-detected!</strong>
+                <span>{bannerRecipe.name || 'Recipe found'} — {bannerRecipe.ingredients?.length || 0} ingredients</span>
+              </div>
+              <div className="auto-banner-actions">
+                <button
+                  className="btn-primary auto-banner-accept"
+                  onClick={() => { setAutoRecipe(bannerRecipe); setBannerRecipe(null); setPhase('preview'); }}
+                >
+                  Review →
+                </button>
+                <button
+                  className="btn-icon auto-banner-dismiss"
+                  onClick={() => setBannerRecipe(null)}
+                  title="Dismiss — keep browsing"
+                >✕</button>
+              </div>
             </div>
+          )}
+
+          {/* ── Toolbar: hint + zoom + clear clutter ── */}
+          <div className="browser-assist-toolbar">
+            <div className="browser-assist-toolbar-hint">
+              {phase === 'extracting'
+                ? <span>⏳ {extractionProgress.message || 'Analyzing…'}</span>
+                : <span>📜 Scroll · pinch to zoom · tap <strong>Extract ↓</strong></span>
+              }
+            </div>
+            <div className="browser-assist-zoom-controls browser-assist-zoom-inline">
+              <button className="browser-assist-zoom-btn" onClick={() => setIframeZoom(Math.max(40, iframeZoom - 15))} title="Zoom out" disabled={iframeZoom <= 40} aria-label="Zoom out">−</button>
+              <button className="browser-assist-zoom-btn browser-assist-zoom-fit" onClick={() => setIframeZoom(85)} title="Fit to screen">Fit</button>
+              <span className="browser-assist-zoom-display" aria-live="polite">{iframeZoom}%</span>
+              <button className="browser-assist-zoom-btn browser-assist-zoom-full" onClick={() => setIframeZoom(100)} title="Full size (100%)">1:1</button>
+              <button className="browser-assist-zoom-btn" onClick={() => setIframeZoom(Math.min(250, iframeZoom + 15))} title="Zoom in" disabled={iframeZoom >= 250} aria-label="Zoom in">+</button>
+            </div>
+            <button
+              className={`browser-assist-clear-btn ${clearingClutter ? 'clearing' : ''}`}
+              onClick={handleClearClutter}
+              disabled={clearingClutter || phase === 'extracting'}
+              title="Remove cookie banners, login popups, and overlays so you can read the page"
+            >
+              {clearingClutter ? '✓ Cleared!' : '🧹 Clear Clutter'}
+            </button>
           </div>
-          <div className="browser-assist-zoom-controls">
-            <button
-              className="browser-assist-zoom-btn"
-              onClick={() => setIframeZoom(Math.max(40, iframeZoom - 10))}
-              title="Zoom out"
-              disabled={iframeZoom <= 40}
-            >
-              −
-            </button>
-            <span className="browser-assist-zoom-display">{iframeZoom}%</span>
-            <button
-              className="browser-assist-zoom-btn"
-              onClick={() => setIframeZoom(Math.min(200, iframeZoom + 10))}
-              title="Zoom in"
-              disabled={iframeZoom >= 200}
-            >
-              +
-            </button>
-            <button
-              className="browser-assist-zoom-btn"
-              onClick={() => setIframeZoom(100)}
-              title="Reset zoom"
-            >
-              1:1
-            </button>
-          </div>
-          <div className="browser-assist-iframe-container">
-            <div style={{ transform: `scale(${iframeZoom / 100})`, transformOrigin: 'top left', width: `${10000 / iframeZoom}%`, transition: 'transform 0.15s ease-out, width 0.15s ease-out', willChange: 'transform' }}>
+
+          {/* ── The page iframe ── */}
+          <div className="browser-assist-iframe-container" aria-label="Recipe page — scroll and pinch to zoom">
+            <div style={{
+              transform: `scale(${iframeZoom / 100})`,
+              transformOrigin: 'top left',
+              width: `${Math.round(10000 / iframeZoom)}%`,
+              transition: 'transform 0.12s ease-out, width 0.12s ease-out',
+              willChange: 'transform',
+            }}>
               <iframe
                 ref={iframeRef}
                 title="Recipe Page"
@@ -717,15 +835,27 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
               />
             </div>
           </div>
+
+          {/* ── Bottom action bar ── */}
           <div className="browser-assist-actions">
-            <button className="btn-primary browser-assist-extract-btn" onClick={handleExtraction} disabled={phase === 'extracting'}>
-              {phase === 'extracting'
-                ? '\u23F3 Analyzing…'
-                : '\u{1F4E5} Extract Recipe'}
+            <button
+              className="btn-primary browser-assist-extract-btn"
+              onClick={handleExtraction}
+              disabled={phase === 'extracting'}
+              title="Grab all visible text and use Google AI to extract the recipe"
+            >
+              {phase === 'extracting' ? '⏳ AI Reading…' : '📥 Extract Recipe'}
             </button>
-            <button className="btn-secondary" onClick={onFallbackToText} disabled={phase === 'extracting'}>
-              ← Back
-            </button>
+            {bannerRecipe && (
+              <button
+                className="btn-accent"
+                onClick={() => { setAutoRecipe(bannerRecipe); setBannerRecipe(null); setPhase('preview'); }}
+                title="Use the auto-detected recipe"
+              >
+                ✅ Use Auto-Result
+              </button>
+            )}
+            <button className="btn-secondary" onClick={onFallbackToText} disabled={phase === 'extracting'}>← Back</button>
           </div>
         </div>
       )}
@@ -763,6 +893,15 @@ const PLACEHOLDER_PATTERNS = [
   /^sign up to see/i,
   /^content (is )?not available/i,
   /^(sorry|oops),?\s*(this )?(content|page|post|recipe)/i,
+  // Instagram UI chrome — navigation / profile elements that leak into full-page text extraction
+  /^instagram\s+\w/i,                                     // "Instagram [username]…"
+  /verified\s*[·•·]\s*(view\s+profile|follow)/i,          // "Verified · View profile"
+  /^view profile$/i,                                       // standalone "View profile"
+  /^play$/i,                                               // video player button text
+  /^watch on instagram/i,                                  // "Watch on Instagram"
+  /^(share|like|comment|save|explore|reels?)$/i,           // single-word nav buttons
+  /^\d+\s*(likes?|followers?|following|comments?|views?)/i, // "1,234 likes"
+  /^follow$/i,                                             // Follow button
 ];
 
 /** Title patterns that indicate a placeholder, not a real recipe name */

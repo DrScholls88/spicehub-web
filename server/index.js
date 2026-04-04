@@ -503,84 +503,113 @@ async function extractInstagramEmbed(url) {
 }
 
 // ── POST /api/extract-instagram-agent ─────────────────────────────────────────
-// Dedicated endpoint for Phase 2 Agent Browser extraction
+// Real Puppeteer-based extraction (replaces dead @vercel/agent-browser CLI)
 app.post('/api/extract-instagram-agent', async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ ok: false, error: 'Missing url' });
 
-  console.log(`[agent-browser] Initiating extraction for: ${url}`);
+  console.log(`[agent-browser] Puppeteer extraction for: ${url}`);
+  let browser = null;
   try {
-    // Session persistence via agent-browser --session flag
-    const sessionId = 'spicehub_social';
-    const npx = IS_CLOUD ? 'npx' : 'npx.cmd';
+    browser = await puppeteer.launch(getLaunchOptions(true));
+    const page = await browser.newPage();
 
-    // Setup batch commands for agent-browser
-    // 1. Navigate to URL
-    // 2. Wait for idle load
-    // 3. Extract text
-    // 4. Extract carousel images
-    // 5. Extract subtitles (if present)
-    const script = `
-      ${npx} -y @vercel/agent-browser@latest open "${url}" --session ${sessionId} &&
-      ${npx} -y @vercel/agent-browser@latest wait --load networkidle --session ${sessionId} &&
-      ${npx} -y @vercel/agent-browser@latest evaluate "document.body.innerText" --session ${sessionId} &&
-      ${npx} -y @vercel/agent-browser@latest evaluate "Array.from(document.querySelectorAll('img, video[poster]')).map(el => el.src || el.poster).filter(src => src && src.startsWith('http') && !src.includes('profile'))" --session ${sessionId} &&
-      ${npx} -y @vercel/agent-browser@latest evaluate "Array.from(document.querySelectorAll('time, .subtitle, [data-testid=\\'video-caption\\']')).map(el => el.innerText).join('\\n')" --session ${sessionId}
-    `.replace(/\n/g, ' ').replace(/\s{2,}/g, ' ');
+    // Mobile viewport (iPhone 15 Pro equivalent)
+    await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
+    await page.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1');
 
-    console.log(`[agent-browser] Executing: ${script}`);
-
-    const execPromise = new Promise((resolve) => {
-      exec(script, { timeout: 60000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
-        if (err) {
-          console.error(`[agent-browser] Error: ${err.message}`);
-          resolve({ ok: false, type: 'none' });
-          return;
-        }
-        resolve({ stdout: stdout || '', stderr: stderr || '' });
-      });
+    // Anti-detection
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+      Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+      window.chrome = { runtime: {} };
     });
 
-    const result = await execPromise;
-    if (!result.stdout) {
-      return res.json({ ok: false, type: 'none' });
-    }
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 25000 });
 
-    // Parse the output to extract text, images, and subtitles
-    let caption = '';
-    let imageUrls = [];
-    let subtitles = '';
-
+    // Auto-expand "more" / "See more" caption buttons
     try {
-      const outputParts = result.stdout.split('\n').filter(l => l.trim().length > 0);
-      subtitles = outputParts[outputParts.length - 1] || '';
-      const possibleImages = JSON.parse(outputParts[outputParts.length - 2] || '[]');
-      if (Array.isArray(possibleImages)) imageUrls = possibleImages;
-      caption = outputParts[outputParts.length - 3] || result.stdout;
-    } catch {
-      caption = result.stdout; // Fallback to raw stdout
-    }
+      await page.evaluate(() => {
+        const moreButtons = document.querySelectorAll('button, span, a, div');
+        for (const btn of moreButtons) {
+          const text = (btn.textContent || '').trim().toLowerCase();
+          if (text === 'more' || text === 'see more' || text === '… more') {
+            btn.click();
+            break;
+          }
+        }
+      });
+      await new Promise(r => setTimeout(r, 1000));
+    } catch { /* caption may already be expanded */ }
 
-    // Attempt to extract title
-    let title = '';
-    const titleMatch = caption.match(/^[^\n]+/);
-    if (titleMatch) title = cleanTitle(titleMatch[0]);
+    // Extract caption via Instagram-specific CSS selectors
+    const caption = await page.evaluate(() => {
+      const selectors = [
+        '._a9zs span[dir="auto"]',
+        'article div[dir="auto"]',
+        '[data-testid="post-comment"] span',
+        '.x9f619 span[dir="auto"]',
+        'h1[dir="auto"]',
+      ];
+      for (const sel of selectors) {
+        const els = document.querySelectorAll(sel);
+        for (const el of els) {
+          const text = (el.textContent || '').trim();
+          if (text.length > 30) return text;
+        }
+      }
+      // Fallback: og:description
+      const ogMeta = document.querySelector('meta[property="og:description"]');
+      if (ogMeta) return ogMeta.getAttribute('content') || '';
+      return '';
+    });
+
+    // Extract title from og:title
+    const title = await page.evaluate(() => {
+      const ogTitle = document.querySelector('meta[property="og:title"]');
+      return ogTitle ? (ogTitle.getAttribute('content') || '') : '';
+    });
+
+    // Extract carousel images via srcset (largest resolution)
+    const imageUrls = await page.evaluate(() => {
+      const imgs = document.querySelectorAll('img[srcset], article img[src]');
+      const urls = [];
+      for (const img of imgs) {
+        const src = img.src || '';
+        if (src && src.startsWith('http') && !src.includes('profile_pic') && !src.includes('s150x150')) {
+          urls.push(src);
+        }
+      }
+      return [...new Set(urls)].slice(0, 5);
+    });
+
+    await browser.close();
+    browser = null;
+
+    const cleanedCaption = stripSocialMetaPrefix(caption || '');
+    const cleanedTitle = cleanTitle(
+      (title || '').replace(/\s*on\s+Instagram\s*$/i, '').replace(/\s*\(@[\w.]+\)\s*$/i, '').replace(/#\w[\w.]*/g, '').trim()
+    );
+
+    if (!cleanedCaption && !cleanedTitle) {
+      return res.json({ ok: false, type: 'none', error: 'No content found' });
+    }
 
     return res.json({
       ok: true,
       type: 'caption',
-      caption: stripSocialMetaPrefix(caption),
-      title: title || '',
+      caption: cleanedCaption,
+      title: cleanedTitle,
       imageUrl: imageUrls[0] || '',
       imageUrls: imageUrls || [],
-      visionSelectedImage: imageUrls[imageUrls.length > 1 ? 1 : 0] || '', // Mock vision selection from array
-      subtitleText: subtitles || '',
+      subtitleText: '',
       sourceUrl: url,
-      extractedVia: 'agent-browser'
+      extractedVia: 'agent-puppeteer',
     });
   } catch (e) {
-    console.error(`[agent-browser] Catch Error: ${e.message}`);
-    return res.json({ ok: false, type: 'none' });
+    if (browser) { try { await browser.close(); } catch {} }
+    console.error(`[agent-browser] Puppeteer error: ${e.message}`);
+    return res.json({ ok: false, type: 'none', error: e.message });
   }
 });
 

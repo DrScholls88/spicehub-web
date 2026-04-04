@@ -176,10 +176,88 @@ export function parseManualCaption(captionText, sourceUrl) {
   };
 }
 
+// ─── Client-side Google AI (Gemini) — direct browser call ───────────────────
+// Uses VITE_GOOGLE_AI_KEY if set. Runs in the browser without a backend hop,
+// giving faster results and working even when the backend server is cold/offline.
+// The API key is bundled into the client build — acceptable for personal/family apps.
+export async function structureWithAIClient(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '' } = {}) {
+  const clientKey = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_GOOGLE_AI_KEY : null;
+  if (!clientKey || !rawText || rawText.trim().length < 20) return null;
+
+  const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${clientKey}`;
+
+  const prompt = `You are a recipe extraction assistant. Convert the following text (which may be from an Instagram post, social media caption, or recipe web page) into a clean, structured recipe.
+
+Return ONLY valid JSON matching this exact schema:
+{
+  "title": "string — short recipe name (no hashtags, no emojis)",
+  "ingredients": [{ "name": "string", "amount": "string — e.g. '2 cups'" }],
+  "directions": ["string — one clear step per item"],
+  "servings": "string or null",
+  "cookTime": "string or null",
+  "notes": "string or null"
+}
+
+Rules:
+- Remove hashtags, @mentions, sponsor phrases, "link in bio", social chrome
+- Keep measurements precise; use "to taste" if amount is missing
+- Split compound steps into separate direction strings
+- Auto-sort: put measurement + ingredient lines in ingredients[], cooking actions in directions[]
+- If no recipe is found, return { "error": "not a recipe" }
+${hintTitle ? `\nTitle hint: "${hintTitle}"` : ''}
+
+Text to parse:
+---
+${rawText.slice(0, 7000)}
+---`;
+
+  try {
+    const res = await fetch(GEMINI_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
+      signal: AbortSignal.timeout(14000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (!raw) return null;
+    const jsonText = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+    const parsed = JSON.parse(jsonText);
+    if (parsed.error) return null;
+    const ingredients = Array.isArray(parsed.ingredients)
+      ? parsed.ingredients.map(ing => typeof ing === 'string' ? ing : [ing.amount, ing.name].filter(Boolean).join(' ').trim()).filter(Boolean)
+      : [];
+    return {
+      name: parsed.title || hintTitle || 'Imported Recipe',
+      ingredients: ingredients.length > 0 ? ingredients : ['See original post for ingredients'],
+      directions: Array.isArray(parsed.directions) && parsed.directions.length > 0
+        ? parsed.directions : ['See original post for directions'],
+      servings: parsed.servings || null,
+      cookTime: parsed.cookTime || null,
+      notes: parsed.notes || null,
+      imageUrl: imageUrl || '',
+      link: sourceUrl || '',
+      _aiStructured: true,
+      _structuredVia: 'gemini-client',
+    };
+  } catch {
+    return null;
+  }
+}
+
 // ─── AI-powered structuring via server /api/structure-recipe (Gemini Flash) ───
-// Returns a SpiceHub recipe object on success, null if server unavailable/unconfigured.
+// Falls back to direct client call if VITE_GOOGLE_AI_KEY is configured.
+// Returns a SpiceHub recipe object on success, null if unavailable.
 export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '' } = {}) {
   if (!rawText || rawText.trim().length < 20) return null;
+
+  // Try client-side Gemini first (faster, no backend roundtrip)
+  try {
+    const clientResult = await structureWithAIClient(rawText, { title: hintTitle, imageUrl, sourceUrl });
+    if (clientResult) return clientResult;
+  } catch { /* fall through to server */ }
+
   try {
     const serverBase = typeof window !== 'undefined' && window.__SPICEHUB_SERVER__ ? window.__SPICEHUB_SERVER__ : 'http://localhost:3001';
     const res = await fetch(`${serverBase}/api/structure-recipe`, {
@@ -215,6 +293,42 @@ export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl
   } catch {
     return null;
   }
+}
+
+// ─── captionToRecipe: Gemini-first structuring with heuristic fallback ────────
+// Takes raw caption text and returns a structured recipe object.
+// Used by BrowserAssist Pass 0 and extractInstagramAgent to get clean results.
+export async function captionToRecipe(captionText, { title = '', imageUrl = '', sourceUrl = '' } = {}) {
+  if (!captionText || captionText.trim().length < 20) return null;
+
+  // Try Gemini AI structuring first (most reliable for social media captions)
+  try {
+    const aiResult = await structureWithAI(captionText, { title, imageUrl, sourceUrl });
+    if (aiResult) {
+      const hasRealIngs = (aiResult.ingredients || []).some(i => i && !/^see (original post|recipe) for/i.test(i.trim()));
+      const hasRealDirs = (aiResult.directions || []).some(d => d && !/^see (original post|recipe) for/i.test(d.trim()));
+      if (hasRealIngs || hasRealDirs) return { ...aiResult, _structuredVia: 'gemini' };
+    }
+  } catch { /* fall through to heuristic */ }
+
+  // Heuristic fallback: parseCaption + comma-delimited parsing
+  const parsed = parseCaption(captionText);
+  if (!parsed) return null;
+
+  const name = parsed.title || title || '';
+  const ingredients = parsed.ingredients?.length > 0 ? parsed.ingredients : [];
+  const directions = parsed.directions?.length > 0 ? parsed.directions : [];
+
+  if (ingredients.length === 0 && directions.length === 0) return null;
+
+  return {
+    name,
+    ingredients,
+    directions,
+    imageUrl,
+    link: sourceUrl,
+    _structuredVia: 'heuristic',
+  };
 }
 
 // ─── Caption Parser (Paprika-style 4-pass, enhanced for video content) ─────────
@@ -955,13 +1069,18 @@ async function detectServer() {
   if (_serverChecked) return _serverBaseUrl;
   _serverChecked = true;
 
+  // Vite injects VITE_SERVER_URL as __SPICEHUB_SERVER__ at build time
+  const buildTimeUrl = (typeof __SPICEHUB_SERVER__ !== 'undefined' && __SPICEHUB_SERVER__ !== 'http://localhost:3001')
+    ? __SPICEHUB_SERVER__ : null;
+
   const candidates = [
+    buildTimeUrl,
     // Same origin (if deployed together)
     window.location.origin,
     // Local dev
     'http://localhost:3001',
     'http://127.0.0.1:3001',
-  ];
+  ].filter(Boolean);
 
   for (const base of candidates) {
     try {
@@ -1305,49 +1424,34 @@ export async function extractInstagramAgent(url, onProgress) {
       };
     }
 
-    // Caption text — parse with the full pipeline
+    // Caption text — structure with Gemini-first via captionToRecipe
     if (onProgress) onProgress('Analyzing recipe content...');
 
     // Priority: subtitle text first (Reels transcript), then caption
-    const textToparse = (data.subtitleText && data.subtitleText.length > 50)
+    const textToStructure = (data.subtitleText && data.subtitleText.length > 50)
       ? `${data.subtitleText}\n${rawCaption}`
       : rawCaption;
 
-    if (!textToparse || textToparse.length < 15) return null;
+    if (!textToStructure || textToStructure.length < 15) return null;
 
-    let parsed = parseCaption(textToparse);
-
-    // Spoken-transcript fallback for Reels
-    if (data.subtitleText && (parsed.ingredients.length <= 1 || parsed.directions.length <= 1)) {
-      const spoken = parseSpokenTranscript(data.subtitleText);
-      if (spoken) {
-        if (spoken.ingredients.length > parsed.ingredients.length) parsed.ingredients = spoken.ingredients;
-        if (spoken.directions.length > parsed.directions.length) parsed.directions = spoken.directions;
-      }
-    }
-
-    // smartClassifyLines fallback
-    if (parsed.ingredients.length === 0 || parsed.directions.length === 0) {
-      const lines = textToparse.split('\n').map(l => l.trim()).filter(Boolean);
-      if (lines.length >= 3) {
-        const classified = smartClassifyLines(lines);
-        if (classified.ingredients.length > parsed.ingredients.length) parsed.ingredients = classified.ingredients;
-        if (classified.directions.length > parsed.directions.length) parsed.directions = classified.directions;
-      }
-    }
-
-    const title = parsed.title || rawTitle || sanitizeRecipeTitle(rawCaption.slice(0, 80));
-
-    return {
-      name: cleanTitle(title),
-      ingredients: parsed.ingredients,
-      directions: parsed.directions,
+    const structured = await captionToRecipe(textToStructure, {
+      title: rawTitle,
       imageUrl: data.imageUrl || '',
-      imageUrls: data.imageUrls || [],
-      link: url,
-      _extractedVia: 'agent-auto',
-      _hasSubtitles: !!(data.subtitleText),
-    };
+      sourceUrl: url,
+    });
+
+    if (structured) {
+      return {
+        ...structured,
+        imageUrl: data.imageUrl || structured.imageUrl || '',
+        imageUrls: data.imageUrls || [],
+        link: url,
+        _extractedVia: `agent-${structured._structuredVia || 'auto'}`,
+        _hasSubtitles: !!(data.subtitleText),
+      };
+    }
+
+    return null;
   } catch (e) {
     console.log(`[SpiceHub] Agent extraction error: ${e.message}`);
     return null;

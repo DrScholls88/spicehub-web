@@ -4095,14 +4095,21 @@ body {
   border-top: 2px solid #f0f0f0;
   border-radius: 8px;
   position: relative;
-  transition: background-color 0.25s, border-color 0.25s;
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.15s ease;
+}
+
+@keyframes dropZonePulse {
+  0%, 100% { box-shadow: inset 0 0 0 2px rgba(230, 81, 0, 0.2), 0 4px 16px rgba(230, 81, 0, 0.08); }
+  50%       { box-shadow: inset 0 0 0 3px rgba(230, 81, 0, 0.35), 0 6px 20px rgba(230, 81, 0, 0.14); }
 }
 
 .preview-detail-section.drop-active {
   background: #fff8ef;
   border-color: var(--primary);
-  box-shadow: inset 0 0 0 2px rgba(230, 81, 0, 0.18), 0 4px 12px rgba(230, 81, 0, 0.08);
-  transform: scale(1.005);
+  border-width: 2px;
+  border-style: dashed;
+  transform: scale(1.008);
+  animation: dropZonePulse 1s ease-in-out infinite;
 }
 
 .preview-label-icon {
@@ -4138,15 +4145,15 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 40px;
-  min-width: 28px;
+  width: 36px;
+  height: 48px;
+  min-width: 36px;
   flex-shrink: 0;
-  color: #ccc;
-  font-size: 16px;
+  color: #bbb;
+  font-size: 0; /* hide any direct text — content comes from ::after */
   cursor: grab;
-  transition: color 0.15s, background 0.15s;
-  border-radius: 8px;
+  transition: color 0.15s, background 0.15s, transform 0.1s;
+  border-radius: 10px;
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
@@ -4156,15 +4163,16 @@ body {
 
 .drag-handle::after {
   content: '⠿';
-  font-size: 17px;
+  font-size: 20px;
   color: inherit;
   line-height: 1;
-  opacity: 0.7;
+  opacity: 0.65;
+  transition: opacity 0.15s;
 }
 
 .drag-handle:hover {
-  color: #999;
-  background: #f5f0e8;
+  color: var(--primary, #e65100);
+  background: rgba(230, 81, 0, 0.07);
 }
 
 .drag-handle:hover::after {
@@ -4174,7 +4182,8 @@ body {
 .drag-handle:active {
   cursor: grabbing;
   color: var(--primary);
-  background: #fff3e0;
+  background: rgba(230, 81, 0, 0.14);
+  transform: scale(1.1);
 }
 
 /* ── Move-between-sections button ── */
@@ -4210,22 +4219,26 @@ body {
 
 /* ── Empty drop zone ── */
 .preview-empty-drop {
-  padding: 18px 16px;
+  padding: 22px 16px;
   text-align: center;
   font-size: 13px;
   color: var(--text-muted);
   font-style: italic;
-  border: 2px dashed #d8d0c4;
-  border-radius: 10px;
-  margin: 4px 12px 8px;
+  border: 2px dashed #c8c0b4;
+  border-radius: 12px;
+  margin: 6px 12px 10px;
   background: #fdf9f4;
   transition: all 0.2s;
+  letter-spacing: 0.01em;
 }
 
-.preview-empty-drop:hover {
-  border-color: var(--primary-light);
-  background: #fff8f0;
-  color: var(--text-light);
+.preview-empty-drop:hover,
+.drop-active .preview-empty-drop {
+  border-color: var(--primary);
+  background: #fff3e8;
+  color: var(--primary);
+  font-style: normal;
+  font-weight: 600;
 }
 
 .preview-editable-row input,
@@ -9710,10 +9723,23 @@ body {
   background: var(--card);
   color: var(--text);
   border-color: var(--border);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
 [data-theme="dark"] .browser-assist-zoom-btn:active:not(:disabled) {
+  background: rgba(255, 112, 67, 0.2);
+}
+
+[data-theme="dark"] .browser-assist-zoom-fit,
+[data-theme="dark"] .browser-assist-zoom-full {
   background: var(--surface);
+  color: var(--text);
+}
+
+[data-theme="dark"] .browser-assist-zoom-fit:hover:not(:disabled),
+[data-theme="dark"] .browser-assist-zoom-full:hover:not(:disabled) {
+  background: var(--primary);
+  color: white;
 }
 
 [data-theme="dark"] .browser-assist-actions {
@@ -9801,8 +9827,10 @@ body {
 }
 
 [data-theme="dark"] .preview-detail-section.drop-active {
-  background: rgba(102, 187, 106, 0.06);
+  background: rgba(255, 112, 67, 0.08);
   border-color: var(--primary);
+  border-style: dashed;
+  animation: dropZonePulse 1s ease-in-out infinite;
 }
 
 [data-theme="dark"] .wv-empty-circle {
@@ -11718,22 +11746,22 @@ body {
 }
 
 /* ── Touch Drag Enhancements ─────────────────────────────────────────────── */
-.drag-handle {
-  touch-action: none;
-  -webkit-user-select: none;
-  user-select: none;
-}
+/* Note: .drag-handle base styles defined in the preview-detail section above */
 
 .preview-editable-row.touch-dragging {
-  opacity: 0.5;
-  transform: scale(0.97);
+  opacity: 0.45;
+  transform: scale(0.96);
   transition: opacity 0.15s ease, transform 0.15s ease;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
 }
 
+/* This duplicate selector is intentional: ensures drop-active works in both
+   the preview-detail card context AND the BrowserAssist preview context */
 .preview-detail-section.drop-active {
-  background: rgba(230, 81, 0, 0.06);
+  background: #fff8ef;
   border-color: var(--primary);
-  box-shadow: inset 0 0 0 2px rgba(230, 81, 0, 0.15);
+  border-style: dashed;
+  animation: dropZonePulse 1s ease-in-out infinite;
 }
 
 .browser-assist-ready {
@@ -11744,16 +11772,237 @@ body {
   min-height: 0;
 }
 
+/* ── Auto-found recipe banner (floats above iframe) ─────────────────────── */
+.browser-assist-auto-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #e8f5e9, #f1f8e9);
+  border-bottom: 2px solid #81c784;
+  flex-shrink: 0;
+  animation: bannerSlideIn 0.3s var(--ease-spring);
+}
+
+@keyframes bannerSlideIn {
+  from { transform: translateY(-100%); opacity: 0; }
+  to   { transform: translateY(0);     opacity: 1; }
+}
+
+.auto-banner-icon {
+  font-size: 22px;
+  flex-shrink: 0;
+}
+
+.auto-banner-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.auto-banner-text strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: #2e7d32;
+  white-space: nowrap;
+}
+
+.auto-banner-text span {
+  font-size: 12px;
+  color: #558b2f;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.auto-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.auto-banner-accept {
+  padding: 7px 14px !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  white-space: nowrap;
+}
+
+.auto-banner-dismiss {
+  width: 30px !important;
+  height: 30px !important;
+  font-size: 14px !important;
+  color: #888 !important;
+  background: transparent !important;
+  border: none !important;
+}
+
+/* ── Browser toolbar: hint + zoom + clear clutter ───────────────────────── */
+.browser-assist-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #f3f0eb;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.browser-assist-toolbar-hint {
+  font-size: 12px;
+  color: var(--text-light);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.browser-assist-toolbar-hint strong {
+  color: #4CAF50;
+}
+
+/* Inline zoom row inside the toolbar — more compact than standalone row */
+.browser-assist-zoom-inline {
+  padding: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  flex-shrink: 0;
+  gap: 4px !important;
+  position: static !important;
+}
+
+.browser-assist-zoom-inline .browser-assist-zoom-btn {
+  width: 36px !important;
+  height: 36px !important;
+  min-width: 36px !important;
+  font-size: 16px !important;
+}
+
+.browser-assist-zoom-inline .browser-assist-zoom-fit,
+.browser-assist-zoom-inline .browser-assist-zoom-full {
+  font-size: 11px !important;
+  min-width: 38px !important;
+  padding: 0 6px !important;
+}
+
+.browser-assist-zoom-inline .browser-assist-zoom-display {
+  min-width: 38px !important;
+  font-size: 12px !important;
+  height: 28px !important;
+}
+
+/* ── Clear Clutter button ───────────────────────────────────────────────── */
+.browser-assist-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 7px 12px;
+  background: white;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.browser-assist-clear-btn:hover:not(:disabled) {
+  background: #fff3e0;
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.browser-assist-clear-btn:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.browser-assist-clear-btn.clearing {
+  background: #e8f5e9;
+  border-color: #81c784;
+  color: #2e7d32;
+  pointer-events: none;
+}
+
+.browser-assist-clear-btn:disabled:not(.clearing) {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* btn-accent — shown in the action bar when auto-result is available */
+.btn-accent {
+  background: #e8f5e9;
+  color: #2e7d32;
+  border: 1.5px solid #81c784;
+  border-radius: var(--radius-sm, 10px);
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  white-space: nowrap;
+}
+
+.btn-accent:hover { background: #c8e6c9; }
+.btn-accent:active { transform: scale(0.96); }
+
+/* Dark mode overrides */
+[data-theme="dark"] .browser-assist-auto-banner {
+  background: linear-gradient(135deg, rgba(46,125,50,0.15), rgba(104,159,56,0.1));
+  border-bottom-color: #388e3c;
+}
+
+[data-theme="dark"] .auto-banner-text strong { color: #a5d6a7; }
+[data-theme="dark"] .auto-banner-text span   { color: #81c784; }
+
+[data-theme="dark"] .browser-assist-toolbar {
+  background: var(--surface);
+  border-bottom-color: var(--border);
+}
+
+[data-theme="dark"] .browser-assist-clear-btn {
+  background: var(--card);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+[data-theme="dark"] .browser-assist-clear-btn:hover:not(:disabled) {
+  background: rgba(255, 112, 67, 0.12);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+[data-theme="dark"] .btn-accent {
+  background: rgba(46,125,50,0.2);
+  color: #a5d6a7;
+  border-color: #388e3c;
+}
+
+[data-theme="dark"] .btn-accent:hover { background: rgba(46,125,50,0.3); }
+
 .browser-assist-iframe-container {
   flex: 1;
-  min-height: 50vh;
+  min-height: 52vh; /* floor so it's still usable if modal is short */
   overflow: auto;
-  background: #f5f5f5;
+  background: #e8e8e8;
   border-bottom: 1px solid var(--border);
   position: relative;
   -webkit-overflow-scrolling: touch;
   touch-action: pan-x pan-y pinch-zoom;
   overscroll-behavior: contain;
+  scroll-behavior: smooth;
 }
 
 .browser-assist-iframe-container>div {
@@ -11763,12 +12012,13 @@ body {
 
 .browser-assist-iframe {
   width: 100%;
-  min-height: 80vh;
+  min-height: 88vh;
   border: none;
   background: white;
   display: block;
   -webkit-user-select: text;
   user-select: text;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
 }
 
 .browser-assist-zoom-controls {
@@ -11776,49 +12026,86 @@ body {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 10px 12px;
-  background: #f9f9f9;
+  padding: 8px 12px;
+  background: #f7f7f7;
   border-bottom: 1px solid var(--border);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 
 .browser-assist-zoom-btn {
-  width: 40px;
-  height: 40px;
-  min-width: 40px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   background: white;
   color: var(--text);
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 700;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.12s, transform 0.1s, box-shadow 0.12s;
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.browser-assist-zoom-btn:hover:not(:disabled) {
+  background: #f0ebe3;
+  border-color: var(--primary-light, #ff8a50);
 }
 
 .browser-assist-zoom-btn:active:not(:disabled) {
-  background: #f0f0f0;
-  transform: scale(0.95);
+  background: #ffe0cc;
+  transform: scale(0.9);
+  box-shadow: none;
 }
 
 .browser-assist-zoom-btn:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
+/* Fit & 1:1 buttons are wider text buttons */
+.browser-assist-zoom-fit,
+.browser-assist-zoom-full {
+  width: auto;
+  min-width: 48px;
+  padding: 0 10px;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  background: var(--surface, #f5f0e8);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.browser-assist-zoom-fit:hover:not(:disabled),
+.browser-assist-zoom-full:hover:not(:disabled) {
+  background: var(--primary-light, #ff8a50);
+  color: white;
+  border-color: var(--primary);
+}
+
 .browser-assist-zoom-display {
-  min-width: 50px;
+  min-width: 48px;
   text-align: center;
   font-size: 13px;
-  font-weight: 600;
-  color: var(--text-light);
+  font-weight: 700;
+  color: var(--text);
   padding: 0 4px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 6px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
 }
 
 @media (max-width: 480px) {
@@ -11836,7 +12123,7 @@ body {
 
   .browser-assist-zoom-display {
     font-size: 13px;
-    min-width: 45px;
+    min-width: 44px;
   }
 
   /* Mobile: larger inputs and drag handles */
@@ -11844,27 +12131,27 @@ body {
   .preview-editable-row textarea {
     font-size: 15px;
     padding: 10px;
-    min-height: 40px;
+    min-height: 44px;
   }
 
+  /* Mobile drag handles already sized at 36x48 in base; keep consistent */
   .drag-handle {
-    width: 36px;
-    height: 36px;
-    min-width: 36px;
-    font-size: 20px;
+    width: 40px;
+    height: 52px;
+    min-width: 40px;
   }
 
   .preview-move-btn {
-    width: 32px;
-    height: 32px;
-    min-width: 32px;
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
     font-size: 16px;
   }
 
   .preview-remove-btn {
-    width: 32px;
-    height: 32px;
-    min-width: 32px;
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
     font-size: 14px;
   }
 

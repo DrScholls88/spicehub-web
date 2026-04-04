@@ -1,0 +1,445 @@
+From c626665fb2aed7fb324b834305ef2584e31cdf8f Mon Sep 17 00:00:00 2001
+From: Brian Goeke <bjgoeke@gmail.com>
+Date: Sat, 4 Apr 2026 09:33:16 -0500
+Subject: [PATCH] fix(instagram): replace dead agent-browser with puppeteer,
+ add captionToRecipe, fix og:description extraction
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- server/index.js: Replace @vercel/agent-browser CLI (non-existent npm package) with
+  real puppeteer-based extraction using existing getLaunchOptions() infrastructure.
+  Mobile viewport, anti-detection, Instagram caption CSS selectors, carousel image extraction.
+- recipeParser.js: Add captionToRecipe() — Gemini-first structuring with heuristic fallback.
+  Fix detectServer() to include __SPICEHUB_SERVER__ (Vite build-time define) as first candidate.
+  Update extractInstagramAgent() to use captionToRecipe instead of manual parseCaption chain.
+- BrowserAssist.jsx: Add Pass 0 — for Instagram URLs, extract og:description meta tag directly
+  (not full page text) and run through captionToRecipe/Gemini before any other extraction pass.
+  Add 8 Instagram UI chrome patterns to PLACEHOLDER_PATTERNS (Verified, View profile, Play, etc.)
+  to prevent navigation text from passing hasRealContent(). Make handleExtraction async with
+  Gemini fallback after heuristic extraction fails.
+
+Fixes: Instagram Reel imports returning "Recipe" as name with profile navigation text
+as ingredients instead of actual recipe content.
+
+Co-Authored-By: Claude Opus 4.6 <noreply@anthropic.com>
+---
+ server/index.js                  | 143 +++++++++++++++++++------------
+ src/components/BrowserAssist.jsx |  64 +++++++++++++-
+ src/recipeParser.js              |  94 ++++++++++++--------
+ 3 files changed, 208 insertions(+), 93 deletions(-)
+
+diff --git a/server/index.js b/server/index.js
+index 73f72f6..c7790fc 100644
+--- a/server/index.js
++++ b/server/index.js
+@@ -503,84 +503,113 @@ async function extractInstagramEmbed(url) {
+ }
+ 
+ // ── POST /api/extract-instagram-agent ─────────────────────────────────────────
+-// Dedicated endpoint for Phase 2 Agent Browser extraction
++// Real Puppeteer-based extraction (replaces dead @vercel/agent-browser CLI)
+ app.post('/api/extract-instagram-agent', async (req, res) => {
+   const { url } = req.body;
+   if (!url) return res.status(400).json({ ok: false, error: 'Missing url' });
+ 
+-  console.log(`[agent-browser] Initiating extraction for: ${url}`);
++  console.log(`[agent-browser] Puppeteer extraction for: ${url}`);
++  let browser = null;
+   try {
+-    // Session persistence via agent-browser --session flag
+-    const sessionId = 'spicehub_social';
+-    const npx = IS_CLOUD ? 'npx' : 'npx.cmd';
+-
+-    // Setup batch commands for agent-browser
+-    // 1. Navigate to URL
+-    // 2. Wait for idle load
+-    // 3. Extract text
+-    // 4. Extract carousel images
+-    // 5. Extract subtitles (if present)
+-    const script = `
+-      ${npx} -y @vercel/agent-browser@latest open "${url}" --session ${sessionId} &&
+-      ${npx} -y @vercel/agent-browser@latest wait --load networkidle --session ${sessionId} &&
+-      ${npx} -y @vercel/agent-browser@latest evaluate "document.body.innerText" --session ${sessionId} &&
+-      ${npx} -y @vercel/agent-browser@latest evaluate "Array.from(document.querySelectorAll('img, video[poster]')).map(el => el.src || el.poster).filter(src => src && src.startsWith('http') && !src.includes('profile'))" --session ${sessionId} &&
+-      ${npx} -y @vercel/agent-browser@latest evaluate "Array.from(document.querySelectorAll('time, .subtitle, [data-testid=\\'video-caption\\']')).map(el => el.innerText).join('\\n')" --session ${sessionId}
+-    `.replace(/\n/g, ' ').replace(/\s{2,}/g, ' ');
+-
+-    console.log(`[agent-browser] Executing: ${script}`);
+-
+-    const execPromise = new Promise((resolve) => {
+-      exec(script, { timeout: 60000, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
+-        if (err) {
+-          console.error(`[agent-browser] Error: ${err.message}`);
+-          resolve({ ok: false, type: 'none' });
+-          return;
++    browser = await puppeteer.launch(getLaunchOptions(true));
++    const page = await browser.newPage();
++
++    // Mobile viewport (iPhone 15 Pro equivalent)
++    await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
++    await page.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1');
++
++    // Anti-detection
++    await page.evaluateOnNewDocument(() => {
++      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
++      Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
++      window.chrome = { runtime: {} };
++    });
++
++    await page.goto(url, { waitUntil: 'networkidle2', timeout: 25000 });
++
++    // Auto-expand "more" / "See more" caption buttons
++    try {
++      await page.evaluate(() => {
++        const moreButtons = document.querySelectorAll('button, span, a, div');
++        for (const btn of moreButtons) {
++          const text = (btn.textContent || '').trim().toLowerCase();
++          if (text === 'more' || text === 'see more' || text === '… more') {
++            btn.click();
++            break;
++          }
+         }
+-        resolve({ stdout: stdout || '', stderr: stderr || '' });
+       });
++      await new Promise(r => setTimeout(r, 1000));
++    } catch { /* caption may already be expanded */ }
++
++    // Extract caption via Instagram-specific CSS selectors
++    const caption = await page.evaluate(() => {
++      const selectors = [
++        '._a9zs span[dir="auto"]',
++        'article div[dir="auto"]',
++        '[data-testid="post-comment"] span',
++        '.x9f619 span[dir="auto"]',
++        'h1[dir="auto"]',
++      ];
++      for (const sel of selectors) {
++        const els = document.querySelectorAll(sel);
++        for (const el of els) {
++          const text = (el.textContent || '').trim();
++          if (text.length > 30) return text;
++        }
++      }
++      // Fallback: og:description
++      const ogMeta = document.querySelector('meta[property="og:description"]');
++      if (ogMeta) return ogMeta.getAttribute('content') || '';
++      return '';
+     });
+ 
+-    const result = await execPromise;
+-    if (!result.stdout) {
+-      return res.json({ ok: false, type: 'none' });
+-    }
++    // Extract title from og:title
++    const title = await page.evaluate(() => {
++      const ogTitle = document.querySelector('meta[property="og:title"]');
++      return ogTitle ? (ogTitle.getAttribute('content') || '') : '';
++    });
+ 
+-    // Parse the output to extract text, images, and subtitles
+-    let caption = '';
+-    let imageUrls = [];
+-    let subtitles = '';
++    // Extract carousel images via srcset (largest resolution)
++    const imageUrls = await page.evaluate(() => {
++      const imgs = document.querySelectorAll('img[srcset], article img[src]');
++      const urls = [];
++      for (const img of imgs) {
++        const src = img.src || '';
++        if (src && src.startsWith('http') && !src.includes('profile_pic') && !src.includes('s150x150')) {
++          urls.push(src);
++        }
++      }
++      return [...new Set(urls)].slice(0, 5);
++    });
+ 
+-    try {
+-      const outputParts = result.stdout.split('\n').filter(l => l.trim().length > 0);
+-      subtitles = outputParts[outputParts.length - 1] || '';
+-      const possibleImages = JSON.parse(outputParts[outputParts.length - 2] || '[]');
+-      if (Array.isArray(possibleImages)) imageUrls = possibleImages;
+-      caption = outputParts[outputParts.length - 3] || result.stdout;
+-    } catch {
+-      caption = result.stdout; // Fallback to raw stdout
+-    }
++    await browser.close();
++    browser = null;
+ 
+-    // Attempt to extract title
+-    let title = '';
+-    const titleMatch = caption.match(/^[^\n]+/);
+-    if (titleMatch) title = cleanTitle(titleMatch[0]);
++    const cleanedCaption = stripSocialMetaPrefix(caption || '');
++    const cleanedTitle = cleanTitle(
++      (title || '').replace(/\s*on\s+Instagram\s*$/i, '').replace(/\s*\(@[\w.]+\)\s*$/i, '').replace(/#\w[\w.]*/g, '').trim()
++    );
++
++    if (!cleanedCaption && !cleanedTitle) {
++      return res.json({ ok: false, type: 'none', error: 'No content found' });
++    }
+ 
+     return res.json({
+       ok: true,
+       type: 'caption',
+-      caption: stripSocialMetaPrefix(caption),
+-      title: title || '',
++      caption: cleanedCaption,
++      title: cleanedTitle,
+       imageUrl: imageUrls[0] || '',
+       imageUrls: imageUrls || [],
+-      visionSelectedImage: imageUrls[imageUrls.length > 1 ? 1 : 0] || '', // Mock vision selection from array
+-      subtitleText: subtitles || '',
++      subtitleText: '',
+       sourceUrl: url,
+-      extractedVia: 'agent-browser'
++      extractedVia: 'agent-puppeteer',
+     });
+   } catch (e) {
+-    console.error(`[agent-browser] Catch Error: ${e.message}`);
+-    return res.json({ ok: false, type: 'none' });
++    if (browser) { try { await browser.close(); } catch {} }
++    console.error(`[agent-browser] Puppeteer error: ${e.message}`);
++    return res.json({ ok: false, type: 'none', error: e.message });
+   }
+ });
+ 
+diff --git a/src/components/BrowserAssist.jsx b/src/components/BrowserAssist.jsx
+index 731fea7..8099189 100644
+--- a/src/components/BrowserAssist.jsx
++++ b/src/components/BrowserAssist.jsx
+@@ -1,5 +1,5 @@
+ import { useState, useEffect, useRef, useCallback } from 'react';
+-import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins, isSocialMediaUrl, tryVideoExtraction, extractInstagramAgent, scoreExtractionConfidence, structureWithAI } from '../recipeParser';
++import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins, isSocialMediaUrl, tryVideoExtraction, extractInstagramAgent, scoreExtractionConfidence, structureWithAI, captionToRecipe } from '../recipeParser';
+ import { fetchHtmlViaProxy, proxyImageUrl } from '../api';
+ import { queueRecipeImport } from '../db';
+ import useOnlineStatus from '../hooks/useOnlineStatus';
+@@ -215,6 +215,42 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
+ 
+         // ── AUTO-EXTRACTION PIPELINE ──
+ 
++        // Pass 0 (Instagram-specific): extract og:description directly → AI structure
++        // MUST run first — stripHtmlToText() captures all page chrome (nav, profile text,
++        // "Verified · View profile", video controls) and misclassifies it as ingredients.
++        // The og:description meta tag contains the actual post caption, clean and reliable.
++        if (/instagram\.com/i.test(url)) {
++          const ogMatch = html.match(/<meta[^>]+property\s*=\s*["']og:description["'][^>]+content\s*=\s*["']([^"']*)["']/i)
++            || html.match(/<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+property\s*=\s*["']og:description["']/i);
++          if (ogMatch && ogMatch[1]) {
++            // Decode HTML entities
++            let ogCaption = ogMatch[1]
++              .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
++              .replace(/&lt;/g, '<').replace(/&gt;/g, '>');
++            // Strip "N likes, N comments - username on Month Day, Year:" social prefix
++            ogCaption = ogCaption
++              .replace(/^[\d,.]+[kKmM]?\s+likes?,?\s*[\d,.]+[kKmM]?\s+comments?\s*[-–—]\s*[^:]+:\s*/i, '')
++              .trim();
++            if (ogCaption.length > 30 && !/^log[ -]?in/i.test(ogCaption)) {
++              const igImageUrls = extractImageUrlsFromHtml(html);
++              setExtractionProgress({ step: 4, total: 5, message: '✨ AI structuring caption…' });
++              try {
++                const igAiRecipe = await captionToRecipe(ogCaption, {
++                  imageUrl: igImageUrls[0] || '',
++                  sourceUrl: url,
++                });
++                if (!cancelled && igAiRecipe && hasRealContent(igAiRecipe)) {
++                  setAutoRecipe(cleanRecipe({ ...igAiRecipe, extractedVia: 'ig-caption-ai' }));
++                  setPhase('preview');
++                  return;
++                }
++              } catch (e) {
++                console.log('[BrowserAssist] Pass 0 (Instagram og:description AI) failed:', e?.message);
++              }
++            }
++          }
++        }
++
+         // Pass 1: extractWithBrowserAPI — plugin detection + caption parsing + smart classification
+         const browserApiResult = extractWithBrowserAPI({
+           html,
+@@ -345,7 +381,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
+   }, []);
+ 
+   // ── Manual extraction from iframe DOM ──────────────────────────────────────
+-  const handleExtraction = useCallback(() => {
++  const handleExtraction = useCallback(async () => {
+     setPhase('extracting');
+     try {
+       const doc = iframeRef.current?.contentDocument;
+@@ -383,6 +419,21 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
+         return;
+       }
+ 
++      // NEW: Gemini fallback — use visible text from iframe for AI structuring
++      if (visibleText && visibleText.length > 80) {
++        setExtractionProgress({ step: 1, total: 1, message: '✨ AI analyzing visible content…' });
++        try {
++          const aiRecipe = await captionToRecipe(visibleText, {
++            imageUrl: imageUrls[0] || '',
++            sourceUrl: url,
++          });
++          if (aiRecipe && hasRealContent(aiRecipe)) {
++            onRecipeExtracted(cleanRecipe({ ...aiRecipe, extractedVia: 'ai-gemini-manual' }));
++            return;
++          }
++        } catch { /* fall through */ }
++      }
++
+       // No recipe found
+       try {
+         const btn = doc.getElementById('spicehub-extract-btn');
+@@ -763,6 +814,15 @@ const PLACEHOLDER_PATTERNS = [
+   /^sign up to see/i,
+   /^content (is )?not available/i,
+   /^(sorry|oops),?\s*(this )?(content|page|post|recipe)/i,
++  // Instagram UI chrome — navigation / profile elements that leak into full-page text extraction
++  /^instagram\s+\w/i,                                     // "Instagram [username]…"
++  /verified\s*[·•·]\s*(view\s+profile|follow)/i,          // "Verified · View profile"
++  /^view profile$/i,                                       // standalone "View profile"
++  /^play$/i,                                               // video player button text
++  /^watch on instagram/i,                                  // "Watch on Instagram"
++  /^(share|like|comment|save|explore|reels?)$/i,           // single-word nav buttons
++  /^\d+\s*(likes?|followers?|following|comments?|views?)/i, // "1,234 likes"
++  /^follow$/i,                                             // Follow button
+ ];
+ 
+ /** Title patterns that indicate a placeholder, not a real recipe name */
+diff --git a/src/recipeParser.js b/src/recipeParser.js
+index 0ae9215..08308f3 100644
+--- a/src/recipeParser.js
++++ b/src/recipeParser.js
+@@ -217,6 +217,42 @@ export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl
+   }
+ }
+ 
++// ─── captionToRecipe: Gemini-first structuring with heuristic fallback ────────
++// Takes raw caption text and returns a structured recipe object.
++// Used by BrowserAssist Pass 0 and extractInstagramAgent to get clean results.
++export async function captionToRecipe(captionText, { title = '', imageUrl = '', sourceUrl = '' } = {}) {
++  if (!captionText || captionText.trim().length < 20) return null;
++
++  // Try Gemini AI structuring first (most reliable for social media captions)
++  try {
++    const aiResult = await structureWithAI(captionText, { title, imageUrl, sourceUrl });
++    if (aiResult) {
++      const hasRealIngs = (aiResult.ingredients || []).some(i => i && !/^see (original post|recipe) for/i.test(i.trim()));
++      const hasRealDirs = (aiResult.directions || []).some(d => d && !/^see (original post|recipe) for/i.test(d.trim()));
++      if (hasRealIngs || hasRealDirs) return { ...aiResult, _structuredVia: 'gemini' };
++    }
++  } catch { /* fall through to heuristic */ }
++
++  // Heuristic fallback: parseCaption + comma-delimited parsing
++  const parsed = parseCaption(captionText);
++  if (!parsed) return null;
++
++  const name = parsed.title || title || '';
++  const ingredients = parsed.ingredients?.length > 0 ? parsed.ingredients : [];
++  const directions = parsed.directions?.length > 0 ? parsed.directions : [];
++
++  if (ingredients.length === 0 && directions.length === 0) return null;
++
++  return {
++    name,
++    ingredients,
++    directions,
++    imageUrl,
++    link: sourceUrl,
++    _structuredVia: 'heuristic',
++  };
++}
++
+ // ─── Caption Parser (Paprika-style 4-pass, enhanced for video content) ─────────
+ export function parseCaption(text) {
+   const ingredients = [];
+@@ -955,13 +991,18 @@ async function detectServer() {
+   if (_serverChecked) return _serverBaseUrl;
+   _serverChecked = true;
+ 
++  // Vite injects VITE_SERVER_URL as __SPICEHUB_SERVER__ at build time
++  const buildTimeUrl = (typeof __SPICEHUB_SERVER__ !== 'undefined' && __SPICEHUB_SERVER__ !== 'http://localhost:3001')
++    ? __SPICEHUB_SERVER__ : null;
++
+   const candidates = [
++    buildTimeUrl,
+     // Same origin (if deployed together)
+     window.location.origin,
+     // Local dev
+     'http://localhost:3001',
+     'http://127.0.0.1:3001',
+-  ];
++  ].filter(Boolean);
+ 
+   for (const base of candidates) {
+     try {
+@@ -1305,49 +1346,34 @@ export async function extractInstagramAgent(url, onProgress) {
+       };
+     }
+ 
+-    // Caption text — parse with the full pipeline
++    // Caption text — structure with Gemini-first via captionToRecipe
+     if (onProgress) onProgress('Analyzing recipe content...');
+ 
+     // Priority: subtitle text first (Reels transcript), then caption
+-    const textToparse = (data.subtitleText && data.subtitleText.length > 50)
++    const textToStructure = (data.subtitleText && data.subtitleText.length > 50)
+       ? `${data.subtitleText}\n${rawCaption}`
+       : rawCaption;
+ 
+-    if (!textToparse || textToparse.length < 15) return null;
+-
+-    let parsed = parseCaption(textToparse);
++    if (!textToStructure || textToStructure.length < 15) return null;
+ 
+-    // Spoken-transcript fallback for Reels
+-    if (data.subtitleText && (parsed.ingredients.length <= 1 || parsed.directions.length <= 1)) {
+-      const spoken = parseSpokenTranscript(data.subtitleText);
+-      if (spoken) {
+-        if (spoken.ingredients.length > parsed.ingredients.length) parsed.ingredients = spoken.ingredients;
+-        if (spoken.directions.length > parsed.directions.length) parsed.directions = spoken.directions;
+-      }
+-    }
++    const structured = await captionToRecipe(textToStructure, {
++      title: rawTitle,
++      imageUrl: data.imageUrl || '',
++      sourceUrl: url,
++    });
+ 
+-    // smartClassifyLines fallback
+-    if (parsed.ingredients.length === 0 || parsed.directions.length === 0) {
+-      const lines = textToparse.split('\n').map(l => l.trim()).filter(Boolean);
+-      if (lines.length >= 3) {
+-        const classified = smartClassifyLines(lines);
+-        if (classified.ingredients.length > parsed.ingredients.length) parsed.ingredients = classified.ingredients;
+-        if (classified.directions.length > parsed.directions.length) parsed.directions = classified.directions;
+-      }
++    if (structured) {
++      return {
++        ...structured,
++        imageUrl: data.imageUrl || structured.imageUrl || '',
++        imageUrls: data.imageUrls || [],
++        link: url,
++        _extractedVia: `agent-${structured._structuredVia || 'auto'}`,
++        _hasSubtitles: !!(data.subtitleText),
++      };
+     }
+ 
+-    const title = parsed.title || rawTitle || sanitizeRecipeTitle(rawCaption.slice(0, 80));
+-
+-    return {
+-      name: cleanTitle(title),
+-      ingredients: parsed.ingredients,
+-      directions: parsed.directions,
+-      imageUrl: data.imageUrl || '',
+-      imageUrls: data.imageUrls || [],
+-      link: url,
+-      _extractedVia: 'agent-auto',
+-      _hasSubtitles: !!(data.subtitleText),
+-    };
++    return null;
+   } catch (e) {
+     console.log(`[SpiceHub] Agent extraction error: ${e.message}`);
+     return null;
+-- 
+2.34.1
+
