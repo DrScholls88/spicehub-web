@@ -12,6 +12,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "agentic-flow": "^2.0.7",
     "dexie": "^4.3.0",
     "jszip": "^3.10.1",
     "react": "^19.2.0",
