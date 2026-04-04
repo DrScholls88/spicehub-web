@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { parseFromUrl, isSocialMediaUrl, getSocialPlatform, parseCaption, isInstagramUrl, resetServerDetection, extractWithBrowserAPI, resolveShortUrl, isShortUrl, extractUrlsFromText, tryVideoExtraction, smartClassifyLines, scoreExtractionConfidence, normalizeAndDedupe, classifyWithConfidence } from '../recipeParser';
+import { parseFromUrl, isSocialMediaUrl, getSocialPlatform, parseCaption, isInstagramUrl, resetServerDetection, extractWithBrowserAPI, resolveShortUrl, isShortUrl, tryVideoExtraction, smartClassifyLines, scoreExtractionConfidence, normalizeAndDedupe, classifyWithConfidence } from '../recipeParser';
 import BrowserAssist from './BrowserAssist';
 
 /**
@@ -211,7 +211,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     let trimmedUrl = url.trim();
 
     // ── Multi-URL detection: if user pasted multiple URLs, batch import ──
-    const detectedUrls = extractUrlsFromText(trimmedUrl);
+    const detectedUrls =(trimmedUrl);
     if (detectedUrls.length > 1) {
       handleBatchImport(detectedUrls);
       return;
@@ -455,7 +455,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       if (!pasted) return;
 
       // Auto-detect pasted URLs
-      const pastedUrls = extractUrlsFromText(pasted);
+      const pastedUrls =(pasted);
       if (pastedUrls.length === 1) {
         // Single URL pasted — auto-fill and start import
         setUrl(pastedUrls[0]);
