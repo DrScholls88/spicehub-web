@@ -4104,12 +4104,18 @@ body {
 }
 
 .preview-detail-section.drop-active {
-  background: #fff8ef;
-  border-color: var(--primary);
-  border-width: 2px;
-  border-style: dashed;
-  transform: scale(1.008);
-  animation: dropZonePulse 1s ease-in-out infinite;
+  background: rgba(255, 112, 67, 0.06);
+  border: 2px dashed var(--primary);
+  border-radius: 14px;
+  transform: scale(1.01);
+  animation: dropZonePulse 0.8s ease-in-out infinite;
+  box-shadow: 0 0 0 4px rgba(255, 112, 67, 0.08);
+}
+
+/* Drop zone label that appears while dragging over */
+.preview-detail-section.drop-active .preview-label {
+  color: var(--primary);
+  font-weight: 700;
 }
 
 .preview-label-icon {
@@ -4120,40 +4126,40 @@ body {
 .preview-editable-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 0 12px;
+  gap: 7px;
+  padding: 0 10px;
 }
 
 .preview-editable-row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   position: relative;
-  padding: 2px;
+  padding: 3px 2px;
   transition: all 0.15s;
-  border-radius: 6px;
+  border-radius: 8px;
   border: 1px solid transparent;
 }
 
 .preview-editable-row:hover {
   border-color: #e0e0e0;
-  background: rgba(0, 0, 0, 0.01);
+  background: rgba(0, 0, 0, 0.015);
 }
 
-/* ── Large touch-friendly drag handle ── */
+/* ── Oversized touch-friendly drag handle (Build 78) ── */
 .drag-handle {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 48px;
-  min-width: 36px;
+  width: 40px;
+  height: 52px;
+  min-width: 40px;
   flex-shrink: 0;
-  color: #bbb;
+  color: #c0c0c0;
   font-size: 0; /* hide any direct text — content comes from ::after */
   cursor: grab;
   transition: color 0.15s, background 0.15s, transform 0.1s;
-  border-radius: 10px;
+  border-radius: 12px;
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
@@ -4163,39 +4169,40 @@ body {
 
 .drag-handle::after {
   content: '⠿';
-  font-size: 20px;
+  font-size: 22px;
   color: inherit;
   line-height: 1;
-  opacity: 0.65;
-  transition: opacity 0.15s;
+  opacity: 0.6;
+  transition: opacity 0.15s, transform 0.15s;
 }
 
 .drag-handle:hover {
   color: var(--primary, #e65100);
-  background: rgba(230, 81, 0, 0.07);
+  background: rgba(230, 81, 0, 0.08);
 }
 
 .drag-handle:hover::after {
   opacity: 1;
+  transform: scale(1.15);
 }
 
 .drag-handle:active {
   cursor: grabbing;
   color: var(--primary);
-  background: rgba(230, 81, 0, 0.14);
+  background: rgba(230, 81, 0, 0.16);
   transform: scale(1.1);
 }
 
-/* ── Move-between-sections button ── */
+/* ── Move-between-sections button (enlarged for touch) ── */
 .preview-move-btn {
-  width: 28px;
-  height: 28px;
-  min-width: 28px;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
   flex-shrink: 0;
   border: 1px solid #e0e0e0;
   background: #fafafa;
-  border-radius: 6px;
-  font-size: 14px;
+  border-radius: 8px;
+  font-size: 16px;
   font-weight: 700;
   color: #888;
   cursor: pointer;
@@ -11429,9 +11436,9 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 220px;
+  min-height: 280px;
   gap: 14px;
-  padding: 32px 24px;
+  padding: 28px 20px;
   text-align: center;
 }
 
@@ -11997,11 +12004,12 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 24px 20px 20px;
+  padding: 28px 20px 24px;
   gap: 20px;
   width: 100%;
-  max-width: 440px;
+  max-width: 460px;
   margin: 0 auto;
+  min-height: 320px; /* give pipeline a tall, comfortable view */
 }
 
 .pipeline-header {

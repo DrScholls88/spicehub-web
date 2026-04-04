@@ -1557,53 +1557,22 @@ function parsePaprikaRecipe(rec) {
     } else {
       // Split on double newlines first, then single
       const blocks = raw.split(/\n{2,}/).map(s => s.trim()).filter(Boolean);
-      directions = blocks.length > 1 ? blocks : raw.split('\n').map(s => s.trim()).filter(Boolean);
+      if (blocks.length > 1) {
+        directions = blocks;
+      } else {
+        directions = raw.split('\n').map(s => s.trim()).filter(Boolean);
+      }
     }
-  }
-
-  // Photo: prefer URL, fall back to embedded base64
-  let imageUrl = rec.image_url || '';
-  if (!imageUrl && rec.photo && rec.photo.length < 500000) {
-    // Only embed photos under ~375 KB (base64) to avoid storing massive blobs
-    imageUrl = `data:image/jpeg;base64,${rec.photo}`;
-  }
-
-  // Notes: append to directions as a final step if present
-  if (rec.notes?.trim()) {
-    directions.push('Notes: ' + rec.notes.trim());
   }
 
   return {
-    name: (rec.name || 'Untitled Recipe').trim(),
-    ingredients: ingredients.length ? ingredients : [],
-    directions: directions.length ? directions : [],
+    name: (rec.name || '').trim(),
+    ingredients,
+    directions,
+    imageUrl: rec.photo_url || rec.image_url || '',
     link: rec.source_url || '',
-    imageUrl,
+    notes: rec.notes || '',
+    servings: rec.servings || '',
+    cookTime: rec.total_time || rec.cook_time || '',
   };
-}
-
-// ── CSV / Spreadsheet helpers ─────────────────────────────────────────────────
-
-function splitSemicolon(val) {
-  if (!val) return [];
-  return val.toString().split(/[;|]/).map(s => s.trim()).filter(Boolean);
-}
-
-function parseCSVLine(line, sep = ',') {
-  const result = [];
-  let current = '';
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i];
-    if (c === '"') {
-      if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
-      else inQuotes = !inQuotes;
-    } else if (c === sep && !inQuotes) {
-      result.push(current); current = '';
-    } else {
-      current += c;
-    }
-  }
-  result.push(current);
-  return result;
 }

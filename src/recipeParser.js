@@ -164,6 +164,84 @@ function isDirectionsHeader(lower) {
   return DIRECTIONS_HEADERS.some(h => cleaned === h || cleaned.startsWith(h + ':') || cleaned.startsWith(h + ' -') || lower === h || lower.startsWith(h + ':') || lower.startsWith(h + ' -'));
 }
 
+// ─── ReciME-style aggressive social caption cleaner ─────────────────────────
+// Strips hashtags, @mentions, engagement bait, timestamps, sponsor phrases,
+// and platform UI chrome before feeding text to Gemini.
+export function cleanSocialCaption(text) {
+  if (!text || typeof text !== 'string') return '';
+  let t = text;
+
+  // 1. Strip trailing hashtag blocks (3+ hashtags at end of post)
+  t = t.replace(/(\n\s*)(#[\w.]+\s*){3,}[\s\S]*$/m, '');
+
+  // 2. Strip engagement bait whole lines
+  const BAIT_LINES = [
+    /^(save|bookmark|share|pin|tag|repost|retweet|like|follow|subscribe|hit the bell|turn on notifications|comment below|double tap|tap the heart|let me know in the comments?).{0,80}$/im,
+    /^(link in bio|full recipe in bio|recipe (is |in |below|at)|check (my )?bio|bio link|swipe up).{0,80}$/im,
+    /^(#?ad\b|advertisement|sponsored|collab|partnership|gifted|#sponsored|#partner|#collab).{0,80}$/im,
+    /^(use code|discount code|promo code|coupon|affiliate|shop now|buy now|purchase).{0,80}$/im,
+    /^(follow (?:me|us|@\w+)?|follow for more|more recipes on|find me on|join me on|new video|new post).{0,80}$/im,
+    /^(music:|song:|audio:|outfit:|shop my|wearing:|featuring:|soundtrack:|ft\.|prod\. by).{0,80}$/im,
+    /^[🔗👇⬇️📲💌📩🔔📌🏷️].{0,80}$/m,
+  ];
+  for (const re of BAIT_LINES) t = t.replace(new RegExp(re.source, re.flags + 'g'), '');
+
+  // 3. Strip "See more" / "… more" truncation artifacts
+  t = t.replace(/\.{3,}\s*(more|see more|read more)\s*$/im, '');
+  t = t.replace(/\s*[…]\s*(more|see more)?\s*$/im, '');
+
+  // 4. Strip Instagram OG engagement prefix (e.g. "13K likes, 213 comments - user on Jan 1, 2025: ")
+  t = t.replace(/^[\d,.]+[kKmM]?\s*likes?,\s*[\d,.]+[kKmM]?\s*comments?\s*[-–—]\s*\S+\s+on\s+[^:]+:\s*[""]?/im, '');
+  t = t.replace(/^[\d,.]+[kKmM]?\s*(likes?|comments?|views?|shares?|saves?)\s*[,·•|]+\s*/im, '');
+
+  // 5. Strip video timestamps (e.g. "2:30 - Add the garlic")
+  t = t.replace(/^\d{1,2}:\d{2}(?::\d{2})?\s*[-–—:]\s*/gm, '');
+  t = t.replace(/\bat\s+\d{1,2}:\d{2}(?::\d{2})?\s*/gi, '');
+
+  // 6. Strip inline @mentions (keep rest of line)
+  t = t.replace(/@[\w.]+/g, '');
+
+  // 7. Strip inline #hashtags (keep rest of line so recipe text survives)
+  t = t.replace(/#[\w.]+/g, '');
+
+  // 8. Strip bare URLs
+  t = t.replace(/https?:\/\/\S+/g, '');
+
+  // 9. Strip Instagram/TikTok UI chrome that leaks into scraped text
+  t = t.replace(/^(verified|view profile|follow|following|message|share profile|send message)\s*$/gim, '');
+  t = t.replace(/verified\s*[·•]\s*(view\s+profile|follow)/gi, '');
+  t = t.replace(/^\d+[\s,]*(likes?|followers?|following|comments?|views?|saves?)\s*$/gim, '');
+
+  // 10. Normalize whitespace
+  t = t.replace(/[ \t]{2,}/g, ' ');
+  t = t.replace(/\n{3,}/g, '\n\n');
+  t = t.replace(/^[\s,;|·•–—]+$/gm, '');
+
+  return t.trim();
+}
+
+/**
+ * isCaptionWeak — returns true if the caption is too thin to contain a full
+ * recipe on its own. Triggers early yt-dlp subtitle fallback in BrowserAssist.
+ */
+export function isCaptionWeak(text) {
+  if (!text || text.trim().length < 30) return true;
+  const cleaned = cleanSocialCaption(text);
+  if (cleaned.length < 80) return true;
+
+  // Recipe signals: units/measurements + food words + cooking verbs
+  const hasIngredientSignal = UNITS_RE.test(cleaned) || FOOD_RE.test(cleaned);
+  const hasDirectionSignal = COOKING_VERBS_RE.test(cleaned);
+
+  // Strong caption: has both ingredient AND direction signals
+  if (hasIngredientSignal && hasDirectionSignal) return false;
+
+  // Thin caption: has only one signal type and isn't long
+  if (cleaned.length < 300 && !(hasIngredientSignal && hasDirectionSignal)) return true;
+
+  return false;
+}
+
 // ─── Caption Parser wrapper (used by BrowserImport) ─────────────────────────
 export function parseManualCaption(captionText, sourceUrl) {
   const parsed = parseCaption(captionText);
@@ -186,25 +264,27 @@ export async function structureWithAIClient(rawText, { title: hintTitle = '', im
 
   const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${clientKey}`;
 
-  const prompt = `You are a recipe extraction assistant. Convert the following text (which may be from an Instagram post, social media caption, or recipe web page) into a clean, structured recipe.
+  const prompt = `You are a ReciME-style recipe extraction assistant. Extract a clean, structured recipe from the following text (from an Instagram caption, TikTok description, YouTube video, or recipe blog).
 
-Return ONLY valid JSON matching this exact schema:
+Return ONLY valid JSON matching this exact schema — no markdown, no explanation:
 {
-  "title": "string — short recipe name (no hashtags, no emojis)",
-  "ingredients": [{ "name": "string", "amount": "string — e.g. '2 cups'" }],
-  "directions": ["string — one clear step per item"],
+  "title": "string — concise recipe name, no hashtags, no emojis, no brand names",
+  "ingredients": [{ "name": "string", "amount": "string — e.g. '2 cups' or 'to taste'" }],
+  "directions": ["string — one clear cooking step per array item, written as an instruction"],
   "servings": "string or null",
   "cookTime": "string or null",
   "notes": "string or null"
 }
 
-Rules:
-- Remove hashtags, @mentions, sponsor phrases, "link in bio", social chrome
-- Keep measurements precise; use "to taste" if amount is missing
-- Split compound steps into separate direction strings
-- Auto-sort: put measurement + ingredient lines in ingredients[], cooking actions in directions[]
-- If no recipe is found, return { "error": "not a recipe" }
-${hintTitle ? `\nTitle hint: "${hintTitle}"` : ''}
+Extraction rules (follow strictly):
+- TITLE: Extract the dish name only. Remove phrases like "on Instagram", "@username", hashtags.
+- INGREDIENTS: Each item = one ingredient with its measurement. Normalize fractions (½ → 1/2).
+- DIRECTIONS: Each step = one action. Split compound steps at ". Then" / ". Next" / sentence breaks.
+- CLEANING: Aggressively remove social chrome — hashtags, @mentions, "link in bio", "save this recipe", "follow me", sponsor disclosures, timestamps, view counts, and any text that isn't part of the recipe.
+- SORTING: Lines with measurements + food words → ingredients[]. Lines with cooking verbs (mix, bake, sauté, etc.) → directions[].
+- If the text contains a spoken/narrated recipe (video transcript), extract the recipe the speaker is describing.
+- If no recipe can be found at all, return: { "error": "not a recipe" }
+${hintTitle ? `\nDish name hint: "${hintTitle}"` : ''}
 
 Text to parse:
 ---
@@ -301,9 +381,13 @@ export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl
 export async function captionToRecipe(captionText, { title = '', imageUrl = '', sourceUrl = '' } = {}) {
   if (!captionText || captionText.trim().length < 20) return null;
 
+  // ReciME-style: aggressively clean social chrome before sending to AI
+  const cleanedCaption = cleanSocialCaption(captionText);
+  const textForAI = cleanedCaption.length >= 20 ? cleanedCaption : captionText;
+
   // Try Gemini AI structuring first (most reliable for social media captions)
   try {
-    const aiResult = await structureWithAI(captionText, { title, imageUrl, sourceUrl });
+    const aiResult = await structureWithAI(textForAI, { title, imageUrl, sourceUrl });
     if (aiResult) {
       const hasRealIngs = (aiResult.ingredients || []).some(i => i && !/^see (original post|recipe) for/i.test(i.trim()));
       const hasRealDirs = (aiResult.directions || []).some(d => d && !/^see (original post|recipe) for/i.test(d.trim()));
@@ -311,8 +395,8 @@ export async function captionToRecipe(captionText, { title = '', imageUrl = '', 
     }
   } catch { /* fall through to heuristic */ }
 
-  // Heuristic fallback: parseCaption + comma-delimited parsing
-  const parsed = parseCaption(captionText);
+  // Heuristic fallback: parseCaption on cleaned text
+  const parsed = parseCaption(textForAI);
   if (!parsed) return null;
 
   const name = parsed.title || title || '';
@@ -2783,83 +2867,4 @@ export function isShortUrl(url) {
     const host = new URL(url).hostname.replace(/^www\./, '');
     return SHORTENER_HOSTS.some(d => host === d || host.endsWith('.' + d));
   } catch { return false; }
-}
-
-/**
- * Resolve a shortened URL to its final destination.
- * Uses HEAD request via CORS proxies to follow redirects.
- * Returns the final URL, or the original if resolution fails.
- */
-export async function resolveShortUrl(url, onProgress) {
-  if (!isShortUrl(url)) return url;
-
-  if (onProgress) onProgress('Resolving shortened URL...');
-
-  // Try multiple CORS proxies to follow the redirect
-  const proxies = [
-    (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-    (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-  ];
-
-  for (const makeProxy of proxies) {
-    try {
-      const proxyUrl = makeProxy(url);
-      const resp = await fetch(proxyUrl, {
-        method: 'GET',
-        redirect: 'follow',
-        headers: { 'Accept': 'text/html' },
-        signal: AbortSignal.timeout(10000),
-      });
-
-      // Check if we got redirected by looking at the response URL or content
-      const finalUrl = resp.url;
-      const text = await resp.text();
-
-      // Look for canonical URL in HTML
-      const canonMatch = text.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i)
-        || text.match(/<meta[^>]+property=["']og:url["'][^>]+content=["']([^"']+)["']/i);
-      if (canonMatch && canonMatch[1] && canonMatch[1] !== url) {
-        if (onProgress) onProgress('URL resolved!');
-        return canonMatch[1];
-      }
-
-      // Check for meta refresh redirects
-      const refreshMatch = text.match(/<meta[^>]+http-equiv=["']refresh["'][^>]+content=["']\d+;\s*url=([^"']+)["']/i);
-      if (refreshMatch && refreshMatch[1]) {
-        return refreshMatch[1];
-      }
-
-      // If allorigins gave us a different URL in the response
-      if (finalUrl && finalUrl !== proxyUrl && !finalUrl.includes('allorigins') && !finalUrl.includes('corsproxy')) {
-        return finalUrl;
-      }
-
-      // If we got real HTML content, the proxy resolved it — return the detected canonical
-      if (text.length > 1000) {
-        // The proxy successfully fetched the page — the URL itself might be the final one
-        // Return original if we can't find a better one
-        return url;
-      }
-    } catch { /* try next proxy */ }
-  }
-
-  return url; // Couldn't resolve — return original
-}
-
-/**
- * Extract all URLs from a block of text.
- * Supports one URL per line, or URLs mixed into text.
- */
-export function extractUrlsFromText(text) {
-  const urlPattern = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/gi;
-  const matches = text.match(urlPattern) || [];
-  // Deduplicate and clean trailing punctuation
-  const seen = new Set();
-  return matches
-    .map(url => url.replace(/[.,;:!?)]+$/, '')) // strip trailing punctuation
-    .filter(url => {
-      if (seen.has(url)) return false;
-      seen.add(url);
-      return true;
-    });
 }

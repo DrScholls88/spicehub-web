@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins, isSocialMediaUrl, getSocialPlatform, tryVideoExtraction, extractInstagramAgent, scoreExtractionConfidence, structureWithAI, captionToRecipe } from '../recipeParser';
+import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins, isSocialMediaUrl, getSocialPlatform, tryVideoExtraction, extractInstagramAgent, scoreExtractionConfidence, structureWithAI, captionToRecipe, cleanSocialCaption, isCaptionWeak } from '../recipeParser';
 import { fetchHtmlViaProxy, proxyImageUrl } from '../api';
 import { queueRecipeImport } from '../db';
 import useOnlineStatus from '../hooks/useOnlineStatus';
@@ -138,7 +138,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
       const isInstagram = /instagram\.com/i.test(url);
 
       const steps = [
-        { label: isInstagram ? 'Reading Instagram post…' : `Reading ${platform} post…`, status: 'pending' },
+        { label: isInstagram ? 'Reading Instagram caption…' : `Reading ${platform} post…`, status: 'pending' },
         { label: 'AI browser extraction…', status: 'pending' },
         { label: 'Video subtitle scan…', status: 'pending' },
         { label: '✨ Google AI recipe parsing…', status: 'pending' },
@@ -158,6 +158,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
         };
 
         // ── Step 0: Instagram embed page (fast, server-side fetch via proxy) ─
+        // ReciME approach: prioritize native post caption + og:description as primary source
         update(0, 'running', isInstagram ? 'Fetching embed page…' : `Fetching ${platform} post…`);
         try {
           let embedHtml = null;
@@ -177,10 +178,11 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
               let ogCaption = ogMatch[1]
                 .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
                 .replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-              // Strip Instagram engagement prefix (e.g. "13K likes, 213 comments - user on Jan 1, 2025: …")
+              // ReciME: strip engagement prefix before cleaning
               ogCaption = ogCaption.replace(/^[\d,.]+[kKmM]?\s*likes?,?\s*[\d,.]+[kKmM]?\s*comments?\s*[-–—]\s*[^:]+:\s*[""]?/i, '').replace(/[""]$/, '').trim();
               if (ogCaption.length > 30 && !/^log[ -]?in/i.test(ogCaption) && !/^\d+\s*likes/i.test(ogCaption)) {
-                capturedCaption = ogCaption;
+                // ReciME: apply aggressive social caption cleaning immediately
+                capturedCaption = cleanSocialCaption(ogCaption);
               }
             }
             // Also try data patterns in scripts
@@ -195,10 +197,10 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
               for (const re of dataPatterns) {
                 const m = re.exec(embedHtml);
                 if (m) {
-                  try { capturedCaption = JSON.parse('"' + m[1] + '"'); } catch { capturedCaption = m[1]; }
-                  capturedCaption = capturedCaption.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-                  if (capturedCaption.length > 30) break;
-                  capturedCaption = '';
+                  let raw = '';
+                  try { raw = JSON.parse('"' + m[1] + '"'); } catch { raw = m[1]; }
+                  raw = raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+                  if (raw.length > 30) { capturedCaption = cleanSocialCaption(raw); break; }
                 }
               }
             }
@@ -207,8 +209,11 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
               || embedHtml.match(/<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+property\s*=\s*["']og:image["']/i);
             if (imgMatch?.[1]) capturedImageUrl = imgMatch[1];
 
+            const captionWeak = isCaptionWeak(capturedCaption);
             update(0, capturedCaption ? 'done' : 'failed',
-              capturedCaption ? `Caption found (${capturedCaption.length} chars)` : 'No caption in embed page');
+              capturedCaption
+                ? `Caption found${captionWeak ? ' (thin — trying video next)' : ' ✓'}`
+                : 'No caption in embed page');
           } else {
             update(0, 'failed', 'Embed page not accessible');
           }
@@ -217,7 +222,50 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
         }
         if (cancelled) return;
 
-        // ── If we got a caption from step 0, try Gemini first ────────────────
+        // ── If caption is STRONG, go straight to Gemini (skip agent browser) ─
+        // ReciME-style: caption-first priority — native caption is the best source
+        if (capturedCaption && !isCaptionWeak(capturedCaption)) {
+          update(1, 'skipped', 'Strong caption found — skipping AI browser');
+          update(2, 'skipped', 'Strong caption found — skipping video scan');
+          update(3, 'running', '✨ AI parsing caption…');
+          try {
+            const recipe = await captionToRecipe(capturedCaption, { imageUrl: capturedImageUrl, sourceUrl: url });
+            if (!cancelled && recipe && hasRealContent(recipe)) {
+              update(3, 'done', 'Recipe extracted from caption!');
+              setAutoRecipe(cleanRecipe({ ...recipe, imageUrl: capturedImageUrl || recipe.imageUrl }));
+              setPhase('preview');
+              return;
+            }
+          } catch { /* fall through to agent */ }
+          if (cancelled) return;
+          // Reset skipped steps since we're falling through
+          update(1, 'pending', '');
+          update(2, 'pending', '');
+          update(3, 'pending', '');
+        }
+
+        // ── If caption is WEAK, jump to yt-dlp immediately (before agent) ────
+        // ReciME insight: short/hashtag-only captions = video-only recipe → subtitles first
+        if (capturedCaption && isCaptionWeak(capturedCaption)) {
+          update(1, 'skipped', 'Caption too short — checking video subtitles first');
+          update(2, 'running', 'Caption weak — scanning video subtitles…');
+          try {
+            const videoResult = await tryVideoExtraction(url);
+            if (!cancelled && videoResult && !videoResult._error && hasRealContent(videoResult) &&
+                videoResult.ingredients?.[0] !== 'See original post for ingredients') {
+              update(2, 'done', 'Video subtitles found!');
+              update(3, 'skipped');
+              setAutoRecipe(cleanRecipe({ ...videoResult, extractedVia: 'yt-dlp-early' }));
+              setPhase('preview');
+              return;
+            }
+          } catch { /* continue */ }
+          if (cancelled) return;
+          update(2, 'failed', 'No video subtitles available');
+          update(1, 'pending', ''); // reset for normal agent step
+        }
+
+        // ── Caption from step 0 but needs AI boost → queue Gemini after agent ─
         if (capturedCaption) {
           update(3, 'running', '✨ AI parsing caption…');
           try {
@@ -240,8 +288,9 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
             if (!cancelled && stepUpdater.current) stepUpdater.current(1, 'running', msg);
           });
           if (!cancelled && agentResult) {
-            // Update captured caption if we got better text
-            const agentCaption = agentResult.caption || '';
+            // ReciME: clean the agent caption before using it
+            const rawAgentCaption = agentResult.caption || '';
+            const agentCaption = rawAgentCaption ? cleanSocialCaption(rawAgentCaption) : '';
             if (agentCaption.length > capturedCaption.length) {
               capturedCaption = agentCaption;
             }
