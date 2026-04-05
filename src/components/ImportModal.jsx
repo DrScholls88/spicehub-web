@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { parseFromUrl, isSocialMediaUrl, getSocialPlatform, parseCaption, isInstagramUrl, resetServerDetection, extractWithBrowserAPI, resolveShortUrl, isShortUrl, tryVideoExtraction, smartClassifyLines, scoreExtractionConfidence, normalizeAndDedupe, classifyWithConfidence } from '../recipeParser';
+import { parseFromUrl, isSocialMediaUrl, getSocialPlatform, parseCaption, isInstagramUrl, resetServerDetection, extractWithBrowserAPI, isShortUrl, tryVideoExtraction, smartClassifyLines, scoreExtractionConfidence, normalizeAndDedupe, classifyWithConfidence } from '../recipeParser';
 import BrowserAssist from './BrowserAssist';
 
 /**
@@ -235,7 +235,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       if (isShortUrl(trimmedUrl)) {
         setImportProgress('Resolving shortened URL...');
         try {
-          const resolved = await resolveShortUrl(trimmedUrl, setImportProgress);
+          const resolved = await(trimmedUrl, setImportProgress);
           if (resolved !== trimmedUrl) {
             trimmedUrl = resolved;
             setUrl(resolved);
@@ -423,7 +423,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
         // Resolve short URLs first
         let resolvedUrl = urls[i];
         if (isShortUrl(resolvedUrl)) {
-          try { resolvedUrl = await resolveShortUrl(resolvedUrl); } catch {}
+          try { resolvedUrl = await(resolvedUrl); } catch {}
         }
 
         const result = await parseFromUrl(resolvedUrl, () => {});
