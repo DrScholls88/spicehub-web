@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import useBackHandler from '../hooks/useBackHandler';
 
 /**
@@ -362,16 +362,18 @@ export default function BarShelf({ drinks, onViewDetail, onClose }) {
 
   // Refs
   const bottleSlotsRef = useRef({});
-  const barTopRef = useRef(null);
-  const animationRef = useRef(null);
-  const timeoutRef = useRef(null);
-  const swigTimerRef = useRef(null);
+  const barTopRef      = useRef(null);
+  const animationRef   = useRef(null);
+  const timeoutRef     = useRef(null);
+  const swigTimerRef   = useRef(null);
+  const idleTimerRef   = useRef(null);
 
   // Cleanup
   useEffect(() => () => {
     clearTimeout(timeoutRef.current);
     cancelAnimationFrame(animationRef.current);
     clearTimeout(swigTimerRef.current);
+    clearInterval(idleTimerRef.current);
   }, []);
 
   // ── Pagination ──────────────────────────────────────────────────────────────
@@ -618,7 +620,6 @@ export default function BarShelf({ drinks, onViewDetail, onClose }) {
   // ──────────────────────────────────────────────────────────────────────────
   return (
     <div className="bs-overlay" onClick={onClose}>
-      <div className="bs-crt-effect" />
       <div className="bs-container" onClick={e => e.stopPropagation()}>
 
         {/* ── Top bar ── */}
