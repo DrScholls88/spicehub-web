@@ -10624,19 +10624,10 @@ body {
 
 /* ── Bar counter surface — taller so it hides lower body ── */
 .bs-bar-surface {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 82px;
-  background: linear-gradient(180deg,
-    #b08860 0%, #9a7850 8%, #8d6e4c 20%,
-    #7a5c3a 45%, #6d4c33 70%, #5a3d28 85%, #4a3220 100%);
-  box-shadow:
-    0 -3px 12px rgba(0, 0, 0, 0.5),
-    inset 0 3px 0 rgba(255, 255, 255, 0.12),
-    inset 0 -2px 0 rgba(0, 0, 0, 0.3);
-  z-index: 5;
+  background: linear-gradient(to bottom, #5d4037 0%, #3e2723 100%);
+  border-top: 4px solid #8d6e63;
+  height: 120px; /* Adjust height to clip the bartender correctly */
+  z-index: 5; /* Ensures he stays behind it */
 }
 
 /* Polished top edge highlight */
@@ -13677,4 +13668,91 @@ body {
   bottom: 0;
   width: 4px;
   border-radius: var(--radius) 0 0 var(--radius);
+}
+/* 1. CRT & Neon Atmosphere */
+.bs-container {
+  position: relative;
+  background: #121010;
+  overflow: hidden;
+}
+
+/* The CRT/8-Bit Scanline Effect */
+.bs-crt-effect {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%),
+              linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
+  background-size: 100% 4px, 3px 100%;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* The Sprite Engine */
+.bs-bartender-sprite {
+  position: absolute;
+  bottom: 140px; /* Aligned so feet are hidden by the bar */
+  width: 64px;
+  height: 64px;
+  background-image: url('/assets/bartender_sprites.png');
+  background-size: 256px 256px; /* 4x4 grid of 64px frames */
+  image-rendering: pixelated;
+  z-index: 2;
+}
+
+/* Wiping Animation (Row 0) */
+.bs-state-wiping {
+  animation: sprite-wipe 0.8s steps(4) infinite;
+}
+@keyframes sprite-wipe {
+  from { background-position: 0 0; }
+  to { background-position: -256px 0; }
+}
+
+/* Swigging Animation (Row 3) */
+.bs-state-swigging {
+  animation: sprite-swig 3s steps(6) forwards;
+}
+@keyframes sprite-swig {
+  from { background-position: 0 -192px; }
+  to { background-position: -384px -192px; }
+}
+
+/* The Bar Surface - Layered in front */
+.bs-heavy-bartop {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  height: 150px;
+  background: #3e2723; /* Dark mahogany */
+  border-top: 6px solid #5d4037;
+  z-index: 3;
+  box-shadow: inset 0 10px 20px rgba(0,0,0,0.5);
+}
+
+/* 2. Enhanced Barback (Recipe Shelf) */
+.bs-barback-display {
+  border: 4px solid #444;
+  box-shadow: 0 0 15px rgba(255, 64, 129, 0.3), inset 0 0 10px #000;
+  background: #0a0a0a;
+}
+
+/* 3. Wiping Animation for SVG Bartender */
+.bs-bt-wipe-arm {
+  animation: svg-wipe 0.6s infinite steps(2);
+  transform-origin: 10px 24px;
+}
+
+@keyframes svg-wipe {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(4px); }
+}
+
+/* 4. Ambient Flicker for the "My Bar" Neon */
+.bs-neon-text {
+  animation: neon-flicker 3s infinite;
+}
+
+@keyframes neon-flicker {
+  0%, 19%, 21%, 23%, 25%, 54%, 56%, 100% { opacity: 1; }
+  20%, 22%, 24%, 55% { opacity: 0.8; }
 }

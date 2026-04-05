@@ -234,56 +234,21 @@ export default function App() {
     }
   };
 
-  // Handle PWA share-target — intelligently route content to the right import mode
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.has('share-target')) {
-      const sharedUrl = params.get('url');
-      const sharedText = params.get('text');
-      const sharedTitle = params.get('title');
-
-      if (sharedUrl || sharedText) {
-        // Determine the import mode based on what was shared
-        let mode = 'url'; // default: assume URL import
-        let contentData = null;
-
-        // Priority: URL > text (text might be a URL or recipe text)
-        if (sharedUrl) {
-          mode = 'url';
-          contentData = { mode, url: sharedUrl, title: sharedTitle };
-        } else if (sharedText) {
-          const textTrimmed = sharedText.trim();
-          // Check if shared text IS a URL or CONTAINS a URL
-          if (textTrimmed.startsWith('http://') || textTrimmed.startsWith('https://')) {
-            // Text starts with URL — extract the first URL
-            const urlMatch = textTrimmed.match(/https?:\/\/[^\s]+/);
-            mode = 'url';
-            contentData = { mode, url: urlMatch ? urlMatch[0] : textTrimmed, title: sharedTitle };
-          } else {
-            // Check if text contains a URL mixed with other text
-            // (common on Android: "Check out this recipe https://instagram.com/reel/...")
-            const urlMatch = textTrimmed.match(/https?:\/\/[^\s]+/);
-            if (urlMatch) {
-              mode = 'url';
-              contentData = { mode, url: urlMatch[0], title: sharedTitle };
-            } else {
-              // Pure text — likely recipe instructions/ingredients
-              mode = 'paste';
-              contentData = { mode, text: textTrimmed, title: sharedTitle };
-            }
-          }
-        }
-
-        if (contentData) {
-          console.log('[Share Target] Received shared content:', { mode, hasUrl: !!contentData.url, hasText: !!contentData.text });
-          setSharedContent(contentData);
-          setShowImportFor('meals');
-          // Clear share-target from URL to prevent re-processing on back navigation
-          window.history.replaceState({}, '', '/');
-        }
-      }
+// Handle Share Target (Android + PWA)
+useEffect(() => {
+  const params = new URLSearchParams(window.location.search);
+  if (params.has('share-target')) {
+    const sharedUrl = params.get('url') || params.get('text') || '';
+    if (sharedUrl) {
+      // Auto-open import modal for meals (most common use case)
+      setShowImportFor('meals');
+      // Pre-fill the URL field
+      setImportUrl(sharedUrl); // You'll need to expose this state or use a ref
+      // Clean URL so refreshing doesn't re-trigger
+      window.history.replaceState({}, '', window.location.pathname);
     }
-  }, []);
+  }
+}, []);
 
   // ── Week plan ─────────────────────────────────────────────────────────────────
   const generateWeek = useCallback(() => {

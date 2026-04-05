@@ -1,24 +1,20 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import useBackHandler from '../hooks/useBackHandler';
 
 /**
- * BarShelf — Retro 16-bit bar experience.
- *
- * Layout (top → bottom):
- *   Top bar  →  Barback (LED menu board + paginated bottle shelves)
- *   →  Bar top (bartender stands BEHIND the counter, upper body visible)
- *   →  Detail card (slides up when a drink is selected)
- *
- * Bartender behaviour:
- *   idle       — wipes the bar, cycles quips, randomly swigs after 8-15 s of inactivity
- *   swigwalk   — walks to a random spot for a sneaky swig
- *   swigging   — tilts head back, eyes squinting, bottle raised, quip shown
- *   swigreturn — walks back home
- *   walking    — going to fetch a selected bottle
- *   grabbing   — reaching up for the bottle
- *   presenting — holding the bottle at centre, detail card visible
- *   returning  — putting the bottle back
+ * BarShelf — Fully realized 8-bit Speakeasy
+ * 
+ * Features:
+ * - Bartender physically stands BEHIND the mahogany bar (only upper body visible)
+ * - Randomized "Sneaky Swig" sequence after 8–15s of inactivity
+ * - Retro LED Recipe Monitor on the barback
+ * - CRT scanline atmosphere
+ * - Wiping arm animation when idle
+ * - Uses sprite sheet for smooth, authentic 8-bit animations
  */
+
+
+
 
 // ── Bottle shape + colour mapping ────────────────────────────────────────────
 const BOTTLE_STYLES = [
@@ -144,10 +140,10 @@ function BarbackDisplay({ selectedDrink, isPresenting }) {
     <div className="bs-barback-display">
       <div className="bs-display-inner">
         <div className="bs-display-scanline" aria-hidden="true" />
-        <div className="bs-display-toprow">
-          <span className="bs-display-led bs-led-grn">●</span>
-          <span className="bs-display-title-text">TONIGHT'S&nbsp;MENU</span>
-          <span className="bs-display-led bs-led-red">●</span>
+        <div className="bs-display-grid-overlay" />
+        <div className="bs-display-toprow" style={{ borderBottom: '2px solid #333' }}>
+          <span className="bs-display-led bs-led-grn">● RECIPE_FEED</span>
+          <span className="bs-display-title-text">MOD_0.8.bit</span>
         </div>
         <div className="bs-display-body">
           {showRecipe ? (
@@ -179,7 +175,7 @@ function BarbackDisplay({ selectedDrink, isPresenting }) {
 // States: idle | walking | grabbing | presenting | returning
 //         swigwalk | swigging | swigreturn
 // ══════════════════════════════════════════════════════════════════════════════
-function PixelBartender({ state, holdingBottle, facingRight, swigBottle }) {
+function PixelBartender({ state, holdingBottle, facingRight, swigBottle, swigQuip }) {
   const flip = facingRight ? '' : 'scale(-1,1)';
   const isWalking   = ['walking', 'returning', 'swigwalk', 'swigreturn'].includes(state);
   const isGrabbing  = state === 'grabbing';
@@ -333,43 +329,48 @@ const SHELVES_PER_PAGE  = 3;
 const BOTTLES_PER_PAGE  = BOTTLES_PER_SHELF * SHELVES_PER_PAGE; // 15
 
 const IDLE_QUIPS = [
-  'Pick a bottle!', "What'll it be?", 'Top shelf?',
-  "Try somethin' new!", 'Thirsty?', 'Name your poison!', 'Happy hour!',
-];
-const SWIG_QUIPS = [
-  'Ahh…', '*hic*', 'Quality control!', "Bottoms up!", "Don't tell the boss…", 'Mmmm…',
+  "Pick yer poison!",
+  "What'll it be, partner?",
+  "Top shelf or bottom?",
+  "Name it, I got it!",
+  "Happy hour never ends here...",
 ];
 
+const SWIG_QUIPS = [
+  "Ahhh... quality control!",
+  "*hic*",
+  "Don't tell the boss...",
+  "Mmm... smooth.",
+  "Just a nip!",
+];
 // ══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ══════════════════════════════════════════════════════════════════════════════
 export default function BarShelf({ drinks, onViewDetail, onClose }) {
-  // ── State ──────────────────────────────────────────────────────────────────
-  const [selectedDrink,   setSelectedDrink]   = useState(null);
-  const [bartenderState,  setBartenderState]  = useState('idle');
-  const [bartenderX,      setBartenderX]      = useState(20);
-  const [facingRight,     setFacingRight]     = useState(true);
-  const [holdingBottle,   setHoldingBottle]   = useState(null);
-  const [swigBottle,      setSwigBottle]      = useState(null);
-  const [swigQuip,        setSwigQuip]        = useState(null);
-  const [swipeStartY,     setSwipeStartY]     = useState(null);
-  const [currentPage,     setCurrentPage]     = useState(0);
-  const [pageDirection,   setPageDirection]   = useState('none');
-  const [idleQuip,        setIdleQuip]        = useState(0);
+  // State
+  const [selectedDrink, setSelectedDrink] = useState(null);
+  const [bartenderState, setBartenderState] = useState('idle');
+  const [bartenderX, setBartenderX] = useState(140);
+  const [facingRight, setFacingRight] = useState(true);
+  const [holdingBottle, setHoldingBottle] = useState(null);
+  const [swigBottle, setSwigBottle] = useState(null);
+  const [swigQuip, setSwigQuip] = useState(null);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [pageDirection, setPageDirection] = useState('none');
+  const [idleQuip, setIdleQuip] = useState(0);
+  const [swipeStartY, setSwipeStartY] = useState(null);
 
-  // ── Refs ───────────────────────────────────────────────────────────────────
+  // Refs
   const bottleSlotsRef = useRef({});
-  const barTopRef      = useRef(null);
-  const animationRef   = useRef(null);
-  const timeoutRef     = useRef(null);
-  const idleTimerRef   = useRef(null);
-  const swigTimerRef   = useRef(null);
+  const barTopRef = useRef(null);
+  const animationRef = useRef(null);
+  const timeoutRef = useRef(null);
+  const swigTimerRef = useRef(null);
 
-  // ── Cleanup on unmount ─────────────────────────────────────────────────────
+  // Cleanup
   useEffect(() => () => {
     clearTimeout(timeoutRef.current);
     cancelAnimationFrame(animationRef.current);
-    clearInterval(idleTimerRef.current);
     clearTimeout(swigTimerRef.current);
   }, []);
 
@@ -617,6 +618,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose }) {
   // ──────────────────────────────────────────────────────────────────────────
   return (
     <div className="bs-overlay" onClick={onClose}>
+      <div className="bs-crt-effect" />
       <div className="bs-container" onClick={e => e.stopPropagation()}>
 
         {/* ── Top bar ── */}
