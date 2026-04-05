@@ -4,43 +4,39 @@ import { useEffect, useRef, useCallback } from 'react';
 const backStack = [];
 let isHandlingPopstate = false;
 
-// Track whether we're programmatically calling history.back() (to prevent double-fire)
-let isProgrammaticBack = false;
+// Use a counter so concurrent programmatic closes don't race
+let programmaticBackCount = 0;
 
 // Initialize global popstate listener (runs once at module load)
 if (typeof window !== 'undefined') {
-  window.addEventListener('popstate', (e) => {
+  window.addEventListener('popstate', () => {
     // Skip if this popstate was triggered by our own programmatic history.back()
-    if (isProgrammaticBack) return;
+    if (programmaticBackCount > 0) return;
 
-    // Check if this is a SpiceHub modal state
     if (backStack.length > 0) {
       isHandlingPopstate = true;
       const handler = backStack[backStack.length - 1];
       if (handler?.onBack) {
         handler.onBack();
       }
-      // Small delay to let React state update before allowing new popstate
       setTimeout(() => {
         isHandlingPopstate = false;
-      }, 100);
+      }, 300);
     }
   });
 }
 
 /**
- * useBackHandler - Register a back-button handler for a modal/overlay.
+ * useBackHandler — Register a back-button handler for a modal/overlay.
  *
- * Handles Android hardware back button, iOS swipe-back gesture, and Escape key
- * (via CloseWatcher API). Manages a stack of modals so that pressing back closes
- * the most recently opened modal first (LIFO order).
+ * Handles Android hardware back button (popstate), CloseWatcher API (Chrome 120+),
+ * and gracefully stacks multiple modals so the most-recent one closes first (LIFO).
  *
- * @param {boolean} active - Whether this handler is currently active (modal is open)
+ * @param {boolean} active  - Whether this handler is currently active (modal is open)
  * @param {Function} onBack - Callback to close the modal
- * @param {string} [id] - Optional identifier for debugging (e.g., 'detail', 'fridge')
+ * @param {string} [id]     - Optional identifier for debugging
  *
- * @example
- *   const [detailItem, setDetailItem] = useState(null);
+ * Usage:
  *   useBackHandler(!!detailItem, () => setDetailItem(null), 'detail');
  */
 export default function useBackHandler(active, onBack, id = 'modal') {
@@ -49,43 +45,37 @@ export default function useBackHandler(active, onBack, id = 'modal') {
   const pushIdRef = useRef(null);
   const closeWatcherRef = useRef(null);
 
-  // Keep callback ref fresh
+  // Keep callback ref fresh so stale closures never fire
   useEffect(() => {
     onBackRef.current = onBack;
   }, [onBack]);
 
-  // Handle programmatic close (X button clicked) — pop history without re-firing callback
+  // Programmatic close — pop history without re-firing the callback
   const handleProgrammaticClose = useCallback(() => {
-    // Remove ourselves from the stack BEFORE calling history.back()
-    // so the popstate listener won't find us
     if (pushIdRef.current && !isHandlingPopstate) {
       const idx = backStack.findIndex((h) => h.pushId === pushIdRef.current);
       if (idx !== -1) {
         backStack.splice(idx, 1);
-        // Flag that this history.back() is ours so popstate listener skips it
-        isProgrammaticBack = true;
-        history.back(); // Pop our state — won't trigger callback
-        // Reset after browser processes the history change
-        setTimeout(() => { isProgrammaticBack = false; }, 100);
+        programmaticBackCount++;
+        history.back();
+        // Give the browser time to process; use 300 ms to cover slow devices
+        setTimeout(() => {
+          programmaticBackCount = Math.max(0, programmaticBackCount - 1);
+        }, 300);
       }
       pushIdRef.current = null;
     }
 
-    // Destroy CloseWatcher
     if (closeWatcherRef.current) {
-      try {
-        closeWatcherRef.current.destroy();
-      } catch {
-        // Ignore errors during cleanup
-      }
+      try { closeWatcherRef.current.destroy(); } catch { /* ignore */ }
       closeWatcherRef.current = null;
     }
   }, []);
 
-  // Main effect: handle modal opening/closing
+  // Main effect: handle modal opening / closing
   useEffect(() => {
     if (active && !wasActiveRef.current) {
-      // Modal just opened — push history state and register handler
+      // Modal just opened — push a history entry and register handler
       const pushId = `${id}-${Date.now()}-${Math.random()}`;
       pushIdRef.current = pushId;
 
@@ -95,46 +85,33 @@ export default function useBackHandler(active, onBack, id = 'modal') {
         pushId,
         id,
         onBack: () => {
-          // Remove from stack
           const idx = backStack.findIndex((h) => h.pushId === pushId);
-          if (idx !== -1) {
-            backStack.splice(idx, 1);
-          }
+          if (idx !== -1) backStack.splice(idx, 1);
           pushIdRef.current = null;
 
-          // Destroy CloseWatcher
           if (closeWatcherRef.current) {
-            try {
-              closeWatcherRef.current.destroy();
-            } catch {
-              // Ignore errors during cleanup
-            }
+            try { closeWatcherRef.current.destroy(); } catch { /* ignore */ }
             closeWatcherRef.current = null;
           }
 
-          // Call the actual close callback
           onBackRef.current?.();
         },
       };
 
       backStack.push(handler);
 
-      // Progressive enhancement: CloseWatcher API (Chrome 120+, Android Chrome PWA)
-      // Handles back gesture and Escape key natively
+      // CloseWatcher API — native Escape / back-gesture support (Chrome 120+, Android Chrome PWA)
       if (typeof window !== 'undefined' && 'CloseWatcher' in window) {
         try {
           const watcher = new CloseWatcher();
-          watcher.addEventListener('close', () => {
-            handler.onBack();
-          });
+          watcher.addEventListener('close', () => handler.onBack());
           closeWatcherRef.current = watcher;
         } catch (e) {
-          // CloseWatcher may throw if too many active watchers exist
           console.warn('[useBackHandler] CloseWatcher creation failed:', e);
         }
       }
     } else if (!active && wasActiveRef.current) {
-      // Modal just closed — clean up
+      // Modal just closed programmatically (X button, etc.)
       handleProgrammaticClose();
     }
 
@@ -146,16 +123,10 @@ export default function useBackHandler(active, onBack, id = 'modal') {
     return () => {
       if (pushIdRef.current) {
         const idx = backStack.findIndex((h) => h.pushId === pushIdRef.current);
-        if (idx !== -1) {
-          backStack.splice(idx, 1);
-        }
+        if (idx !== -1) backStack.splice(idx, 1);
       }
       if (closeWatcherRef.current) {
-        try {
-          closeWatcherRef.current.destroy();
-        } catch {
-          // Ignore errors during cleanup
-        }
+        try { closeWatcherRef.current.destroy(); } catch { /* ignore */ }
       }
     };
   }, []);

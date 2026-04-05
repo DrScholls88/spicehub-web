@@ -10118,10 +10118,11 @@ body {
    BarShelf — Immersive retro bar with backbar + bar top layout
    ═══════════════════════════════════════════════════════════════════════════════ */
 
+/* ── Overlay + container ── */
 .bs-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.9);
+  background: rgba(0, 0, 0, 0.92);
   z-index: 550;
   animation: fadeIn 0.2s ease-out;
 }
@@ -10132,7 +10133,22 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: linear-gradient(180deg, #0d0520 0%, #1a0a2e 25%, #0d0d1a 55%, #1a0f0a 100%);
+  /* Rich dark bar-room atmosphere */
+  background:
+    /* Horizontal mortar lines (brick pattern) */
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0px, transparent 15px,
+      rgba(0, 0, 0, 0.18) 15px, rgba(0, 0, 0, 0.18) 17px
+    ),
+    /* Vertical brick seams */
+    repeating-linear-gradient(
+      to right,
+      transparent 0px, transparent 32px,
+      rgba(0, 0, 0, 0.1) 32px, rgba(0, 0, 0, 0.1) 34px
+    ),
+    /* Dark reddish-brown base */
+    linear-gradient(180deg, #100508 0%, #150a20 20%, #0d0d18 55%, #180c06 100%);
   max-width: 600px;
   margin: 0 auto;
 }
@@ -10149,30 +10165,32 @@ body {
   justify-content: space-between;
   padding: 10px 16px;
   flex-shrink: 0;
-  z-index: 2;
+  z-index: 10;
   border-bottom: 2px solid #3a1f5e;
-  background: linear-gradient(180deg, rgba(26, 10, 46, 0.9) 0%, transparent 100%);
+  background: linear-gradient(180deg, rgba(10, 4, 20, 0.95) 0%, rgba(10, 4, 20, 0.7) 100%);
 }
 
 .bs-back-btn {
   background: none;
   border: 2px solid #4caf50;
-  padding: 6px 12px;
+  padding: 8px 14px;
   color: #4caf50;
   font-size: 10px;
   cursor: pointer;
   border-radius: 0;
   font-family: 'Press Start 2P', monospace;
   -webkit-tap-highlight-color: transparent;
+  /* Bigger touch target */
+  min-height: 40px;
+  min-width: 72px;
 }
 
 .bs-back-btn:active {
   background: #4caf5020;
+  transform: scale(0.96);
 }
 
-.bs-pixel-arrow {
-  font-size: 12px;
-}
+.bs-pixel-arrow { font-size: 12px; }
 
 .bs-title {
   font-size: 14px;
@@ -10201,50 +10219,179 @@ body {
   margin-top: 2px;
 }
 
-/* ═══ BACKBAR — Paginated bottle display ═══ */
+/* ═══════════════════════════════════════════════════════
+   BACKBAR — Ambient lighting + LED menu board + shelves
+   ═══════════════════════════════════════════════════════ */
 .bs-backbar {
   flex: 1;
   overflow: hidden;
   position: relative;
   display: flex;
   flex-direction: column;
-  background: linear-gradient(180deg,
-      rgba(30, 15, 50, 0.6) 0%,
-      rgba(20, 10, 30, 0.8) 50%,
-      rgba(40, 25, 15, 0.4) 100%);
 }
 
+/* Radial glow at top (ceiling wash) */
 .bs-backbar-glow {
   position: absolute;
   top: 0;
   left: 5%;
   right: 5%;
-  height: 70%;
-  background: radial-gradient(ellipse at center top, rgba(156, 39, 176, 0.1) 0%, rgba(255, 64, 129, 0.03) 40%, transparent 70%);
+  height: 60%;
+  background: radial-gradient(ellipse at center top,
+    rgba(156, 39, 176, 0.12) 0%,
+    rgba(255, 64, 129, 0.04) 40%,
+    transparent 70%);
   pointer-events: none;
   z-index: 0;
 }
 
-/* Decorative mirror / neon sign above shelves */
-.bs-backbar-mirror {
-  text-align: center;
-  padding: 8px 0 4px;
+/* Warm amber light wash from left (as if a lamp) */
+.bs-ambient-left {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 35%;
+  height: 100%;
+  background: radial-gradient(ellipse at left center,
+    rgba(255, 150, 30, 0.06) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Cool blue light wash from right (neon effect) */
+.bs-ambient-right {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 35%;
+  height: 100%;
+  background: radial-gradient(ellipse at right center,
+    rgba(64, 130, 255, 0.05) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Barback LED Menu Display ── */
+.bs-barback-display {
   flex-shrink: 0;
+  padding: 6px 12px 4px;
   position: relative;
-  z-index: 1;
-  font-size: 10px;
+  z-index: 2;
 }
 
-.bs-backbar-mirror::after {
-  content: '';
-  display: block;
-  width: 60%;
-  height: 1px;
-  margin: 6px auto 0;
-  background: linear-gradient(90deg, transparent, rgba(255, 204, 2, 0.3), transparent);
+.bs-display-inner {
+  position: relative;
+  background: #080808;
+  border: 2px solid #2a2a2a;
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow:
+    0 0 0 1px #111,
+    0 0 12px rgba(0, 0, 0, 0.8),
+    inset 0 0 20px rgba(0, 0, 0, 0.6);
 }
 
-/* Shelves container with page transitions */
+/* CRT scanline overlay */
+.bs-display-scanline {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px, transparent 1px,
+    rgba(0, 0, 0, 0.25) 1px, rgba(0, 0, 0, 0.25) 2px
+  );
+  pointer-events: none;
+  z-index: 3;
+}
+
+.bs-display-toprow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 4px 12px 2px;
+  border-bottom: 1px solid #1a1a1a;
+}
+
+.bs-display-title-text {
+  font-size: 7px;
+  color: #ffcc02;
+  letter-spacing: 1px;
+  opacity: 0.85;
+}
+
+/* LED indicator dots */
+.bs-display-led {
+  font-size: 8px;
+  animation: bsLedBlink 2s ease-in-out infinite;
+}
+
+.bs-led-grn { color: #4caf50; }
+.bs-led-red { color: #f44336; animation-delay: 1s; }
+
+@keyframes bsLedBlink {
+  0%, 45%, 55%, 100% { opacity: 1; }
+  50%               { opacity: 0.2; }
+}
+
+.bs-display-body {
+  padding: 5px 10px 6px;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+}
+
+/* Recipe view on the display */
+.bs-display-recipe {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  animation: bsDisplaySlideIn 0.3s ease-out;
+}
+
+@keyframes bsDisplaySlideIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.bs-display-drink-name {
+  font-size: 9px;
+  color: #ffcc02;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bs-display-recipe-ings {
+  font-size: 6px;
+  color: #888;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Scrolling marquee when idle */
+.bs-display-marquee-wrap {
+  overflow: hidden;
+  width: 100%;
+}
+
+.bs-display-marquee {
+  display: inline-block;
+  font-size: 7px;
+  color: #ff4081;
+  white-space: nowrap;
+  animation: bsMarqueeScroll 20s linear infinite;
+  opacity: 0.8;
+}
+
+@keyframes bsMarqueeScroll {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(-100%); }
+}
+
+/* ── Bottle shelves container ── */
 .bs-backbar-shelves {
   flex: 1;
   display: flex;
@@ -10256,36 +10403,16 @@ body {
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
-.bs-backbar-shelves.bs-page-left {
-  animation: bsPageSlideLeft 0.35s ease-out;
-}
-
-.bs-backbar-shelves.bs-page-right {
-  animation: bsPageSlideRight 0.35s ease-out;
-}
+.bs-backbar-shelves.bs-page-left  { animation: bsPageSlideLeft  0.35s ease-out; }
+.bs-backbar-shelves.bs-page-right { animation: bsPageSlideRight 0.35s ease-out; }
 
 @keyframes bsPageSlideLeft {
-  0% {
-    opacity: 0;
-    transform: translateX(40px);
-  }
-
-  100% {
-    opacity: 1;
-    transform: translateX(0);
-  }
+  from { opacity: 0; transform: translateX( 40px); }
+  to   { opacity: 1; transform: translateX(0); }
 }
-
 @keyframes bsPageSlideRight {
-  0% {
-    opacity: 0;
-    transform: translateX(-40px);
-  }
-
-  100% {
-    opacity: 1;
-    transform: translateX(0);
-  }
+  from { opacity: 0; transform: translateX(-40px); }
+  to   { opacity: 1; transform: translateX(0); }
 }
 
 /* Individual shelf row */
@@ -10295,17 +10422,9 @@ body {
   animation: bsShelfSlideIn 0.4s ease-out both;
 }
 
-.bs-shelf-row:nth-child(1) {
-  animation-delay: 0.05s;
-}
-
-.bs-shelf-row:nth-child(2) {
-  animation-delay: 0.15s;
-}
-
-.bs-shelf-row:nth-child(3) {
-  animation-delay: 0.25s;
-}
+.bs-shelf-row:nth-child(1) { animation-delay: 0.05s; }
+.bs-shelf-row:nth-child(2) { animation-delay: 0.15s; }
+.bs-shelf-row:nth-child(3) { animation-delay: 0.25s; }
 
 .bs-bottles-row {
   display: flex;
@@ -10318,22 +10437,36 @@ body {
 
 /* Wooden shelf plank */
 .bs-shelf-plank {
-  height: 8px;
+  height: 10px;
   margin: 0 8px;
-  background: linear-gradient(180deg, #8d6e4c 0%, #6d4c33 30%, #5a3d28 60%, #4a3220 100%);
+  background: linear-gradient(180deg,
+    #9a7856 0%, #8d6e4c 15%, #7a5c3a 40%, #6d4c33 70%, #4a3220 100%);
   border-radius: 0 0 2px 2px;
-  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 4px 8px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3);
   position: relative;
 }
 
 .bs-shelf-plank::before {
   content: '';
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+}
+
+/* Subtle wood grain lines */
+.bs-shelf-plank::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0px, transparent 8px,
+    rgba(0, 0, 0, 0.05) 8px, rgba(0, 0, 0, 0.05) 9px
+  );
 }
 
 /* Page navigation */
@@ -10353,32 +10486,22 @@ body {
   border: 2px solid #555;
   color: #aaa;
   font-size: 12px;
-  padding: 4px 10px;
+  padding: 6px 12px;
   cursor: pointer;
   font-family: 'Press Start 2P', monospace;
   -webkit-tap-highlight-color: transparent;
   transition: all 0.15s;
+  min-height: 38px;
 }
 
-.bs-page-btn:disabled {
-  opacity: 0.2;
-  cursor: default;
-}
+.bs-page-btn:disabled           { opacity: 0.2; cursor: default; }
+.bs-page-btn:active:not(:disabled) { background: #ffffff10; color: #fff; }
 
-.bs-page-btn:active:not(:disabled) {
-  background: #ffffff10;
-  color: #fff;
-}
-
-.bs-page-dots {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-}
+.bs-page-dots { display: flex; gap: 6px; align-items: center; }
 
 .bs-page-dot {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   border: 2px solid #555;
   background: none;
@@ -10394,7 +10517,7 @@ body {
   box-shadow: 0 0 6px #ff408180;
 }
 
-/* Bottle slot */
+/* ── Bottle slot ── */
 .bs-bottle-slot {
   display: flex;
   flex-direction: column;
@@ -10406,16 +10529,13 @@ body {
   transition: all 0.15s;
   -webkit-tap-highlight-color: transparent;
   min-width: 48px;
+  min-height: 60px;
   position: relative;
 }
 
-.bs-bottle-slot:active {
-  transform: scale(0.92);
-}
+.bs-bottle-slot:active { transform: scale(0.92); }
 
-.bs-bottle-slot.bs-selected {
-  filter: brightness(1.2);
-}
+.bs-bottle-slot.bs-selected { filter: brightness(1.2); }
 
 .bs-bottle-slot.bs-selected::after {
   content: '';
@@ -10423,21 +10543,16 @@ body {
   bottom: -2px;
   left: 50%;
   transform: translateX(-50%);
-  width: 6px;
-  height: 6px;
+  width: 6px; height: 6px;
   background: #ff4081;
   border-radius: 50%;
   box-shadow: 0 0 6px #ff4081, 0 0 12px #ff408180;
 }
 
-.bs-empty-slot {
-  cursor: default;
-  opacity: 0.15;
-}
+.bs-empty-slot { cursor: default; opacity: 0.15; }
 
 .bs-empty-bottle {
-  width: 20px;
-  height: 48px;
+  width: 20px; height: 48px;
   border: 1px dashed #555;
   border-radius: 2px;
   opacity: 0.3;
@@ -10449,32 +10564,14 @@ body {
   animation: bsBottleIdleWobble 4s ease-in-out infinite;
 }
 
-.bs-shelf-wobble-0 .bs-bottle-idle {
-  animation-delay: 0s;
-}
-
-.bs-shelf-wobble-1 .bs-bottle-idle {
-  animation-delay: 1.3s;
-}
-
-.bs-shelf-wobble-2 .bs-bottle-idle {
-  animation-delay: 2.6s;
-}
+.bs-shelf-wobble-0 .bs-bottle-idle { animation-delay: 0s; }
+.bs-shelf-wobble-1 .bs-bottle-idle { animation-delay: 1.3s; }
+.bs-shelf-wobble-2 .bs-bottle-idle { animation-delay: 2.6s; }
 
 @keyframes bsBottleIdleWobble {
-
-  0%,
-  100% {
-    transform: rotate(0deg);
-  }
-
-  25% {
-    transform: rotate(0.4deg);
-  }
-
-  75% {
-    transform: rotate(-0.4deg);
-  }
+  0%, 100% { transform: rotate(0deg); }
+  25%       { transform: rotate(0.4deg); }
+  75%       { transform: rotate(-0.4deg); }
 }
 
 /* Bottle SVG */
@@ -10500,84 +10597,20 @@ body {
   text-overflow: ellipsis;
 }
 
-/* ═══ BAR TOP — Bartender stands behind here ═══ */
+/* ═══════════════════════════════════════════════════════
+   BAR TOP — Taller counter; bartender visible from chest up
+   ═══════════════════════════════════════════════════════ */
 .bs-bar-top {
   flex-shrink: 0;
   position: relative;
-  height: 200px;
+  height: 220px;
   overflow: hidden;
 }
 
-/* Bar surface (wood grain counter) */
-.bs-bar-surface {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 40px;
-  background: linear-gradient(180deg,
-      #a07850 0%, #8d6e4c 15%, #7a5c3a 40%, #6d4c33 70%, #5a3d28 100%);
-  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.4), inset 0 2px 0 rgba(255, 255, 255, 0.1);
-  z-index: 5;
-}
-
-.bs-bar-surface::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: linear-gradient(90deg,
-      rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.05));
-}
-
-/* Coasters on bar */
-.bs-bar-coaster {
-  position: absolute;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: radial-gradient(circle, rgba(100, 70, 40, 0.6) 0%, rgba(80, 50, 30, 0.3) 100%);
-  top: 10px;
-}
-
-.bs-bar-coaster-1 {
-  left: 15%;
-}
-
-.bs-bar-coaster-2 {
-  right: 20%;
-}
-
-.bs-bar-napkin {
-  position: absolute;
-  width: 16px;
-  height: 10px;
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 1px;
-  top: 14px;
-  right: 12%;
-}
-
-/* Bar rail (brass foot rail) */
-.bs-bar-rail {
-  position: absolute;
-  bottom: 0;
-  left: 5%;
-  right: 5%;
-  height: 4px;
-  background: linear-gradient(180deg, #c9a84c 0%, #b8942e 50%, #a07820 100%);
-  border-radius: 2px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.3);
-  z-index: 6;
-}
-
-/* ── Bartender character (stands behind bar top) ── */
+/* ── Bartender (rendered FIRST → behind the counter surface) ── */
 .bs-bartender-wrap {
   position: absolute;
-  bottom: 32px;
+  bottom: 78px; /* sits so lower body is hidden behind bar counter */
   left: 0;
   z-index: 4;
   pointer-events: none;
@@ -10586,22 +10619,100 @@ body {
 
 .bs-bartender-svg {
   image-rendering: pixelated;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
 }
 
-/* Walk bob animation */
+/* ── Bar counter surface — taller so it hides lower body ── */
+.bs-bar-surface {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 82px;
+  background: linear-gradient(180deg,
+    #b08860 0%, #9a7850 8%, #8d6e4c 20%,
+    #7a5c3a 45%, #6d4c33 70%, #5a3d28 85%, #4a3220 100%);
+  box-shadow:
+    0 -3px 12px rgba(0, 0, 0, 0.5),
+    inset 0 3px 0 rgba(255, 255, 255, 0.12),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.3);
+  z-index: 5;
+}
+
+/* Polished top edge highlight */
+.bs-bar-surface::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 4px;
+  background: linear-gradient(90deg,
+    rgba(255, 255, 255, 0.04),
+    rgba(255, 255, 255, 0.15),
+    rgba(255, 255, 255, 0.04));
+}
+
+/* Wood grain lines on bar surface */
+.bs-bar-surface::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent 0px, transparent 12px,
+    rgba(0, 0, 0, 0.04) 12px, rgba(0, 0, 0, 0.04) 13px
+  );
+}
+
+/* Bar top coasters */
+.bs-bar-coaster {
+  position: absolute;
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: radial-gradient(circle, rgba(110, 78, 46, 0.7) 0%, rgba(80, 50, 30, 0.4) 100%);
+  top: 8px;
+}
+
+.bs-bar-coaster-1 { left: 14%; }
+.bs-bar-coaster-2 { right: 18%; }
+
+.bs-bar-napkin {
+  position: absolute;
+  width: 18px; height: 12px;
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 1px;
+  top: 12px;
+  right: 10%;
+}
+
+/* Brass foot rail */
+.bs-bar-rail {
+  position: absolute;
+  bottom: 0;
+  left: 4%;
+  right: 4%;
+  height: 5px;
+  background: linear-gradient(180deg, #d4b060 0%, #c9a84c 30%, #b8942e 70%, #a07820 100%);
+  border-radius: 3px;
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 0 8px rgba(200, 160, 50, 0.2);
+  z-index: 6;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   BARTENDER ANIMATIONS
+   ══════════════════════════════════════════════════════════════ */
+
+/* Walk bob */
 .bs-bt-walk {
   animation: bsBtBob 0.2s ease-in-out infinite alternate;
 }
 
 @keyframes bsBtBob {
-  from {
-    transform: translateY(0);
-  }
-
-  to {
-    transform: translateY(-3px);
-  }
+  from { transform: translateY(0); }
+  to   { transform: translateY(-4px); }
 }
 
 /* Present bounce */
@@ -10610,63 +10721,87 @@ body {
 }
 
 @keyframes bsBtBounce {
-  0% {
-    transform: translateY(0);
-  }
-
-  30% {
-    transform: translateY(-6px);
-  }
-
-  50% {
-    transform: translateY(0);
-  }
-
-  70% {
-    transform: translateY(-3px);
-  }
-
-  100% {
-    transform: translateY(0);
-  }
+  0%   { transform: translateY(0); }
+  30%  { transform: translateY(-8px); }
+  50%  { transform: translateY(0); }
+  70%  { transform: translateY(-4px); }
+  100% { transform: translateY(0); }
 }
 
-/* Blink animation (eyes) */
+/* Swig celebratory bounce (full body) */
+.bs-bt-swig-bounce {
+  animation: bsBtSwigBounce 0.5s ease-out;
+}
+
+@keyframes bsBtSwigBounce {
+  0%   { transform: translateY(0) rotate(0deg); }
+  20%  { transform: translateY(-5px) rotate(-2deg); }
+  50%  { transform: translateY(0) rotate(1deg); }
+  75%  { transform: translateY(-2px) rotate(0deg); }
+  100% { transform: translateY(0) rotate(0deg); }
+}
+
+/* Swig arm raise */
+.bs-bt-swig-arm {
+  transform-origin: 30px 22px;
+  animation: bsBtSwigArm 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes bsBtSwigArm {
+  from { transform: translateY(8px); }
+  to   { transform: translateY(0); }
+}
+
+/* Head tilt back when swigging */
+.bs-bt-head-tilt {
+  transform-origin: 20px 15px;
+  animation: bsBtHeadTilt 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes bsBtHeadTilt {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(-6deg) translateY(-1px); }
+}
+
+/* Swig bottle liquid drip */
+.bs-bt-drip {
+  animation: bsBtDrip 0.6s ease-in-out infinite alternate;
+}
+
+@keyframes bsBtDrip {
+  from { opacity: 0.3; transform: translateY(0) scale(0.8); }
+  to   { opacity: 1;   transform: translateY(2px) scale(1.2); }
+}
+
+/* Swig bottle appear */
+.bs-bt-swig-bottle {
+  animation: bsBtSwigBottleIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes bsBtSwigBottleIn {
+  from { opacity: 0; transform: rotate(-140deg) scale(0.5); }
+  to   { opacity: 1; transform: rotate(-125deg) scale(1); }
+}
+
+/* Blink (eyes) */
 .bs-bt-blink {
   animation: bsBtBlink 4s ease-in-out infinite;
 }
 
 @keyframes bsBtBlink {
-
-  0%,
-  92%,
-  96%,
-  100% {
-    opacity: 0;
-  }
-
-  93%,
-  95% {
-    opacity: 1;
-  }
+  0%, 92%, 96%, 100% { opacity: 0; }
+  93%, 95%           { opacity: 1; }
 }
 
-/* Wiping arm animation */
+/* Wipe arm */
 .bs-bt-wipe-arm {
   animation: bsBtWipe 1.2s ease-in-out infinite;
   transform-origin: 8px 26px;
 }
 
 @keyframes bsBtWipe {
-
-  0%,
-  100% {
-    transform: translateX(0);
-  }
-
-  50% {
-    transform: translateX(6px);
-  }
+  0%, 100% { transform: translateX(0); }
+  50%      { transform: translateX(8px); }
 }
 
 /* Held bottle wobble */
@@ -10675,39 +10810,29 @@ body {
 }
 
 @keyframes bsBtBottleWobble {
-  0% {
-    transform: rotate(-10deg);
-  }
-
-  40% {
-    transform: rotate(5deg);
-  }
-
-  70% {
-    transform: rotate(-3deg);
-  }
-
-  100% {
-    transform: rotate(0deg);
-  }
+  0%   { transform: rotate(-10deg); }
+  40%  { transform: rotate(5deg); }
+  70%  { transform: rotate(-3deg); }
+  100% { transform: rotate(0deg); }
 }
 
-/* Speech bubble */
+/* ── Speech bubble ── */
 .bs-bt-speech {
   position: absolute;
-  top: -36px;
+  top: -40px;
   left: 50%;
   transform: translateX(-50%);
   background: #fff;
   color: #333;
   font-size: 8px;
-  padding: 6px 10px;
+  padding: 7px 12px;
   border-radius: 8px;
   white-space: nowrap;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
   animation: bsBtSpeechIn 0.3s ease-out;
   font-family: 'Press Start 2P', monospace;
   pointer-events: none;
+  z-index: 10;
 }
 
 .bs-bt-speech::after {
@@ -10720,37 +10845,46 @@ body {
   border-top-color: #fff;
 }
 
+/* Idle quip — fades in/out */
 .bs-bt-speech-idle {
   opacity: 0.7;
   animation: bsBtSpeechPulse 5s ease-in-out infinite;
 }
 
-@keyframes bsBtSpeechIn {
-  from {
-    opacity: 0;
-    transform: translateX(-50%) translateY(6px);
-  }
+/* Swig quip — bigger, more festive */
+.bs-bt-speech-swig {
+  background: #ffcc02;
+  color: #333;
+  font-size: 9px;
+  animation: bsBtSwigSpeech 1.9s ease-out forwards;
+  border: 2px solid #e5a800;
+}
 
-  to {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-  }
+.bs-bt-speech-swig::after {
+  border-top-color: #ffcc02;
+}
+
+@keyframes bsBtSpeechIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 
 @keyframes bsBtSpeechPulse {
-
-  0%,
-  100% {
-    opacity: 0;
-  }
-
-  12%,
-  88% {
-    opacity: 0.7;
-  }
+  0%, 100%  { opacity: 0; }
+  12%, 88%  { opacity: 0.7; }
 }
 
-/* ── Detail card ── */
+@keyframes bsBtSwigSpeech {
+  0%   { opacity: 0; transform: translateX(-50%) translateY(6px) scale(0.8); }
+  15%  { opacity: 1; transform: translateX(-50%) translateY(0)   scale(1.1); }
+  25%  { opacity: 1; transform: translateX(-50%) translateY(0)   scale(1); }
+  80%  { opacity: 1; transform: translateX(-50%) translateY(0); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+}
+
+/* ══════════════════════════════════════════════════════════════
+   DETAIL CARD
+   ══════════════════════════════════════════════════════════════ */
 .bs-detail-card {
   position: fixed;
   bottom: 0;
@@ -10765,7 +10899,7 @@ body {
   margin: 0 auto;
   z-index: 555;
   animation: slideUp 0.25s cubic-bezier(0.32, 0.72, 0, 1);
-  box-shadow: 0 -4px 20px rgba(156, 39, 176, 0.2);
+  box-shadow: 0 -4px 24px rgba(156, 39, 176, 0.25);
 }
 
 .bs-detail-header {
@@ -10781,10 +10915,7 @@ body {
   border-radius: 8px;
 }
 
-.bs-detail-info {
-  flex: 1;
-  min-width: 0;
-}
+.bs-detail-info { flex: 1; min-width: 0; }
 
 .bs-detail-name {
   font-size: 11px;
@@ -10807,27 +10938,24 @@ body {
   background: #7b1fa2;
   color: white;
   padding: 3px 8px;
-  border-radius: 0;
 }
 
-.bs-detail-ing-count {
-  font-size: 7px;
-  color: #999;
-}
+.bs-detail-ing-count { font-size: 7px; color: #999; }
 
 .bs-detail-close {
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   background: rgba(255, 255, 255, 0.1);
   border: 1px solid #555;
   color: #aaa;
-  font-size: 14px;
+  font-size: 16px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: system-ui, sans-serif;
   -webkit-tap-highlight-color: transparent;
+  border-radius: 4px;
 }
 
 .bs-detail-ingredients {
@@ -10841,15 +10969,11 @@ body {
   font-size: 7px;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid #444;
-  padding: 4px 8px;
+  padding: 5px 9px;
   color: #ccc;
 }
 
-.bs-ing-more {
-  font-size: 7px;
-  color: #888;
-  padding: 4px;
-}
+.bs-ing-more { font-size: 7px; color: #888; padding: 4px; }
 
 .bs-detail-actions {
   margin-top: 12px;
@@ -10859,7 +10983,7 @@ body {
 
 .bs-action-btn {
   flex: 1;
-  padding: 10px;
+  padding: 12px 10px;
   border: 2px solid;
   font-size: 9px;
   cursor: pointer;
@@ -10869,9 +10993,7 @@ body {
   transition: all 0.15s;
 }
 
-.bs-action-btn:active {
-  transform: scale(0.96);
-}
+.bs-action-btn:active { transform: scale(0.96); }
 
 .bs-action-view {
   border-color: #ff4081;
@@ -10879,11 +11001,9 @@ body {
   background: rgba(255, 64, 129, 0.1);
 }
 
-.bs-action-view:active {
-  background: rgba(255, 64, 129, 0.25);
-}
+.bs-action-view:active { background: rgba(255, 64, 129, 0.25); }
 
-/* Detail card swipe hint */
+/* Swipe hint */
 .bs-detail-swipe-hint {
   display: flex;
   flex-direction: column;
@@ -10893,19 +11013,18 @@ body {
 }
 
 .bs-detail-swipe-bar {
-  width: 36px;
-  height: 4px;
+  width: 36px; height: 4px;
   background: #555;
   border-radius: 2px;
 }
 
 .bs-detail-swipe-text {
   font-size: 7px;
-  color: #666;
+  color: #555;
   font-family: 'Press Start 2P', monospace;
 }
 
-/* ── Empty bar ── */
+/* ── Empty state ── */
 .bs-empty-bar {
   display: flex;
   flex-direction: column;
@@ -10915,73 +11034,41 @@ body {
   text-align: center;
 }
 
-.bs-empty-neon {
-  font-size: 24px;
-  margin-bottom: 16px;
-}
+.bs-empty-neon  { font-size: 24px; margin-bottom: 16px; }
+.bs-empty-msg   { font-size: 8px; color: #888; line-height: 1.8; }
 
-.bs-empty-msg {
-  font-size: 8px;
-  color: #888;
-  line-height: 1.8;
-}
-
-/* ── Animations ── */
+/* ══════════════════════════════════════════════════════════════
+   SHARED KEYFRAMES
+   ══════════════════════════════════════════════════════════════ */
 @keyframes bsNeonFlicker {
-
-  0%,
-  100% {
-    opacity: 1;
-  }
-
-  88% {
-    opacity: 1;
-  }
-
-  89% {
-    opacity: 0.5;
-  }
-
-  90% {
-    opacity: 1;
-  }
-
-  92% {
-    opacity: 1;
-  }
-
-  93% {
-    opacity: 0.6;
-  }
-
-  94% {
-    opacity: 1;
-  }
-
-  96% {
-    opacity: 0.8;
-  }
-
-  97% {
-    opacity: 1;
-  }
+  0%, 86%, 100%  { opacity: 1; }
+  87%            { opacity: 0.5; }
+  88%            { opacity: 1; }
+  91%            { opacity: 0.6; }
+  92%            { opacity: 1; }
+  95%            { opacity: 0.8; }
+  96%            { opacity: 1; }
 }
 
 @keyframes bsShelfSlideIn {
-  from {
-    opacity: 0;
-    transform: translateY(16px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
-/* ── Dark theme refinements ── */
+/* ── Dark theme ── */
 [data-theme="dark"] .bs-container {
-  background: linear-gradient(180deg, #050210 0%, #0a0515 25%, #050508 55%, #0f0a05 100%);
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0px, transparent 15px,
+      rgba(0, 0, 0, 0.22) 15px, rgba(0, 0, 0, 0.22) 17px
+    ),
+    repeating-linear-gradient(
+      to right,
+      transparent 0px, transparent 32px,
+      rgba(0, 0, 0, 0.12) 32px, rgba(0, 0, 0, 0.12) 34px
+    ),
+    linear-gradient(180deg, #050108 0%, #08041a 20%, #050508 55%, #0a0603 100%);
 }
 
 [data-theme="dark"] .bs-bt-speech {
@@ -10989,24 +11076,21 @@ body {
   color: #e0e0e0;
 }
 
-[data-theme="dark"] .bs-bt-speech::after {
-  border-top-color: #2a2a2a;
+[data-theme="dark"] .bs-bt-speech::after { border-top-color: #2a2a2a; }
+
+[data-theme="dark"] .bs-bt-speech-swig {
+  background: #cc9900;
+  color: #fff;
 }
 
-/* ── Desktop ── */
+[data-theme="dark"] .bs-bt-speech-swig::after { border-top-color: #cc9900; }
+
+/* ── Desktop hover states ── */
 @media (min-width: 640px) {
-  .bs-bottle-slot:hover .bs-bottle-svg {
-    transform: translateY(-4px);
-  }
-
-  .bs-action-btn:hover {
-    opacity: 0.85;
-  }
-
-  .bs-page-btn:hover:not(:disabled) {
-    border-color: #aaa;
-    color: #fff;
-  }
+  .bs-bottle-slot:hover .bs-bottle-svg { transform: translateY(-4px); }
+  .bs-action-btn:hover                 { opacity: 0.85; }
+  .bs-page-btn:hover:not(:disabled)    { border-color: #aaa; color: #fff; }
+  .bs-back-btn:hover                   { background: #4caf5018; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

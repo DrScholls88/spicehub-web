@@ -38,7 +38,5 @@
     "workbox-build": "^7.4.0",
     "workbox-window": "^7.4.0"
   },
-  "optionalDependencies": {
-    "@rollup/rollup-linux-x64-gnu": "^4.59.0"
-  }
+  "optionalDependencies": {}
 }
