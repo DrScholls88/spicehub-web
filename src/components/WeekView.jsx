@@ -41,84 +41,31 @@ function getMonday(date) {
   return d;
 }
 
-function addDays(date, n) {
-  const d = new Date(date);
-  d.setDate(d.getDate() + n);
-  return d;
+function dateKey(date) {
+  return date.toISOString().split('T')[0]; // 'YYYY-MM-DD'
 }
 
-function formatMonth(monday) {
-  const sunday = addDays(monday, 6);
-  if (monday.getMonth() === sunday.getMonth()) {
-    return monday.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+function getCalendarCells(year, month) {
+  // Get first day of month
+  const firstDay = new Date(year, month, 1);
+  // Get start day (0=Sun, 1=Mon, etc.)
+  const startDow = firstDay.getDay();
+  // Calculate offset to Monday (0=Mon, 1=Tue, ..., 6=Sun)
+  const startOffset = startDow === 0 ? 6 : startDow - 1;
+
+  // Build start date (go back to Monday before month starts)
+  const startDate = new Date(firstDay);
+  startDate.setDate(startDate.getDate() - startOffset);
+  startDate.setHours(0, 0, 0, 0);
+
+  // Always 6 weeks (42 days)
+  const cells = [];
+  for (let i = 0; i < 42; i++) {
+    const d = new Date(startDate);
+    d.setDate(startDate.getDate() + i);
+    cells.push(d);
   }
-  return `${monday.toLocaleDateString('en-US', { month: 'short' })} – ${sunday.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })}`;
-}
-
-function formatWeekRange(weekStart) {
-  const mon = new Date(weekStart);
-  const sun = addDays(mon, 6);
-  const opts = { month: 'short', day: 'numeric' };
-  return `${mon.toLocaleDateString('en-US', opts)} – ${sun.toLocaleDateString('en-US', opts)}`;
-}
-
-function getWeeksAgoLabel(weekStart) {
-  const now = getMonday(new Date());
-  const then = new Date(weekStart);
-  const diffWeeks = Math.round((now - then) / (7 * 24 * 60 * 60 * 1000));
-  if (diffWeeks === 0) return 'This week';
-  if (diffWeeks === 1) return 'Last week';
-  return `${diffWeeks}w ago`;
-}
-
-// ── Mini week card (used in both current and past views) ─────────────────────
-function MiniWeekCard({ weekMeals, label, sublabel, isCurrent, onRestoreWeek, onRestoreMeal, onSelectDay }) {
-  return (
-    <div className={`wv2-mini-week${isCurrent ? ' current' : ''}`}>
-      <div className="wv2-mini-week-hdr">
-        <span className="wv2-mini-week-label">{label}</span>
-        {sublabel && <span className="wv2-mini-week-sub">{sublabel}</span>}
-        {!isCurrent && onRestoreWeek && (
-          <button className="wv2-mini-restore" onClick={() => onRestoreWeek(weekMeals)}>
-            ↩ Use
-          </button>
-        )}
-      </div>
-      <div className="wv2-mini-days">
-        {DAY_LABELS.map((day, i) => {
-          const entry = weekMeals?.[i];
-          const isSpecial = entry && entry._special;
-          const hasMeal = !!entry;
-          return (
-            <div
-              key={i}
-              className={`wv2-mini-day${hasMeal ? ' filled' : ''}`}
-              onClick={() => {
-                if (isCurrent && onSelectDay) onSelectDay(i);
-                else if (!isCurrent && hasMeal && !isSpecial && onRestoreMeal) onRestoreMeal(entry, i);
-              }}
-            >
-              <span className="wv2-mini-day-lbl">{day}</span>
-              {isSpecial ? (
-                <span className="wv2-mini-day-icon">{entry.icon}</span>
-              ) : hasMeal ? (
-                <div className="wv2-mini-day-meal">
-                  {entry.imageUrl ? (
-                    <MealImage src={entry.imageUrl} alt="" className="wv2-mini-day-img" fallbackEmoji="" fallbackClass="wv2-mini-day-img-ph" />
-                  ) : (
-                    <div className="wv2-mini-day-img-ph">🍽️</div>
-                  )}
-                  <span className="wv2-mini-day-name">{entry.name}</span>
-                </div>
-              ) : (
-                <span className="wv2-mini-day-empty">—</span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
+  return cells;
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
@@ -126,6 +73,7 @@ function MiniWeekCard({ weekMeals, label, sublabel, isCurrent, onRestoreWeek, on
 export default function WeekView({
   days, weekPlan, meals, specialDays,
   onGenerate, onRespin, onSetDay, onSetSpecial, onViewDetail, onBuildGrocery,
+  onToggleLock,
   cookingStats = {},
   weekHistory = [],
   onRestoreWeek,
@@ -135,144 +83,126 @@ export default function WeekView({
   onCloseSpinner,
   onSpinnerComplete,
   rotationMeals,
+  currentPlan,
 }) {
   const today = useMemo(() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d; }, []);
-  const thisMonday = useMemo(() => getMonday(today), [today]);
+  const currentWeekMonday = useMemo(() => getMonday(today), [today]);
 
-  const [weekOffset, setWeekOffset] = useState(0);
-  const [selectedDay, setSelectedDay] = useState(() => {
-    const d = today.getDay();
-    return d === 0 ? 6 : d - 1;
-  });
+  const [viewYear, setViewYear] = useState(today.getFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getMonth()); // 0-11
+  const [activeDate, setActiveDate] = useState(today);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedDates, setSelectedDates] = useState(new Set());
+  const [showDetailPanel, setShowDetailPanel] = useState(false);
   const [pickerDay, setPickerDay] = useState(null);
-  const [swipeStart, setSwipeStart] = useState(null);
-  const [showHistory, setShowHistory] = useState(false);
 
-  const activeMonday = useMemo(() => addDays(thisMonday, weekOffset * 7), [thisMonday, weekOffset]);
-  const weekDates = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(activeMonday, i)), [activeMonday]);
+  const calendarCells = useMemo(() => getCalendarCells(viewYear, viewMonth), [viewYear, viewMonth]);
 
-  const isCurrentWeek = weekOffset === 0;
-  const hasWeek = weekPlan.some(Boolean);
-  const plannedCount = weekPlan.filter(Boolean).length;
+  // Get meal for any date (current week, past history, or future)
+  const getMealForDate = useCallback((date) => {
+    const dow = date.getDay() === 0 ? 6 : date.getDay() - 1; // 0=Mon index
+    const weekMon = getMonday(date);
 
-  const todayIdx = useMemo(() => {
-    const d = today.getDay();
-    return d === 0 ? 6 : d - 1;
+    // Is this in the current active week?
+    if (weekMon.getTime() === currentWeekMonday.getTime()) {
+      return { meal: weekPlan[dow] || null, isCurrent: true, dow };
+    }
+
+    // Is this in a past week? Check history.
+    const histEntry = weekHistory.find(hw => {
+      const hwMon = new Date(hw.weekStart);
+      hwMon.setHours(0, 0, 0, 0);
+      return hwMon.getTime() === weekMon.getTime();
+    });
+
+    if (histEntry) {
+      return { meal: histEntry.meals?.[dow] || null, isCurrent: false, dow, histEntry };
+    }
+
+    // Future or no data
+    const isFuture = date > today;
+    return { meal: null, isCurrent: weekMon.getTime() === currentWeekMonday.getTime(), isFuture, dow };
+  }, [weekPlan, weekHistory, currentWeekMonday, today]);
+
+  // Handle calendar cell click
+  const handleCellClick = useCallback((date) => {
+    if (selectMode) {
+      // Toggle selection (only current/future)
+      const key = dateKey(date);
+      const { isCurrent, isFuture } = getMealForDate(date);
+      if (!isCurrent && !isFuture && date < today) {
+        // Past day - skip in select mode
+        return;
+      }
+      setSelectedDates(prev => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return next;
+      });
+    } else {
+      // Detail mode - open panel
+      setActiveDate(date);
+      setShowDetailPanel(true);
+    }
+  }, [selectMode, getMealForDate, today]);
+
+  // Navigate month
+  const handlePrevMonth = useCallback(() => {
+    if (viewMonth === 0) {
+      setViewMonth(11);
+      setViewYear(y => y - 1);
+    } else {
+      setViewMonth(m => m - 1);
+    }
+  }, [viewMonth]);
+
+  const handleNextMonth = useCallback(() => {
+    if (viewMonth === 11) {
+      setViewMonth(0);
+      setViewYear(y => y + 1);
+    } else {
+      setViewMonth(m => m + 1);
+    }
+  }, [viewMonth]);
+
+  const handleToday = useCallback(() => {
+    setViewYear(today.getFullYear());
+    setViewMonth(today.getMonth());
   }, [today]);
 
-  // Touch swipe handling for week navigation
-  const handleTouchStart = useCallback((e) => {
-    setSwipeStart(e.touches[0].clientX);
-  }, []);
+  // Handle spinning selected days
+  const handleSpinSelected = useCallback(() => {
+    // Convert selected dateKeys to current-week day indices
+    const indices = [];
+    selectedDates.forEach(key => {
+      const date = new Date(key + 'T00:00:00');
+      const { isCurrent, dow } = getMealForDate(date);
+      if (isCurrent) indices.push(dow);
+    });
 
-  const handleTouchEnd = useCallback((e) => {
-    if (swipeStart === null) return;
-    const diff = swipeStart - e.changedTouches[0].clientX;
-    if (Math.abs(diff) > 60) {
-      if (diff > 0) {
-        if (showHistory) { /* swipe in history doesn't navigate weeks */ }
-        else setWeekOffset(o => o + 1);
-      } else {
-        if (showHistory) { /* swipe in history doesn't navigate weeks */ }
-        else setWeekOffset(o => o - 1);
-      }
-    }
-    setSwipeStart(null);
-  }, [swipeStart, showHistory]);
+    // For now, just trigger onGenerate
+    // In a more advanced version, we'd pass indices to the spinner
+    onGenerate();
+    setSelectMode(false);
+    setSelectedDates(new Set());
+  }, [selectedDates, getMealForDate, onGenerate]);
 
-  const openPicker = useCallback((idx) => {
-    setPickerDay(prev => prev === idx ? null : idx);
+  // Open meal picker
+  const openPicker = useCallback((date) => {
+    const dow = date.getDay() === 0 ? 6 : date.getDay() - 1;
+    setPickerDay(dow);
   }, []);
 
   const closePicker = useCallback(() => setPickerDay(null), []);
 
-  const handleRestoreMealToDay = useCallback((meal, dayIdx) => {
-    if (meal && !meal._special) {
-      onSetDay(dayIdx, meal);
-    }
-  }, [onSetDay]);
+  // Render meal picker bottom sheet
+  const renderPicker = () => {
+    if (pickerDay === null) return null;
 
-  const selectedEntry = weekPlan[selectedDay];
-  const selectedIsSpecial = selectedEntry && selectedEntry._special;
+    const isPastDay = activeDate < today && activeDate.getTime() !== currentWeekMonday.getTime() + (pickerDay * 24 * 60 * 60 * 1000);
+    const { meal: currentMeal } = getMealForDate(activeDate);
 
-  // Filter out "this week" from history for the side panel
-  const pastWeeks = useMemo(() => {
-    const currentMondayStr = thisMonday.toISOString();
-    return weekHistory.filter(hw => hw.weekStart !== currentMondayStr);
-  }, [weekHistory, thisMonday]);
-
-  // ── SPLIT VIEW MODE (History active) ──────────────────────────────────────
-  if (showHistory) {
-    return (
-      <div className="wv2 wv2-split-mode">
-        {/* Toggle bar */}
-        <div className="wv2-split-toggle">
-          <button className="wv2-split-toggle-btn active" onClick={() => setShowHistory(false)}>
-            ✕ Close History
-          </button>
-        </div>
-
-        <div className="wv2-split-container">
-          {/* LEFT: Current week (condensed) */}
-          <div className="wv2-split-current">
-            <div className="wv2-split-section-hdr">
-              <span>This Week</span>
-              <span className="wv2-split-section-sub">{plannedCount}/7</span>
-            </div>
-            <MiniWeekCard
-              weekMeals={weekPlan}
-              label={formatMonth(activeMonday)}
-              isCurrent
-              onSelectDay={(i) => { setSelectedDay(i); setShowHistory(false); }}
-            />
-            <div className="wv2-split-actions">
-              <button className="wv2-btn primary compact" onClick={onGenerate}>
-                🎰 Spin{rotationCount > 0 ? ` (${rotationCount})` : ''}
-              </button>
-              {hasWeek && (
-                <button className="wv2-btn secondary compact" onClick={onBuildGrocery}>
-                  🛒 Grocery
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* RIGHT: Past weeks (scrollable) */}
-          <div className="wv2-split-history">
-            <div className="wv2-split-section-hdr">
-              <span>Past Weeks</span>
-              <span className="wv2-split-section-sub">{pastWeeks.length} saved</span>
-            </div>
-            <div className="wv2-split-history-scroll">
-              {pastWeeks.length === 0 ? (
-                <div className="wv2-split-empty">
-                  <p>No past weeks saved yet.</p>
-                  <p>Your weekly plans will appear here automatically.</p>
-                </div>
-              ) : (
-                pastWeeks.map((hw) => (
-                  <MiniWeekCard
-                    key={hw.id}
-                    weekMeals={hw.meals}
-                    label={formatWeekRange(hw.weekStart)}
-                    sublabel={getWeeksAgoLabel(hw.weekStart)}
-                    onRestoreWeek={onRestoreWeek}
-                    onRestoreMeal={handleRestoreMealToDay}
-                  />
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Meal picker (still available) */}
-        {pickerDay !== null && renderPicker()}
-      </div>
-    );
-  }
-
-  // ── NORMAL VIEW MODE ──────────────────────────────────────────────────────
-  function renderPicker() {
     return (
       <div className="pk-overlay" onClick={closePicker}>
         <div className="pk-sheet" onClick={e => e.stopPropagation()}>
@@ -282,29 +212,31 @@ export default function WeekView({
             <button className="pk-close" onClick={closePicker}>✕</button>
           </div>
 
-          <div className="pk-specials">
-            {specialDays.map(s => (
-              <button
-                key={s.id}
-                className="pk-chip"
-                onClick={() => { onSetSpecial(pickerDay, s.id); closePicker(); }}
-              >
-                <span>{s.icon}</span> {s.name}
-              </button>
-            ))}
-            {weekPlan[pickerDay] && (
-              <button
-                className="pk-chip clear"
-                onClick={() => { onSetSpecial(pickerDay, null); closePicker(); }}
-              >
-                ✕ Clear
-              </button>
-            )}
-          </div>
+          {!isPastDay && (
+            <div className="pk-specials">
+              {specialDays.map(s => (
+                <button
+                  key={s.id}
+                  className="pk-chip"
+                  onClick={() => { onSetSpecial(pickerDay, s.id); closePicker(); }}
+                >
+                  <span>{s.icon}</span> {s.name}
+                </button>
+              ))}
+              {currentMeal && (
+                <button
+                  className="pk-chip clear"
+                  onClick={() => { onSetSpecial(pickerDay, null); closePicker(); }}
+                >
+                  ✕ Clear
+                </button>
+              )}
+            </div>
+          )}
 
           <div className="pk-list">
             {meals.map(meal => {
-              const isCurrent = weekPlan[pickerDay] && !weekPlan[pickerDay]._special && weekPlan[pickerDay].id === meal.id;
+              const isCurrent = currentMeal && !currentMeal._special && currentMeal.id === meal.id;
               return (
                 <div
                   key={meal.id}
@@ -333,220 +265,600 @@ export default function WeekView({
         </div>
       </div>
     );
-  }
+  };
+
+  // Check if we're viewing current month
+  const isCurrentMonth = viewYear === today.getFullYear() && viewMonth === today.getMonth();
+
+  // Count meals in current plan
+  const plannedCount = weekPlan.filter(Boolean).length;
+  const hasWeek = plannedCount > 0;
 
   return (
-    <div
-      className="wv2"
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
-    >
-      {/* ── Compact header with week nav ── */}
-      <div className="wv2-header">
-        <button className="wv2-nav" onClick={() => setWeekOffset(o => o - 1)} aria-label="Previous week">‹</button>
-        <div className="wv2-header-center">
-          <span className="wv2-month">{formatMonth(activeMonday)}</span>
-          {!isCurrentWeek && (
-            <button className="wv2-today-link" onClick={() => { setWeekOffset(0); setSelectedDay(todayIdx); }}>
-              Back to today
-            </button>
-          )}
-        </div>
-        <button className="wv2-nav" onClick={() => setWeekOffset(o => o + 1)} aria-label="Next week">›</button>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', background: 'var(--bg)' }}>
+      {/* ── Month Navigation Header ── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '12px 16px',
+        background: 'var(--card)',
+        borderBottom: '1px solid var(--border)',
+        gap: '8px',
+      }}>
+        <button
+          onClick={handlePrevMonth}
+          style={{
+            background: 'none',
+            border: 'none',
+            fontSize: '20px',
+            cursor: 'pointer',
+            padding: '8px 12px',
+            color: 'var(--primary)',
+          }}
+          aria-label="Previous month"
+        >
+          ‹
+        </button>
+
+        <h2 style={{
+          flex: 1,
+          textAlign: 'center',
+          fontSize: '16px',
+          fontWeight: 700,
+          color: 'var(--text)',
+          margin: 0,
+        }}>
+          {new Date(viewYear, viewMonth).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+        </h2>
+
+        {!isCurrentMonth && (
+          <button
+            onClick={handleToday}
+            style={{
+              background: 'transparent',
+              border: `1px solid var(--primary)`,
+              borderRadius: '20px',
+              padding: '4px 12px',
+              fontSize: '12px',
+              fontWeight: 600,
+              color: 'var(--primary)',
+              cursor: 'pointer',
+            }}
+          >
+            Today
+          </button>
+        )}
+
+        <button
+          onClick={handleNextMonth}
+          style={{
+            background: 'none',
+            border: 'none',
+            fontSize: '20px',
+            cursor: 'pointer',
+            padding: '8px 12px',
+            color: 'var(--primary)',
+          }}
+          aria-label="Next month"
+        >
+          ›
+        </button>
       </div>
 
-      {/* ── Day strip (clean pills) ── */}
-      <div className="wv2-strip">
-        {DAY_LABELS.map((label, i) => {
-          const date = weekDates[i];
-          const isToday = isCurrentWeek && i === todayIdx;
-          const isSelected = i === selectedDay;
-          const hasContent = !!weekPlan[i];
+      {/* ── Day headers (Mo Tu We ...) ── */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(7, 1fr)',
+        background: 'var(--card)',
+        borderBottom: '1px solid var(--border)',
+      }}>
+        {DAY_LABELS.map(day => (
+          <div
+            key={day}
+            style={{
+              padding: '12px 8px',
+              textAlign: 'center',
+              fontSize: '12px',
+              fontWeight: 600,
+              color: 'var(--text-light)',
+              textTransform: 'uppercase',
+            }}
+          >
+            {day}
+          </div>
+        ))}
+      </div>
+
+      {/* ── Calendar Grid ── */}
+      <div style={{
+        flex: 1,
+        display: 'grid',
+        gridTemplateColumns: 'repeat(7, 1fr)',
+        gap: '1px',
+        background: 'var(--border)',
+        padding: '1px',
+        overflowY: 'auto',
+      }}>
+        {calendarCells.map((date, idx) => {
+          const isThisMonth = date.getMonth() === viewMonth;
+          const isToday = date.getTime() === today.getTime();
+          const isPast = date < today;
+          const key = dateKey(date);
+          const isSelected = selectedDates.has(key);
+          const { meal } = getMealForDate(date);
+          const isLocked = meal && meal._locked;
+
           return (
-            <button
-              key={i}
-              className={`wv2-pill${isSelected ? ' sel' : ''}${isToday ? ' today' : ''}`}
-              onClick={() => setSelectedDay(i)}
+            <div
+              key={key}
+              onClick={() => handleCellClick(date)}
+              style={{
+                background: isToday ? 'var(--primary)' : isSelected ? 'rgba(230, 81, 0, 0.15)' : 'var(--card)',
+                padding: '8px',
+                minHeight: '80px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-start',
+                justifyContent: 'flex-start',
+                cursor: 'pointer',
+                opacity: isThisMonth ? 1 : 0.4,
+                transition: 'background 0.2s',
+                borderRadius: '4px',
+              }}
+              onMouseEnter={e => {
+                if (!isToday) {
+                  e.currentTarget.style.background = isSelected ? 'rgba(230, 81, 0, 0.25)' : 'var(--surface)';
+                }
+              }}
+              onMouseLeave={e => {
+                if (!isToday) {
+                  e.currentTarget.style.background = isSelected ? 'rgba(230, 81, 0, 0.15)' : 'var(--card)';
+                }
+              }}
             >
-              <span className="wv2-pill-lbl">{label}</span>
-              <span className="wv2-pill-num">{date.getDate()}</span>
-              {hasContent && <span className="wv2-pill-dot" />}
-            </button>
+              <span style={{
+                fontSize: '14px',
+                fontWeight: 600,
+                color: isToday ? 'white' : 'var(--text)',
+                marginBottom: '4px',
+              }}>
+                {date.getDate()}
+              </span>
+
+              {isLocked && (
+                <span style={{ fontSize: '10px', marginBottom: '2px' }}>🔒</span>
+              )}
+
+              {meal && (
+                <div style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  background: meal._special ? 'var(--warning)' : 'var(--primary)',
+                  marginTop: 'auto',
+                }} />
+              )}
+            </div>
           );
         })}
       </div>
 
-      {/* ── Progress bar ── */}
-      <div className="wv2-progress-wrap">
-        <div className="wv2-progress-bar">
-          <div className="wv2-progress-fill" style={{ width: `${(plannedCount / 7) * 100}%` }} />
-        </div>
-        <span className="wv2-progress-label">{plannedCount}/7 planned</span>
-      </div>
-
-      {/* ── Meal Spinner or Selected day/Week list ── */}
-      {showSpinner ? (
-        <MealSpinner
-          meals={meals}
-          rotationMeals={rotationMeals}
-          onComplete={onSpinnerComplete}
-          onClose={onCloseSpinner}
-        />
-      ) : (
-        <>
-          <div className={`wv2-hero ${selectedEntry && selectedEntry._locked ? 'locked' : ''}`}>
-            <div className="wv2-hero-hdr">
-              <h2 className="wv2-hero-day">
-                {DAY_FULL[selectedDay]}
-                {isCurrentWeek && selectedDay === todayIdx && <span className="wv2-badge">Today</span>}
-              </h2>
-              <span className="wv2-hero-date">
-                {weekDates[selectedDay].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+      {/* ── Detail Panel (bottom sheet) ── */}
+      {showDetailPanel && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            background: 'var(--card)',
+            borderRadius: '20px 20px 0 0',
+            boxShadow: '0 -4px 24px rgba(0,0,0,0.12)',
+            padding: '20px 16px',
+            zIndex: 200,
+            maxHeight: '60vh',
+            overflowY: 'auto',
+            animation: 'slideUp 0.3s cubic-bezier(0.32, 0.72, 0, 1)',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700 }}>
+              {DAY_FULL[activeDate.getDay() === 0 ? 6 : activeDate.getDay() - 1]}
+              {' '}
+              <span style={{ fontSize: '14px', color: 'var(--text-light)' }}>
+                {activeDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
               </span>
-            </div>
-
-            {selectedIsSpecial ? (
-              <div className="wv2-hero-special">
-                <span className="wv2-hero-special-icon">{selectedEntry.icon}</span>
-                <span className="wv2-hero-special-name">{selectedEntry.name}</span>
-                <button className="wv2-clear-btn" onClick={() => onSetSpecial(selectedDay, null)}>Clear</button>
-              </div>
-            ) : selectedEntry ? (
-              <div className="wv2-hero-meal">
-                <div className="wv2-hero-img-wrap">
-                  <MealImage
-                    src={selectedEntry.imageUrl}
-                    alt={selectedEntry.name}
-                    className="wv2-hero-img"
-                    fallbackClass="wv2-hero-img-ph"
-                  />
-                </div>
-                <div className="wv2-hero-body">
-                  <h3 className="wv2-hero-name">{selectedEntry.name}</h3>
-                  <p className="wv2-hero-meta">
-                    {selectedEntry.ingredients?.length || 0} ingredients
-                    {selectedEntry.category ? ` · ${selectedEntry.category}` : ''}
-                  </p>
-                  <div className="wv2-hero-actions">
-                    <button className={`wv2-act ${selectedEntry._locked ? 'active' : ''}`} onClick={(e) => { e.stopPropagation(); onToggleLock(selectedDay); }}>
-                      {selectedEntry._locked ? '🔒 Locked' : '🔓 Lock'}
-                    </button>
-                    <button className="wv2-act" onClick={() => onViewDetail(selectedEntry)}>📖 View</button>
-                    {!selectedEntry._locked && <button className="wv2-act" onClick={() => onRespin(selectedDay)}>🔄 Respin</button>}
-                    {!selectedEntry._locked && <button className="wv2-act" onClick={() => openPicker(selectedDay)}>✏️ Change</button>}
-                    {!selectedEntry._locked && <button className="wv2-act danger" onClick={() => onSetSpecial(selectedDay, null)}>✕</button>}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="wv2-hero-empty" onClick={() => openPicker(selectedDay)}>
-                <div className="wv-empty-circle"><span>+</span></div>
-                <p className="wv-empty-lbl">Tap to add a meal</p>
-              </div>
-            )}
+            </h3>
+            <button
+              onClick={() => setShowDetailPanel(false)}
+              style={{
+                background: 'none',
+                border: 'none',
+                fontSize: '20px',
+                cursor: 'pointer',
+                color: 'var(--text-light)',
+              }}
+            >
+              ✕
+            </button>
           </div>
 
-          <div className="wv2-week-list">
-            {DAY_LABELS.map((label, i) => {
-              if (i === selectedDay) return null;
-              const entry = weekPlan[i];
-              const isSpecial = entry && entry._special;
-              const isToday = isCurrentWeek && i === todayIdx;
+          {(() => {
+            const { meal, isCurrent } = getMealForDate(activeDate);
+            const dow = activeDate.getDay() === 0 ? 6 : activeDate.getDay() - 1;
+
+            if (!meal) {
               return (
-                <div
-                  key={i}
-                  className={`wv2-row${isToday ? ' today' : ''}${entry ? ' filled' : ''}${entry && entry._locked ? ' locked' : ''}`}
-                  onClick={() => setSelectedDay(i)}
+                <button
+                  onClick={() => { openPicker(activeDate); setShowDetailPanel(false); }}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    background: 'var(--primary)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
                 >
-                  <div className="wv2-row-day">
-                    <span className="wv2-row-lbl">{label}</span>
-                    <span className="wv2-row-date">{weekDates[i].getDate()}</span>
+                  + Add a meal
+                </button>
+              );
+            }
+
+            if (meal._special) {
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '12px',
+                    background: 'var(--surface)',
+                    borderRadius: '8px',
+                  }}>
+                    <span style={{ fontSize: '24px' }}>{meal.icon}</span>
+                    <span style={{ fontSize: '16px', fontWeight: 600 }}>{meal.name}</span>
                   </div>
-                  {isSpecial ? (
-                    <div className="wv2-row-content">
-                      <span className="wv2-row-icon">{entry.icon}</span>
-                      <span className="wv2-row-name">{entry.name}</span>
-                    </div>
-                  ) : entry ? (
-                    <div className="wv2-row-content">
-                      {entry.imageUrl && (
-                        <MealImage
-                          src={entry.imageUrl}
-                          alt=""
-                          className="wv2-row-img"
-                          fallbackEmoji=""
-                          fallbackClass="wv2-row-img-ph"
-                        />
-                      )}
-                      <span className="wv2-row-name">{entry.name}</span>
-                    </div>
-                  ) : (
-                    <div className="wv2-row-content empty">
-                      <span className="wv2-row-plus">+</span>
-                      <span className="wv2-row-name empty">No meal</span>
-                    </div>
-                  )}
-                  {entry && entry._locked ? (
-                    <span className="wv2-row-lock-icon">🔒</span>
-                  ) : (
-                    <span className="wv2-row-chevron">›</span>
+                  {isCurrent && (
+                    <button
+                      onClick={() => { onSetSpecial(dow, null); setShowDetailPanel(false); }}
+                      style={{
+                        padding: '10px',
+                        background: 'var(--danger)',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      Clear
+                    </button>
                   )}
                 </div>
               );
-            })}
-          </div>
-        </>
-      )}
+            }
 
-      {/* ── Action buttons (thumb zone) ── */}
-      {!showSpinner && (
-        <div className="wv2-actions-bar">
-          <button className="wv2-btn primary" onClick={onGenerate}>
-            🎰 Spin the Week{rotationCount > 0 ? ` (${rotationCount})` : ''}
-          </button>
-          <div className="wv2-actions-row">
-            {hasWeek && (
-              <button className="wv2-btn secondary" onClick={onBuildGrocery}>
-                🛒 Grocery List
-              </button>
-            )}
-            <button className="wv2-btn tertiary" onClick={() => setShowHistory(true)}>
-              📅 Past Weeks{pastWeeks.length > 0 ? ` (${pastWeeks.length})` : ''}
-            </button>
-          </div>
+            return (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {meal.imageUrl && (
+                  <img
+                    src={meal.imageUrl}
+                    alt={meal.name}
+                    style={{
+                      width: '100%',
+                      height: '160px',
+                      objectFit: 'cover',
+                      borderRadius: '8px',
+                    }}
+                  />
+                )}
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '16px', fontWeight: 700, marginBottom: '4px' }}>
+                    {meal.name}
+                  </h4>
+                  <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-light)' }}>
+                    {meal.ingredients?.length || 0} ingredients
+                    {meal.category ? ` · ${meal.category}` : ''}
+                  </p>
+                </div>
+
+                {isCurrent && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <button
+                      onClick={() => { onToggleLock(dow); setShowDetailPanel(false); }}
+                      style={{
+                        padding: '10px',
+                        background: meal._locked ? 'var(--primary)' : 'var(--surface)',
+                        color: meal._locked ? 'white' : 'var(--text)',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {meal._locked ? '🔒 Locked' : '🔓 Unlock'}
+                    </button>
+                    <button
+                      onClick={() => { onViewDetail(meal); setShowDetailPanel(false); }}
+                      style={{
+                        padding: '10px',
+                        background: 'var(--surface)',
+                        color: 'var(--text)',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontSize: '14px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      📖 View Details
+                    </button>
+                    {!meal._locked && (
+                      <>
+                        <button
+                          onClick={() => { onRespin(dow); setShowDetailPanel(false); }}
+                          style={{
+                            padding: '10px',
+                            background: 'var(--surface)',
+                            color: 'var(--text)',
+                            border: 'none',
+                            borderRadius: '8px',
+                            fontSize: '14px',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          🔄 Respin
+                        </button>
+                        <button
+                          onClick={() => { openPicker(activeDate); setShowDetailPanel(false); }}
+                          style={{
+                            padding: '10px',
+                            background: 'var(--surface)',
+                            color: 'var(--text)',
+                            border: 'none',
+                            borderRadius: '8px',
+                            fontSize: '14px',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          ✏️ Change
+                        </button>
+                        <button
+                          onClick={() => { onSetSpecial(dow, null); setShowDetailPanel(false); }}
+                          style={{
+                            padding: '10px',
+                            background: 'var(--danger)',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            fontSize: '14px',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          ✕ Clear
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
 
-      {/* ── Stats strip (condensed) ── */}
+      {/* ── Spinner Overlay ── */}
+      {showSpinner && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.4)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 300,
+        }}>
+          <MealSpinner
+            meals={meals}
+            rotationMeals={rotationMeals}
+            currentPlan={currentPlan}
+            onComplete={(plan) => {
+              onSpinnerComplete(plan);
+              setSelectMode(false);
+              setSelectedDates(new Set());
+            }}
+            onClose={onCloseSpinner}
+          />
+        </div>
+      )}
+
+      {/* ── Action Bar (fixed bottom) ── */}
+      {!showSpinner && (
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+          padding: '12px 16px',
+          background: 'var(--card)',
+          borderTop: '1px solid var(--border)',
+          position: 'sticky',
+          bottom: 0,
+        }}>
+          {selectMode ? (
+            <>
+              <button
+                onClick={handleSpinSelected}
+                disabled={selectedDates.size === 0}
+                style={{
+                  padding: '12px',
+                  background: selectedDates.size === 0 ? 'var(--border)' : 'var(--primary)',
+                  color: selectedDates.size === 0 ? 'var(--text-muted)' : 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: selectedDates.size === 0 ? 'not-allowed' : 'pointer',
+                }}
+              >
+                🎰 Spin Selected ({selectedDates.size})
+              </button>
+              <button
+                onClick={() => {
+                  setSelectMode(false);
+                  setSelectedDates(new Set());
+                }}
+                style={{
+                  padding: '12px',
+                  background: 'var(--surface)',
+                  color: 'var(--text)',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={onGenerate}
+                style={{
+                  padding: '12px',
+                  background: 'var(--primary)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                🎰 Spin the Week{rotationCount > 0 ? ` (${rotationCount})` : ''}
+              </button>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={() => setSelectMode(true)}
+                  style={{
+                    flex: 1,
+                    padding: '12px',
+                    background: 'var(--surface)',
+                    color: 'var(--text)',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '14px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  📌 Select Days
+                </button>
+                {hasWeek && (
+                  <button
+                    onClick={onBuildGrocery}
+                    style={{
+                      flex: 1,
+                      padding: '12px',
+                      background: 'var(--surface)',
+                      color: 'var(--text)',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '14px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    🛒 Grocery
+                  </button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── Stats Strip ── */}
       {(cookingStats.streak > 0 || cookingStats.totalCooked > 0) && (
-        <div className="wv2-stats">
+        <div style={{
+          display: 'flex',
+          gap: '12px',
+          padding: '12px 16px',
+          background: 'var(--surface)',
+          borderTop: '1px solid var(--border)',
+          justifyContent: 'center',
+        }}>
           {cookingStats.streak > 0 && (
-            <div className="wv2-stat fire">
-              <span className="wv2-stat-n">{cookingStats.streak}</span>
-              <span className="wv2-stat-l">streak</span>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--primary)' }}>
+                {cookingStats.streak}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-light)', marginTop: '2px' }}>
+                streak
+              </div>
             </div>
           )}
           {cookingStats.totalCooked > 0 && (
-            <div className="wv2-stat">
-              <span className="wv2-stat-n">{cookingStats.totalCooked}</span>
-              <span className="wv2-stat-l">cooked</span>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text)' }}>
+                {cookingStats.totalCooked}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-light)', marginTop: '2px' }}>
+                cooked
+              </div>
             </div>
           )}
           {cookingStats.topMeal && (
-            <div className="wv2-stat fav">
-              <span className="wv2-stat-n" title={cookingStats.topMeal.name}>
-                {cookingStats.topMeal.name.length > 10
-                  ? cookingStats.topMeal.name.substring(0, 10) + '…'
-                  : cookingStats.topMeal.name}
-              </span>
-              <span className="wv2-stat-l">top pick</span>
+            <div style={{ textAlign: 'center' }}>
+              <div
+                style={{
+                  fontSize: '14px',
+                  fontWeight: 700,
+                  color: 'var(--text)',
+                  maxWidth: '80px',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+                title={cookingStats.topMeal.name}
+              >
+                {cookingStats.topMeal.name}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-light)', marginTop: '2px' }}>
+                top pick
+              </div>
             </div>
           )}
         </div>
       )}
 
-      {/* ── Meal picker bottom sheet ── */}
-      {pickerDay !== null && renderPicker()}
+      {/* ── Meal Picker Bottom Sheet ── */}
+      {renderPicker()}
+
+      <style>{`
+        @keyframes slideUp {
+          from {
+            transform: translateY(100%);
+          }
+          to {
+            transform: translateY(0);
+          }
+        }
+      `}</style>
     </div>
   );
 }

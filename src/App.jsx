@@ -4,6 +4,7 @@ import { PAPRIKA_MEALS } from './paprika_import_data';
 import { checkStorageQuota, checkAndRecommendCleanup } from './storageManager';
 import { initializeBackgroundSync } from './backgroundSync';
 import WeekView from './components/WeekView';
+import LandingPage from './components/LandingPage';
 import MealLibrary from './components/MealLibrary';
 import BarLibrary from './components/BarLibrary';
 import GroceryList from './components/GroceryList';
@@ -40,7 +41,7 @@ const SPECIAL_DAYS = [
 
 export default function App() {
   const { isOnline } = useOnlineStatus();
-  const [tab, setTab] = useState('week');
+  const [tab, setTab] = useState('home');
   const [meals, setMeals] = useState([]);
   const [drinks, setDrinks] = useState([]);
   const [weekPlan, setWeekPlan] = useState(Array(7).fill(null));
@@ -501,6 +502,20 @@ export default function App() {
       )}
 
       <main className="main-content">
+        {tab === 'home' && (
+          <LandingPage
+            cookingStats={cookingStats}
+            weekPlan={weekPlan}
+            meals={meals}
+            drinks={drinks}
+            rotationCount={rotationMeals.length}
+            onNavigate={setTab}
+            onGenerate={generateWeek}
+            onViewDetail={setDetailItem}
+            onOpenFridge={() => setShowFridge(true)}
+            onOpenStats={() => setShowStats(true)}
+          />
+        )}
         {tab === 'week' && (
           <WeekView
             days={DAYS}
@@ -568,9 +583,13 @@ export default function App() {
 
       {/* ── Bottom Tab Bar (mobile-first) ── */}
       <nav className="tab-bar">
+        <button className={tab === 'home' ? 'active' : ''} onClick={() => setTab('home')}>
+          <span style={{ fontSize: 18 }}>🏠</span>
+          <span>Home</span>
+        </button>
         <button className={tab === 'week' ? 'active' : ''} onClick={() => setTab('week')}>
           <span style={{ fontSize: 18 }}>📅</span>
-          <span>Week</span>
+          <span>Plan</span>
         </button>
         <button className={tab === 'library' ? 'active' : ''} onClick={() => setTab('library')}>
           <span style={{ fontSize: 18 }}>🍳</span>
@@ -582,7 +601,7 @@ export default function App() {
         </button>
         <button className={tab === 'grocery' ? 'active' : ''} onClick={() => { setTab('grocery'); if (groceryItems.length === 0 && weekPlan.some(Boolean)) buildGroceryList(); }}>
           <span style={{ fontSize: 18 }}>🛒</span>
-          <span>Grocery</span>
+          <span>Shop</span>
         </button>
       </nav>
 
