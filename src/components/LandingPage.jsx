@@ -1,4 +1,25 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
+
+// ── Date helpers ──────────────────────────────────────────────────────────────
+function getMondayOfWeek(date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+function localDateKey(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+function addDays(date, n) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + n);
+  return d;
+}
 
 const STYLES = {
   container: {
@@ -29,56 +50,90 @@ const STYLES = {
     opacity: '0.95',
     fontWeight: '500',
   },
-  weekStripContainer: {
-    marginBottom: '24px',
-  },
-  weekStripLabel: {
+  sectionLabel: {
     fontSize: '14px',
     fontWeight: '600',
     color: 'var(--text)',
     marginBottom: '12px',
   },
-  weekStrip: {
+  // ── Next 5 Days horizontal scroll ──
+  nextDaysSection: {
+    marginBottom: '24px',
+  },
+  nextDaysScroll: {
     display: 'flex',
-    gap: '8px',
+    gap: '10px',
     overflowX: 'auto',
     paddingBottom: '8px',
     scrollBehavior: 'smooth',
+    WebkitOverflowScrolling: 'touch',
   },
-  dayChip: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: '50px',
-    height: '60px',
+  dayCard: {
+    flexShrink: 0,
+    width: '130px',
     background: 'var(--card)',
     border: '1.5px solid var(--border)',
-    borderRadius: 'var(--radius-sm)',
-    padding: '8px',
+    borderRadius: 'var(--radius)',
+    overflow: 'hidden',
     cursor: 'pointer',
-    transition: 'all 0.2s ease-out',
-    fontSize: '12px',
-    fontWeight: '500',
-    color: 'var(--text-light)',
+    transition: 'transform 0.15s ease-out, box-shadow 0.15s ease-out',
+    display: 'flex',
+    flexDirection: 'column',
   },
-  dayChipToday: {
-    background: 'var(--primary)',
-    color: '#fff',
-    border: '1.5px solid var(--primary)',
+  dayCardToday: {
+    border: '2px solid var(--primary)',
+  },
+  dayCardPhotoArea: {
+    width: '100%',
+    height: '80px',
+    objectFit: 'cover',
+    display: 'block',
+    background: 'var(--surface)',
+    flexShrink: 0,
+  },
+  dayCardPhotoFallback: {
+    width: '100%',
+    height: '80px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'var(--surface)',
+    fontSize: '28px',
+    flexShrink: 0,
+  },
+  dayCardBody: {
+    padding: '8px 8px 10px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '3px',
+    flex: 1,
+  },
+  dayCardDayLabel: {
+    fontSize: '11px',
     fontWeight: '700',
+    color: 'var(--text-muted)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.4px',
   },
-  dayChipWithMeal: {
-    borderColor: 'var(--primary)',
-    borderWidth: '2px',
+  dayCardDayLabelToday: {
+    color: 'var(--primary)',
   },
-  dayChipMealDot: {
-    width: '6px',
-    height: '6px',
-    background: 'var(--primary)',
-    borderRadius: '50%',
-    marginTop: '4px',
+  dayCardMealName: {
+    fontSize: '12px',
+    fontWeight: '600',
+    color: 'var(--text)',
+    lineHeight: '1.3',
+    display: '-webkit-box',
+    WebkitLineClamp: 2,
+    WebkitBoxOrient: 'vertical',
+    overflow: 'hidden',
   },
+  dayCardEmpty: {
+    fontSize: '11px',
+    color: 'var(--text-muted)',
+    fontStyle: 'italic',
+  },
+  // ── Empty state ──
   emptyState: {
     background: 'var(--surface)',
     border: '1.5px dashed var(--border)',
@@ -105,10 +160,7 @@ const STYLES = {
     cursor: 'pointer',
     transition: 'all 0.2s ease-out',
   },
-  emptyStateButtonHover: {
-    background: 'var(--primary-dark)',
-    transform: 'scale(1.02)',
-  },
+  // ── Tiles ──
   tilesGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(2, 1fr)',
@@ -161,9 +213,7 @@ const STYLES = {
     top: '0',
     borderRadius: 'var(--radius) 0 0 var(--radius)',
   },
-  tileBorder: {
-    position: 'relative',
-  },
+  // ── Stats strip ──
   statsStrip: {
     background: 'var(--surface)',
     border: '1px solid var(--border)',
@@ -174,10 +224,6 @@ const STYLES = {
     cursor: 'pointer',
     transition: 'all 0.2s ease-out',
   },
-  statsStripHover: {
-    background: '#faf7f0',
-    boxShadow: 'var(--shadow)',
-  },
   statItem: {
     display: 'flex',
     alignItems: 'center',
@@ -186,12 +232,118 @@ const STYLES = {
     fontWeight: '500',
     color: 'var(--text)',
   },
-  statEmoji: {
-    fontSize: '16px',
+  statEmoji: { fontSize: '16px' },
+  // ── Preview Sheet ──
+  scrim: {
+    position: 'fixed',
+    inset: 0,
+    background: 'rgba(0,0,0,0.35)',
+    zIndex: 300,
+  },
+  previewSheet: {
+    position: 'fixed',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    maxWidth: 600,
+    margin: '0 auto',
+    background: 'var(--card)',
+    borderRadius: '20px 20px 0 0',
+    boxShadow: '0 -8px 40px rgba(0,0,0,0.2)',
+    zIndex: 310,
+    maxHeight: '70vh',
+    overflowY: 'auto',
+    animation: 'lp-slideUp 0.3s cubic-bezier(0.32,0.72,0,1) both',
+  },
+  previewHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    background: 'var(--border)',
+    margin: '10px auto 0',
+  },
+  previewHeader: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    padding: '14px 16px 8px',
+  },
+  previewCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: '50%',
+    border: 'none',
+    background: 'var(--surface)',
+    color: 'var(--text-light)',
+    fontSize: 16,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  previewPhoto: {
+    width: '100%',
+    height: 180,
+    objectFit: 'cover',
+    display: 'block',
+  },
+  previewPhotoFallback: {
+    width: '100%',
+    height: 140,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: 56,
+    background: 'var(--surface)',
+  },
+  previewBody: {
+    padding: '12px 16px 28px',
+  },
+  previewMealName: {
+    fontSize: 20,
+    fontWeight: 800,
+    color: 'var(--text)',
+    marginBottom: 4,
+  },
+  previewMeta: {
+    fontSize: 13,
+    color: 'var(--text-light)',
+    marginBottom: 16,
+  },
+  previewBtn: {
+    display: 'block',
+    width: '100%',
+    padding: '13px 16px',
+    border: 'none',
+    borderRadius: 12,
+    background: 'var(--primary)',
+    color: 'white',
+    fontSize: 14,
+    fontWeight: 700,
+    cursor: 'pointer',
+    textAlign: 'center',
   },
 };
 
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+// Inject slideUp keyframe once
+let _injectedLPStyle = false;
+function injectLPStyle() {
+  if (_injectedLPStyle || document.getElementById('lp-anim-style')) return;
+  _injectedLPStyle = true;
+  const s = document.createElement('style');
+  s.id = 'lp-anim-style';
+  s.textContent = `
+    @keyframes lp-slideUp {
+      from { transform: translateY(100%); opacity: 0; }
+      to   { transform: translateY(0);   opacity: 1; }
+    }
+  `;
+  document.head.appendChild(s);
+}
+
+const DOW_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
 const TILE_COLORS = {
   planWeek: '#e65100',
   myMeals: '#2e7d32',
@@ -201,9 +353,130 @@ const TILE_COLORS = {
   stats: '#e65100',
 };
 
+// ── DayPhotoCard ──────────────────────────────────────────────────────────────
+function DayPhotoCard({ date, meal, isToday, onClick }) {
+  const [imgErr, setImgErr] = useState(false);
+  const dayLabel = isToday ? 'Today' : DOW_SHORT[date.getDay()];
+  const dateNum = date.getDate();
+  const specialEmoji = meal?._special ? meal.icon : null;
+
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        ...STYLES.dayCard,
+        ...(isToday && STYLES.dayCardToday),
+        border: isToday ? '2px solid var(--primary)' : '1.5px solid var(--border)',
+      }}
+    >
+      {/* Photo / fallback */}
+      {specialEmoji ? (
+        <div style={STYLES.dayCardPhotoFallback}>{specialEmoji}</div>
+      ) : meal?.imageUrl && !imgErr ? (
+        <img
+          src={meal.imageUrl}
+          alt={meal.name || ''}
+          style={STYLES.dayCardPhotoArea}
+          onError={() => setImgErr(true)}
+        />
+      ) : (
+        <div style={STYLES.dayCardPhotoFallback}>
+          {meal ? '🍳' : '🍽️'}
+        </div>
+      )}
+      {/* Card body */}
+      <div style={STYLES.dayCardBody}>
+        <div style={{
+          ...STYLES.dayCardDayLabel,
+          ...(isToday && STYLES.dayCardDayLabelToday),
+        }}>
+          {dayLabel} {dateNum}
+        </div>
+        {meal ? (
+          <div style={STYLES.dayCardMealName}>{meal.name}</div>
+        ) : (
+          <div style={STYLES.dayCardEmpty}>Nothing yet</div>
+        )}
+      </div>
+    </button>
+  );
+}
+
+// ── MealPreviewSheet ──────────────────────────────────────────────────────────
+function MealPreviewSheet({ date, meal, isToday, onClose, onViewFull }) {
+  const [imgErr, setImgErr] = useState(false);
+  useEffect(() => { injectLPStyle(); }, []);
+
+  const dayLabel = isToday ? 'Today' : DOW_SHORT[date.getDay()];
+  const dateStr = date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
+
+  return (
+    <>
+      {/* Scrim */}
+      <div style={STYLES.scrim} onClick={onClose} />
+      {/* Sheet */}
+      <div style={STYLES.previewSheet}>
+        <div style={STYLES.previewHandle} />
+        {/* Header row */}
+        <div style={STYLES.previewHeader}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
+              {dayLabel} · {dateStr}
+            </div>
+          </div>
+          <button style={STYLES.previewCloseBtn} onClick={onClose}>✕</button>
+        </div>
+
+        {/* Photo */}
+        {!meal || meal._special ? (
+          <div style={STYLES.previewPhotoFallback}>
+            {meal?._special ? meal.icon : '🍽️'}
+          </div>
+        ) : meal.imageUrl && !imgErr ? (
+          <img
+            src={meal.imageUrl}
+            alt={meal.name || ''}
+            style={STYLES.previewPhoto}
+            onError={() => setImgErr(true)}
+          />
+        ) : (
+          <div style={STYLES.previewPhotoFallback}>🍳</div>
+        )}
+
+        {/* Body */}
+        <div style={STYLES.previewBody}>
+          {!meal ? (
+            <div style={{ textAlign: 'center', padding: '8px 0 4px' }}>
+              <div style={{ fontSize: 15, color: 'var(--text-light)' }}>Nothing planned for this day.</div>
+            </div>
+          ) : (
+            <>
+              <div style={STYLES.previewMealName}>{meal.name}</div>
+              <div style={STYLES.previewMeta}>
+                {meal.ingredients?.length
+                  ? `${meal.ingredients.length} ingredients`
+                  : ''}
+                {meal.category ? ` · ${meal.category}` : ''}
+                {meal.rating ? ` · ${'⭐'.repeat(meal.rating)}` : ''}
+              </div>
+              {!meal._special && (
+                <button style={STYLES.previewBtn} onClick={() => { onViewFull(meal); onClose(); }}>
+                  📖 View Full Recipe
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 export default function LandingPage({
   cookingStats = {},
   weekPlan = [],
+  weekHistory = [],
   meals = [],
   drinks = [],
   rotationCount = 0,
@@ -213,42 +486,61 @@ export default function LandingPage({
   onOpenFridge = () => {},
   onOpenStats = () => {},
 }) {
+  useEffect(() => { injectLPStyle(); }, []);
+
   const [hoveredTile, setHoveredTile] = useState(null);
   const [hoveredStats, setHoveredStats] = useState(false);
   const [hoverEmptyButton, setHoverEmptyButton] = useState(false);
+  const [previewDay, setPreviewDay] = useState(null); // { date, meal, isToday }
 
-  // Compute greeting and date
-  const { greeting, period } = useMemo(() => {
+  // Greeting and date
+  const { greeting } = useMemo(() => {
     const hour = new Date().getHours();
-    if (hour < 12) return { greeting: 'Good morning! ☀️', period: 'morning' };
-    if (hour < 18) return { greeting: 'Good afternoon! 🌤️', period: 'afternoon' };
-    if (hour < 21) return { greeting: 'Good evening! 🌅', period: 'evening' };
-    return { greeting: 'Night owl mode 🦉', period: 'night' };
+    if (hour < 12) return { greeting: 'Good morning! ☀️' };
+    if (hour < 18) return { greeting: 'Good afternoon! 🌤️' };
+    if (hour < 21) return { greeting: 'Good evening! 🌅' };
+    return { greeting: 'Night owl mode 🦉' };
   }, []);
 
   const formattedDate = useMemo(() => {
     const today = new Date();
-    const dayName = DAYS[today.getDay() === 0 ? 6 : today.getDay() - 1];
+    const dow = DOW_SHORT[today.getDay()];
     const date = today.getDate();
     const monthName = today.toLocaleString('default', { month: 'long' });
-    return `${dayName}, ${monthName} ${date}`;
+    return `${dow}, ${monthName} ${date}`;
   }, []);
 
-  // Get current day of week (0=Monday, 6=Sunday)
-  const todayIndex = useMemo(() => {
-    const today = new Date();
-    return today.getDay() === 0 ? 6 : today.getDay() - 1;
-  }, []);
+  // ── Build Next 5 Days ──────────────────────────────────────────────────────
+  const today = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
+  const currentWeekMonday = useMemo(() => getMondayOfWeek(today), [today]);
 
-  // Check if any meals are planned for the week
-  const hasWeekPlan = useMemo(() => {
-    return weekPlan && weekPlan.some((meal) => meal !== null);
-  }, [weekPlan]);
+  const next5Days = useMemo(() => {
+    return Array.from({ length: 5 }, (_, i) => {
+      const date = addDays(today, i);
+      const isToday = i === 0;
+      // Find meal: check current weekPlan first, then weekHistory
+      const weekMon = getMondayOfWeek(date);
+      const dow = date.getDay() === 0 ? 6 : date.getDay() - 1; // Mon-first index
+      let meal = null;
+      if (weekMon.getTime() === currentWeekMonday.getTime()) {
+        meal = weekPlan[dow] || null;
+      } else {
+        const key = localDateKey(weekMon);
+        const histEntry = weekHistory.find(hw => {
+          const hwMon = new Date(hw.weekStart); hwMon.setHours(0,0,0,0);
+          return localDateKey(hwMon) === key;
+        });
+        if (histEntry) meal = histEntry.meals?.[dow] || null;
+      }
+      return { date, meal, isToday };
+    });
+  }, [today, currentWeekMonday, weekPlan, weekHistory]);
 
-  // Get stats data
+  const hasAnyMeal = next5Days.some(d => d.meal !== null);
+
+  // ── Tiles ──────────────────────────────────────────────────────────────────
   const { streak = 0, totalCooked = 0, topMeal = null } = cookingStats || {};
 
-  // Tile definitions
   const tiles = useMemo(() => [
     {
       id: 'planWeek',
@@ -300,53 +592,32 @@ export default function LandingPage({
     },
   ], [rotationCount, meals.length, drinks.length, totalCooked, onNavigate, onOpenFridge, onOpenStats]);
 
-  const handleTileClick = (tile) => {
-    tile.onClick();
-  };
-
-  const getTileStyle = (tileId) => {
-    const tileData = tiles.find((t) => t.id === tileId);
-    return {
-      ...STYLES.tile,
-      ...(hoveredTile === tileId && STYLES.tileHover),
-    };
-  };
+  const getTileStyle = (tileId) => ({
+    ...STYLES.tile,
+    ...(hoveredTile === tileId && STYLES.tileHover),
+  });
 
   return (
     <div style={STYLES.container}>
-      {/* Header with greeting and date */}
+      {/* Header */}
       <div style={STYLES.header}>
         <div style={STYLES.headerGreeting}>{greeting}</div>
         <div style={STYLES.headerDate}>{formattedDate}</div>
       </div>
 
-      {/* This Week mini strip */}
-      <div style={STYLES.weekStripContainer}>
-        <div style={STYLES.weekStripLabel}>This Week</div>
-        {hasWeekPlan ? (
-          <div style={STYLES.weekStrip}>
-            {DAYS.map((day, index) => (
-              <button
-                key={day}
-                onClick={() => onNavigate('week')}
-                style={{
-                  ...STYLES.dayChip,
-                  ...(index === todayIndex && STYLES.dayChipToday),
-                  ...(weekPlan[index] && STYLES.dayChipWithMeal),
-                  outline: 'none',
-                }}
-                aria-label={`${day}, ${index === todayIndex ? 'today' : ''}`}
-              >
-                <div>{day}</div>
-                {weekPlan[index] && (
-                  <div
-                    style={{
-                      ...STYLES.dayChipMealDot,
-                      background: index === todayIndex ? 'rgba(255,255,255,0.8)' : 'var(--primary)',
-                    }}
-                  />
-                )}
-              </button>
+      {/* ── Next 5 Days ── */}
+      <div style={STYLES.nextDaysSection}>
+        <div style={STYLES.sectionLabel}>Next 5 Days</div>
+        {hasAnyMeal ? (
+          <div style={STYLES.nextDaysScroll}>
+            {next5Days.map(({ date, meal, isToday }) => (
+              <DayPhotoCard
+                key={localDateKey(date)}
+                date={date}
+                meal={meal}
+                isToday={isToday}
+                onClick={() => setPreviewDay({ date, meal, isToday })}
+              />
             ))}
           </div>
         ) : (
@@ -358,7 +629,7 @@ export default function LandingPage({
               onMouseLeave={() => setHoverEmptyButton(false)}
               style={{
                 ...STYLES.emptyStateButton,
-                ...(hoverEmptyButton && STYLES.emptyStateButtonHover),
+                ...(hoverEmptyButton && { background: 'var(--primary-dark)', transform: 'scale(1.02)' }),
               }}
             >
               Spin the Wheel
@@ -367,22 +638,17 @@ export default function LandingPage({
         )}
       </div>
 
-      {/* Navigation tiles grid */}
+      {/* ── Navigation tiles ── */}
       <div style={STYLES.tilesGrid}>
         {tiles.map((tile) => (
           <button
             key={tile.id}
-            onClick={() => handleTileClick(tile)}
+            onClick={tile.onClick}
             onMouseEnter={() => setHoveredTile(tile.id)}
             onMouseLeave={() => setHoveredTile(null)}
             style={getTileStyle(tile.id)}
           >
-            <div
-              style={{
-                ...STYLES.tileAccent,
-                backgroundColor: tile.accent,
-              }}
-            />
+            <div style={{ ...STYLES.tileAccent, backgroundColor: tile.accent }} />
             <div style={STYLES.tileEmoji}>{tile.emoji}</div>
             <div style={STYLES.tileTitle}>{tile.title}</div>
             <div style={STYLES.tileSubtitle}>{tile.subtitle}</div>
@@ -390,7 +656,7 @@ export default function LandingPage({
         ))}
       </div>
 
-      {/* Stats strip (bottom) */}
+      {/* ── Stats strip ── */}
       {(streak > 0 || topMeal) && (
         <button
           onClick={onOpenStats}
@@ -398,9 +664,9 @@ export default function LandingPage({
           onMouseLeave={() => setHoveredStats(false)}
           style={{
             ...STYLES.statsStrip,
-            ...(hoveredStats && STYLES.statsStripHover),
+            ...(hoveredStats && { background: '#faf7f0', boxShadow: 'var(--shadow)' }),
             outline: 'none',
-            border: 'none',
+            border: hoveredStats ? '1px solid var(--border)' : '1px solid var(--border)',
           }}
         >
           {streak > 0 && (
@@ -416,6 +682,17 @@ export default function LandingPage({
             </div>
           )}
         </button>
+      )}
+
+      {/* ── Day preview bottom sheet ── */}
+      {previewDay && (
+        <MealPreviewSheet
+          date={previewDay.date}
+          meal={previewDay.meal}
+          isToday={previewDay.isToday}
+          onClose={() => setPreviewDay(null)}
+          onViewFull={(meal) => { onViewDetail(meal); }}
+        />
       )}
     </div>
   );

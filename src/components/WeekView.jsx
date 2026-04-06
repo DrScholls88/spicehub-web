@@ -17,7 +17,7 @@ function MealImage({ src, alt, className, style, fallbackEmoji = '🍽️', fall
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const DAY_FULL   = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const MONTH_NAMES = [
   'January','February','March','April','May','June',
@@ -64,10 +64,9 @@ function isSameDay(a, b) {
 
 function getCalendarCells(year, month) {
   const firstDay = new Date(year, month, 1);
-  const startDow = firstDay.getDay();
-  const startOffset = startDow === 0 ? 6 : startDow - 1;
+  const startDow = firstDay.getDay(); // 0=Sun, already leftmost column
   const startDate = new Date(firstDay);
-  startDate.setDate(startDate.getDate() - startOffset);
+  startDate.setDate(startDate.getDate() - startDow); // rewind to the Sunday before (or on) month start
   startDate.setHours(0, 0, 0, 0);
   const cells = [];
   for (let i = 0; i < 42; i++) {
@@ -163,6 +162,7 @@ export default function WeekView({
   const [pickerDay, setPickerDay] = useState(null);
   const [slideDir, setSlideDir] = useState(null); // 'left'|'right'|null (month transition)
   const [spinnerSelectedIndices, setSpinnerSelectedIndices] = useState(null);
+  const [spinnerTargetDates, setSpinnerTargetDates] = useState(null);
 
   // ── Long-press + drag refs ──────────────────────────────────────────────────
   const longPressTimerRef     = useRef(null);
@@ -312,24 +312,29 @@ export default function WeekView({
 
   // ── Spin selected days ──────────────────────────────────────────────────────
   const handleSpinSelected = useCallback(() => {
-    const indices = [];
-    selectedDates.forEach(key => {
-      const date = dateFromKey(key);
-      const { isCurrent, dow } = getMealForDate(date);
-      if (isCurrent) indices.push(dow);
-    });
-    // Store indices so MealSpinner receives them when it opens
-    setSpinnerSelectedIndices(indices.length > 0 ? indices.sort((a,b) => a-b) : null);
+    // Collect ALL selected dates (any week), sorted chronologically
+    const sortedDates = Array.from(selectedDates)
+      .map(key => dateFromKey(key))
+      .sort((a, b) => a - b);
+
+    if (sortedDates.length === 0) return;
+
+    // Mon-first DOW index (0=Mon..6=Sun) for each date — used in MealSpinner for locked-meal lookup
+    const indices = sortedDates.map(date => date.getDay() === 0 ? 6 : date.getDay() - 1);
+
+    setSpinnerTargetDates(sortedDates);
+    setSpinnerSelectedIndices(indices);
     setSelectMode(false);
     setSelectedDates(new Set());
     onGenerate();
-  }, [selectedDates, getMealForDate, onGenerate]);
+  }, [selectedDates, onGenerate]);
 
   // Dates for each spinner slot (shown as labels inside spinner)
   const spinnerSlotDates = useMemo(() => {
-    const indices = spinnerSelectedIndices || [0,1,2,3,4,5,6];
-    return indices.map(idx => addDays(currentWeekMonday, idx));
-  }, [spinnerSelectedIndices, currentWeekMonday]);
+    if (spinnerTargetDates && spinnerTargetDates.length > 0) return spinnerTargetDates;
+    // Default: full current week Mon→Sun
+    return [0,1,2,3,4,5,6].map(idx => addDays(currentWeekMonday, idx));
+  }, [spinnerTargetDates, currentWeekMonday]);
 
   // ── Meal picker ─────────────────────────────────────────────────────────────
   const openPicker = useCallback((date) => {
@@ -465,7 +470,7 @@ export default function WeekView({
         {DAY_LABELS.map((d, i) => (
           <div key={d} style={{
             textAlign: 'center', fontSize: 11, fontWeight: 700,
-            color: i >= 5 ? 'var(--primary)' : 'var(--text-muted)',
+            color: (i === 0 || i === 6) ? 'var(--primary)' : 'var(--text-muted)',
             padding: '6px 0 2px', letterSpacing: '0.3px',
           }}>{d}</div>
         ))}
@@ -663,11 +668,21 @@ export default function WeekView({
             meals={meals}
             rotationMeals={rotationMeals}
             currentPlan={currentPlan}
-            onComplete={(plan) => {
-              onSpinnerComplete(plan);
+            onComplete={(pickedMeals) => {
+              // Map each picked meal to its target date → [{date, meal}] pairs
+              const targetDates = spinnerTargetDates && spinnerTargetDates.length > 0
+                ? spinnerTargetDates
+                : [0,1,2,3,4,5,6].map(idx => addDays(currentWeekMonday, idx));
+              const pairs = pickedMeals.map((meal, i) => ({ date: targetDates[i], meal }));
+              onSpinnerComplete(pairs);
               setSpinnerSelectedIndices(null);
+              setSpinnerTargetDates(null);
             }}
-            onClose={() => { onCloseSpinner(); setSpinnerSelectedIndices(null); }}
+            onClose={() => {
+              onCloseSpinner();
+              setSpinnerSelectedIndices(null);
+              setSpinnerTargetDates(null);
+            }}
             selectedDayIndices={spinnerSelectedIndices}
             slotDates={spinnerSlotDates}
           />

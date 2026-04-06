@@ -30,6 +30,22 @@ import './App.css';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
+// ── Date utilities (shared with week history logic) ───────────────────────────
+function getMondayOfWeek(date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+function localDateKey(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 // Special "non-meal" day options
 const SPECIAL_DAYS = [
   { id: '__eat_out__', name: 'Eat Out', icon: '🍽️' },
@@ -259,11 +275,49 @@ useEffect(() => {
     setShowSpinner(true);
   }, [meals]);
 
-  const handleSpinnerComplete = useCallback((plan) => {
-    setWeekPlan(plan);
+  const handleSpinnerCompleteForDates = useCallback(async (pairs) => {
+    // pairs = [{date: Date, meal: mealObj}] — one entry per spinner slot
+    const todayMonday = getMondayOfWeek(new Date());
+    const weekMap = new Map();
+
+    pairs.forEach(({ date, meal }) => {
+      const weekMon = getMondayOfWeek(date);
+      const key = localDateKey(weekMon);
+      const dow = date.getDay() === 0 ? 6 : date.getDay() - 1; // Mon-first DOW index
+
+      if (!weekMap.has(key)) {
+        const isCurrent = weekMon.getTime() === todayMonday.getTime();
+        // Seed plan from current state or from history
+        let plan;
+        if (isCurrent) {
+          plan = [...weekPlan];
+        } else {
+          const histEntry = weekHistory.find(hw => {
+            const hwMon = new Date(hw.weekStart); hwMon.setHours(0, 0, 0, 0);
+            return localDateKey(hwMon) === key;
+          });
+          plan = histEntry ? [...histEntry.meals] : Array(7).fill(null);
+        }
+        weekMap.set(key, { mon: weekMon, isCurrent, plan });
+      }
+
+      weekMap.get(key).plan[dow] = meal;
+    });
+
+    // Persist each week
+    for (const [, { mon, isCurrent, plan }] of weekMap) {
+      if (isCurrent) {
+        setWeekPlan(plan);
+      } else {
+        await saveWeekToHistory(mon.toISOString(), plan);
+      }
+    }
+
+    // Refresh history so calendar reflects changes
+    getWeekHistory().then(h => setWeekHistory(h));
     setShowSpinner(false);
-    showToast('Week plan generated!');
-  }, [showToast]);
+    showToast(`${pairs.length} meal${pairs.length !== 1 ? 's' : ''} planned! 🎉`);
+  }, [weekPlan, weekHistory, showToast]);
 
   const restoreWeek = useCallback((weekMeals) => {
     if (!weekMeals || weekMeals.length !== 7) return;
@@ -471,6 +525,7 @@ useEffect(() => {
           <LandingPage
             cookingStats={cookingStats}
             weekPlan={weekPlan}
+            weekHistory={weekHistory}
             meals={meals}
             drinks={drinks}
             rotationCount={rotationMeals.length}
@@ -500,7 +555,7 @@ useEffect(() => {
             rotationCount={rotationMeals.length}
             showSpinner={showSpinner}
             onCloseSpinner={() => setShowSpinner(false)}
-            onSpinnerComplete={handleSpinnerComplete}
+            onSpinnerComplete={handleSpinnerCompleteForDates}
             rotationMeals={rotationMeals}
             currentPlan={weekPlan}
           />
@@ -699,3 +754,4 @@ useEffect(() => {
     </div>
   );
 }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  
