@@ -212,7 +212,10 @@ export function cleanSocialCaption(text) {
   t = t.replace(/verified\s*[·•]\s*(view\s+profile|follow)/gi, '');
   t = t.replace(/^\d+[\s,]*(likes?|followers?|following|comments?|views?|saves?)\s*$/gim, '');
 
-  // 10. Normalize whitespace
+  // 10. Strip soft CTA lines ("watch the full video", "see recipe below", etc.)
+  t = t.replace(/^(watch|see|check|full recipe|recipe below|link in bio|recipe (is |in |at )|swipe (up|left|right)|tap (the )?link).{0,100}$/gim, '');
+
+  // 11. Normalize whitespace
   t = t.replace(/[ \t]{2,}/g, ' ');
   t = t.replace(/\n{3,}/g, '\n\n');
   t = t.replace(/^[\s,;|·•–—]+$/gm, '');
@@ -2867,4 +2870,203 @@ export function isShortUrl(url) {
     const host = new URL(url).hostname.replace(/^www\./, '');
     return SHORTENER_HOSTS.some(d => host === d || host.endsWith('.' + d));
   } catch { return false; }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// UNIFIED IMPORT ENGINE  (Build 79)
+// Single entry point for all recipe URL imports.
+// For Instagram: yt-dlp FIRST → embed page → AI browser → manual fallback.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Internal — checks if a recipe object has real extractable content
+ * (not just placeholder strings injected when extraction partially fails).
+ */
+function hasRecipeContent(recipe) {
+  if (!recipe) return false;
+  if (recipe._error || recipe._needsManualCaption) return false;
+  const PLACEHOLDERS = [
+    'See original post for ingredients',
+    'See original post for directions',
+    'See recipe for ingredients',
+    'See recipe for directions',
+  ];
+  const hasIngredients = Array.isArray(recipe.ingredients) && recipe.ingredients.length > 0
+    && !PLACEHOLDERS.includes(recipe.ingredients[0]);
+  const hasDirections = Array.isArray(recipe.directions) && recipe.directions.length > 0
+    && !PLACEHOLDERS.includes(recipe.directions[0]);
+  return hasIngredients || hasDirections;
+}
+
+/**
+ * resolveShortUrl — attempts to follow short-URL redirects via the backend.
+ * Falls back silently to the original URL on any error.
+ */
+export async function resolveShortUrl(url) {
+  if (!isShortUrl(url)) return url;
+  try {
+    const serverUrl = await detectServer();
+    if (!serverUrl) return url;
+    const resp = await fetch(`${serverUrl}/api/resolve-url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!resp.ok) return url;
+    const data = await resp.json();
+    return data.resolvedUrl || url;
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * importFromInstagram — Unified 3-phase Instagram extraction engine.
+ *
+ * Phase order (ReciME insight — video subtitles are richest for Reels):
+ *   0. yt-dlp video subtitles  ← FIRST
+ *   1. Instagram embed page (fast, no Puppeteer)
+ *   2. AI browser (Puppeteer, only if 0+1 fail)
+ *   3. Gemini AI on any captured text
+ *   → Last resort: { _needsManualCaption: true, sourceUrl }
+ *
+ * @param {string} url  - Instagram post/reel URL
+ * @param {function} onProgress  - callback(phaseIndex, status, message)
+ *   status: 'running' | 'done' | 'failed' | 'skipped' | 'pending'
+ * @returns {Object} Structured recipe or { _needsManualCaption: true }
+ */
+export async function importFromInstagram(url, onProgress = () => {}) {
+  const progress = (phase, status, msg) => onProgress(phase, status, msg);
+
+  // ── Phase 0: yt-dlp video subtitles ─────────────────────────────────────────
+  progress(0, 'running', 'Scanning for video subtitles…');
+  try {
+    const videoResult = await tryVideoExtraction(url, (msg) => progress(0, 'running', msg));
+    if (videoResult && !videoResult._error && hasRecipeContent(videoResult)) {
+      progress(0, 'done', 'Video subtitles found!');
+      progress(1, 'skipped', 'Subtitles sufficient — skipping embed');
+      progress(2, 'skipped', 'Subtitles sufficient — skipping AI browser');
+      progress(3, 'done', 'Recipe extracted from video!');
+      return { ...videoResult, extractedVia: 'yt-dlp', sourceUrl: url };
+    }
+  } catch { /* continue to embed */ }
+  progress(0, 'failed', 'No video subtitles available');
+
+  // ── Phase 1: Instagram embed page ───────────────────────────────────────────
+  progress(1, 'running', 'Fetching Instagram caption…');
+  let capturedCaption = '';
+  let capturedImageUrl = '';
+  try {
+    const embedData = await extractInstagramEmbed(url);
+    if (embedData?.caption) {
+      capturedCaption = cleanSocialCaption(embedData.caption);
+      capturedImageUrl = embedData.imageUrl || '';
+      const isWeak = isCaptionWeak(capturedCaption);
+      progress(1, capturedCaption ? 'done' : 'failed',
+        capturedCaption
+          ? `Caption found${isWeak ? ' (thin — trying AI browser)' : ' ✓'}`
+          : 'No caption found');
+
+      // Strong caption: skip Puppeteer, go straight to Gemini
+      if (capturedCaption && !isWeak) {
+        progress(2, 'skipped', 'Strong caption — skipping AI browser');
+        progress(3, 'running', '✨ AI parsing caption…');
+        try {
+          const recipe = await captionToRecipe(capturedCaption, { imageUrl: capturedImageUrl, sourceUrl: url });
+          if (recipe && hasRecipeContent(recipe)) {
+            progress(3, 'done', 'Recipe extracted!');
+            return { ...recipe, imageUrl: capturedImageUrl || recipe.imageUrl, extractedVia: 'embed-caption', sourceUrl: url };
+          }
+        } catch { /* fall through to agent */ }
+        progress(3, 'pending', '');
+      }
+    } else {
+      progress(1, 'failed', 'No caption in embed page');
+    }
+  } catch {
+    progress(1, 'failed', 'Embed fetch failed');
+  }
+
+  // ── Phase 2: AI Browser (Puppeteer) ─────────────────────────────────────────
+  progress(2, 'running', 'Launching AI browser…');
+  try {
+    const agentResult = await extractInstagramAgent(url, (msg) => progress(2, 'running', msg));
+    if (agentResult) {
+      const rawCaption = agentResult.caption || '';
+      const agentCaption = rawCaption ? cleanSocialCaption(rawCaption) : '';
+      if (agentCaption.length > capturedCaption.length) capturedCaption = agentCaption;
+      if (agentResult.imageUrl && !capturedImageUrl) capturedImageUrl = agentResult.imageUrl;
+
+      if (hasRecipeContent(agentResult)) {
+        progress(2, 'done', 'AI browser succeeded');
+        progress(3, 'running', '✨ AI structuring recipe…');
+        try {
+          const textForAI = capturedCaption || agentCaption;
+          const aiRecipe = textForAI.length > 30
+            ? await captionToRecipe(textForAI, { imageUrl: capturedImageUrl, sourceUrl: url })
+            : null;
+          const best = (aiRecipe && hasRecipeContent(aiRecipe)) ? aiRecipe : agentResult;
+          progress(3, 'done', 'Recipe extracted!');
+          return {
+            ...best,
+            imageUrl: capturedImageUrl || agentResult.imageUrl || best.imageUrl,
+            extractedVia: 'agent-browser',
+            sourceUrl: url,
+          };
+        } catch {
+          progress(3, 'skipped', 'Using raw extraction');
+          return { ...agentResult, imageUrl: capturedImageUrl || agentResult.imageUrl, extractedVia: 'agent-browser', sourceUrl: url };
+        }
+      } else {
+        progress(2, 'failed', 'AI browser: no recipe found');
+      }
+    } else {
+      progress(2, 'failed', 'AI browser unavailable (server warming up)');
+    }
+  } catch (err) {
+    progress(2, 'failed', `AI browser error: ${(err?.message || '').slice(0, 50)}`);
+  }
+
+  // ── Phase 3: Last-chance Gemini on any captured caption ─────────────────────
+  if (capturedCaption) {
+    progress(3, 'running', '✨ Google AI final attempt…');
+    try {
+      const recipe = await captionToRecipe(capturedCaption, { imageUrl: capturedImageUrl, sourceUrl: url });
+      if (recipe && hasRecipeContent(recipe)) {
+        progress(3, 'done', 'Recipe extracted!');
+        return { ...recipe, imageUrl: capturedImageUrl || recipe.imageUrl, extractedVia: 'caption-ai', sourceUrl: url };
+      }
+    } catch { /* fall through */ }
+    progress(3, 'failed', 'AI could not find a recipe');
+  } else {
+    progress(3, 'failed', 'No text captured to analyze');
+  }
+
+  // ── Manual fallback ──────────────────────────────────────────────────────────
+  return { _needsManualCaption: true, sourceUrl: url };
+}
+
+/**
+ * importRecipeFromUrl — single entry point for all recipe imports.
+ *
+ * - Resolves short URLs first (bit.ly, vm.tiktok.com, etc.)
+ * - Routes Instagram through importFromInstagram() (yt-dlp-first pipeline)
+ * - Routes everything else through parseFromUrl() (generic extraction)
+ *
+ * @param {string} url - Any recipe URL (social or blog)
+ * @param {function} onProgress - callback(phaseIndex, status, message)
+ * @returns {Object} Structured recipe or { _needsManualCaption: true }
+ */
+export async function importRecipeFromUrl(url, onProgress = () => {}) {
+  // Resolve URL shorteners before routing
+  let resolvedUrl = url;
+  try { resolvedUrl = await resolveShortUrl(url); } catch { /* use original */ }
+
+  if (isInstagramUrl(resolvedUrl)) {
+    return await importFromInstagram(resolvedUrl, onProgress);
+  }
+
+  // Non-Instagram social + recipe blogs: use existing generic pipeline
+  return await parseFromUrl(resolvedUrl, (msg) => onProgress(0, 'running', msg));
 }

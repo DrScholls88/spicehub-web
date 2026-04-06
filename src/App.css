@@ -10601,18 +10601,18 @@ body {
    BAR TOP — Taller counter; bartender visible from chest up
    ═══════════════════════════════════════════════════════ */
 .bs-bar-top {
-  flex-shrink: 0;
   position: relative;
-  height: 220px;
+  height: 190px;
+  z-index: 10;
   overflow: hidden;
 }
 
 /* ── Bartender (rendered FIRST → behind the counter surface) ── */
 .bs-bartender-wrap {
   position: absolute;
-  bottom: 78px; /* sits so lower body is hidden behind bar counter */
+  bottom: 48px; /* sits so lower body is hidden behind bar counter */
   left: 0;
-  z-index: 4;
+  z-index: 2;
   pointer-events: none;
   will-change: transform;
 }
@@ -10626,7 +10626,11 @@ body {
 .bs-bar-surface {
   background: linear-gradient(to bottom, #5d4037 0%, #3e2723 100%);
   border-top: 4px solid #8d6e63;
-  height: 120px; /* Adjust height to clip the bartender correctly */
+  box-shadow: inset 0 12px 30px rgba(0,0,0,0.6);
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 138px; /* Adjust height to clip the bartender correctly */
   z-index: 5; /* Ensures he stays behind it */
 }
 
@@ -10678,18 +10682,13 @@ body {
 
 /* Brass foot rail */
 .bs-bar-rail {
-  position: absolute;
-  bottom: 0;
-  left: 4%;
-  right: 4%;
-  height: 5px;
-  background: linear-gradient(180deg, #d4b060 0%, #c9a84c 30%, #b8942e 70%, #a07820 100%);
-  border-radius: 3px;
-  box-shadow:
-    0 2px 6px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.35),
-    0 0 8px rgba(200, 160, 50, 0.2);
-  z-index: 6;
+position: absolute;
+  bottom: 12px;
+  left: 0;
+  right: 0;
+  height: 8px;
+  background: #b8860b;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.3);
 }
 
 /* ══════════════════════════════════════════════════════════════
@@ -13680,11 +13679,12 @@ body {
 .bs-crt-effect {
   position: absolute;
   inset: 0;
-  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%),
-              linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
-  background-size: 100% 4px, 3px 100%;
+  background: linear-gradient(rgba(18,16,16,0) 50%, rgba(0,0,0,0.12) 50%),
+              linear-gradient(90deg, rgba(255,0,0,0.02), rgba(0,255,0,0.01), rgba(0,0,255,0.02));
+  background-size: 100% 3px, 3px 100%;
   pointer-events: none;
-  z-index: 10;
+  z-index: 30;
+  mix-blend-mode: overlay;
 }
 
 /* The Sprite Engine */

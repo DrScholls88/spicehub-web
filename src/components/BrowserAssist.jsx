@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins, isSocialMediaUrl, getSocialPlatform, tryVideoExtraction, extractInstagramAgent, scoreExtractionConfidence, structureWithAI, captionToRecipe, cleanSocialCaption, isCaptionWeak } from '../recipeParser';
+import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins, isSocialMediaUrl, getSocialPlatform, tryVideoExtraction, extractInstagramAgent, scoreExtractionConfidence, structureWithAI, captionToRecipe, cleanSocialCaption, isCaptionWeak, importRecipeFromUrl } from '../recipeParser';
 import { fetchHtmlViaProxy, proxyImageUrl } from '../api';
 import { queueRecipeImport } from '../db';
 import useOnlineStatus from '../hooks/useOnlineStatus';
@@ -133,23 +133,30 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
 
     let cancelled = false;
 
-    // ── SOCIAL MEDIA PIPELINE ─────────────────────────────────────────────
+    // ── SOCIAL MEDIA PIPELINE — Unified Import Engine (Build 79) ────────────
+    // All logic lives in importRecipeFromUrl() / importFromInstagram() in recipeParser.js.
+    // Phase order for Instagram: yt-dlp FIRST → embed → AI browser → Gemini → manual.
     if (isSocial) {
       const isInstagram = /instagram\.com/i.test(url);
 
-      const steps = [
-        { label: isInstagram ? 'Reading Instagram caption…' : `Reading ${platform} post…`, status: 'pending' },
-        { label: 'AI browser extraction…', status: 'pending' },
-        { label: 'Video subtitle scan…', status: 'pending' },
-        { label: '✨ Google AI recipe parsing…', status: 'pending' },
-      ];
+      // Step labels reflect new phase order (yt-dlp first for Instagram)
+      const steps = isInstagram
+        ? [
+            { label: 'Video subtitle scan…', status: 'pending' },
+            { label: 'Reading Instagram caption…', status: 'pending' },
+            { label: 'AI browser extraction…', status: 'pending' },
+            { label: '✨ Google AI recipe parsing…', status: 'pending' },
+          ]
+        : [
+            { label: `Reading ${platform} post…`, status: 'pending' },
+            { label: 'AI browser extraction…', status: 'pending' },
+            { label: 'Video subtitle scan…', status: 'pending' },
+            { label: '✨ Google AI recipe parsing…', status: 'pending' },
+          ];
+
       setPipelineSteps(steps);
       setPipelineMessage('Starting import pipeline…');
       setPhase('loading');
-
-      // Track any raw caption/text found during steps 0-2
-      let capturedCaption = '';
-      let capturedImageUrl = '';
 
       (async () => {
         const update = (idx, status, msg) => {
@@ -157,221 +164,26 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
           if (stepUpdater.current) stepUpdater.current(idx, status, msg);
         };
 
-        // ── Step 0: Instagram embed page (fast, server-side fetch via proxy) ─
-        // ReciME approach: prioritize native post caption + og:description as primary source
-        update(0, 'running', isInstagram ? 'Fetching embed page…' : `Fetching ${platform} post…`);
         try {
-          let embedHtml = null;
-          const shortcodeMatch = url.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
-          if (shortcodeMatch) {
-            const embedUrl = `https://www.instagram.com/p/${shortcodeMatch[1]}/embed/captioned/`;
-            try { embedHtml = await fetchHtmlViaProxy(embedUrl, 12000); } catch { /* try direct */ }
-          }
-          if (!embedHtml || embedHtml.length < 1000) {
-            try { embedHtml = await fetchHtmlViaProxy(url, 15000); } catch { /* continue */ }
-          }
-          if (!cancelled && embedHtml && embedHtml.length > 500) {
-            // Extract caption from the HTML (no JS needed — static parsing)
-            const ogMatch = embedHtml.match(/<meta[^>]+property\s*=\s*["']og:description["'][^>]+content\s*=\s*["']([^"']*)["']/i)
-              || embedHtml.match(/<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+property\s*=\s*["']og:description["']/i);
-            if (ogMatch?.[1] && ogMatch[1].length > 30) {
-              let ogCaption = ogMatch[1]
-                .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
-                .replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-              // ReciME: strip engagement prefix before cleaning
-              ogCaption = ogCaption.replace(/^[\d,.]+[kKmM]?\s*likes?,?\s*[\d,.]+[kKmM]?\s*comments?\s*[-–—]\s*[^:]+:\s*[""]?/i, '').replace(/[""]$/, '').trim();
-              if (ogCaption.length > 30 && !/^log[ -]?in/i.test(ogCaption) && !/^\d+\s*likes/i.test(ogCaption)) {
-                // ReciME: apply aggressive social caption cleaning immediately
-                capturedCaption = cleanSocialCaption(ogCaption);
-              }
-            }
-            // Also try data patterns in scripts
-            if (!capturedCaption) {
-              const dataPatterns = [
-                /"edge_media_to_caption"\s*:\s*\{"edges"\s*:\s*\[\{"node"\s*:\s*\{"text"\s*:\s*"([^"]{30,}(?:\\.[^"]*)*)"/,
-                /"caption"\s*:\s*\{"text"\s*:\s*"([^"]{30,}(?:\\.[^"]*)*)"/,
-                /"caption_text"\s*:\s*"([^"]{30,}(?:\\.[^"]*)*)"/,
-                /"accessibility_caption"\s*:\s*"([^"]{30,}(?:\\.[^"]*)*)"/,
-                /"text"\s*:\s*"([^"]{80,}(?:\\.[^"]*)*)"/,
-              ];
-              for (const re of dataPatterns) {
-                const m = re.exec(embedHtml);
-                if (m) {
-                  let raw = '';
-                  try { raw = JSON.parse('"' + m[1] + '"'); } catch { raw = m[1]; }
-                  raw = raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-                  if (raw.length > 30) { capturedCaption = cleanSocialCaption(raw); break; }
-                }
-              }
-            }
-            // Extract image
-            const imgMatch = embedHtml.match(/<meta[^>]+property\s*=\s*["']og:image["'][^>]+content\s*=\s*["']([^"']*)["']/i)
-              || embedHtml.match(/<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+property\s*=\s*["']og:image["']/i);
-            if (imgMatch?.[1]) capturedImageUrl = imgMatch[1];
-
-            const captionWeak = isCaptionWeak(capturedCaption);
-            update(0, capturedCaption ? 'done' : 'failed',
-              capturedCaption
-                ? `Caption found${captionWeak ? ' (thin — trying video next)' : ' ✓'}`
-                : 'No caption in embed page');
-          } else {
-            update(0, 'failed', 'Embed page not accessible');
-          }
-        } catch (err) {
-          if (!cancelled) update(0, 'failed', 'Embed fetch failed');
-        }
-        if (cancelled) return;
-
-        // ── If caption is STRONG, go straight to Gemini (skip agent browser) ─
-        // ReciME-style: caption-first priority — native caption is the best source
-        if (capturedCaption && !isCaptionWeak(capturedCaption)) {
-          update(1, 'skipped', 'Strong caption found — skipping AI browser');
-          update(2, 'skipped', 'Strong caption found — skipping video scan');
-          update(3, 'running', '✨ AI parsing caption…');
-          try {
-            const recipe = await captionToRecipe(capturedCaption, { imageUrl: capturedImageUrl, sourceUrl: url });
-            if (!cancelled && recipe && hasRealContent(recipe)) {
-              update(3, 'done', 'Recipe extracted from caption!');
-              setAutoRecipe(cleanRecipe({ ...recipe, imageUrl: capturedImageUrl || recipe.imageUrl }));
-              setPhase('preview');
-              return;
-            }
-          } catch { /* fall through to agent */ }
-          if (cancelled) return;
-          // Reset skipped steps since we're falling through
-          update(1, 'pending', '');
-          update(2, 'pending', '');
-          update(3, 'pending', '');
-        }
-
-        // ── If caption is WEAK, jump to yt-dlp immediately (before agent) ────
-        // ReciME insight: short/hashtag-only captions = video-only recipe → subtitles first
-        if (capturedCaption && isCaptionWeak(capturedCaption)) {
-          update(1, 'skipped', 'Caption too short — checking video subtitles first');
-          update(2, 'running', 'Caption weak — scanning video subtitles…');
-          try {
-            const videoResult = await tryVideoExtraction(url);
-            if (!cancelled && videoResult && !videoResult._error && hasRealContent(videoResult) &&
-                videoResult.ingredients?.[0] !== 'See original post for ingredients') {
-              update(2, 'done', 'Video subtitles found!');
-              update(3, 'skipped');
-              setAutoRecipe(cleanRecipe({ ...videoResult, extractedVia: 'yt-dlp-early' }));
-              setPhase('preview');
-              return;
-            }
-          } catch { /* continue */ }
-          if (cancelled) return;
-          update(2, 'failed', 'No video subtitles available');
-          update(1, 'pending', ''); // reset for normal agent step
-        }
-
-        // ── Caption from step 0 but needs AI boost → queue Gemini after agent ─
-        if (capturedCaption) {
-          update(3, 'running', '✨ AI parsing caption…');
-          try {
-            const recipe = await captionToRecipe(capturedCaption, { imageUrl: capturedImageUrl, sourceUrl: url });
-            if (!cancelled && recipe && hasRealContent(recipe)) {
-              update(3, 'done', 'Recipe extracted!');
-              setAutoRecipe(cleanRecipe({ ...recipe, imageUrl: capturedImageUrl || recipe.imageUrl }));
-              setPhase('preview');
-              return;
-            }
-          } catch { /* fall through */ }
-          if (cancelled) return;
-          update(3, 'pending', ''); // reset — will try again after agent
-        }
-
-        // ── Step 1: AI Browser (Puppeteer backend) ────────────────────────────
-        update(1, 'running', 'Launching AI browser…');
-        try {
-          const agentResult = await extractInstagramAgent(url, (msg) => {
-            if (!cancelled && stepUpdater.current) stepUpdater.current(1, 'running', msg);
+          const result = await importRecipeFromUrl(url, (phase, status, msg) => {
+            if (!cancelled) update(phase, status, msg);
           });
-          if (!cancelled && agentResult) {
-            // ReciME: clean the agent caption before using it
-            const rawAgentCaption = agentResult.caption || '';
-            const agentCaption = rawAgentCaption ? cleanSocialCaption(rawAgentCaption) : '';
-            if (agentCaption.length > capturedCaption.length) {
-              capturedCaption = agentCaption;
-            }
-            if (agentResult.imageUrl && !capturedImageUrl) capturedImageUrl = agentResult.imageUrl;
 
-            if (hasRealContent(agentResult)) {
-              update(1, 'done', 'AI browser succeeded');
-              // Try Gemini AI on the result for better structuring
-              update(3, 'running', '✨ AI parsing recipe…');
-              try {
-                const textForAI = capturedCaption || agentCaption;
-                const aiRecipe = textForAI.length > 30
-                  ? await captionToRecipe(textForAI, { imageUrl: capturedImageUrl || agentResult.imageUrl, sourceUrl: url })
-                  : null;
-                const best = (aiRecipe && hasRealContent(aiRecipe)) ? aiRecipe : agentResult;
-                update(3, 'done', 'Recipe extracted!');
-                setAutoRecipe(cleanRecipe({
-                  ...best,
-                  imageUrl: capturedImageUrl || agentResult.imageUrl || best.imageUrl,
-                  extractedVia: 'agent-browser',
-                }));
-                setPhase('preview');
-                return;
-              } catch {
-                // Use raw agent result without AI structuring
-                update(3, 'skipped', 'Using raw extraction');
-                setAutoRecipe(cleanRecipe(agentResult));
-                setPhase('preview');
-                return;
-              }
-            } else {
-              update(1, 'failed', 'AI browser: no recipe content found');
-            }
-          } else {
-            update(1, 'failed', 'AI browser unavailable (server may be starting up)');
+          if (cancelled) return;
+
+          if (!result || result._needsManualCaption) {
+            setPipelineMessage('Automatic extraction failed — paste the caption text below');
+            setPhase('manual');
+            return;
           }
+
+          setAutoRecipe(cleanRecipe(result));
+          setPhase('preview');
         } catch (err) {
-          if (!cancelled) update(1, 'failed', `AI browser error: ${err?.message?.slice(0, 40)}`);
-        }
-        if (cancelled) return;
-
-        // ── Step 2: Video subtitle extraction (yt-dlp) ───────────────────────
-        update(2, 'running', 'Looking for video transcript…');
-        try {
-          const videoResult = await tryVideoExtraction(url);
-          if (!cancelled && videoResult && !videoResult._error) {
-            if (videoResult.ingredients?.[0] !== 'See original post for ingredients' && hasRealContent(videoResult)) {
-              update(2, 'done', 'Video transcript found!');
-              update(3, 'skipped');
-              setAutoRecipe(cleanRecipe({ ...videoResult, extractedVia: 'yt-dlp' }));
-              setPhase('preview');
-              return;
-            }
+          if (!cancelled) {
+            setErrorMsg(`Import failed: ${err?.message || 'Unknown error'}`);
+            setPhase('error');
           }
-          update(2, 'failed', 'No video transcript available');
-        } catch {
-          if (!cancelled) update(2, 'failed', 'Video extraction unavailable');
-        }
-        if (cancelled) return;
-
-        // ── Step 3: Last-chance Gemini AI on any captured text ────────────────
-        if (capturedCaption) {
-          update(3, 'running', '✨ Google AI final attempt…');
-          try {
-            const recipe = await captionToRecipe(capturedCaption, { imageUrl: capturedImageUrl, sourceUrl: url });
-            if (!cancelled && recipe && hasRealContent(recipe)) {
-              update(3, 'done', 'Recipe extracted!');
-              setAutoRecipe(cleanRecipe({ ...recipe, imageUrl: capturedImageUrl || recipe.imageUrl }));
-              setPhase('preview');
-              return;
-            }
-          } catch { /* fall through */ }
-          if (!cancelled) update(3, 'failed', 'AI could not find a recipe');
-        } else {
-          update(3, 'failed', 'No text captured to analyze');
-        }
-
-        // ── All methods failed → manual mode ─────────────────────────────────
-        if (!cancelled) {
-          setPipelineMessage('Automatic extraction failed — paste the caption text below');
-          setPhase('manual');
         }
       })();
 

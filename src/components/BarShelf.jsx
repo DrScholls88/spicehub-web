@@ -714,6 +714,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose }) {
               holdingBottle={holdingBottle}
               facingRight={facingRight}
               swigBottle={swigBottle}
+              swigQuip={swigQuip}
             />
             {/* Speech bubble — presenting */}
             {bartenderState === 'presenting' && selectedDrink && (
