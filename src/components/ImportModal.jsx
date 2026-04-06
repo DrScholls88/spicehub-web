@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { parseFromUrl, isSocialMediaUrl, getSocialPlatform, parseCaption, isInstagramUrl, resetServerDetection, extractWithBrowserAPI, isShortUrl, tryVideoExtraction, smartClassifyLines, scoreExtractionConfidence, normalizeAndDedupe, classifyWithConfidence } from '../recipeParser';
+import { parseFromUrl, isSocialMediaUrl, getSocialPlatform, parseCaption, isInstagramUrl, resetServerDetection, extractWithBrowserAPI, isShortUrl, resolveShortUrl, tryVideoExtraction, smartClassifyLines, scoreExtractionConfidence, normalizeAndDedupe, classifyWithConfidence } from '../recipeParser';
 import BrowserAssist from './BrowserAssist';
 
 /**
@@ -211,7 +211,8 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     let trimmedUrl = url.trim();
 
     // ── Multi-URL detection: if user pasted multiple URLs, batch import ──
-    const detectedUrls =(trimmedUrl);
+    // Split on whitespace/newlines and keep only valid URLs for batch import
+    const detectedUrls = trimmedUrl.split(/[\s\n]+/).filter(s => /^https?:\/\//i.test(s));
     if (detectedUrls.length > 1) {
       handleBatchImport(detectedUrls);
       return;
@@ -235,7 +236,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       if (isShortUrl(trimmedUrl)) {
         setImportProgress('Resolving shortened URL...');
         try {
-          const resolved = await(trimmedUrl, setImportProgress);
+          const resolved = await resolveShortUrl(trimmedUrl);
           if (resolved !== trimmedUrl) {
             trimmedUrl = resolved;
             setUrl(resolved);
@@ -423,7 +424,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
         // Resolve short URLs first
         let resolvedUrl = urls[i];
         if (isShortUrl(resolvedUrl)) {
-          try { resolvedUrl = await(resolvedUrl); } catch {}
+          try { resolvedUrl = await resolveShortUrl(resolvedUrl); } catch {}
         }
 
         const result = await parseFromUrl(resolvedUrl, () => {});
