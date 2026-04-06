@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { parseFromUrl, isSocialMediaUrl, getSocialPlatform, parseCaption, isInstagramUrl, resetServerDetection, extractWithBrowserAPI, isShortUrl, resolveShortUrl, tryVideoExtraction, smartClassifyLines, scoreExtractionConfidence, normalizeAndDedupe, classifyWithConfidence } from '../recipeParser';
+import { parseFromUrl, importRecipeFromUrl, isSocialMediaUrl, getSocialPlatform, parseCaption, isInstagramUrl, resetServerDetection, extractWithBrowserAPI, isShortUrl, resolveShortUrl, tryVideoExtraction, smartClassifyLines, scoreExtractionConfidence, normalizeAndDedupe, classifyWithConfidence } from '../recipeParser';
 import BrowserAssist from './BrowserAssist';
 
 /**
@@ -247,88 +247,14 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
         } catch { /* continue with original URL */ }
       }
 
-      // ── Instagram special handling ──
+      // ── Instagram: route directly to BrowserAssist (unified 4-phase engine) ──
+      // importRecipeFromUrl() in recipeParser.js now owns the full pipeline:
+      //   Phase 0: yt-dlp video subtitles (Reels narration)
+      //   Phase 1: Fast embed page fetch
+      //   Phase 2: AI browser / Puppeteer agent
+      //   Phase 3: Gemini AI structuring
+      // BrowserAssist shows live step-by-step progress and handles graceful fallback.
       if (isInstagramUrl(trimmedUrl)) {
-        // Try yt-dlp video extraction first (best for Reels with subtitles)
-        setImportProgress('Step 1/3 — Checking for video subtitles...');
-        try {
-          const videoResult = await tryVideoExtraction(trimmedUrl, (progress) => {
-            setImportProgress(`Step 1/3 — ${progress}`);
-          });
-          if (videoResult && !videoResult._error && videoResult.ingredients?.[0] !== 'See original post for ingredients') {
-            setPreview([videoResult]);
-            setImporting(false);
-            setImportProgress('');
-            return;
-          }
-        } catch { /* fall through */ }
-
-        // Try server-side extraction (embed page + yt-dlp metadata)
-        setImportProgress('Step 2/3 — Reading post caption...');
-        try {
-          const result = await parseFromUrl(trimmedUrl, (progress) => {
-            setImportProgress(`Step 2/3 — ${progress}`);
-          });
-          if (result && !result._error) {
-            setPreview([result]);
-            setImporting(false);
-            setImportProgress('');
-            return;
-          }
-        } catch { /* fall through */ }
-
-        // Try embedded page via CORS proxy
-        setImportProgress('Step 3/3 — Trying Instagram embed...');
-        try {
-          const { fetchHtmlViaProxy } = await import('../api');
-          const shortcodeMatch = trimmedUrl.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
-          const embedUrl = shortcodeMatch
-            ? `https://www.instagram.com/p/${shortcodeMatch[1]}/embed/captioned/`
-            : trimmedUrl;
-          const html = await fetchHtmlViaProxy(embedUrl, 40000);
-          if (html && html.length > 500) {
-            // Strip HTML to visible text for caption parsing
-            const visibleText = html
-              .replace(/<script[\s\S]*?<\/script>/gi, '')
-              .replace(/<style[\s\S]*?<\/style>/gi, '')
-              .replace(/<br\s*\/?>/gi, '\n')
-              .replace(/<\/(?:p|div|h[1-6]|li)>/gi, '\n')
-              .replace(/<[^>]+>/g, ' ')
-              .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-              .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
-              .replace(/\s+/g, ' ').trim();
-
-            // Extract OG image URL(s) from the fetched HTML
-            const imageUrls = [];
-            const ogM = html.match(/<meta[^>]+property\s*=\s*["']og:image["'][^>]+content\s*=\s*["']([^"']*)["']/i)
-              || html.match(/<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+property\s*=\s*["']og:image["']/i);
-            if (ogM?.[1]) imageUrls.push(ogM[1].replace(/&amp;/g, '&'));
-            // Also grab display_url from JSON (Instagram embed page)
-            for (const m of html.matchAll(/"display_url"\s*:\s*"(https:[^"]+)"/g)) {
-              const u = m[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
-              if (u.startsWith('http') && !imageUrls.includes(u)) imageUrls.push(u);
-            }
-            for (const m of html.matchAll(/"thumbnail_src"\s*:\s*"(https:[^"]+)"/g)) {
-              const u = m[1].replace(/\\u0026/g, '&').replace(/\\/g, '');
-              if (u.startsWith('http') && !imageUrls.includes(u)) imageUrls.push(u);
-            }
-
-            const extracted = extractWithBrowserAPI({
-              html,
-              visibleText,
-              imageUrls,
-              sourceUrl: trimmedUrl,
-            });
-            // Accept if we got at least 1 ingredient (not just the old >1 check)
-            if (extracted && (extracted.ingredients?.length >= 1 || extracted.directions?.length >= 2)) {
-              setPreview([extracted]);
-              setImporting(false);
-              setImportProgress('');
-              return;
-            }
-          }
-        } catch { /* fall through to BrowserAssist */ }
-
         setImporting(false);
         setImportProgress('');
         setBrowserAssistUrl(trimmedUrl);
@@ -336,7 +262,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
         return;
       }
 
-      // ── Non-Instagram URLs ──
+// ── Non-Instagram URLs ──
       setError('');
       setBrowserAssistMode('off');
 
@@ -362,7 +288,14 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
         setImportProgress(isSocialMediaUrl(trimmedUrl) ? `Step 2/2 — ${progress}` : progress);
       });
 
-      if (!result || result._error) {
+      // Reject placeholder results for social URLs — route to BrowserAssist instead
+      const isPlaceholderResult = (
+        result?.ingredients?.[0] === 'See original post for ingredients' ||
+        result?.directions?.[0] === 'See original post for directions' ||
+        result?.ingredients?.[0] === 'See recipe for ingredients' ||
+        result?.directions?.[0] === 'See recipe for directions'
+      );
+      if (!result || result._error || (isSocialMediaUrl(trimmedUrl) && isPlaceholderResult)) {
         if (isSocialMediaUrl(trimmedUrl)) {
           setImporting(false);
           setImportProgress('');

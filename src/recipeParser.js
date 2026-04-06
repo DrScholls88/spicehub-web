@@ -2939,111 +2939,156 @@ export async function resolveShortUrl(url) {
 export async function importFromInstagram(url, onProgress = () => {}) {
   const progress = (phase, status, msg) => onProgress(phase, status, msg);
 
-  // ── Phase 0: yt-dlp video subtitles ─────────────────────────────────────────
+  // Placeholders to explicitly reject from any phase result
+  const PLACEHOLDERS = [
+    'See original post for ingredients', 'See original post for directions',
+    'See recipe for ingredients', 'See recipe for directions',
+  ];
+  const isPlaceholder = (arr) =>
+    !Array.isArray(arr) || arr.length === 0 || PLACEHOLDERS.includes(arr[0]);
+
+  // Reconstruct raw text from a structured recipe result (for Gemini re-polish)
+  const recipeToText = (r) => [
+    r.name || '',
+    ...(r.ingredients || []).filter(i => !PLACEHOLDERS.includes(i)),
+    ...(r.directions || []).filter(d => !PLACEHOLDERS.includes(d)),
+  ].filter(Boolean).join('\n');
+
+  let capturedCaption = '';
+  let capturedImageUrl = '';
+  let videoRecipe = null; // yt-dlp structured result (skip phases 1+2 if rich enough)
+
+  // ── Phase 0: yt-dlp video subtitles (narration — richest source for Reels) ──
   progress(0, 'running', 'Scanning for video subtitles…');
   try {
     const videoResult = await tryVideoExtraction(url, (msg) => progress(0, 'running', msg));
-    if (videoResult && !videoResult._error && hasRecipeContent(videoResult)) {
-      progress(0, 'done', 'Video subtitles found!');
-      progress(1, 'skipped', 'Subtitles sufficient — skipping embed');
-      progress(2, 'skipped', 'Subtitles sufficient — skipping AI browser');
-      progress(3, 'done', 'Recipe extracted from video!');
-      return { ...videoResult, extractedVia: 'yt-dlp', sourceUrl: url };
-    }
-  } catch { /* continue to embed */ }
-  progress(0, 'failed', 'No video subtitles available');
-
-  // ── Phase 1: Instagram embed page ───────────────────────────────────────────
-  progress(1, 'running', 'Fetching Instagram caption…');
-  let capturedCaption = '';
-  let capturedImageUrl = '';
-  try {
-    const embedData = await extractInstagramEmbed(url);
-    if (embedData?.caption) {
-      capturedCaption = cleanSocialCaption(embedData.caption);
-      capturedImageUrl = embedData.imageUrl || '';
-      const isWeak = isCaptionWeak(capturedCaption);
-      progress(1, capturedCaption ? 'done' : 'failed',
-        capturedCaption
-          ? `Caption found${isWeak ? ' (thin — trying AI browser)' : ' ✓'}`
-          : 'No caption found');
-
-      // Strong caption: skip Puppeteer, go straight to Gemini
-      if (capturedCaption && !isWeak) {
-        progress(2, 'skipped', 'Strong caption — skipping AI browser');
-        progress(3, 'running', '✨ AI parsing caption…');
-        try {
-          const recipe = await captionToRecipe(capturedCaption, { imageUrl: capturedImageUrl, sourceUrl: url });
-          if (recipe && hasRecipeContent(recipe)) {
-            progress(3, 'done', 'Recipe extracted!');
-            return { ...recipe, imageUrl: capturedImageUrl || recipe.imageUrl, extractedVia: 'embed-caption', sourceUrl: url };
-          }
-        } catch { /* fall through to agent */ }
-        progress(3, 'pending', '');
-      }
-    } else {
-      progress(1, 'failed', 'No caption in embed page');
-    }
-  } catch {
-    progress(1, 'failed', 'Embed fetch failed');
-  }
-
-  // ── Phase 2: AI Browser (Puppeteer) ─────────────────────────────────────────
-  progress(2, 'running', 'Launching AI browser…');
-  try {
-    const agentResult = await extractInstagramAgent(url, (msg) => progress(2, 'running', msg));
-    if (agentResult) {
-      const rawCaption = agentResult.caption || '';
-      const agentCaption = rawCaption ? cleanSocialCaption(rawCaption) : '';
-      if (agentCaption.length > capturedCaption.length) capturedCaption = agentCaption;
-      if (agentResult.imageUrl && !capturedImageUrl) capturedImageUrl = agentResult.imageUrl;
-
-      if (hasRecipeContent(agentResult)) {
-        progress(2, 'done', 'AI browser succeeded');
-        progress(3, 'running', '✨ AI structuring recipe…');
-        try {
-          const textForAI = capturedCaption || agentCaption;
-          const aiRecipe = textForAI.length > 30
-            ? await captionToRecipe(textForAI, { imageUrl: capturedImageUrl, sourceUrl: url })
-            : null;
-          const best = (aiRecipe && hasRecipeContent(aiRecipe)) ? aiRecipe : agentResult;
-          progress(3, 'done', 'Recipe extracted!');
-          return {
-            ...best,
-            imageUrl: capturedImageUrl || agentResult.imageUrl || best.imageUrl,
-            extractedVia: 'agent-browser',
-            sourceUrl: url,
-          };
-        } catch {
-          progress(3, 'skipped', 'Using raw extraction');
-          return { ...agentResult, imageUrl: capturedImageUrl || agentResult.imageUrl, extractedVia: 'agent-browser', sourceUrl: url };
-        }
+    if (videoResult && !videoResult._error) {
+      // Accept yt-dlp result only if BOTH ingredients AND directions are non-placeholder
+      const hasIng = !isPlaceholder(videoResult.ingredients);
+      const hasDir = !isPlaceholder(videoResult.directions);
+      if (hasIng && hasDir) {
+        videoRecipe = videoResult;
+        capturedImageUrl = videoResult.imageUrl || '';
+        // Reconstruct text so Gemini can re-polish structure in Phase 3
+        capturedCaption = recipeToText(videoResult);
+        progress(0, 'done', 'Rich video content found — structuring with Gemini…');
+        progress(1, 'skipped', 'Video subtitles sufficient');
+        progress(2, 'skipped', 'Video subtitles sufficient');
+        // Fall through to Phase 3 (Gemini always runs per unified plan)
+      } else if (hasIng || hasDir) {
+        // Partial yt-dlp — collect what we can and continue to embed/agent
+        capturedCaption = recipeToText(videoResult);
+        capturedImageUrl = videoResult.imageUrl || '';
+        progress(0, 'done', 'Partial video data — trying embed for more…');
       } else {
-        progress(2, 'failed', 'AI browser: no recipe found');
+        progress(0, 'failed', 'No usable video subtitles');
       }
     } else {
-      progress(2, 'failed', 'AI browser unavailable (server warming up)');
+      progress(0, 'failed', 'No video subtitles available');
     }
-  } catch (err) {
-    progress(2, 'failed', `AI browser error: ${(err?.message || '').slice(0, 50)}`);
-  }
+  } catch { progress(0, 'failed', 'Video extraction unavailable'); }
 
-  // ── Phase 3: Last-chance Gemini on any captured caption ─────────────────────
-  if (capturedCaption) {
-    progress(3, 'running', '✨ Google AI final attempt…');
+  // ── Phase 1: Instagram embed page (skip if yt-dlp gave full content) ─────────
+  if (!videoRecipe) {
+    progress(1, 'running', 'Fetching Instagram caption…');
+    try {
+      const embedData = await extractInstagramEmbed(url);
+      if (embedData?.caption) {
+        const embedCaption = cleanSocialCaption(embedData.caption);
+        if (embedCaption.length > capturedCaption.length) capturedCaption = embedCaption;
+        if (embedData.imageUrl && !capturedImageUrl) capturedImageUrl = embedData.imageUrl;
+
+        const isWeak = isCaptionWeak(capturedCaption);
+        progress(1, 'done',
+          capturedCaption
+            ? `Caption found${isWeak ? ' (thin — will try AI browser)' : ' ✓'}`
+            : 'Embed returned no text');
+
+        // Strong caption: skip AI browser, go straight to Phase 3
+        if (capturedCaption && !isWeak) {
+          progress(2, 'skipped', 'Strong caption — skipping AI browser');
+          // Fall through to Phase 3
+        }
+        // Weak caption: continue to Phase 2 (AI browser) to try to get more text
+      } else {
+        progress(1, 'failed', 'No caption in embed page');
+      }
+    } catch { progress(1, 'failed', 'Embed fetch failed'); }
+
+    // ── Phase 2: AI Browser (Puppeteer) — only when embed gave no/weak caption ──
+    const skipAgent = capturedCaption && !isCaptionWeak(capturedCaption);
+    if (!skipAgent) {
+      progress(2, 'running', 'Launching AI browser…');
+      try {
+        const agentResult = await extractInstagramAgent(url, (msg) => progress(2, 'running', msg));
+        if (agentResult) {
+          const rawCaption = agentResult.caption || '';
+          const agentCaption = rawCaption ? cleanSocialCaption(rawCaption) : '';
+          // Keep whichever caption is longer (more content)
+          if (agentCaption.length > capturedCaption.length) capturedCaption = agentCaption;
+          if (agentResult.imageUrl && !capturedImageUrl) capturedImageUrl = agentResult.imageUrl;
+
+          if (agentCaption.length > 20 || !isPlaceholder(agentResult.ingredients)) {
+            progress(2, 'done', 'AI browser succeeded');
+          } else {
+            progress(2, 'failed', 'AI browser returned no recipe content');
+          }
+        } else {
+          progress(2, 'failed', 'AI browser unavailable (server may be cold-starting)');
+        }
+      } catch (err) {
+        progress(2, 'failed', `AI browser error: ${(err?.message || '').slice(0, 50)}`);
+      }
+    }
+  } // end phases 1+2
+
+  // ── Phase 3: Gemini AI structuring — ALWAYS runs on any captured text ─────────
+  // Per unified plan: "Phase 3 is the always-run intelligence layer."
+  // Even thin captions get a Gemini attempt — it often salvages partial content.
+  if (capturedCaption && capturedCaption.trim().length >= 20) {
+    progress(3, 'running', '✨ Structuring recipe with Gemini…');
     try {
       const recipe = await captionToRecipe(capturedCaption, { imageUrl: capturedImageUrl, sourceUrl: url });
-      if (recipe && hasRecipeContent(recipe)) {
-        progress(3, 'done', 'Recipe extracted!');
-        return { ...recipe, imageUrl: capturedImageUrl || recipe.imageUrl, extractedVia: 'caption-ai', sourceUrl: url };
+      if (recipe && !isPlaceholder(recipe.ingredients) && !isPlaceholder(recipe.directions)) {
+        progress(3, 'done', 'Recipe structured successfully!');
+        return {
+          ...recipe,
+          imageUrl: capturedImageUrl || recipe.imageUrl,
+          extractedVia: videoRecipe ? 'yt-dlp+ai' : 'caption-ai',
+          sourceUrl: url,
+          importedAt: new Date().toISOString(),
+        };
       }
-    } catch { /* fall through */ }
-    progress(3, 'failed', 'AI could not find a recipe');
+      // Gemini returned partial — try heuristic + merge with yt-dlp if available
+      if (videoRecipe && hasRecipeContent(videoRecipe)) {
+        const merged = {
+          ...videoRecipe,
+          ...(recipe?.name ? { name: recipe.name } : {}),
+          ingredients: !isPlaceholder(recipe?.ingredients) ? recipe.ingredients : videoRecipe.ingredients,
+          directions: !isPlaceholder(recipe?.directions) ? recipe.directions : videoRecipe.directions,
+        };
+        if (hasRecipeContent(merged)) {
+          progress(3, 'done', 'Recipe extracted from video!');
+          return { ...merged, imageUrl: capturedImageUrl || merged.imageUrl, extractedVia: 'yt-dlp', sourceUrl: url, importedAt: new Date().toISOString() };
+        }
+      }
+    } catch (err) {
+      // Gemini failed — fall back to yt-dlp result if available
+      if (videoRecipe && hasRecipeContent(videoRecipe)) {
+        progress(3, 'done', 'Using video extraction (AI unavailable)');
+        return { ...videoRecipe, imageUrl: capturedImageUrl || videoRecipe.imageUrl, extractedVia: 'yt-dlp', sourceUrl: url, importedAt: new Date().toISOString() };
+      }
+    }
+    progress(3, 'failed', 'AI could not structure a recipe from this post');
+  } else if (videoRecipe && hasRecipeContent(videoRecipe)) {
+    // No caption text but yt-dlp gave us a full recipe — use it directly
+    progress(3, 'done', 'Recipe from video subtitles!');
+    return { ...videoRecipe, imageUrl: capturedImageUrl || videoRecipe.imageUrl, extractedVia: 'yt-dlp', sourceUrl: url, importedAt: new Date().toISOString() };
   } else {
-    progress(3, 'failed', 'No text captured to analyze');
+    progress(3, 'failed', 'No text captured from any source');
   }
 
-  // ── Manual fallback ──────────────────────────────────────────────────────────
+  // ── Manual fallback — all phases exhausted ───────────────────────────────────
   return { _needsManualCaption: true, sourceUrl: url };
 }
 
