@@ -1,5 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { importRecipeFromUrlWithProgress, isSocialMediaUrl, getSocialPlatform } from '../recipeParser.js';
+import {
+  importRecipeFromUrl,
+  isSocialMediaUrl, getSocialPlatform,
+  isInstagramUrl, isShortUrl, resolveShortUrl,
+  parseFromUrl, parseCaption,
+  classifyWithConfidence, smartClassifyLines, normalizeAndDedupe,
+} from '../recipeParser.js';
 import BrowserAssist from './BrowserAssist';
 
 /**
@@ -208,48 +214,32 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     }
   };
 
-  // ── Import from ANY URL ───────────────────────────────────────────────────────
-  const handleUrlImport = async (url) => {
-    if (!url || !url.trim()) {
-      setError('Please enter a valid URL');
+  // ── Import from ANY URL ─────────────────────────────────────────────────────
+  // Called by the Import button and Enter-key handler.
+  // Routes single URLs through performUrlExtraction (which handles Instagram →
+  // BrowserAssist, short URL resolution, social fallback, etc.) and multi-URL
+  // pastes through handleBatchImport.
+  const handleUrlImport = () => {
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl) {
+      setError('Please enter a URL.');
+      return;
+    }
+    setError('');
+
+    // Detect multiple URLs pasted as newline/space-separated list
+    const detectedUrls = trimmedUrl.split(/[\s\n]+/).filter(s => /^https?:\/\//i.test(s));
+
+    if (detectedUrls.length > 1) {
+      // Batch mode
+      handleBatchImport(detectedUrls);
       return;
     }
 
-    setIsLoading(true);
-    setError(null);
-    setProgress([]);
-
-    try {
-      // NEW: Use the unified engine with progress callback
-      const result = await importRecipeFromUrlWithProgress(url, (step) => {
-        setProgress(prev => [...prev, step]);
-      });
-
-      if (result?._needsManualCaption === true) {
-        // Graceful fallback with pre-filled data
-        setManualUrl(result.sourceUrl);
-        setBestImage(result.bestImage || null);
-        setActiveTab('manual'); // or whatever your manual paste tab is called
-        setIsLoading(false);
-        return;
-      }
-
-      // Success! Import the structured recipe
-      onRecipeAdded?.(result);
-      setSuccessMessage('Recipe imported successfully!');
-      
-      // Close modal after short delay for nice UX
-      setTimeout(() => {
-        onClose?.();
-      }, 1200);
-
-    } catch (err) {
-      console.error('Import failed:', err);
-      setError('Failed to import recipe. Try manual paste instead.');
-      setActiveTab('manual');
-    } finally {
-      setIsLoading(false);
-    }
+    // Single URL — route through performUrlExtraction (handles Instagram → BrowserAssist)
+    setImporting(true);
+    setImportProgress('');
+    performUrlExtraction(trimmedUrl);
   };
 
   // ── Extract URL (reusable for auto-extraction on share-target) ──────────────────
@@ -418,8 +408,8 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       const pasted = e.clipboardData?.getData('text')?.trim();
       if (!pasted) return;
 
-      // Auto-detect pasted URLs
-      const pastedUrls =(pasted);
+      // Auto-detect pasted URLs (split on whitespace/newlines, keep only http/https)
+      const pastedUrls = pasted.split(/[\s\n]+/).filter(s => /^https?:\/\//i.test(s));
       if (pastedUrls.length === 1) {
         // Single URL pasted — auto-fill and start import
         setUrl(pastedUrls[0]);
@@ -1287,7 +1277,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
               </div>
             )}
           </>
-        )
+        )}
       </div>
     </div>
   );

@@ -12272,11 +12272,50 @@ body {
   max-width: 360px;
 }
 
+/* "Open in browser" CTA link in manual fallback */
+.manual-open-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary, #FF7043);
+  text-decoration: none;
+  border: 1.5px solid var(--primary, #FF7043);
+  border-radius: 20px;
+  padding: 6px 16px;
+  margin-top: 4px;
+  transition: background 0.18s;
+}
+.manual-open-link:hover,
+.manual-open-link:focus {
+  background: rgba(255, 112, 67, 0.08);
+  text-decoration: none;
+}
+
+/* Collapsible "What was tried" section */
+.manual-pipeline-summary-details {
+  width: 100%;
+}
+.manual-pipeline-summary-toggle {
+  font-size: 12px;
+  color: var(--text-light);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  padding: 4px 0;
+  opacity: 0.75;
+}
+.manual-pipeline-summary-toggle::-webkit-details-marker { display: none; }
+.manual-pipeline-summary-toggle::before { content: '▶ '; font-size: 10px; }
+details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
+
 .manual-pipeline-summary {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   justify-content: center;
+  padding-top: 8px;
 }
 
 .manual-step-badge {
@@ -12363,6 +12402,42 @@ body {
   cursor: not-allowed;
 }
 
+/* ── Mobile pipeline fixes (iOS/Android PWA) ───────────────────────────────── */
+@media (max-width: 480px) {
+  .pipeline-container {
+    padding: 20px 14px 18px;
+    gap: 14px;
+    min-height: 280px;
+  }
+  .pipeline-steps {
+    padding: 12px;
+    gap: 8px;
+  }
+  .pipeline-step {
+    gap: 10px;
+  }
+  .pipeline-step-label {
+    font-size: 13px;
+  }
+  .pipeline-message {
+    font-size: 11px;
+  }
+  .pipeline-skip-btn {
+    font-size: 13px;
+    padding: 11px 16px;
+  }
+}
+
+/* iOS Safari: ensure animation plays (some iOS versions need explicit will-change) */
+.pipeline-spinner {
+  -webkit-animation: pipelineSpin 0.75s linear infinite;
+  will-change: transform;
+}
+.pipeline-message {
+  -webkit-animation: pulseFade 2s ease-in-out infinite;
+  will-change: opacity;
+}
+
 /* Dark mode */
 [data-theme="dark"] .pipeline-steps {
   background: var(--card);
@@ -12376,6 +12451,9 @@ body {
 [data-theme="dark"] .manual-step-badge--failed { background: rgba(183,28,28,0.12); border-color: #c62828; color: #ef9a9a; }
 [data-theme="dark"] .manual-step-badge--skipped,
 [data-theme="dark"] .manual-step-badge--pending { background: rgba(255,255,255,0.05); border-color: #444; color: #9e9e9e; }
+[data-theme="dark"] .manual-open-link { color: var(--primary); border-color: var(--primary); }
+[data-theme="dark"] .manual-open-link:hover { background: rgba(255, 112, 67, 0.12); }
+[data-theme="dark"] .manual-pipeline-summary-toggle { color: var(--text-light); }
 
 .browser-assist-iframe-container {
   flex: 1;

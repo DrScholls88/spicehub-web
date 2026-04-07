@@ -213,7 +213,10 @@ export function cleanSocialCaption(text) {
   t = t.replace(/^\d+[\s,]*(likes?|followers?|following|comments?|views?|saves?)\s*$/gim, '');
 
   // 10. Strip soft CTA lines ("watch the full video", "see recipe below", etc.)
-  t = t.replace(/^(watch|see|check|full recipe|recipe below|link in bio|recipe (is |in |at )|swipe (up|left|right)|tap (the )?link).{0,100}$/gim, '');
+  // ⚠️  Be surgical: only strip if the line is CLEARLY a CTA, not cooking narration.
+  //     "watch the garlic", "see how it thickens" should survive.
+  //     Match only when the line starts with a CTA trigger AND ends with a CTA-shaped phrase.
+  t = t.replace(/^(watch the full (video|reel|recipe)|see (the )?(full |original )?recipe|check (out )?(the )?(full |my )?recipe|full recipe (is |in |at |below|on)|recipe (is |in |at |below|available)|swipe (up|left|right) for|tap (the )?(link|here)|link in bio for).{0,80}$/gim, '');
 
   // 11. Normalize whitespace
   t = t.replace(/[ \t]{2,}/g, ' ');
@@ -228,19 +231,24 @@ export function cleanSocialCaption(text) {
  * recipe on its own. Triggers early yt-dlp subtitle fallback in BrowserAssist.
  */
 export function isCaptionWeak(text) {
-  if (!text || text.trim().length < 30) return true;
+  if (!text || text.trim().length < 20) return true;
   const cleaned = cleanSocialCaption(text);
-  if (cleaned.length < 80) return true;
+  // Very short after cleaning → definitely weak
+  if (cleaned.length < 50) return true;
 
   // Recipe signals: units/measurements + food words + cooking verbs
   const hasIngredientSignal = UNITS_RE.test(cleaned) || FOOD_RE.test(cleaned);
   const hasDirectionSignal = COOKING_VERBS_RE.test(cleaned);
 
-  // Strong caption: has both ingredient AND direction signals
+  // Strong caption: has both ingredient AND direction signals → always good
   if (hasIngredientSignal && hasDirectionSignal) return false;
 
-  // Thin caption: has only one signal type and isn't long
-  if (cleaned.length < 300 && !(hasIngredientSignal && hasDirectionSignal)) return true;
+  // Medium caption with at least one signal and reasonable length → accept
+  // Narrated Reels often have 100–200 chars of real content but only one signal type
+  if ((hasIngredientSignal || hasDirectionSignal) && cleaned.length >= 120) return false;
+
+  // Short single-signal caption → weak
+  if (cleaned.length < 200 && !(hasIngredientSignal && hasDirectionSignal)) return true;
 
   return false;
 }
@@ -1049,11 +1057,25 @@ async function extractInstagramEmbed(url) {
   const shortcode = extractInstagramShortcode(url);
   if (!shortcode) return null;
 
-  const embedUrl = `https://www.instagram.com/p/${shortcode}/embed/captioned/`;
-  console.log(`[instagram-embed] Trying embed page: ${embedUrl}`);
+  // Try both the /p/ and /reel/ embed URL patterns (Instagram changed their structure in 2025)
+  const embedUrls = [
+    `https://www.instagram.com/p/${shortcode}/embed/captioned/`,
+    `https://www.instagram.com/reel/${shortcode}/embed/captioned/`,
+  ];
+  console.log(`[instagram-embed] Trying embed pages for shortcode: ${shortcode}`);
 
   try {
-    const html = await fetchHtmlViaProxy(embedUrl, 15000);
+    // Try both embed URL patterns, take the first that returns useful HTML
+    let html = null;
+    for (const embedUrl of embedUrls) {
+      const candidate = await fetchHtmlViaProxy(embedUrl, 18000);
+      if (candidate && candidate.length > 3000) {
+        html = candidate;
+        console.log(`[instagram-embed] Got response from: ${embedUrl}`);
+        break;
+      }
+    }
+    if (!html) html = await fetchHtmlViaProxy(embedUrls[0], 18000); // final fallback
     if (!html) { console.log('[instagram-embed] CORS proxy returned no data'); return null; }
     if (html.length < 5000 && (html.includes('Log in') || html.includes('login'))) {
       console.log('[instagram-embed] Login wall detected'); return null;
@@ -1075,17 +1097,29 @@ async function extractInstagramEmbed(url) {
         if (text && text.length > 15) { caption = text; break; }
       }
     }
-    // JSON data fallback
+    // JSON data fallback — multiple 2026 Instagram patterns
     if (!caption) {
       const dataPatterns = [
-        /"caption"\s*:\s*\{\s*"text"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/,
-        /"text"\s*:\s*"([^"]{20,}(?:\\.[^"]*)*)"/,
+        // 2024/2025 SFX JSON payload: "caption":{"text":"…"}
+        /"caption"\s*:\s*\{\s*"text"\s*:\s*"((?:[^"\\]|\\.)*)"/,
+        // Flat caption field
+        /"caption"\s*:\s*"((?:[^"\\]|\\.){20,})"/,
+        // edge_media_to_caption
+        /"edge_media_to_caption"[^}]*"text"\s*:\s*"((?:[^"\\]|\\.)+)"/,
+        // xdt_api__v1__media pattern (2025/2026 API leak in embed HTML)
+        /"caption_text"\s*:\s*"((?:[^"\\]|\\.){15,})"/,
+        // Generic text field with enough length
+        /"text"\s*:\s*"((?:[^"\\]|\\.){30,})"/,
       ];
       for (const re of dataPatterns) {
         const m = re.exec(html);
         if (m && m[1]) {
-          try { caption = JSON.parse('"' + m[1] + '"'); } catch { caption = m[1]; }
-          if (caption.length > 15) break; else caption = '';
+          try {
+            const decoded = JSON.parse('"' + m[1] + '"');
+            if (decoded.length > 15) { caption = decoded; break; }
+          } catch {
+            if (m[1].length > 15) { caption = m[1].replace(/\\n/g, '\n').replace(/\\t/g, ' '); break; }
+          }
         }
       }
     }
@@ -1093,6 +1127,11 @@ async function extractInstagramEmbed(url) {
     if (!caption) {
       const og = extractMeta(html, 'og:description');
       if (og && og.length > 15) caption = og;
+    }
+    // Twitter card description fallback
+    if (!caption) {
+      const tc = extractMeta(html, 'twitter:description');
+      if (tc && tc.length > 15) caption = tc;
     }
 
     // Extract image
@@ -1112,6 +1151,23 @@ async function extractInstagramEmbed(url) {
 
     // Extract title
     let title = cleanTitle(extractMeta(html, 'og:title') || '');
+
+    // If embed page gave nothing, try Instagram oEmbed (public, no auth needed)
+    if (!caption) {
+      try {
+        const oEmbedUrl = `https://www.instagram.com/oembed/?url=${encodeURIComponent(url)}&format=json`;
+        const oEmbedHtml = await fetchHtmlViaProxy(oEmbedUrl, 8000);
+        if (oEmbedHtml && oEmbedHtml.length > 10) {
+          const oData = JSON.parse(oEmbedHtml);
+          if (oData?.title && oData.title.length > 10) {
+            caption = oData.title;
+            if (!title) title = oData.author_name || '';
+            if (!imageUrl && oData.thumbnail_url) imageUrl = oData.thumbnail_url;
+            console.log(`[instagram-embed] oEmbed fallback success — ${caption.length} chars`);
+          }
+        }
+      } catch { /* oEmbed not available */ }
+    }
 
     if (!caption && !title) { console.log('[instagram-embed] No data found'); return null; }
 
@@ -1323,7 +1379,8 @@ export async function tryVideoExtraction(url, onProgress) {
   try {
     if (onProgress) onProgress('Connecting to extraction server...');
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 35000);
+    // 50s timeout — Render.com free tier cold starts take ~30s; give it headroom
+    const timer = setTimeout(() => ctrl.abort(), 50000);
 
     if (onProgress) onProgress('Downloading video metadata & subtitles...');
     const resp = await fetch(`${serverUrl}/api/extract-video`, {

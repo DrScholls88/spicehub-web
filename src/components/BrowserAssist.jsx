@@ -609,25 +609,39 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
             <span className="manual-icon">📋</span>
             <h3>Paste Recipe Text</h3>
             <p className="manual-subtitle">
-              Auto-extraction couldn't read this {platform || 'social'} post. Open the post, copy the caption and ingredient list, then paste it here.
+              Auto-extraction couldn't read this {platform || 'social'} post — open the post, copy the caption, then paste it below.
             </p>
+            {url && (
+              <a
+                href={url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="manual-open-link"
+              >
+                🔗 Open {platform || 'post'} in browser →
+              </a>
+            )}
           </div>
 
-          <div className="manual-pipeline-summary">
-            {pipelineSteps.map((step, i) => (
-              <div key={i} className={`manual-step-badge manual-step-badge--${step.status}`}>
-                {step.status === 'done' ? '✓' : step.status === 'failed' ? '✗' : '—'} {step.label}
+          {pipelineSteps.length > 0 && (
+            <details className="manual-pipeline-summary-details">
+              <summary className="manual-pipeline-summary-toggle">What was tried</summary>
+              <div className="manual-pipeline-summary">
+                {pipelineSteps.map((step, i) => (
+                  <div key={i} className={`manual-step-badge manual-step-badge--${step.status}`}>
+                    {step.status === 'done' ? '✓' : step.status === 'failed' ? '✗' : '—'} {step.label}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            </details>
+          )}
 
           <div className="manual-tips">
-            <strong>How to get the recipe text:</strong>
             <ol>
-              <li>Open the {platform || 'post'} link in your browser</li>
+              <li>Open the link above in your browser</li>
               <li>Tap <strong>… more</strong> to expand the full caption</li>
-              <li>Copy the caption text</li>
-              <li>Paste it below and tap <strong>Parse with AI →</strong></li>
+              <li>Long-press → <strong>Select All</strong> → Copy</li>
+              <li>Paste below and tap <strong>Parse with AI →</strong></li>
             </ol>
           </div>
 
