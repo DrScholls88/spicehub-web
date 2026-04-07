@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { parseFromUrl, importRecipeFromUrl, isSocialMediaUrl, getSocialPlatform, parseCaption, isInstagramUrl, resetServerDetection, extractWithBrowserAPI, isShortUrl, resolveShortUrl, tryVideoExtraction, smartClassifyLines, scoreExtractionConfidence, normalizeAndDedupe, classifyWithConfidence } from '../recipeParser';
+import { importRecipeFromUrlWithProgress, isSocialMediaUrl, getSocialPlatform } from '../recipeParser.js';
 import BrowserAssist from './BrowserAssist';
 
 /**
@@ -26,6 +26,9 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   const [socialDetected, setSocialDetected] = useState(null);
   const [pasteText, setPasteText] = useState('');
   const [pasteLink, setPasteLink] = useState('');
+  const [progress, setProgress] = useState([]);
+  const [bestImage, setBestImage] = useState(null);
+  const [manualUrl, setManualUrl] = useState('');
   // Browser Assist state
   const [browserAssistUrl, setBrowserAssistUrl] = useState(null);
   const [browserAssistMode, setBrowserAssistMode] = useState('off'); // 'off' | 'showing'
@@ -206,20 +209,47 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   };
 
   // ── Import from ANY URL ───────────────────────────────────────────────────────
-  const handleUrlImport = async () => {
-    if (!url.trim()) return;
-    let trimmedUrl = url.trim();
-
-    // ── Multi-URL detection: if user pasted multiple URLs, batch import ──
-    // Split on whitespace/newlines and keep only valid URLs for batch import
-    const detectedUrls = trimmedUrl.split(/[\s\n]+/).filter(s => /^https?:\/\//i.test(s));
-    if (detectedUrls.length > 1) {
-      handleBatchImport(detectedUrls);
+  const handleUrlImport = async (url) => {
+    if (!url || !url.trim()) {
+      setError('Please enter a valid URL');
       return;
     }
 
-    setImporting(true);
-    await performUrlExtraction(trimmedUrl);
+    setIsLoading(true);
+    setError(null);
+    setProgress([]);
+
+    try {
+      // NEW: Use the unified engine with progress callback
+      const result = await importRecipeFromUrlWithProgress(url, (step) => {
+        setProgress(prev => [...prev, step]);
+      });
+
+      if (result?._needsManualCaption === true) {
+        // Graceful fallback with pre-filled data
+        setManualUrl(result.sourceUrl);
+        setBestImage(result.bestImage || null);
+        setActiveTab('manual'); // or whatever your manual paste tab is called
+        setIsLoading(false);
+        return;
+      }
+
+      // Success! Import the structured recipe
+      onRecipeAdded?.(result);
+      setSuccessMessage('Recipe imported successfully!');
+      
+      // Close modal after short delay for nice UX
+      setTimeout(() => {
+        onClose?.();
+      }, 1200);
+
+    } catch (err) {
+      console.error('Import failed:', err);
+      setError('Failed to import recipe. Try manual paste instead.');
+      setActiveTab('manual');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // ── Extract URL (reusable for auto-extraction on share-target) ──────────────────
@@ -675,15 +705,29 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
           </div>
         )}
 
-        {/* ── Browser Assist (interactive extraction — last resort for any URL) ── */}
-        {browserAssistMode === 'showing' ? (
-          <div className="import-browser-assist">
-            <BrowserAssist
-              url={browserAssistUrl}
-              onRecipeExtracted={handleBrowserAssistRecipe}
-              onFallbackToText={handleBrowserAssistFallback}
-            />
-          </div>
+       {activeTab === 'url' && (
+    <div className="mt-4">
+      {isLoading ? (
+        <BrowserAssist 
+          url={urlInput} 
+          onRecipeImported={onRecipeAdded}
+          onManualFallback={(sourceUrl, image) => {
+            setManualUrl(sourceUrl);
+            setBestImage(image);
+            setActiveTab('manual');
+          }}
+        />
+      ) : (
+        <button 
+          onClick={() => handleUrlImport(urlInput)}
+          disabled={isLoading}
+          className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium"
+        >
+          Import Recipe from URL
+        </button>
+      )}
+    </div>
+  )}
 
         ) : /* ── Preview screen (full detail + editable) ──────────────────────── */
         preview ? (
@@ -1261,7 +1305,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
               </div>
             )}
           </>
-        )}
+        )
       </div>
     </div>
   );
