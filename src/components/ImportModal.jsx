@@ -5,6 +5,7 @@ import {
   isInstagramUrl, isShortUrl, resolveShortUrl,
   parseFromUrl, parseCaption,
   classifyWithConfidence, smartClassifyLines, normalizeAndDedupe,
+  scoreExtractionConfidence, tryVideoExtraction,
 } from '../recipeParser.js';
 import BrowserAssist from './BrowserAssist';
 

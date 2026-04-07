@@ -716,6 +716,16 @@ export default function BarShelf({ drinks, onViewDetail, onClose }) {
               swigBottle={swigBottle}
               swigQuip={swigQuip}
             />
+          </div>
+
+          {/* Quips — now outside so they can be on top of everything */}
+          <div 
+            className="bs-quips-layer" 
+            style={{ 
+              transform: `translateX(${bartenderX}px)`,
+              transition: bartenderState === 'idle' ? 'transform 0.3s ease' : 'none',
+            }}
+          >
             {/* Speech bubble — presenting */}
             {bartenderState === 'presenting' && selectedDrink && (
               <div className="bs-bt-speech">

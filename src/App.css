@@ -10604,7 +10604,7 @@ body {
   position: relative;
   height: 190px;
   z-index: 10;
-  overflow: hidden;
+  /* overflow: hidden; -- removed to allow bartender quips to show above */
 }
 
 /* ── Bartender — positioned so torso is above the bar counter ── */
@@ -10808,12 +10808,19 @@ body {
   100% { transform: rotate(0deg); }
 }
 
-/* ── Speech bubble ── */
-.bs-bt-speech {
+.bs-quips-layer {
   position: absolute;
-  top: -40px;
-  left: 50%;
-  transform: translateX(-50%);
+  bottom: 155px; /* positioned above bartender's head */
+  left: 0;
+  width: 120px; /* same as bartender svg width */
+  z-index: 100; /* on top of everything else in the bar-top */
+  pointer-events: none;
+  display: flex;
+  justify-content: center;
+}
+
+.bs-bt-speech {
+  position: relative; /* relative to .bs-quips-layer now */
   background: #fff;
   color: #333;
   font-size: 8px;
@@ -10824,7 +10831,6 @@ body {
   animation: bsBtSpeechIn 0.3s ease-out;
   font-family: 'Press Start 2P', monospace;
   pointer-events: none;
-  z-index: 10;
 }
 
 .bs-bt-speech::after {
