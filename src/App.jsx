@@ -255,11 +255,11 @@ useEffect(() => {
   const params = new URLSearchParams(window.location.search);
   if (params.has('share-target')) {
     const sharedUrl = params.get('url') || params.get('text') || '';
+    const sharedTitle = params.get('title') || '';
     if (sharedUrl) {
-      // Auto-open import modal for meals (most common use case)
+      // Auto-open import modal and pass shared URL into ImportModal via sharedContent
       setShowImportFor('meals');
-      // Pre-fill the URL field
-      setImportUrl(sharedUrl); // You'll need to expose this state or use a ref
+      setSharedContent({ mode: 'url', url: sharedUrl, title: sharedTitle });
       // Clean URL so refreshing doesn't re-trigger
       window.history.replaceState({}, '', window.location.pathname);
     }

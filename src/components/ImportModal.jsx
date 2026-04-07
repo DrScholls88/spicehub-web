@@ -705,30 +705,12 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
           </div>
         )}
 
-       {activeTab === 'url' && (
-    <div className="mt-4">
-      {isLoading ? (
-        <BrowserAssist 
-          url={urlInput} 
-          onRecipeImported={onRecipeAdded}
-          onManualFallback={(sourceUrl, image) => {
-            setManualUrl(sourceUrl);
-            setBestImage(image);
-            setActiveTab('manual');
-          }}
-        />
-      ) : (
-        <button 
-          onClick={() => handleUrlImport(urlInput)}
-          disabled={isLoading}
-          className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium"
-        >
-          Import Recipe from URL
-        </button>
-      )}
-    </div>
-  )}
-
+        {browserAssistMode === 'showing' ? (
+          <BrowserAssist
+            url={browserAssistUrl}
+            onRecipeExtracted={handleBrowserAssistRecipe}
+            onFallbackToText={handleBrowserAssistFallback}
+          />
         ) : /* ── Preview screen (full detail + editable) ──────────────────────── */
         preview ? (
           <div className="import-preview">
