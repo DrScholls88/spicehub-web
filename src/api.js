@@ -13,10 +13,13 @@
  */
 
 // ── CORS proxies (cycled on failure) ──────────────────────────────────────────
+// Ordered roughly by reliability. Rotation starts from last successful index.
 const PROXIES = [
   url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
   url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
   url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+  url => `https://thingproxy.freeboard.io/fetch/${url}`,
+  url => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, // returns JSON {contents} — handled below
 ];
 
 /**
@@ -60,12 +63,19 @@ export async function fetchHtmlViaProxy(url, timeoutMs = 15000) {
         const resp = await fetch(proxyUrl, { signal: ctrl.signal });
         clearTimeout(timer);
         if (!resp.ok) continue;
-        const text = await resp.text();
-        // Improved login wall detection — only reject if it looks like an actual login page
-        if (text.length < 20000 && (text.includes('id="loginForm"') || text.includes('name="username"') || (text.includes('Log in to Instagram') && !text.includes('EmbedCaption')))) {
-          continue;
+        let text = await resp.text();
+        // allorigins /get returns JSON wrapper — unwrap it
+        if (proxyUrl.includes('allorigins.win/get?')) {
+          try { const j = JSON.parse(text); if (j.contents) text = j.contents; } catch { /* not JSON */ }
         }
-        if (text.length < 500) continue; // Error page
+        // Strict login wall detection — only reject pages that ARE login forms
+        const isLoginWall = (
+          text.includes('id="loginForm"') ||
+          (text.includes('name="username"') && text.includes('name="password"') && text.length < 30000) ||
+          (text.includes('"loginEndpoint"') && text.length < 10000)
+        );
+        if (isLoginWall) continue;
+        if (text.length < 300) continue; // Likely an error or empty response
         // Remember which proxy worked
         _lastGoodProxyIdx = PROXIES.indexOf(makeProxy);
         if (_lastGoodProxyIdx < 0) _lastGoodProxyIdx = 0;
@@ -134,9 +144,13 @@ export async function extractInstagramEmbed(url) {
         continue;
       }
 
-      // Check for login wall
-      if (html.length < 5000 && (html.includes('Log in') || html.includes('login'))) {
-        console.log('[instagram-embed] Login wall detected for ' + embedUrl);
+      // Check for actual login wall (not just pages that mention "login" in code)
+      if (
+        html.includes('"viewerId":null') ||
+        (html.length < 4000 && html.includes('"requiresLogin":true')) ||
+        (html.length < 3000 && !html.includes('EmbedCaption') && !html.includes('CaptionUsername') && !html.includes('"shortcode"'))
+      ) {
+        console.log('[instagram-embed] Login wall or empty embed detected for ' + embedUrl);
         continue;
       }
 
@@ -157,21 +171,55 @@ export async function extractInstagramEmbed(url) {
         }
       }
 
-      // Method 2: JSON data in scripts
+      // Method 2: JSON data in scripts — expanded patterns for all IG embed formats
       if (!caption) {
         const dataPatterns = [
-          /"caption"\s*:\s*\{\s*"text"\s*:\s*"([^"]*(?:\\.[^"]*)*)"/,
-          /"text"\s*:\s*"([^"]{20,}(?:\\.[^"]*)*)"/,
+          // Standard embed JSON: "caption":{"text":"..."}
+          /"caption"\s*:\s*\{\s*"text"\s*:\s*"((?:[^"\\]|\\.)*)"/,
+          // Newer embed format: "node":{"...","caption":"..."}
+          /"captionText"\s*:\s*"((?:[^"\\]|\\.){20,})"/,
+          // edge_media_to_caption edges
+          /"edges"\s*:\s*\[\s*\{[^}]*"text"\s*:\s*"((?:[^"\\]|\\.){20,})"/,
+          // accessibility_caption
+          /"accessibility_caption"\s*:\s*"((?:[^"\\]|\\.){20,})"/,
+          // Any long "text" value in a script block (heuristic, broad)
+          /"text"\s*:\s*"((?:[^"\\]|\\.){40,})"/,
         ];
         for (const re of dataPatterns) {
           const m = re.exec(html);
           if (m && m[1]) {
             try {
-              caption = JSON.parse('"' + m[1] + '"');
-              if (caption.length > 15) break;
-              caption = '';
-            } catch { caption = m[1]; if (caption.length > 15) break; caption = ''; }
+              const decoded = JSON.parse('"' + m[1] + '"');
+              if (decoded.length > 15) { caption = decoded; break; }
+            } catch {
+              if (m[1].length > 15) { caption = m[1]; break; }
+            }
           }
+        }
+      }
+
+      // Method 2b: parse __additionalData / window.__InstagramWebSharedData JSON blobs
+      if (!caption) {
+        const scriptM = html.match(/window\.__additionalDataLoaded\([^,]+,(\{[\s\S]+?\})\);/) ||
+                        html.match(/<script[^>]*>window\._sharedData\s*=\s*(\{[\s\S]+?\});<\/script>/);
+        if (scriptM) {
+          try {
+            const data = JSON.parse(scriptM[1]);
+            // Recursively search for a caption text field
+            const findCaption = (obj, depth = 0) => {
+              if (!obj || typeof obj !== 'object' || depth > 8) return '';
+              if (typeof obj.text === 'string' && obj.text.length > 20) return obj.text;
+              if (typeof obj.caption === 'string' && obj.caption.length > 20) return obj.caption;
+              if (obj.caption?.text?.length > 20) return obj.caption.text;
+              for (const val of Object.values(obj)) {
+                const found = findCaption(val, depth + 1);
+                if (found) return found;
+              }
+              return '';
+            };
+            const found = findCaption(data);
+            if (found) caption = found;
+          } catch { /* not parseable */ }
         }
       }
 
@@ -223,23 +271,40 @@ export async function extractInstagramEmbed(url) {
           .trim();
       }
 
-      if (!caption && !title) {
-        console.log('[instagram-embed] No caption or title found in ' + embedUrl);
+      // Even with no caption, extract raw visible text from the embed page for Gemini fallback
+      let rawPageText = '';
+      if (!caption) {
+        // Strip all script/style/meta tags, collapse whitespace
+        rawPageText = html
+          .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+          .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+          .replace(/<!--[\s\S]*?-->/g, ' ')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 3000); // cap for Gemini
+      }
+
+      if (!caption && !title && !rawPageText) {
+        console.log('[instagram-embed] No content found in ' + embedUrl);
         continue;
       }
 
       // Keep result if caption is longer than previous best
-      if (caption.length > bestCaptionLength) {
-        bestCaptionLength = caption.length;
+      const effectiveLength = caption.length || (rawPageText.length > 200 ? rawPageText.length * 0.1 : 0);
+      if (effectiveLength > bestCaptionLength || (!bestResult && (caption || rawPageText))) {
+        bestCaptionLength = effectiveLength;
         bestResult = {
           ok: true,
           type: 'caption',
-          caption,
+          caption: caption || '',
+          rawPageText: caption ? '' : rawPageText, // only used when caption is empty
           title: title || '',
           imageUrl,
           sourceUrl: url,
         };
-        console.log(`[instagram-embed] Found in ${embedUrl} — caption: ${caption.length} chars, image: ${imageUrl ? 'yes' : 'no'}`);
+        console.log(`[instagram-embed] Found in ${embedUrl} — caption: ${caption.length} chars, rawText: ${rawPageText.length} chars, image: ${imageUrl ? 'yes' : 'no'}`);
       }
     } catch (e) {
       console.log(`[instagram-embed] Error from ${embedUrl}: ${e.message}`);

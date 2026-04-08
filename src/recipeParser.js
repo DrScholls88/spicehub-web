@@ -244,11 +244,11 @@ export function isCaptionWeak(text) {
   if (hasIngredientSignal && hasDirectionSignal) return false;
 
   // Medium caption with at least one signal and reasonable length → accept
-  // Narrated Reels often have 100–200 chars of real content but only one signal type
-  if ((hasIngredientSignal || hasDirectionSignal) && cleaned.length >= 120) return false;
+  // Narrated Reels often have 60–150 chars of real content but only one signal type
+  if ((hasIngredientSignal || hasDirectionSignal) && cleaned.length >= 80) return false;
 
   // Short single-signal caption → weak
-  if (cleaned.length < 200 && !(hasIngredientSignal && hasDirectionSignal)) return true;
+  if (cleaned.length < 150 && !(hasIngredientSignal && hasDirectionSignal)) return true;
 
   return false;
 }
@@ -1828,7 +1828,46 @@ export async function parseFromUrl(url, onProgress) {
   const serverResult = await tryServerExtraction(url, onProgress);
   if (serverResult && !serverResult._error) return serverResult;
 
-  // ── 4. All methods exhausted ──
+  // ── 4. Gemini AI fallback — if we fetched HTML but structural extraction failed ──
+  // Re-fetch once more and send a compressed version to Gemini to extract the recipe.
+  if (onProgress) onProgress('Trying AI extraction...');
+  try {
+    const html2 = await fetchHtmlViaProxy(url, 20000);
+    if (html2 && html2.length > 500) {
+      // Extract only meaningful text (no scripts/styles) for the AI prompt
+      const pageText = html2
+        .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+        .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+        .replace(/<nav[\s\S]*?<\/nav>/gi, ' ')
+        .replace(/<header[\s\S]*?<\/header>/gi, ' ')
+        .replace(/<footer[\s\S]*?<\/footer>/gi, ' ')
+        .replace(/<!--[\s\S]*?-->/g, ' ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+        .replace(/\s{3,}/g, '\n')
+        .trim()
+        .slice(0, 6000);
+
+      if (pageText.length > 200) {
+        const titleHint = extractMeta(html2, 'og:title') || '';
+        const imageUrl = extractMeta(html2, 'og:image') || '';
+        const aiRecipe = await structureWithAIClient(pageText, { title: titleHint, imageUrl, sourceUrl: url });
+        if (aiRecipe) {
+          const hasContent = (aiRecipe.ingredients?.length > 0 && !aiRecipe.ingredients[0].includes('See original')) ||
+                            (aiRecipe.directions?.length > 0 && !aiRecipe.directions[0].includes('See original'));
+          if (hasContent) {
+            console.log('[SpiceHub] AI extraction succeeded for ' + url);
+            return { ...aiRecipe, link: url, _extractedVia: 'gemini-ai' };
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.log('[SpiceHub] AI fallback failed:', e.message);
+  }
+
+  // ── 5. All methods exhausted ──
   return null;
 }
 
@@ -1842,21 +1881,36 @@ export async function parseFromUrl(url, onProgress) {
  */
 export function parseHtml(html, sourceUrl) {
   // 1. JSON-LD (best, most reliable)
+  // IMPORTANT: Only accept if it has at least a title + some content (ingredients OR directions).
+  // Many sites have a Recipe JSON-LD schema stub with empty arrays — falling through lets CSS
+  // extraction (WPRM, Tasty, Feast, Mediavine Create, etc.) find the actual content.
   const [jsonLdRecipe] = findJsonLdRecipes(html);
   if (jsonLdRecipe) {
-    return { ...jsonLdRecipe, link: sourceUrl };
+    const hasContent = jsonLdRecipe.ingredients?.length > 0 || jsonLdRecipe.directions?.length > 0;
+    if (hasContent) {
+      return { ...jsonLdRecipe, link: sourceUrl };
+    }
+    // Has a name but no content — continue to CSS/microdata for the actual recipe data.
+    // We'll merge the JSON-LD name/image back in at the end if CSS finds content.
+    console.log('[SpiceHub] JSON-LD Recipe found but empty content — falling through to CSS extraction');
   }
 
   // 2. Microdata (itemprop/itemtype)
   const microdataRecipe = extractMicrodataFromHtml(html);
   if (microdataRecipe) {
-    return { ...microdataRecipe, link: sourceUrl };
+    // Merge in JSON-LD title/image if better
+    const name = (jsonLdRecipe?.name && !microdataRecipe.name) ? jsonLdRecipe.name : microdataRecipe.name;
+    const imageUrl = microdataRecipe.imageUrl || jsonLdRecipe?.imageUrl || '';
+    return { ...microdataRecipe, name, imageUrl, link: sourceUrl };
   }
 
-  // 3. Heuristic CSS class matching (WPRM, Tasty, etc.)
+  // 3. Heuristic CSS class matching (WPRM, Tasty, Feast, Mediavine Create, etc.)
   const heuristicRecipe = extractRecipeByCSS(html);
   if (heuristicRecipe) {
-    return { ...heuristicRecipe, link: sourceUrl };
+    // Merge JSON-LD title/image if CSS didn't find them
+    const name = heuristicRecipe.name || jsonLdRecipe?.name || '';
+    const imageUrl = heuristicRecipe.imageUrl || jsonLdRecipe?.imageUrl || extractMeta(html, 'og:image') || '';
+    return { ...heuristicRecipe, name, imageUrl, link: sourceUrl };
   }
 
   // 4. Meta tags fallback
@@ -1934,21 +1988,37 @@ function extractRecipeByCSS(html) {
   const stripTags = (s) => s.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 
   // Look for popular recipe plugin patterns
+  // WPRM, Tasty, Mediavine Create, Feast Plugin, AdThrive, NYT Cooking, Allrecipes, etc.
   const ingPatterns = [
+    // WP Recipe Maker (most popular)
     /class\s*=\s*["'][^"']*wprm-recipe-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
+    // Tasty Recipes
     /class\s*=\s*["'][^"']*tasty-recipe[s]?-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
+    // Mediavine Create (mv-create-*)
+    /class\s*=\s*["'][^"']*mv-create-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div|p)>/gi,
     /class\s*=\s*["'][^"']*mv-recipe-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
     /class\s*=\s*["'][^"']*mv-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    // Feast Plugin (used by many food blogs)
+    /class\s*=\s*["'][^"']*recipe-card-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    /class\s*=\s*["'][^"']*ingredients__ingredient[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    // AdThrive / Raptive
     /class\s*=\s*["'][^"']*at-recipe-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    /class\s*=\s*["'][^"']*adthrive-recipe-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    // Generic recipe ingredient patterns
     /class\s*=\s*["'][^"']*recipe__ingredient[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
     /class\s*=\s*["'][^"']*ingredient-item[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
     /class\s*=\s*["'][^"']*recipe-ingred_txt[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|span|div)>/gi,
     /class\s*=\s*["'][^"']*structured-ingredients__list-item[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
     /class\s*=\s*["'][^"']*ingredient-list__item[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
     /class\s*=\s*["'][^"']*recipe-ingredients__item[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    // NYT Cooking, Serious Eats
     /class\s*=\s*["'][^"']*o-Ingredient__a-Name[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|span|div)>/gi,
+    /class\s*=\s*["'][^"']*ingredient__quantity[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|span|div)>/gi,
+    // Broad fallbacks
     /class\s*=\s*["'][^"']*recipe-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
     /class\s*=\s*["'][^"']*ingredient-text[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|span|div)>/gi,
+    // schema.org recipeIngredient inside any tag
+    /itemprop\s*=\s*["']recipeIngredient["'][^>]*>([^<]{3,200})/gi,
   ];
 
   const ingredients = [];
@@ -1962,20 +2032,36 @@ function extractRecipeByCSS(html) {
   }
 
   const dirPatterns = [
+    // WP Recipe Maker
     /class\s*=\s*["'][^"']*wprm-recipe-instruction[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
+    // Tasty Recipes
     /class\s*=\s*["'][^"']*tasty-recipe[s]?-instruction[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
+    // Mediavine Create (mv-create-*)
+    /class\s*=\s*["'][^"']*mv-create-instruction[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div|p)>/gi,
+    /class\s*=\s*["'][^"']*mv-create-step[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div|p)>/gi,
     /class\s*=\s*["'][^"']*mv-recipe-instruction[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
     /class\s*=\s*["'][^"']*mv-instruction[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    // Feast Plugin
+    /class\s*=\s*["'][^"']*recipe-card-step[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div|p)>/gi,
+    /class\s*=\s*["'][^"']*instructions__instruction[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    // AdThrive / Raptive
     /class\s*=\s*["'][^"']*at-recipe-instruction[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    /class\s*=\s*["'][^"']*adthrive-recipe-instruction[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    // Generic patterns
     /class\s*=\s*["'][^"']*recipe__step[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
     /class\s*=\s*["'][^"']*step-item[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
     /class\s*=\s*["'][^"']*recipe-directions__item[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
     /class\s*=\s*["'][^"']*structured-project__step[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
     /class\s*=\s*["'][^"']*recipe-step__text[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div|p)>/gi,
+    // NYT Cooking, Serious Eats
     /class\s*=\s*["'][^"']*o-Method__m-Step[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    // Gutenberg blocks
     /class\s*=\s*["'][^"']*wp-block-list-item[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    // Broad fallbacks
     /class\s*=\s*["'][^"']*recipe-instruction[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
     /class\s*=\s*["'][^"']*step-text[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div|p)>/gi,
+    // schema.org recipeInstructions inside <li>
+    /itemprop\s*=\s*["'](?:recipeInstructions|step)["'][^>]*>([\s\S]*?)<\/(?:li|div|section)>/gi,
   ];
 
   const directions = [];
@@ -1995,6 +2081,9 @@ function extractRecipeByCSS(html) {
   const titlePatterns = [
     /class\s*=\s*["'][^"']*wprm-recipe-name[^"']*["'][^>]*>([^<]+)/i,
     /class\s*=\s*["'][^"']*tasty-recipes-title[^"']*["'][^>]*>([^<]+)/i,
+    /class\s*=\s*["'][^"']*mv-create-title[^"']*["'][^>]*>([^<]+)/i,
+    /class\s*=\s*["'][^"']*recipe-card-title[^"']*["'][^>]*>([^<]+)/i,
+    /class\s*=\s*["'][^"']*recipe[_-]?name[^"']*["'][^>]*>([^<]+)/i,
     /class\s*=\s*["'][^"']*recipe[_-]?title[^"']*["'][^>]*>([^<]+)/i,
   ];
   for (const re of titlePatterns) {
@@ -3083,15 +3172,24 @@ export async function importFromInstagram(url, onProgress = () => {}) {
     }
   } catch { progress(0, 'failed', 'Video extraction unavailable'); }
 
+  // Track raw page text from embed as last-resort Gemini input
+  let capturedRawPageText = '';
+
   // ── Phase 1: Instagram embed page (skip if yt-dlp gave full content) ─────────
   if (!videoRecipe) {
     progress(1, 'running', 'Fetching Instagram caption…');
     try {
       const embedData = await extractInstagramEmbed(url);
+      if (embedData?.rawPageText && !embedData?.caption) {
+        // No clean caption but we have raw page text — save for Phase 3 Gemini fallback
+        capturedRawPageText = embedData.rawPageText;
+      }
+      // Always capture image from embed data, regardless of caption
+      if (embedData?.imageUrl && !capturedImageUrl) capturedImageUrl = embedData.imageUrl;
+
       if (embedData?.caption) {
         const embedCaption = cleanSocialCaption(embedData.caption);
         if (embedCaption.length > capturedCaption.length) capturedCaption = embedCaption;
-        if (embedData.imageUrl && !capturedImageUrl) capturedImageUrl = embedData.imageUrl;
 
         const isWeak = isCaptionWeak(capturedCaption);
         progress(1, 'done',
@@ -3105,6 +3203,9 @@ export async function importFromInstagram(url, onProgress = () => {}) {
           // Fall through to Phase 3
         }
         // Weak caption: continue to Phase 2 (AI browser) to try to get more text
+      } else if (embedData?.rawPageText) {
+        // No clean caption but embed returned raw page text — Phase 3 will try Gemini on it
+        progress(1, 'done', 'No caption found — trying AI on page content');
       } else {
         progress(1, 'failed', 'No caption in embed page');
       }
@@ -3139,11 +3240,19 @@ export async function importFromInstagram(url, onProgress = () => {}) {
 
   // ── Phase 3: Gemini AI structuring — ALWAYS runs on any captured text ─────────
   // Per unified plan: "Phase 3 is the always-run intelligence layer."
-  // Even thin captions get a Gemini attempt — it often salvages partial content.
-  if (capturedCaption && capturedCaption.trim().length >= 20) {
-    progress(3, 'running', '✨ Structuring recipe with Gemini…');
+  // Runs on: caption text, yt-dlp text, OR raw embed page text as last resort.
+  const textForGemini = capturedCaption?.trim().length >= 20
+    ? capturedCaption
+    : capturedRawPageText?.trim().length >= 100 ? capturedRawPageText : '';
+
+  if (textForGemini) {
+    if (!capturedCaption?.trim().length) {
+      progress(3, 'running', '✨ Trying AI on raw page content…');
+    } else {
+      progress(3, 'running', '✨ Structuring recipe with Gemini…');
+    }
     try {
-      const recipe = await captionToRecipe(capturedCaption, { imageUrl: capturedImageUrl, sourceUrl: url });
+      const recipe = await captionToRecipe(textForGemini, { imageUrl: capturedImageUrl, sourceUrl: url });
       if (recipe && !isPlaceholder(recipe.ingredients) && !isPlaceholder(recipe.directions)) {
         progress(3, 'done', 'Recipe structured successfully!');
         return {

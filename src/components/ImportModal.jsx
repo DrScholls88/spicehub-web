@@ -636,10 +636,16 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
 
   const confirmImport = () => {
     if (!preview) return;
-    onImport(preview.map(m => ({
+    // Filter out any null/undefined entries from the preview (defensive guard)
+    const valid = preview.filter(m => m && m.name);
+    if (!valid.length) return;
+    onImport(valid.map(m => ({
       ...m,
-      ingredients: m.ingredients?.length ? m.ingredients : ['No ingredients listed'],
-      directions: m.directions?.length ? m.directions : ['No directions listed'],
+      // For drinks: directions are optional (a simple cocktail may just have ingredients)
+      // Use generic fallbacks only when truly empty so the DB never gets undefined fields
+      ingredients: m.ingredients?.length ? m.ingredients : [],
+      directions: m.directions?.length ? m.directions : [],
+      importedAt: m.importedAt || new Date().toISOString(),
     })));
   };
 
@@ -1024,7 +1030,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
             <div className="modal-footer">
               <button className="btn-secondary" onClick={() => setPreview(null)}>← Back</button>
               <button className="btn-primary" onClick={confirmImport}>
-                Add {preview.length} Recipe{preview.length !== 1 ? 's' : ''}
+                Add {preview.length} {title.toLowerCase().includes('drink') ? (preview.length !== 1 ? 'Drinks' : 'Drink') : (preview.length !== 1 ? 'Recipes' : 'Recipe')}
               </button>
             </div>
           </div>
