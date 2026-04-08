@@ -990,8 +990,8 @@ function parseRecipeNode(node) {
 
   return {
     name,
-    ingredients: ingredients.length ? ingredients : ['See recipe for ingredients'],
-    directions: directions.length ? directions : ['See recipe for directions'],
+    ingredients: ingredients.length ? ingredients : [],
+    directions: directions.length ? directions : [],
     imageUrl,
   };
 }
@@ -1702,8 +1702,8 @@ function parseRecipeFromServerJsonLd(recipe) {
 
   return {
     name: cleanTitle(recipe.name),
-    ingredients: ingredients.length ? ingredients : ['See recipe for ingredients'],
-    directions: directions.length ? directions : ['See recipe for directions'],
+    ingredients: ingredients.length ? ingredients : [],
+    directions: directions.length ? directions : [],
     imageUrl: imageUrl || '',
   };
 }
@@ -1782,7 +1782,15 @@ export async function parseFromUrl(url, onProgress) {
     // Fallback: CORS proxy (sometimes works for public pages)
     if (onProgress) onProgress('Trying direct extraction...');
     try {
-      const html = await fetchHtmlViaProxy(url);
+      let html = await fetchHtmlViaProxy(url);
+      // Detect redirect pages (CORS proxy may return redirect HTML instead of following)
+      if (html && (
+        /^\s*<!DOCTYPE[^>]*>\s*<html[^>]*>\s*<head[^>]*>\s*<meta[^>]+refresh[^>]+url=/i.test(html) ||
+        /<body[^>]*>\s*(?:Redirecting|Moved|Location:)/i.test(html) ||
+        html.length < 2000 && /window\.location\s*=/.test(html)
+      )) {
+        html = null;
+      }
       if (html) {
         const recipe = parseHtml(html, url);
         if (recipe) return recipe;
@@ -1798,7 +1806,15 @@ export async function parseFromUrl(url, onProgress) {
   console.log('[SpiceHub] Fetching recipe via CORS proxy...');
   if (onProgress) onProgress('Extracting recipe from page...');
   try {
-    const html = await fetchHtmlViaProxy(url);
+    let html = await fetchHtmlViaProxy(url);
+    // Detect redirect pages (CORS proxy may return redirect HTML instead of following)
+    if (html && (
+      /^\s*<!DOCTYPE[^>]*>\s*<html[^>]*>\s*<head[^>]*>\s*<meta[^>]+refresh[^>]+url=/i.test(html) ||
+      /<body[^>]*>\s*(?:Redirecting|Moved|Location:)/i.test(html) ||
+      html.length < 2000 && /window\.location\s*=/.test(html)
+    )) {
+      html = null;
+    }
     if (html) {
       const recipe = parseHtml(html, url);
       if (recipe) return recipe;
@@ -1859,8 +1875,8 @@ export function parseHtml(html, sourceUrl) {
   // Strip social media prefix from description
   description = stripSocialMetaPrefix(description || '');
 
-  let ingredients = ['See original recipe for ingredients'];
-  let directions = ['See original recipe for directions'];
+  let ingredients = [];
+  let directions = [];
 
   if (description) {
     const parsed = parseCaption(description);
@@ -1907,8 +1923,8 @@ function extractMicrodataFromHtml(html) {
 
   return {
     name,
-    ingredients: ingredients.length ? ingredients : ['See recipe for ingredients'],
-    directions: directions.length ? directions : ['See recipe for directions'],
+    ingredients: ingredients.length ? ingredients : [],
+    directions: directions.length ? directions : [],
     imageUrl,
   };
 }
@@ -1921,6 +1937,16 @@ function extractRecipeByCSS(html) {
   const ingPatterns = [
     /class\s*=\s*["'][^"']*wprm-recipe-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
     /class\s*=\s*["'][^"']*tasty-recipe[s]?-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
+    /class\s*=\s*["'][^"']*mv-recipe-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    /class\s*=\s*["'][^"']*mv-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    /class\s*=\s*["'][^"']*at-recipe-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    /class\s*=\s*["'][^"']*recipe__ingredient[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    /class\s*=\s*["'][^"']*ingredient-item[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    /class\s*=\s*["'][^"']*recipe-ingred_txt[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|span|div)>/gi,
+    /class\s*=\s*["'][^"']*structured-ingredients__list-item[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    /class\s*=\s*["'][^"']*ingredient-list__item[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    /class\s*=\s*["'][^"']*recipe-ingredients__item[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    /class\s*=\s*["'][^"']*o-Ingredient__a-Name[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|span|div)>/gi,
     /class\s*=\s*["'][^"']*recipe-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
     /class\s*=\s*["'][^"']*ingredient-text[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|span|div)>/gi,
   ];
@@ -1938,6 +1964,16 @@ function extractRecipeByCSS(html) {
   const dirPatterns = [
     /class\s*=\s*["'][^"']*wprm-recipe-instruction[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
     /class\s*=\s*["'][^"']*tasty-recipe[s]?-instruction[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
+    /class\s*=\s*["'][^"']*mv-recipe-instruction[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    /class\s*=\s*["'][^"']*mv-instruction[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    /class\s*=\s*["'][^"']*at-recipe-instruction[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    /class\s*=\s*["'][^"']*recipe__step[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    /class\s*=\s*["'][^"']*step-item[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    /class\s*=\s*["'][^"']*recipe-directions__item[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    /class\s*=\s*["'][^"']*structured-project__step[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    /class\s*=\s*["'][^"']*recipe-step__text[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div|p)>/gi,
+    /class\s*=\s*["'][^"']*o-Method__m-Step[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
+    /class\s*=\s*["'][^"']*wp-block-list-item[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
     /class\s*=\s*["'][^"']*recipe-instruction[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
     /class\s*=\s*["'][^"']*step-text[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div|p)>/gi,
   ];
@@ -1970,8 +2006,8 @@ function extractRecipeByCSS(html) {
 
   return {
     name,
-    ingredients: ingredients.length ? ingredients : ['See recipe for ingredients'],
-    directions: directions.length ? directions : ['See recipe for directions'],
+    ingredients: ingredients.length ? ingredients : [],
+    directions: directions.length ? directions : [],
     imageUrl: extractMeta(html, 'og:image') || '',
   };
 }
@@ -2021,8 +2057,8 @@ export function extractRecipeFromDOM(visibleText, imageUrls = [], sourceUrl = ''
 
   return {
     name: cleanTitle(name),
-    ingredients: ingredients.length ? ingredients : ['See recipe for ingredients'],
-    directions: directions.length ? directions : ['See recipe for directions'],
+    ingredients: ingredients.length ? ingredients : [],
+    directions: directions.length ? directions : [],
     imageUrl,
     link: sourceUrl,
   };
@@ -3168,10 +3204,17 @@ export async function importRecipeFromUrl(url, onProgress = () => {}) {
   try { resolvedUrl = await resolveShortUrl(url); } catch { /* use original */ }
 
   if (isInstagramUrl(resolvedUrl)) {
+    // ── Normalize URL for consistent cache key (strip UTM params, trailing slash) ──
+    let cacheKey = resolvedUrl;
+    try {
+      const { normalizeInstagramUrl } = await import('./api.js');
+      cacheKey = normalizeInstagramUrl(resolvedUrl);
+    } catch { /* use raw URL */ }
+
     // ── Check Dexie cache first (offline-first, 7-day TTL) ──
     try {
       const { getCachedInstagramRecipe } = await import('./db.js');
-      const cached = await getCachedInstagramRecipe(resolvedUrl);
+      const cached = await getCachedInstagramRecipe(cacheKey);
       if (cached) {
         onProgress(0, 'done', 'Loaded from cache ✓');
         onProgress(1, 'skipped', 'Cached');
@@ -3183,11 +3226,11 @@ export async function importRecipeFromUrl(url, onProgress = () => {}) {
 
     const recipe = await importFromInstagram(resolvedUrl, onProgress);
 
-    // ── Save successful result to cache ──
+    // ── Save successful result to cache (keyed by normalized URL) ──
     if (recipe && !recipe._needsManualCaption) {
       try {
         const { cacheInstagramRecipe } = await import('./db.js');
-        await cacheInstagramRecipe(resolvedUrl, recipe);
+        await cacheInstagramRecipe(cacheKey, recipe);
       } catch { /* cache write failed, non-fatal */ }
     }
 

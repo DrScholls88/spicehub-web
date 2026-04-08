@@ -56,69 +56,13 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icon-192.svg', 'icon-512.svg', 'icon-maskable.svg'],
       manifest: false, // We use our own manifest.json in /public
+      strategies: 'injectManifest',
+      swSrc: 'public/sw.js',
+      swDest: 'sw.js',
+      // With injectManifest, runtime caching is defined in sw.js directly.
+      // Only globPatterns is needed here to control which assets get precached.
       workbox: {
-        skipWaiting: true,
-        clientsClaim: true,
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
-        navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api\//, /\.[a-z]+$/i],
-        runtimeCaching: [
-          {
-            // Cache recipe images from external sources
-            urlPattern: /^https:\/\/images\.unsplash\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'recipe-images',
-              expiration: { maxEntries: 100, maxAgeSeconds: 30 * 24 * 60 * 60 },
-            },
-          },
-          {
-            // Cache Instagram CDN images (recipe photos)
-            urlPattern: /^https:\/\/.*\.cdninstagram\.com\/.*/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'instagram-images',
-              expiration: { maxEntries: 50, maxAgeSeconds: 7 * 24 * 60 * 60 },
-            },
-          },
-          {
-            // Cache CORS proxy responses for recipe parsing (client-side fallback)
-            urlPattern: /^https:\/\/api\.allorigins\.win\/.*/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'cors-proxy-cache',
-              expiration: { maxEntries: 30, maxAgeSeconds: 7 * 24 * 60 * 60 },
-            },
-          },
-          {
-            // Cache web fonts and SVG icons from CDNs with long expiry
-            urlPattern: /\.(?:woff2?|ttf|eot)$/i,
-            handler: 'StaleWhileRevalidate',
-            options: {
-              cacheName: 'font-cache',
-              expiration: { maxEntries: 20, maxAgeSeconds: 365 * 24 * 60 * 60 },
-            },
-          },
-          {
-            // Cache general images (PNG, JPEG, GIF, WebP, AVIF)
-            urlPattern: /\.(?:png|jpg|jpeg|gif|webp|avif)$/i,
-            handler: 'CacheFirst',
-            options: {
-              cacheName: 'general-images',
-              expiration: { maxEntries: 200, maxAgeSeconds: 30 * 24 * 60 * 60 },
-            },
-          },
-          {
-            // Cache API calls with network-first strategy and 5s timeout
-            urlPattern: /\/api\/.*/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'api-cache',
-              expiration: { maxEntries: 50, maxAgeSeconds: 24 * 60 * 60 },
-              networkTimeoutSeconds: 5,
-            },
-          },
-        ],
       },
     }),
   ],

@@ -251,9 +251,11 @@ export default function App() {
   };
 
 // Handle Share Target (Android + PWA)
+// Supports both GET (legacy) and POST (via sw.js redirect) methods
 useEffect(() => {
   const params = new URLSearchParams(window.location.search);
   if (params.has('share-target')) {
+    // Prefer 'url' param, fall back to 'text' (can be either a URL or description)
     const sharedUrl = params.get('url') || params.get('text') || '';
     const sharedTitle = params.get('title') || '';
     if (sharedUrl) {

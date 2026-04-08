@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { downloadMealsFile, importMealsFromJson, shareMealsFile } from '../sync';
 import { proxyImageUrl } from '../api';
 import { toggleRotation, bulkSetRotation } from '../db';
+import useBackHandler from '../hooks/useBackHandler';
 
 // Image component with CORS proxy fallback for expired CDN URLs
 function CardImage({ src, alt, className, phClass }) {
@@ -184,6 +185,10 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
     onToast?.(`Added ${selectedIds.size} meal${selectedIds.size !== 1 ? 's' : ''} to The Rotation`);
     exitSelectMode();
   }, [selectedIds, onReload, onToast]);
+
+  // ── Hardware back button handler (Android PWA) ──────────────────────────────
+  // When in select mode, back button should deselect all items instead of closing the app
+  useBackHandler(selectMode, exitSelectMode, 'meal-select');
 
   return (
     <div className="ml">
