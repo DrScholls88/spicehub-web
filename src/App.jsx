@@ -677,6 +677,7 @@ useEffect(() => {
           drinks={drinks}
           onViewDetail={(drink) => { setShowBarShelf(false); setDetailItem(drink); }}
           onClose={() => setShowBarShelf(false)}
+          onImport={() => setShowImportFor('drinks')}
         />
       )}
       {showBarFridge && (

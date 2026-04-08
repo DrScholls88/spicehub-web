@@ -10133,22 +10133,22 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  /* Rich dark bar-room atmosphere */
+  /* CRT scanline overlay + cyberpunk night sky */
   background:
-    /* Horizontal mortar lines (brick pattern) */
+    /* CRT scanline overlay */
     repeating-linear-gradient(
       to bottom,
-      transparent 0px, transparent 15px,
-      rgba(0, 0, 0, 0.18) 15px, rgba(0, 0, 0, 0.18) 17px
+      transparent 0px, transparent 2px,
+      rgba(0, 0, 0, 0.03) 2px, rgba(0, 0, 0, 0.03) 4px
     ),
-    /* Vertical brick seams */
-    repeating-linear-gradient(
-      to right,
-      transparent 0px, transparent 32px,
-      rgba(0, 0, 0, 0.1) 32px, rgba(0, 0, 0, 0.1) 34px
-    ),
-    /* Dark reddish-brown base */
-    linear-gradient(180deg, #100508 0%, #150a20 20%, #0d0d18 55%, #180c06 100%);
+    /* Deep purple-black night */
+    linear-gradient(180deg,
+      #0a0015 0%,
+      #120025 15%,
+      #0d001a 40%,
+      #100808 75%,
+      #0a0005 100%
+    );
   max-width: 600px;
   margin: 0 auto;
 }
@@ -10191,6 +10191,36 @@ body {
 }
 
 .bs-pixel-arrow { font-size: 12px; }
+
+.bs-import-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: none;
+  border: 2px solid #ff4081;
+  padding: 6px 10px;
+  color: #ff4081;
+  font-size: 14px;
+  cursor: pointer;
+  font-family: 'Press Start 2P', monospace;
+  min-height: 40px;
+  min-width: 52px;
+  border-radius: 0;
+  transition: background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bs-import-btn:active {
+  background: rgba(255, 64, 129, 0.15);
+  transform: scale(0.96);
+}
+
+.bs-import-label {
+  font-size: 6px;
+  color: #ff4081;
+  letter-spacing: 0.5px;
+}
 
 .bs-title {
   font-size: 14px;
@@ -10269,6 +10299,32 @@ body {
     rgba(64, 130, 255, 0.05) 0%, transparent 70%);
   pointer-events: none;
   z-index: 0;
+}
+
+/* City skyline drawn purely in CSS pixel art */
+.bs-city-skyline {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 45%;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.18;
+  background:
+    /* Building silhouettes using gradients */
+    linear-gradient(to top, #6a0dad 0%, #6a0dad 60%, transparent 60%) 0 0 / 40px 80px no-repeat,
+    linear-gradient(to top, #4a0080 0%, #4a0080 45%, transparent 45%) 42px 0 / 25px 55px no-repeat,
+    linear-gradient(to top, #5a0090 0%, #5a0090 70%, transparent 70%) 69px 0 / 35px 90px no-repeat,
+    linear-gradient(to top, #3a0060 0%, #3a0060 35%, transparent 35%) 106px 0 / 30px 45px no-repeat,
+    linear-gradient(to top, #6a0dad 0%, #6a0dad 55%, transparent 55%) 138px 0 / 45px 70px no-repeat,
+    linear-gradient(to top, #4a0080 0%, #4a0080 80%, transparent 80%) 185px 0 / 20px 100px no-repeat,
+    linear-gradient(to top, #5a0090 0%, #5a0090 40%, transparent 40%) 207px 0 / 50px 50px no-repeat,
+    linear-gradient(to top, #3a0060 0%, #3a0060 65%, transparent 65%) 259px 0 / 38px 82px no-repeat,
+    linear-gradient(to top, #6a0dad 0%, #6a0dad 48%, transparent 48%) 299px 0 / 28px 60px no-repeat,
+    linear-gradient(to top, #4a0080 0%, #4a0080 72%, transparent 72%) 329px 0 / 42px 92px no-repeat,
+    /* Ground glow */
+    linear-gradient(to top, rgba(106, 13, 173, 0.4) 0%, transparent 20%);
 }
 
 /* ── Barback LED Menu Display ── */
@@ -10391,6 +10447,49 @@ body {
   to   { transform: translateX(-100%); }
 }
 
+/* Glass display case frame */
+.bs-display-case {
+  position: relative;
+  flex: 1;
+  margin: 0 8px 4px;
+  border: 3px solid #3a1f6e;
+  border-radius: 4px;
+  overflow: hidden;
+  background: linear-gradient(180deg,
+    rgba(20, 5, 40, 0.85) 0%,
+    rgba(10, 2, 25, 0.92) 100%
+  );
+  box-shadow:
+    0 0 0 1px #1a0a30,
+    0 0 20px rgba(100, 0, 200, 0.2),
+    inset 0 0 30px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(180, 100, 255, 0.15);
+}
+
+/* Glass sheen top-left highlight */
+.bs-display-case::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 40%; height: 100%;
+  background: linear-gradient(135deg,
+    rgba(255,255,255,0.04) 0%,
+    transparent 50%
+  );
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Glass bottom light strip */
+.bs-display-case::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 5%; right: 5%;
+  height: 2px;
+  background: linear-gradient(to right, transparent, rgba(150, 80, 255, 0.6), transparent);
+  z-index: 10;
+}
+
 /* ── Bottle shelves container ── */
 .bs-backbar-shelves {
   flex: 1;
@@ -10435,38 +10534,29 @@ body {
   align-items: flex-end;
 }
 
-/* Wooden shelf plank */
+/* Wooden shelf plank with neon glow */
 .bs-shelf-plank {
-  height: 10px;
-  margin: 0 8px;
-  background: linear-gradient(180deg,
-    #9a7856 0%, #8d6e4c 15%, #7a5c3a 40%, #6d4c33 70%, #4a3220 100%);
-  border-radius: 0 0 2px 2px;
+  height: 6px;
+  background: linear-gradient(to bottom, #8B4513 0%, #5D2E0C 50%, #3d1a08 100%);
+  border-top: 2px solid #CD853F;
   box-shadow:
-    0 4px 8px rgba(0, 0, 0, 0.6),
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    inset 0 -1px 0 rgba(0, 0, 0, 0.3);
+    0 2px 6px rgba(0,0,0,0.6),
+    0 -1px 3px rgba(255, 180, 80, 0.15),
+    inset 0 1px 0 rgba(255,200,100,0.2);
   position: relative;
 }
 
-.bs-shelf-plank::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
-}
-
-/* Subtle wood grain lines */
+/* Neon under-shelf glow (like LED strip lighting) */
 .bs-shelf-plank::after {
   content: '';
   position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(
-    90deg,
-    transparent 0px, transparent 8px,
-    rgba(0, 0, 0, 0.05) 8px, rgba(0, 0, 0, 0.05) 9px
-  );
+  bottom: -4px;
+  left: 10%;
+  right: 10%;
+  height: 4px;
+  background: rgba(180, 80, 255, 0.35);
+  filter: blur(3px);
+  border-radius: 50%;
 }
 
 /* Page navigation */
@@ -10483,19 +10573,31 @@ body {
 
 .bs-page-btn {
   background: none;
-  border: 2px solid #555;
-  color: #aaa;
-  font-size: 12px;
-  padding: 6px 12px;
+  border: 2px solid #7c3aed;
+  color: #a855f7;
+  font-size: 18px;
+  padding: 8px 16px;
   cursor: pointer;
-  font-family: 'Press Start 2P', monospace;
-  -webkit-tap-highlight-color: transparent;
+  min-height: 48px;
+  min-width: 48px;
+  border-radius: 2px;
   transition: all 0.15s;
-  min-height: 38px;
+  font-family: inherit;
 }
 
-.bs-page-btn:disabled           { opacity: 0.2; cursor: default; }
-.bs-page-btn:active:not(:disabled) { background: #ffffff10; color: #fff; }
+.bs-page-btn:not(:disabled):hover,
+.bs-page-btn:not(:disabled):active {
+  background: rgba(124, 58, 237, 0.25);
+  border-color: #a855f7;
+  color: #c084fc;
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.4);
+  transform: scale(1.08);
+}
+
+.bs-page-btn:disabled {
+  opacity: 0.2;
+  cursor: default;
+}
 
 .bs-page-dots { display: flex; gap: 6px; align-items: center; }
 
@@ -10547,6 +10649,14 @@ body {
   background: #ff4081;
   border-radius: 50%;
   box-shadow: 0 0 6px #ff4081, 0 0 12px #ff408180;
+}
+
+.bs-glow {
+  filter: drop-shadow(0 0 4px currentColor) drop-shadow(0 0 8px currentColor);
+}
+
+.bs-bottle-slot.bs-selected .bs-bottle-svg {
+  filter: drop-shadow(0 0 6px #ff4081) drop-shadow(0 0 12px #ff408166);
 }
 
 .bs-empty-slot { cursor: default; opacity: 0.15; }

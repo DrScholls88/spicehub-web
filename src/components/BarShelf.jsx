@@ -173,7 +173,7 @@ function BarbackDisplay({ selectedDrink, isPresenting }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // PIXEL ART BARTENDER
 // States: idle | walking | grabbing | presenting | returning
-//         swigwalk | swigging | swigreturn
+//         swigwalk | swigging | swigreturn | polishing | tipping | dozing | shaking | surprised
 // ══════════════════════════════════════════════════════════════════════════════
 function PixelBartender({ state, holdingBottle, facingRight, swigBottle, swigQuip }) {
   const flip = facingRight ? '' : 'scale(-1,1)';
@@ -182,6 +182,11 @@ function PixelBartender({ state, holdingBottle, facingRight, swigBottle, swigQui
   const isPresenting = state === 'presenting';
   const isIdle      = state === 'idle';
   const isSwigging  = state === 'swigging';
+  const isPolishing = state === 'polishing';
+  const isTipping   = state === 'tipping';
+  const isDozing    = state === 'dozing';
+  const isShaking   = state === 'shaking';
+  const isSurprised = state === 'surprised';
 
   return (
     <svg
@@ -196,13 +201,15 @@ function PixelBartender({ state, holdingBottle, facingRight, swigBottle, swigQui
     >
       <g transform={`translate(20,0) ${flip} translate(-20,0)`}>
 
-        {/* ── Hat (bowler) ── */}
-        <rect x="10" y="0"  width="20" height="4"  fill="#1a1a1a" />
-        <rect x="8"  y="4"  width="24" height="3"  fill="#1a1a1a" />
-        <rect x="12" y="1"  width="16" height="6"  fill="#2a2a2a" />
+        {/* ── Hat (bowler) ── tilts when tipping */}
+        <g style={isTipping ? { transform: 'translate(3px, 0px) rotate(-8deg)' } : {}}>
+          <rect x="10" y="0"  width="20" height="4"  fill="#1a1a1a" />
+          <rect x="8"  y="4"  width="24" height="3"  fill="#1a1a1a" />
+          <rect x="12" y="1"  width="16" height="6"  fill="#2a2a2a" />
+        </g>
 
         {/* ── Head ── tilts back when swigging */}
-        <g className={isSwigging ? 'bs-bt-head-tilt' : ''}>
+        <g className={isSwigging ? 'bs-bt-head-tilt' : ''} style={isTipping ? { transform: 'skewX(-3deg)' } : {}}>
           <rect x="13" y="7" width="14" height="12" fill="#e8b88a" />
           {isSwigging ? (
             /* squinting eyes + open mouth for the swig */
@@ -211,14 +218,41 @@ function PixelBartender({ state, holdingBottle, facingRight, swigBottle, swigQui
               <rect x="21" y="12" width="5" height="1" fill="#4a3520" />
               <rect x="17" y="17" width="6" height="2" fill="#3e2000" rx="1" />
             </>
+          ) : isDozing ? (
+            /* eyes shut + big smile */
+            <>
+              <rect x="15" y="12" width="3" height="1" fill="#4a3520" />
+              <rect x="22" y="12" width="3" height="1" fill="#4a3520" />
+              <rect x="16" y="16" width="8" height="2" fill="#3e2000" rx="1" />
+            </>
+          ) : isShaking ? (
+            /* big O-mouth, wider eyes */
+            <>
+              <rect x="14" y="10" width="4" height="4" fill="#333" />
+              <rect x="22" y="10" width="4" height="4" fill="#333" />
+              <rect x="15" y="10" width="1" height="1" fill="#fff" />
+              <rect x="23" y="10" width="1" height="1" fill="#fff" />
+              <rect x="17" y="17" width="6" height="2" fill="#3e2000" rx="1" />
+            </>
+          ) : isSurprised ? (
+            /* extra wide eyes + eyebrows + O-mouth */
+            <>
+              <rect x="14" y="10" width="5" height="3" fill="#333" />
+              <rect x="21" y="10" width="5" height="3" fill="#333" />
+              <rect x="15" y="10" width="1" height="1" fill="#fff" />
+              <rect x="23" y="10" width="1" height="1" fill="#fff" />
+              <rect x="14" y="9" width="5" height="1" fill="#4a3520" />
+              <rect x="21" y="9" width="5" height="1" fill="#4a3520" />
+              <rect x="17" y="16" width="6" height="2" fill="#3e2000" rx="1" />
+            </>
           ) : (
             <>
               <rect x="15" y="11" width="3" height="3" fill="#333" />
               <rect x="22" y="11" width="3" height="3" fill="#333" />
               <rect x="16" y="11" width="1" height="1" fill="#fff" />
               <rect x="23" y="11" width="1" height="1" fill="#fff" />
-              {isIdle && <rect x="15" y="11" width="3" height="1" fill="#e8b88a" className="bs-bt-blink" />}
-              {isIdle && <rect x="22" y="11" width="3" height="1" fill="#e8b88a" className="bs-bt-blink" />}
+              {(isIdle || isPolishing || isTipping) && <rect x="15" y="11" width="3" height="1" fill="#e8b88a" className="bs-bt-blink" />}
+              {(isIdle || isPolishing || isTipping) && <rect x="22" y="11" width="3" height="1" fill="#e8b88a" className="bs-bt-blink" />}
             </>
           )}
           {/* Mustache */}
@@ -248,7 +282,23 @@ function PixelBartender({ state, holdingBottle, facingRight, swigBottle, swigQui
             <rect x="4"  y="26" width="8" height="4"  fill="#333" />
             <rect x="4"  y="30" width="4" height="3"  fill="#e8b88a" />
           </>
-        ) : isIdle ? (
+        ) : isPolishing ? (
+          /* Extended polishing arm + wiping motion */
+          <>
+            <rect x="28" y="20" width="4" height="8" fill="#333" className="bs-bt-polish-arm" />
+            <rect x="32" y="18" width="6" height="3" fill="#e8b88a" className="bs-bt-polish-arm" />
+            <rect x="4"  y="24" width="8" height="4" fill="#333" />
+            <rect x="4"  y="28" width="4" height="3" fill="#e8b88a" />
+          </>
+        ) : isShaking ? (
+          /* Both arms up for shaking */
+          <>
+            <rect x="4"  y="18" width="4" height="14" fill="#333" />
+            <rect x="2"  y="16" width="4" height="4"  fill="#e8b88a" />
+            <rect x="32" y="18" width="4" height="14" fill="#333" />
+            <rect x="34" y="16" width="4" height="4"  fill="#e8b88a" />
+          </>
+        ) : isIdle || isTipping || isDozing ? (
           /* Wiping arm + resting arm */
           <>
             <rect x="4"  y="24" width="8" height="4" fill="#333"    className="bs-bt-wipe-arm" />
@@ -265,7 +315,7 @@ function PixelBartender({ state, holdingBottle, facingRight, swigBottle, swigQui
             <rect x="4"  y="28" width="4" height="3"  fill="#e8b88a" />
           </>
         ) : (
-          /* Walking / returning */
+          /* Walking / returning / surprised */
           <>
             <rect x="4"  y="24" width="8" height="4" fill="#333" />
             <rect x="4"  y="28" width="4" height="3" fill="#e8b88a" />
@@ -334,6 +384,11 @@ const IDLE_QUIPS = [
   "Top shelf or bottom?",
   "Name it, I got it!",
   "Happy hour never ends here...",
+  "Step right up!",
+  "The bar is open.",
+  "Fine spirits. Finer company.",
+  "Every drink tells a story.",
+  "Don't be shy!",
 ];
 
 const SWIG_QUIPS = [
@@ -342,11 +397,27 @@ const SWIG_QUIPS = [
   "Don't tell the boss...",
   "Mmm... smooth.",
   "Just a nip!",
+  "Don't mind if I do!",
+  "For quality control...",
+  "Shaken, not stirred... into me.",
+  "The customer's always right, but I'm thirsty.",
+  "This one's on the house. My house.",
+  "A bartender's perk!",
+  "Research purposes only.",
+  "Occupational hazard!",
+  "*suspicious glug*",
+  "Aged to perfection... like me.",
+];
+
+const IDLE_BEHAVIORS = [
+  "polishing",
+  "tipping",
+  "dozing",
 ];
 // ══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ══════════════════════════════════════════════════════════════════════════════
-export default function BarShelf({ drinks, onViewDetail, onClose }) {
+export default function BarShelf({ drinks, onViewDetail, onClose, onImport }) {
   // State
   const [selectedDrink, setSelectedDrink] = useState(null);
   const [bartenderState, setBartenderState] = useState('idle');
@@ -367,9 +438,11 @@ export default function BarShelf({ drinks, onViewDetail, onClose }) {
   const timeoutRef     = useRef(null);
   const swigTimerRef   = useRef(null);
   const idleTimerRef   = useRef(null);
+  const behaviorTimerRef = useRef(null);
 
   // Cleanup
   useEffect(() => () => {
+    clearTimeout(behaviorTimerRef.current);
     clearTimeout(timeoutRef.current);
     cancelAnimationFrame(animationRef.current);
     clearTimeout(swigTimerRef.current);
@@ -515,9 +588,18 @@ export default function BarShelf({ drinks, onViewDetail, onClose }) {
               animationRef.current = requestAnimationFrame(animSwigReturn);
             } else {
               setBartenderX(restPos);
-              setBartenderState('idle');
               setFacingRight(true);
               setSwigBottle(null);
+
+              // 40% chance of polishing before returning to idle
+              if (Math.random() < 0.4) {
+                setBartenderState('polishing');
+                timeoutRef.current = setTimeout(() => {
+                  setBartenderState('idle');
+                }, 1200);
+              } else {
+                setBartenderState('idle');
+              }
             }
           };
           animationRef.current = requestAnimationFrame(animSwigReturn);
@@ -541,12 +623,40 @@ export default function BarShelf({ drinks, onViewDetail, onClose }) {
     return () => clearTimeout(swigTimerRef.current);
   }, [bartenderState, selectedDrink]);
 
+  // ── Idle behavior cycling (tipping, dozing, etc.) ──────────────────────────
+  useEffect(() => {
+    if (bartenderState !== 'idle' || selectedDrink) {
+      clearTimeout(behaviorTimerRef.current);
+      return;
+    }
+    // Every 30-45s, randomly trigger tipping or dozing
+    const delay = 30000 + Math.random() * 15000; // 30–45 s
+    behaviorTimerRef.current = setTimeout(() => {
+      const behaviors = ['tipping', 'dozing'];
+      const behavior = behaviors[Math.floor(Math.random() * behaviors.length)];
+      setBartenderState(behavior);
+
+      // Return to idle after behavior duration
+      const behaviorDuration = behavior === 'tipping' ? 1500 : 2000;
+      timeoutRef.current = setTimeout(() => {
+        setBartenderState('idle');
+      }, behaviorDuration);
+    }, delay);
+    return () => clearTimeout(behaviorTimerRef.current);
+  }, [bartenderState, selectedDrink]);
+
   // ── Page navigation ────────────────────────────────────────────────────────
   const goToPage = useCallback((newPage) => {
     if (newPage < 0 || newPage >= totalPages || newPage === currentPage) return;
     if (bartenderState !== 'idle') return;
     setPageDirection(newPage > currentPage ? 'right' : 'left');
-    setTimeout(() => { setCurrentPage(newPage); setPageDirection('none'); }, 200);
+    // Trigger shaking state briefly on page change
+    setBartenderState('shaking');
+    timeoutRef.current = setTimeout(() => {
+      setCurrentPage(newPage);
+      setPageDirection('none');
+      setBartenderState('idle');
+    }, 1000);
   }, [totalPages, currentPage, bartenderState]);
 
   // ── Bottle tap ─────────────────────────────────────────────────────────────
@@ -634,6 +744,12 @@ export default function BarShelf({ drinks, onViewDetail, onClose }) {
             <span className="bs-count-num">{drinks.length}</span>
             <span className="bs-count-label">bottles</span>
           </div>
+          {onImport && (
+            <button className="bs-import-btn" onClick={onImport} title="Import a drink">
+              <span>+</span>
+              <span className="bs-import-label">IMPORT</span>
+            </button>
+          )}
         </div>
 
         {/* ═══ BACKBAR DISPLAY + BOTTLE SHELVES ═══ */}
@@ -642,6 +758,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose }) {
           <div className="bs-backbar-glow" />
           <div className="bs-ambient-left"  aria-hidden="true" />
           <div className="bs-ambient-right" aria-hidden="true" />
+          <div className="bs-city-skyline" aria-hidden="true" />
 
           {/* LED menu board */}
           <BarbackDisplay
@@ -649,55 +766,58 @@ export default function BarShelf({ drinks, onViewDetail, onClose }) {
             isPresenting={bartenderState === 'presenting'}
           />
 
-          {/* Paginated bottle shelves */}
-          <div className={`bs-backbar-shelves ${pageDirection !== 'none' ? `bs-page-${pageDirection}` : ''}`}>
-            {shelves.map((row, shelfIdx) => (
-              <div key={shelfIdx} className={`bs-shelf-row bs-shelf-wobble-${shelfIdx}`}>
-                <div className="bs-bottles-row">
-                  {row.map((drink) => {
-                    const bottleStyle = getBottleStyle(drink);
-                    const isSelected  = selectedDrink?.id === drink.id;
-                    return (
-                      <button
-                        key={drink.id}
-                        ref={el => { if (el) bottleSlotsRef.current[drink.id] = el; }}
-                        className={`bs-bottle-slot ${isSelected ? 'bs-selected' : ''}`}
-                        onClick={() => handleBottleTap(drink)}
-                        title={drink.name}
-                      >
-                        <div className="bs-bottle-idle" style={{ opacity: isSelected && holdingBottle ? 0.2 : 1 }}>
-                          <PixelBottle style={bottleStyle} size={52} glow={isSelected} />
-                        </div>
-                        <span className="bs-bottle-label">
-                          {drink.name.length > 9 ? drink.name.slice(0, 8) + '…' : drink.name}
-                        </span>
-                      </button>
-                    );
-                  })}
-                  {row.length < BOTTLES_PER_SHELF && Array.from({ length: BOTTLES_PER_SHELF - row.length }).map((_, i) => (
-                    <div key={`empty-${i}`} className="bs-bottle-slot bs-empty-slot">
-                      <div className="bs-empty-bottle" />
-                    </div>
-                  ))}
+          {/* Glass display case */}
+          <div className="bs-display-case">
+            {/* Paginated bottle shelves */}
+            <div className={`bs-backbar-shelves ${pageDirection !== 'none' ? `bs-page-${pageDirection}` : ''}`}>
+              {shelves.map((row, shelfIdx) => (
+                <div key={shelfIdx} className={`bs-shelf-row bs-shelf-wobble-${shelfIdx}`}>
+                  <div className="bs-bottles-row">
+                    {row.map((drink) => {
+                      const bottleStyle = getBottleStyle(drink);
+                      const isSelected  = selectedDrink?.id === drink.id;
+                      return (
+                        <button
+                          key={drink.id}
+                          ref={el => { if (el) bottleSlotsRef.current[drink.id] = el; }}
+                          className={`bs-bottle-slot ${isSelected ? 'bs-selected' : ''}`}
+                          onClick={() => handleBottleTap(drink)}
+                          title={drink.name}
+                        >
+                          <div className="bs-bottle-idle" style={{ opacity: isSelected && holdingBottle ? 0.2 : 1 }}>
+                            <PixelBottle style={bottleStyle} size={52} glow={isSelected} />
+                          </div>
+                          <span className="bs-bottle-label">
+                            {drink.name.length > 9 ? drink.name.slice(0, 8) + '…' : drink.name}
+                          </span>
+                        </button>
+                      );
+                    })}
+                    {row.length < BOTTLES_PER_SHELF && Array.from({ length: BOTTLES_PER_SHELF - row.length }).map((_, i) => (
+                      <div key={`empty-${i}`} className="bs-bottle-slot bs-empty-slot">
+                        <div className="bs-empty-bottle" />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="bs-shelf-plank" />
                 </div>
-                <div className="bs-shelf-plank" />
-              </div>
-            ))}
-          </div>
-
-          {/* Page navigation */}
-          {totalPages > 1 && (
-            <div className="bs-page-nav">
-              <button className="bs-page-btn" onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 0}>◀</button>
-              <div className="bs-page-dots">
-                {Array.from({ length: totalPages }).map((_, i) => (
-                  <button key={i} className={`bs-page-dot ${i === currentPage ? 'active' : ''}`} onClick={() => goToPage(i)} />
-                ))}
-              </div>
-              <button className="bs-page-btn" onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages - 1}>▶</button>
+              ))}
             </div>
-          )}
+          </div>
         </div>
+
+        {/* Page navigation — outside display case */}
+        {totalPages > 1 && (
+          <div className="bs-page-nav">
+            <button className="bs-page-btn" onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 0}>◀</button>
+            <div className="bs-page-dots">
+              {Array.from({ length: totalPages }).map((_, i) => (
+                <button key={i} className={`bs-page-dot ${i === currentPage ? 'active' : ''}`} onClick={() => goToPage(i)} />
+              ))}
+            </div>
+            <button className="bs-page-btn" onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages - 1}>▶</button>
+          </div>
+        )}
 
         {/* ═══ BAR TOP — bartender stands BEHIND the counter ═══ */}
         <div className="bs-bar-top" ref={barTopRef}>
@@ -715,13 +835,14 @@ export default function BarShelf({ drinks, onViewDetail, onClose }) {
               facingRight={facingRight}
               swigBottle={swigBottle}
               swigQuip={swigQuip}
+              idleQuip={IDLE_QUIPS[idleQuip]}
             />
           </div>
 
           {/* Quips — now outside so they can be on top of everything */}
-          <div 
-            className="bs-quips-layer" 
-            style={{ 
+          <div
+            className="bs-quips-layer"
+            style={{
               transform: `translateX(${bartenderX}px)`,
               transition: bartenderState === 'idle' ? 'transform 0.3s ease' : 'none',
             }}
@@ -736,6 +857,12 @@ export default function BarShelf({ drinks, onViewDetail, onClose }) {
             {bartenderState === 'swigging' && swigQuip && (
               <div className="bs-bt-speech bs-bt-speech-swig">
                 <span>{swigQuip}</span>
+              </div>
+            )}
+            {/* Speech bubble — tipping */}
+            {bartenderState === 'tipping' && (
+              <div className="bs-bt-speech bs-bt-speech-tip">
+                <span>Much obliged!</span>
               </div>
             )}
             {/* Speech bubble — idle */}
