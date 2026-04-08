@@ -346,7 +346,9 @@ export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl
   // Try client-side Gemini first (faster, no backend roundtrip)
   try {
     const clientResult = await structureWithAIClient(rawText, { title: hintTitle, imageUrl, sourceUrl });
-    if (clientResult) return clientResult;
+    if (clientResult && clientResult.ingredients?.length && clientResult.directions?.length) {
+      return clientResult;
+    }
   } catch { /* fall through to server */ }
 
   try {
@@ -1379,8 +1381,8 @@ export async function tryVideoExtraction(url, onProgress) {
   try {
     if (onProgress) onProgress('Connecting to extraction server...');
     const ctrl = new AbortController();
-    // 50s timeout — Render.com free tier cold starts take ~30s; give it headroom
-    const timer = setTimeout(() => ctrl.abort(), 50000);
+    // 8s timeout — fail fast when server unavailable (Vercel production doesn't run this)
+    const timer = setTimeout(() => ctrl.abort(), 8000);
 
     if (onProgress) onProgress('Downloading video metadata & subtitles...');
     const resp = await fetch(`${serverUrl}/api/extract-video`, {
@@ -3166,7 +3168,30 @@ export async function importRecipeFromUrl(url, onProgress = () => {}) {
   try { resolvedUrl = await resolveShortUrl(url); } catch { /* use original */ }
 
   if (isInstagramUrl(resolvedUrl)) {
-    return await importFromInstagram(resolvedUrl, onProgress);
+    // ── Check Dexie cache first (offline-first, 7-day TTL) ──
+    try {
+      const { getCachedInstagramRecipe } = await import('./db.js');
+      const cached = await getCachedInstagramRecipe(resolvedUrl);
+      if (cached) {
+        onProgress(0, 'done', 'Loaded from cache ✓');
+        onProgress(1, 'skipped', 'Cached');
+        onProgress(2, 'skipped', 'Cached');
+        onProgress(3, 'done', 'Loaded from cache ✓');
+        return { ...cached, _fromCache: true };
+      }
+    } catch { /* cache unavailable, continue */ }
+
+    const recipe = await importFromInstagram(resolvedUrl, onProgress);
+
+    // ── Save successful result to cache ──
+    if (recipe && !recipe._needsManualCaption) {
+      try {
+        const { cacheInstagramRecipe } = await import('./db.js');
+        await cacheInstagramRecipe(resolvedUrl, recipe);
+      } catch { /* cache write failed, non-fatal */ }
+    }
+
+    return recipe;
   }
 
   // Non-Instagram social + recipe blogs: use existing generic pipeline

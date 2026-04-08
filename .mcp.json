@@ -1,12 +1,19 @@
 {
   "mcpServers": {
     "playwright": {
-      "type": "stdio",
       "command": "npx",
-      "args": [
-        "@playwright/mcp@latest"
-      ],
-      "env": {}
+      "args": ["@playwright/mcp@latest"]
+    },
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"]
+    },
+    "github": {
+      "url": "https://api.githubcopilot.com/mcp/"
+    },
+    "ruflo": {
+      "command": "npx",
+      "args": ["ruflo@latest", "mcp", "start"]
     }
   }
 }

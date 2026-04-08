@@ -33,7 +33,12 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   const [socialDetected, setSocialDetected] = useState(null);
   const [pasteText, setPasteText] = useState('');
   const [pasteLink, setPasteLink] = useState('');
-  const [progress, setProgress] = useState([]);
+  const [progress, setProgress] = useState([
+    { label: 'Video subtitles', status: 'pending', message: '' },
+    { label: 'Caption fetch', status: 'pending', message: '' },
+    { label: 'AI browser', status: 'pending', message: '' },
+    { label: 'AI structuring', status: 'pending', message: '' },
+  ]);
   const [bestImage, setBestImage] = useState(null);
   const [manualUrl, setManualUrl] = useState('');
   // Browser Assist state

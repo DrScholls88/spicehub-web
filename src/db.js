@@ -38,6 +38,11 @@ db.version(7).stores({
   weekHistory: '++id, weekStart',
 });
 
+// v8: Instagram import cache (offline-first, avoids re-fetching same URL)
+db.version(8).stores({
+  instagramCache: 'url, cachedAt',
+});
+
 export default db;
 
 // ── Week plan persistence ─────────────────────────────────────────────────────
@@ -369,7 +374,39 @@ export async function deleteWeekFromHistory(id) {
   await db.weekHistory.delete(id);
 }
 
+// ── Instagram import cache ────────────────────────────────────────────────────
+const INSTAGRAM_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
+export async function getCachedInstagramRecipe(url) {
+  try {
+    const entry = await db.instagramCache.get(url);
+    if (!entry) return null;
+    if (Date.now() - entry.cachedAt > INSTAGRAM_CACHE_TTL_MS) {
+      await db.instagramCache.delete(url);
+      return null;
+    }
+    return entry.recipe;
+  } catch (e) {
+    console.warn('[SpiceHub DB] instagramCache get failed:', e);
+    return null;
+  }
+}
+
+export async function cacheInstagramRecipe(url, recipe) {
+  try {
+    await db.instagramCache.put({ url, recipe, cachedAt: Date.now() });
+  } catch (e) {
+    console.warn('[SpiceHub DB] instagramCache put failed:', e);
+  }
+}
+
+export async function clearInstagramCache() {
+  try {
+    await db.instagramCache.clear();
+  } catch (e) {
+    console.warn('[SpiceHub DB] instagramCache clear failed:', e);
+  }
+}
 
 export async function importPaprikaMeals(paprikaMeals) {
   try {

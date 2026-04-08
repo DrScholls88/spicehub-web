@@ -118,7 +118,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
   useEffect(() => {
     stepUpdater.current = (idx, status, msg) => {
       setPipelineSteps(prev => {
-        const next = prev.map((s, i) => i === idx ? { ...s, status } : s);
+        const next = prev.map((s, i) => i === idx ? { ...s, status, message: msg || '' } : s);
         return next;
       });
       if (msg !== undefined) setPipelineMessage(msg);
@@ -553,7 +553,10 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
                       {step.status === 'skipped' && <span className="pipeline-skip">—</span>}
                       {step.status === 'pending' && <span className="pipeline-dot" />}
                     </div>
-                    <div className="pipeline-step-label">{step.label}</div>
+                    <div className="pipeline-step-content">
+                      <div className="pipeline-step-label">{step.label}</div>
+                      {step.message && <div className="pipeline-step-message">{step.message}</div>}
+                    </div>
                   </div>
                 ))}
               </div>
