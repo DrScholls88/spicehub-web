@@ -352,7 +352,9 @@ export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl
   } catch { /* fall through to server */ }
 
   try {
-    const serverBase = typeof window !== 'undefined' && window.__SPICEHUB_SERVER__ ? window.__SPICEHUB_SERVER__ : 'http://localhost:3001';
+    // Only try server structuring if we have a non-local server configured
+    const serverBase = typeof window !== 'undefined' && window.__SPICEHUB_SERVER__ ? window.__SPICEHUB_SERVER__ : null;
+    if (!serverBase) return null; // Skip server call in client-only mode
     const res = await fetch(`${serverBase}/api/structure-recipe`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1207,12 +1209,16 @@ let _serverBaseUrl = null;
 let _serverChecked = false;
 
 /**
- * Detect the SpiceHub server URL. Tries common locations.
+ * Detect the SpiceHub server URL. Tries configured URL + same-origin.
+ * NEVER tries localhost/127.0.0.1 when running on HTTPS (production) — that
+ * generates ERR_CONNECTION_REFUSED spam for every import with no benefit.
  * Returns base URL string or null if server is not available.
  */
 async function detectServer() {
   if (_serverChecked) return _serverBaseUrl;
   _serverChecked = true;
+
+  const isProduction = typeof window !== 'undefined' && window.location.protocol === 'https:';
 
   // Vite injects VITE_SERVER_URL as __SPICEHUB_SERVER__ at build time
   const buildTimeUrl = (typeof __SPICEHUB_SERVER__ !== 'undefined' && __SPICEHUB_SERVER__ !== 'http://localhost:3001')
@@ -1220,11 +1226,10 @@ async function detectServer() {
 
   const candidates = [
     buildTimeUrl,
-    // Same origin (if deployed together)
+    // Same origin (e.g. Render full-stack deployment)
     window.location.origin,
-    // Local dev
-    'http://localhost:3001',
-    'http://127.0.0.1:3001',
+    // Localhost only in development (HTTP) — skip in production to avoid connection refused errors
+    ...(isProduction ? [] : ['http://localhost:3001', 'http://127.0.0.1:3001']),
   ].filter(Boolean);
 
   for (const base of candidates) {
@@ -3334,6 +3339,21 @@ export async function importRecipeFromUrl(url, onProgress = () => {}) {
     } catch { /* cache unavailable, continue */ }
 
     const recipe = await importFromInstagram(resolvedUrl, onProgress);
+
+    // ── Download Instagram image as base64 data URL before storing ──────────────
+    // Instagram/Meta CDN URLs expire and block hotlinking. Converting to base64
+    // at import time means the image is permanently stored in Dexie, not CDN-dependent.
+    if (recipe && !recipe._needsManualCaption && recipe.imageUrl) {
+      try {
+        onProgress(3, 'running', 'Saving image locally…');
+        const { downloadInstagramImage, isInstagramCdnUrl } = await import('./api.js');
+        if (isInstagramCdnUrl(recipe.imageUrl)) {
+          const localImage = await downloadInstagramImage(recipe.imageUrl);
+          recipe.imageUrl = localImage; // mutate before cache write
+        }
+        onProgress(3, 'done', 'Recipe saved ✓');
+      } catch { /* image download non-fatal */ }
+    }
 
     // ── Save successful result to cache (keyed by normalized URL) ──
     if (recipe && !recipe._needsManualCaption) {

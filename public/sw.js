@@ -3,13 +3,19 @@
 // This file is the single source of truth for all SW behavior:
 //   • Precaching Vite build assets
 //   • SPA navigation fallback (/index.html)
-//   • Runtime caching (images, CORS proxy, fonts)
-//   • POST share-target → GET redirect (the critical missing piece)
+//   • Runtime caching (images, fonts)
+//   • POST share-target → GET redirect
+//
+// IMPORTANT DESIGN DECISIONS:
+//   • Instagram/Meta CDN URLs (scontent.cdninstagram.com, fbcdn.net) are NOT cached.
+//     They expire and block hotlinking. SpiceHub now stores images as base64 at import time.
+//   • CORS proxy calls (allorigins.win, corsproxy.io, etc.) are NOT intercepted by the SW.
+//     They must reach the network directly — SW interception strips CORS headers.
 
 import { precacheAndRoute, cleanupOutdatedCaches, createHandlerBoundToURL } from 'workbox-precaching';
 import { clientsClaim } from 'workbox-core';
 import { NavigationRoute, registerRoute } from 'workbox-routing';
-import { NetworkFirst, CacheFirst, StaleWhileRevalidate } from 'workbox-strategies';
+import { NetworkFirst, CacheFirst, StaleWhileRevalidate, NetworkOnly } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 
 // ── Core: claim clients and activate immediately ────────────────────────────
@@ -17,56 +23,70 @@ self.skipWaiting();
 clientsClaim();
 
 // ── Precache all Vite-built assets ──────────────────────────────────────────
-// vite-plugin-pwa injects the manifest array in place of self.__WB_MANIFEST
 precacheAndRoute(self.__WB_MANIFEST || []);
 cleanupOutdatedCaches();
 
 // ── SPA navigation fallback ─────────────────────────────────────────────────
-// Serve /index.html for all navigation requests EXCEPT:
-//   - /api/* routes (proxy)
-//   - Static file extensions (.js, .css, .png etc.)
-//   - /share-target (must NOT be cached — it needs live POST data)
 const navHandler = createHandlerBoundToURL('/index.html');
 const navigationRoute = new NavigationRoute(navHandler, {
   denylist: [
     /^\/api\//,           // backend API routes
-    /\/share-target/,     // share target — must reach live SW, not cache
+    /\/share-target/,     // share target — live POST handler below
     /\.[a-z]{2,4}$/i,    // static files (js, css, png, woff2, etc.)
   ],
 });
 registerRoute(navigationRoute);
 
-// ── Runtime caching ─────────────────────────────────────────────────────────
+// ── Instagram / Meta CDN: NetworkOnly with silent failure ──────────────────
+// These URLs WILL 403 (they expire + block hotlinking from external domains).
+// We cannot and should not cache them. NetworkOnly + catch means broken images
+// fail silently instead of crashing the SW with "no-response".
+// SpiceHub now downloads images to base64 at import time to avoid this entirely.
+const igCdnMatcher = ({ url }) =>
+  /\.(cdninstagram\.com|fbcdn\.net|fbsbx\.com|fna\.fbcdn\.net)$/i.test(url.hostname);
 
-// Instagram CDN images (recipe photos imported from Instagram)
+registerRoute(igCdnMatcher, new NetworkOnly());
+
+// ── CORS proxy calls: pass-through (no SW interception) ────────────────────
+// allorigins.win, corsproxy.io, codetabs.com, thingproxy — SW must NOT intercept.
+// Intercepting strips CORS headers and causes ERR_FAILED / no-response crashes.
+// We handle this by NOT registering a route for these origins.
+// The SW will let these requests bypass to the network automatically.
+
+// ── Recipe + general images (non-Instagram) ─────────────────────────────────
+// CacheFirst is safe here because these URLs don't expire aggressively.
+// Explicitly exclude Instagram/Meta CDN origins to prevent 403 cache crashes.
 registerRoute(
-  /^https:\/\/.*\.cdninstagram\.com\/.*/i,
+  ({ url, request }) => {
+    if (request.destination !== 'image') return false;
+    // Never cache Instagram/Meta CDN — they expire and 403
+    if (/\.(cdninstagram\.com|fbcdn\.net|fbsbx\.com|fna\.fbcdn\.net)$/i.test(url.hostname)) return false;
+    // Never cache CORS proxy URLs
+    if (/\.(allorigins\.win|corsproxy\.io|codetabs\.com|thingproxy\.freeboard\.io)$/i.test(url.hostname)) return false;
+    return true;
+  },
   new CacheFirst({
-    cacheName: 'instagram-images',
-    plugins: [new ExpirationPlugin({ maxEntries: 50, maxAgeSeconds: 7 * 24 * 60 * 60 })],
+    cacheName: 'recipe-images',
+    plugins: [
+      new ExpirationPlugin({
+        maxEntries: 150,
+        maxAgeSeconds: 30 * 24 * 60 * 60, // 30 days
+        purgeOnQuotaError: true,
+      }),
+    ],
   })
 );
 
-// Unsplash recipe images
+// ── Unsplash images ─────────────────────────────────────────────────────────
 registerRoute(
   /^https:\/\/images\.unsplash\.com\/.*/i,
   new CacheFirst({
-    cacheName: 'recipe-images',
+    cacheName: 'unsplash-images',
     plugins: [new ExpirationPlugin({ maxEntries: 100, maxAgeSeconds: 30 * 24 * 60 * 60 })],
   })
 );
 
-// CORS proxy responses (network-first so fresh content takes priority)
-registerRoute(
-  /^https:\/\/(?:api\.allorigins\.win|corsproxy\.io|api\.codetabs\.com)\/.*/i,
-  new NetworkFirst({
-    cacheName: 'cors-proxy-cache',
-    plugins: [new ExpirationPlugin({ maxEntries: 30, maxAgeSeconds: 7 * 24 * 60 * 60 })],
-    networkTimeoutSeconds: 10,
-  })
-);
-
-// Web fonts (long-lived, stale-while-revalidate)
+// ── Web fonts ───────────────────────────────────────────────────────────────
 registerRoute(
   /\.(?:woff2?|ttf|eot)$/i,
   new StaleWhileRevalidate({
@@ -75,23 +95,17 @@ registerRoute(
   })
 );
 
-// General images (PNG, JPEG, GIF, WebP, AVIF, SVG)
+// ── Google AI API calls: NetworkFirst (fast, no caching) ───────────────────
 registerRoute(
-  /\.(?:png|jpg|jpeg|gif|webp|avif|svg)$/i,
-  new CacheFirst({
-    cacheName: 'general-images',
-    plugins: [new ExpirationPlugin({ maxEntries: 200, maxAgeSeconds: 30 * 24 * 60 * 60 })],
-  })
+  /^https:\/\/generativelanguage\.googleapis\.com\/.*/i,
+  new NetworkFirst({ networkTimeoutSeconds: 15 })
 );
 
 // ── Share Target: POST → GET redirect ───────────────────────────────────────
-// When Android shares a URL to SpiceHub:
+// When Android/iOS shares a URL to SpiceHub:
 //   1. OS sends POST /share-target with multipart/form-data
-//   2. This handler intercepts, extracts params, redirects to /?share-target=1&url=...
+//   2. This handler extracts params, redirects to /?share-target=1&url=...
 //   3. App.jsx detects ?share-target param and auto-opens ImportModal
-//
-// This MUST be a fetch event listener (not a registerRoute) so it fires BEFORE
-// any routing/caching logic intercepts the POST request.
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
@@ -99,7 +113,6 @@ self.addEventListener('fetch', (event) => {
     event.respondWith((async () => {
       try {
         const formData = await event.request.formData();
-        // Shared URL is in 'url' field; 'text' is a fallback (some apps put URL in text)
         const sharedUrl = formData.get('url') || formData.get('text') || '';
         const sharedTitle = formData.get('title') || '';
 
@@ -108,11 +121,9 @@ self.addEventListener('fetch', (event) => {
         if (sharedUrl) params.append('url', sharedUrl);
         if (sharedTitle) params.append('title', sharedTitle);
 
-        // 303 See Other — browser follows redirect with GET, preserving query string
         return Response.redirect(`/?${params.toString()}`, 303);
       } catch (err) {
         console.error('[SpiceHub SW] share-target error:', err);
-        // Fallback: at least open the app
         return Response.redirect('/?share-target=1', 303);
       }
     })());

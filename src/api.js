@@ -320,6 +320,67 @@ export async function extractInstagramEmbed(url) {
   return null;
 }
 
+// ── Instagram CDN image download → base64 data URL ───────────────────────────
+// Instagram/Meta CDN URLs (scontent.cdninstagram.com, fbcdn.net, etc.) expire
+// after hours and block hotlinking via Referer checks. The fix: download at
+// import time and store as a self-contained data URL in Dexie.
+
+const INSTAGRAM_CDN_RE = /\.(cdninstagram\.com|fbcdn\.net|fbsbx\.com|fna\.fbcdn\.net)/i;
+
+export function isInstagramCdnUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  try { return INSTAGRAM_CDN_RE.test(new URL(url).hostname); } catch { return false; }
+}
+
+/**
+ * Download an Instagram CDN image through a CORS proxy and return a base64 data URL.
+ * Returns the original URL if download fails (graceful degradation).
+ * Caps at ~1 MB to avoid storing giant images.
+ */
+export async function downloadInstagramImage(imageUrl) {
+  if (!imageUrl || !isInstagramCdnUrl(imageUrl)) return imageUrl;
+
+  // Try multiple CORS proxies in order — Instagram CDN is picky
+  const tryProxies = [
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(imageUrl)}`,
+    `https://corsproxy.io/?${encodeURIComponent(imageUrl)}`,
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(imageUrl)}`,
+    `https://thingproxy.freeboard.io/fetch/${imageUrl}`,
+  ];
+
+  for (const proxyUrl of tryProxies) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
+      const resp = await fetch(proxyUrl, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!resp.ok) continue;
+
+      const blob = await resp.blob();
+      if (!blob || blob.size < 100) continue; // Empty or too small
+      if (blob.size > 1.5 * 1024 * 1024) continue; // Skip if > 1.5 MB
+
+      // Validate it's actually an image
+      if (!blob.type.startsWith('image/') && blob.size < 500) continue;
+
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+
+      if (dataUrl && dataUrl.startsWith('data:image')) {
+        console.log(`[SpiceHub] Downloaded Instagram image: ${Math.round(blob.size / 1024)}KB → data URL`);
+        return dataUrl;
+      }
+    } catch { /* try next proxy */ }
+  }
+
+  console.log(`[SpiceHub] Could not download Instagram image — will use original URL`);
+  return imageUrl; // Graceful fallback: original URL (may 403 later, but better than nothing)
+}
+
 // ── Legacy exports (kept for backward compat, now no-ops or thin wrappers) ──
 
 /** @deprecated Server no longer required. Returns false always. */

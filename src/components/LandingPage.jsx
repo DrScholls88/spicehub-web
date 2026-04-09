@@ -373,12 +373,12 @@ function DayPhotoCard({ date, meal, isToday, onClick }) {
       {specialEmoji ? (
         <div style={STYLES.dayCardPhotoFallback}>{specialEmoji}</div>
       ) : meal?.imageUrl && !imgErr ? (
-        <img
-          src={meal.imageUrl}
-          alt={meal.name || ''}
-          style={STYLES.dayCardPhotoArea}
-          onError={() => setImgErr(true)}
-        />
+<SafeMediaImage
+  src={meal?.imageUrl}
+  alt={meal?.name || ''}
+  style={STYLES.dayCardPhotoArea}   // or previewPhoto
+  fallbackEmoji={meal ? '🍳' : '🍽️'}
+/>
       ) : (
         <div style={STYLES.dayCardPhotoFallback}>
           {meal ? '🍳' : '🍽️'}
@@ -433,12 +433,12 @@ function MealPreviewSheet({ date, meal, isToday, onClose, onViewFull }) {
             {meal?._special ? meal.icon : '🍽️'}
           </div>
         ) : meal.imageUrl && !imgErr ? (
-          <img
-            src={meal.imageUrl}
-            alt={meal.name || ''}
-            style={STYLES.previewPhoto}
-            onError={() => setImgErr(true)}
-          />
+<SafeMediaImage
+  src={meal?.imageUrl}
+  alt={meal?.name || ''}
+  style={STYLES.dayCardPhotoArea}   // or previewPhoto
+  fallbackEmoji={meal ? '🍳' : '🍽️'}
+/>
         ) : (
           <div style={STYLES.previewPhotoFallback}>🍳</div>
         )}

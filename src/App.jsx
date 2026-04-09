@@ -66,6 +66,8 @@ export default function App() {
   const [editDrink, setEditDrink] = useState(null);
   // 'meals' | 'drinks' | null — controls which ImportModal is open and where to save
   const [showImportFor, setShowImportFor] = useState(null);
+  // Increment this to force ImportModal to fully remount (fresh state) on each open
+  const [importModalKey, setImportModalKey] = useState(0);
   const [groceryItems, setGroceryItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
@@ -260,6 +262,7 @@ useEffect(() => {
     const sharedTitle = params.get('title') || '';
     if (sharedUrl) {
       // Auto-open import modal and pass shared URL into ImportModal via sharedContent
+      setImportModalKey(k => k + 1); // force fresh ImportModal state
       setShowImportFor('meals');
       setSharedContent({ mode: 'url', url: sharedUrl, title: sharedTitle });
       // Clean URL so refreshing doesn't re-trigger
@@ -570,7 +573,7 @@ useEffect(() => {
             onDelete={deleteMeal}
             onViewDetail={setDetailItem}
             onShare={shareItem}
-            onImport={() => setShowImportFor('meals')}
+            onImport={() => { setImportModalKey(k => k + 1); setShowImportFor('meals'); }}
             onReload={loadMeals}
             onToast={showToast}
             onToggleFavorite={toggleFavorite}
@@ -585,7 +588,7 @@ useEffect(() => {
             onDelete={deleteDrink}
             onViewDetail={setDetailItem}
             onShare={shareItem}
-            onImport={() => setShowImportFor('drinks')}
+            onImport={() => { setImportModalKey(k => k + 1); setShowImportFor('drinks'); }}
             onReload={loadDrinks}
             onToast={showToast}
             onOpenShelf={() => setShowBarShelf(true)}
@@ -657,6 +660,7 @@ useEffect(() => {
       )}
       {showImportFor && (
         <ImportModal
+          key={importModalKey}
           onImport={handleImport}
           onClose={() => { setShowImportFor(null); setSharedContent(null); }}
           title={showImportFor === 'drinks' ? 'Import Drink' : 'Import Recipe'}
@@ -677,7 +681,7 @@ useEffect(() => {
           drinks={drinks}
           onViewDetail={(drink) => { setShowBarShelf(false); setDetailItem(drink); }}
           onClose={() => setShowBarShelf(false)}
-          onImport={() => setShowImportFor('drinks')}
+          onImport={() => { setImportModalKey(k => k + 1); setShowImportFor('drinks'); }}
         />
       )}
       {showBarFridge && (

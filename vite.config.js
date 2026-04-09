@@ -52,17 +52,20 @@ export default defineConfig({
   },
   plugins: [
     react(),
-    VitePWA({
-      registerType: 'autoUpdate',
-      includeAssets: ['icon-192.svg', 'icon-512.svg', 'icon-maskable.svg'],
-      manifest: false, // We use our own manifest.json in /public
-      strategies: 'injectManifest',
-      swSrc: 'public/sw.js',
-      swDest: 'sw.js',
-      // With injectManifest, runtime caching is defined in sw.js directly.
-      // Only globPatterns is needed here to control which assets get precached.
-      workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+VitePWA({
+  registerType: 'autoUpdate',
+  includeAssets: ['icon-192.svg', 'icon-512.svg', 'icon-maskable.svg'],
+  manifest: false, // you use custom /public/manifest.json — good
+  strategies: 'injectManifest',
+  swSrc: 'public/sw.js',
+  swDest: 'sw.js',
+  injectManifest: {
+    // Recommended for newer workbox + Vite 7
+    injectionPoint: undefined, // if you don't use self.__WB_MANIFEST in sw.js
+    // or keep it if you do
+  },
+  workbox: {
+    globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
       },
     }),
   ],
@@ -89,7 +92,30 @@ export default defineConfig({
         rewrite: (path) => path,
       },
     },
+    '/media-proxy': {   // New proxy for images
+    ttarget: 'https://dummy.invalid',  // dummy - we override in configure
+    changeOrigin: true,
+    secure: true,
+    configure: (proxy, _options) => {
+      proxy.on('proxyReq', (proxyReq, req) => {
+        // Extract the real target URL from the path
+        const fullUrl = decodeURIComponent(req.url.replace(/^\/media-proxy\//, ''));
+        if (!fullUrl.startsWith('http')) {
+          proxyReq.destroy(); // invalid
+          return;
+        }
+// Re-target dynamically
+        const url = new URL(fullUrl);
+        proxyReq.setHeader('host', url.host);
+        proxyReq.path = url.pathname + url.search;
+        // Anti-block headers (Instagram checks these)
+        proxyReq.setHeader('Referer', 'https://www.instagram.com/');
+        proxyReq.setHeader('User-Agent', 'SpiceHub-App/1.0 (+https://spicehub-web.vercel.app)');
+        proxyReq.setHeader('Accept', 'image/*');
+      });
+    },
   },
+},
   build: {
     outDir: 'dist',
     sourcemap: true,
