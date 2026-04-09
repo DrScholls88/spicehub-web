@@ -116,8 +116,10 @@ VitePWA({
     },
   },
 },
-  build: {
+build: {
     outDir: 'dist',
     sourcemap: true,
+    target: 'es2019',           // ← This is the key fix for mobile blank screens
+    chunkSizeWarningLimit: 800  // Helps with your large xlsx/jszip chunks
   },
 })
