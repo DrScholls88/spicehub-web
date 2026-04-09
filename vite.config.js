@@ -53,19 +53,20 @@ export default defineConfig({
   plugins: [
     react(),
 VitePWA({
-  registerType: 'autoUpdate',
-  includeAssets: ['icon-192.svg', 'icon-512.svg', 'icon-maskable.svg'],
-  manifest: false, // you use custom /public/manifest.json — good
-  strategies: 'injectManifest',
-  swSrc: 'public/sw.js',
-  swDest: 'sw.js',
-  injectManifest: {
-    // Recommended for newer workbox + Vite 7
-    injectionPoint: undefined, // if you don't use self.__WB_MANIFEST in sw.js
-    // or keep it if you do
-  },
-  workbox: {
-    globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+      registerType: 'autoUpdate',
+      includeAssets: ['icon-192.svg', 'icon-512.svg', 'icon-maskable.svg'],
+      manifest: false, // keep your custom /public/manifest.json
+      strategies: 'injectManifest',
+      swSrc: 'public/sw.js',
+      swDest: 'dist/sw.js',           // ← Changed: output to dist/ so Vercel serves it correctly
+      injectManifest: {
+        // Minimal & safe for Vite 7
+        injectionPoint: 'self.__WB_MANIFEST',
+      },
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,webp}'],
+        cleanupOutdatedCaches: true,    // Clears old broken caches after deploy
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
       },
     }),
   ],
@@ -119,7 +120,14 @@ VitePWA({
 build: {
     outDir: 'dist',
     sourcemap: true,
-    target: 'es2019',           // ← This is the key fix for mobile blank screens
-    chunkSizeWarningLimit: 800  // Helps with your large xlsx/jszip chunks
+    target: 'es2019',
+    chunkSizeWarningLimit: 800,
+    rollupOptions: {
+      output: {
+        entryFileNames: 'assets/[name]-[hash].js',
+        chunkFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash].[ext]'
+    }
+  }
   },
 })
