@@ -55,15 +55,10 @@ export default defineConfig({
 VitePWA({
   registerType: 'autoUpdate',
   includeAssets: ['icon-192.svg', 'icon-512.svg', 'icon-maskable.svg'],
-  manifest: false, // you use custom /public/manifest.json — good
+  manifest: false, // you use custom manifest.json in /public — keep this
   strategies: 'injectManifest',
   swSrc: 'public/sw.js',
   swDest: 'sw.js',
-  injectManifest: {
-    // Recommended for newer workbox + Vite 7
-    injectionPoint: undefined, // if you don't use self.__WB_MANIFEST in sw.js
-    // or keep it if you do
-  },
   workbox: {
     globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
       },
