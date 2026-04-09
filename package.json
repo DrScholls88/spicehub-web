@@ -36,8 +36,16 @@
     "globals": "^16.5.0",
     "puppeteer-core": "^23.11.1",
     "vite": "^7.3.1",
-    "vite-plugin-pwa": "^0.19.8",
-    "workbox-build": "^7.0.0",
+    "vite-plugin-pwa": "^1.2.0",
+    "workbox-build": "^7.4.0",
     "workbox-window": "^7.4.0"
+  },
+  "overrides": {
+    "vite-plugin-pwa": {
+      "vite": "$vite"
+    },
+    "@vitejs/plugin-react": {
+      "vite": "$vite"
+    }
   }
 }
