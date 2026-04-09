@@ -87,6 +87,7 @@ export default function App() {
   const [storageWarning, setStorageWarning] = useState(null);
   const [sharedContent, setSharedContent] = useState(null); // { mode, url, text } from share-target
   const [weekHistory, setWeekHistory] = useState([]); // past week plans
+  const [isSyncing, setIsSyncing] = useState(false)
 
   // ── Swipe-down-to-dismiss for inline bottom sheets ──────────────────────────
   const storageSwipe = useSwipeDismiss(() => setShowStorageManager(false));
@@ -225,7 +226,7 @@ export default function App() {
       }
     });
     return unsubscribe;
-  }, [queuedOps, showToast]);
+  }, [queuedOps, showToast, isSyncing]);
 
   // Handle PWA install prompt
   useEffect(() => {
@@ -498,6 +499,7 @@ useEffect(() => {
     <div className="app">
       <OfflineIndicator
         queuedOps={queuedOps}
+        isSyncing={isSyncing}
       />
 
       <header className="app-header">
