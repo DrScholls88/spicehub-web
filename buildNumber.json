@@ -1,7 +1,3 @@
 {
-<<<<<<< HEAD
-  "build": 115
-=======
-  "build": 111
->>>>>>> bf7c95b (fix(core): Instagram image persistence, SW stability, import state reset, production server detection)
+  "build": 1
 }
