@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import SafeMediaImage from './SafeMediaImage.jsx';
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
 function getMondayOfWeek(date) {
