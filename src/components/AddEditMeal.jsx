@@ -1,5 +1,12 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { parseFromUrl, isSocialMediaUrl, getSocialPlatform, parseCaption } from '../recipeParser';
+
+// Auto-expand a textarea to fit its content (call on mount + onChange)
+function autoExpand(el) {
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
+}
 
 const MEAL_CATEGORIES = ['Dinners', 'Breakfasts', 'Lunches', 'Desserts', 'Sides', 'Tailgate', 'Snacks'];
 
@@ -19,8 +26,10 @@ export default function AddEditMeal({
   const [category, setCategory] = useState(meal?.category || (isMealMode ? 'Dinners' : ''));
   const [ingredients, setIngredients] = useState(meal?.ingredients?.length ? meal.ingredients : ['']);
   const [directions, setDirections] = useState(meal?.directions?.length ? meal.directions : ['']);
+  const [notes, setNotes] = useState(meal?.notes || '');
   const [link, setLink] = useState(meal?.link || '');
   const [imageUrl, setImageUrl] = useState(meal?.imageUrl || '');
+  const notesRef = useRef(null);
 
   const [importUrl, setImportUrl] = useState('');
   const [showImportUrl, setShowImportUrl] = useState(false);
@@ -142,6 +151,7 @@ export default function AddEditMeal({
       ...(isMealMode && category ? { category } : {}),
       ingredients: ingredients.filter(i => i.trim()).length ? ingredients.filter(i => i.trim()) : ['No ingredients listed'],
       directions: directions.filter(d => d.trim()).length ? directions.filter(d => d.trim()) : ['No directions listed'],
+      notes: notes.trim(),
       link: link.trim(),
       imageUrl: imageUrl.trim(),
     };
@@ -261,21 +271,49 @@ export default function AddEditMeal({
             <button className="btn-small" onClick={() => addToList(setIngredients)}>+ Add Ingredient</button>
           </div>
 
-          <div className="form-group">
-            <label>{directionsLabel}</label>
-            {directions.map((dir, i) => (
-              <div key={i} className="list-input-row">
-                <textarea
-                  value={dir}
-                  onChange={e => updateList(setDirections, i, e.target.value)}
-                  placeholder={`Step ${i + 1}...`}
-                  rows={2}
-                />
-                {directions.length > 1 && <button className="btn-icon small danger" onClick={() => removeFromList(setDirections, i)}>✕</button>}
-              </div>
-            ))}
-            <button className="btn-small" onClick={() => addToList(setDirections)}>+ Add Step</button>
-          </div>
+<div className="form-group">
+  <label>{directionsLabel}</label>
+  {directions.map((dir, i) => (
+    <div key={i} className="list-input-row">
+      <textarea
+        value={dir}
+        onChange={e => {
+          updateList(setDirections, i, e.target.value);
+          autoExpand(e.target);
+        }}
+        /* Cleaned up ref for list items */
+        ref={el => el && autoExpand(el)} 
+        placeholder={`Step ${i + 1}...`}
+        rows={1}
+        style={{ resize: 'none', overflow: 'hidden' }}
+      />
+      {directions.length > 1 && (
+        <button className="btn-icon small danger" onClick={() => removeFromList(setDirections, i)}>✕</button>
+      )}
+    </div>
+  ))}
+  <button className="btn-small" onClick={() => addToList(setDirections)}>+ Add Step</button>
+</div>
+
+<div className="form-group">
+  <label>Notes</label>
+  <textarea
+    value={notes}
+    onChange={e => {
+      setNotes(e.target.value);
+      autoExpand(e.target);
+    }}
+    ref={el => {
+      if (el) {
+        notesRef.current = el; // Correctly assigns the ref
+        autoExpand(el);        // Correctly triggers initial sizing
+      }
+    }}
+    placeholder="Personal notes, substitutions, tips, serving ideas…"
+    rows={2}
+    style={{ resize: 'none', overflow: 'hidden', width: '100%', boxSizing: 'border-box' }}
+  />
+</div>
         </div>
 
         <div className="modal-footer">

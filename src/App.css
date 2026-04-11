@@ -5134,6 +5134,17 @@ body {
   color: var(--text-light);
 }
 
+.ml-tile-notes {
+  font-size: 11px;
+  color: var(--text-light);
+  opacity: 0.75;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-style: italic;
+  margin-top: 1px;
+}
+
 /* ── Quick Preview popup (long press / right-click) ── */
 .ml-qp-overlay {
   position: fixed;

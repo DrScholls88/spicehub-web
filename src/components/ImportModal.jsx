@@ -377,10 +377,18 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   };
 
   const handleBrowserAssistFallback = () => {
-    // User clicked "Use Paste Text Instead" — switch directly to Paste Text tab
+    // User backed out of BrowserAssist — clear pipeline state fully so a second
+    // import attempt doesn't carry stale URL / importing flags.
     setBrowserAssistMode('off');
+    setBrowserAssistUrl(null);
+    setImporting(false);
+    setImportProgress('');
+    setSocialDetected(null);
+    // Switch to Paste Text and pre-fill the source URL for manual entry
     setMode('paste');
-    setPasteLink(url); // Pre-fill the source URL so user doesn't lose it
+    setPasteLink(url);
+    setUrl(''); // clear URL field so user must re-enter to try again
+    setError('');
   };
 
   // ── Multi-URL batch import ──────────────────────────────────────────────────
@@ -653,8 +661,12 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
 
   const confirmImport = () => {
     if (!preview) return;
-    // Filter out any null/undefined entries from the preview (defensive guard)
-    const valid = preview.filter(m => m && (m.name || m._isAddendum));
+    // Accept any recipe that has a name, real content, or is a side-dish addendum.
+    // Empty name is fine — we fall back to "Untitled Recipe" below.
+    // This prevents cleanRecipe()'s placeholder-title stripping from silently dropping valid recipes.
+    const valid = preview.filter(m =>
+      m && (m.name || m._isAddendum || (m.ingredients?.length > 0) || (m.directions?.length > 0))
+    );
     if (!valid.length) return;
     onImport(valid.map(m => ({
       ...m,
@@ -1114,7 +1126,16 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
               </button>
             </div>
             <div className="modal-footer">
-              <button className="btn-secondary" onClick={() => setPreview(null)}>← Back</button>
+              <button className="btn-secondary" onClick={() => {
+                setPreview(null);
+                setUrl('');
+                setImporting(false);
+                setImportProgress('');
+                setBrowserAssistMode('off');
+                setBrowserAssistUrl(null);
+                setSocialDetected(null);
+                setError('');
+              }}>← Back</button>
               <button className="btn-primary" onClick={confirmImport}>
                 Add {preview.length} {title.toLowerCase().includes('drink') ? (preview.length !== 1 ? 'Drinks' : 'Drink') : (preview.length !== 1 ? 'Recipes' : 'Recipe')}
               </button>

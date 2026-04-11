@@ -7,6 +7,8 @@
  *   2. CORS PROXY    → fallback if server unreachable (limited for social media)
  *   3. CAPTION TEXT  → 4-pass heuristic parser (used internally on extracted captions)
  */
+import { downloadInstagramImage, isInstagramCdnUrl } from './api.js';
+import { cacheInstagramRecipe } from './db.js';
 
 // ─── Title sanitizer (public export, delegates to cleanTitle) ────────────────
 export function sanitizeRecipeTitle(raw) {
@@ -3380,22 +3382,25 @@ export async function importRecipeFromUrl(url, onProgress = () => {}) {
     if (recipe && !recipe._needsManualCaption && recipe.imageUrl) {
       try {
         onProgress(3, 'running', 'Saving image locally…');
-        const { downloadInstagramImage, isInstagramCdnUrl } = await import('./api.js');
         if (isInstagramCdnUrl(recipe.imageUrl)) {
           const localImage = await downloadInstagramImage(recipe.imageUrl);
           recipe.imageUrl = localImage; // mutate before cache write
         }
         onProgress(3, 'done', 'Recipe saved ✓');
-      } catch { /* image download non-fatal */ }
-    }
+    } catch (err) { 
+    console.error("Image download failed:", err);
+  }
+}
 
     // ── Save successful result to cache (keyed by normalized URL) ──
     if (recipe && !recipe._needsManualCaption) {
       try {
         const { cacheInstagramRecipe } = await import('./db.js');
         await cacheInstagramRecipe(cacheKey, recipe);
-      } catch { /* cache write failed, non-fatal */ }
-    }
+  } catch (err) {
+    console.error("Cache write failed:", err);
+  }
+}
 
     return recipe;
   }

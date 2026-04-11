@@ -1,31 +1,19 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { downloadMealsFile, importMealsFromJson, shareMealsFile } from '../sync';
-import { proxyImageUrl } from '../api';
 import { toggleRotation, bulkSetRotation } from '../db';
 import useBackHandler from '../hooks/useBackHandler';
+import SafeMediaImage from './SafeMediaImage';
 
-// Image component with CORS proxy fallback for expired CDN URLs
+// Thin wrapper: maps SafeMediaImage into tile-image card usage
 function CardImage({ src, alt, className, phClass }) {
-  const [failed, setFailed] = useState(false);
-  const [triedProxy, setTriedProxy] = useState(false);
-  const [currentSrc, setCurrentSrc] = useState(src);
-  useEffect(() => { setFailed(false); setTriedProxy(false); setCurrentSrc(src); }, [src]);
-  if (!src || failed) return <div className={phClass}>🍽️</div>;
+  if (!src) return <div className={phClass}>🍽️</div>;
   return (
-    <img
-      src={currentSrc}
+    <SafeMediaImage
+      src={src}
       alt={alt || ''}
       className={className}
-      loading="lazy"
-      onError={() => {
-        if (!triedProxy && src.startsWith('http')) {
-          // Try CORS proxy fallback (no backend server needed)
-          setCurrentSrc(proxyImageUrl(src));
-          setTriedProxy(true);
-        } else {
-          setFailed(true);
-        }
-      }}
+      fallbackEmoji="🍽️"
+      style={null}
     />
   );
 }
@@ -43,6 +31,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
   const restoreRef = useRef(null);
   const categoryScrollRef = useRef(null);
   const longPressTimer = useRef(null);
+  const touchStartPos = useRef(null); // {x, y} at touchStart — used to cancel long-press on scroll
 
   const filtered = meals.filter(m => {
     const matchSearch = m.name.toLowerCase().includes(search.toLowerCase());
@@ -88,18 +77,55 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
 
   const closeConfirmDelete = () => setConfirmDeleteId(null);
 
-  // Long press to show quick preview
-  const handleTouchStart = (meal) => {
-    longPressTimer.current = setTimeout(() => {
-      setQuickPreview(meal);
-    }, 500);
-  };
-  const handleTouchEnd = () => {
+  // ── Ghost-selection cleanup: remove deleted meal IDs from selectedIds ─────────
+  useEffect(() => {
+    if (selectedIds.size === 0) return;
+    const liveMealIds = new Set(meals.map(m => m.id));
+    const hasGhosts = [...selectedIds].some(id => !liveMealIds.has(id));
+    if (hasGhosts) {
+      setSelectedIds(prev => {
+        const cleaned = new Set([...prev].filter(id => liveMealIds.has(id)));
+        if (cleaned.size === 0) setSelectMode(false);
+        return cleaned;
+      });
+    }
+  }, [meals, selectedIds]);
+
+  // ── Long-press handlers with movement threshold ────────────────────────────────
+  // A long press only fires if the finger hasn't moved more than 8px (prevents
+  // firing during scroll or swipe gestures — the #1 cause of over-sensitivity).
+  const LONG_PRESS_MS = 500;
+  const MOVE_THRESHOLD_PX = 8;
+
+  const cancelLongPress = useCallback(() => {
     if (longPressTimer.current) {
       clearTimeout(longPressTimer.current);
       longPressTimer.current = null;
     }
-  };
+    touchStartPos.current = null;
+  }, []);
+
+  // Long press to show quick preview (when NOT in select mode)
+  const handleTouchStart = useCallback((meal, e) => {
+    if (selectMode) return;
+    const touch = e.changedTouches?.[0];
+    touchStartPos.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
+    longPressTimer.current = setTimeout(() => {
+      longPressTimer.current = null;
+      setQuickPreview(meal);
+    }, LONG_PRESS_MS);
+  }, [selectMode]);
+
+  const handleTouchMove = useCallback((e) => {
+    if (!touchStartPos.current || !longPressTimer.current) return;
+    const touch = e.changedTouches?.[0];
+    if (!touch) return;
+    const dx = Math.abs(touch.clientX - touchStartPos.current.x);
+    const dy = Math.abs(touch.clientY - touchStartPos.current.y);
+    if (dx > MOVE_THRESHOLD_PX || dy > MOVE_THRESHOLD_PX) cancelLongPress();
+  }, [cancelLongPress]);
+
+  const handleTouchEnd = useCallback(() => cancelLongPress(), [cancelLongPress]);
 
   // ── Multi-select handlers ──────────────────────────────────────────────────
   const toggleSelect = (mealId) => {
@@ -161,14 +187,17 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
   };
 
   // Enter multi-select via long-press on a tile (when not already in select mode)
-  const handleLongPressSelect = (meal) => {
+  // NOTE: movement threshold is enforced by handleTouchMove above.
+  const handleLongPressSelect = useCallback((meal, e) => {
+    if (selectMode) return;
+    const touch = e.changedTouches?.[0];
+    touchStartPos.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
     longPressTimer.current = setTimeout(() => {
-      if (!selectMode) {
-        setSelectMode(true);
-        setSelectedIds(new Set([meal.id]));
-      }
-    }, 500);
-  };
+      longPressTimer.current = null;
+      setSelectMode(true);
+      setSelectedIds(new Set([meal.id]));
+    }, LONG_PRESS_MS);
+  }, [selectMode]);
 
   // ── Rotation handler ─────────────────────────────────────────────────────────
   const handleToggleRotation = useCallback(async (meal) => {
@@ -254,7 +283,8 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                   onViewDetail(meal);
                 }
               }}
-              onTouchStart={() => selectMode ? null : handleLongPressSelect(meal)}
+              onTouchStart={e => selectMode ? handleLongPressSelect(meal, e) : handleTouchStart(meal, e)}
+              onTouchMove={handleTouchMove}
               onTouchEnd={handleTouchEnd}
               onTouchCancel={handleTouchEnd}
               onContextMenu={e => {
@@ -284,6 +314,11 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                 <span className="ml-tile-meta">
                   {meal.ingredients.length} ing · {meal.directions.length} steps
                 </span>
+                {meal.notes && (
+                  <span className="ml-tile-notes">
+                    {meal.notes.slice(0, 60)}{meal.notes.length > 60 ? '…' : ''}
+                  </span>
+                )}
               </div>
             </div>
           ))
