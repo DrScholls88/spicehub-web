@@ -85,6 +85,23 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     setPreview(updated);
   }, [preview]);
 
+  // ── Auto-expand textarea / input on focus & input ─────────────────────────
+  const handleAutoExpand = useCallback((e) => {
+    const el = e.target;
+    el.style.height = 'auto';
+    el.style.height = Math.max(el.scrollHeight, 40) + 'px';
+  }, []);
+
+  // ── Update a field on a specific recipe in preview ─────────────────────────
+  const updateRecipeField = useCallback((recipeIdx, field, value) => {
+    setPreview(prev => {
+      if (!prev) return prev;
+      const updated = [...prev];
+      updated[recipeIdx] = { ...updated[recipeIdx], [field]: value };
+      return updated;
+    });
+  }, []);
+
   // ── Auto-sort: re-classify all items using smartClassifyLines ──────────────
   const handleAutoSort = useCallback((recipeIdx) => {
     if (!preview) return;
@@ -637,14 +654,16 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   const confirmImport = () => {
     if (!preview) return;
     // Filter out any null/undefined entries from the preview (defensive guard)
-    const valid = preview.filter(m => m && m.name);
+    const valid = preview.filter(m => m && (m.name || m._isAddendum));
     if (!valid.length) return;
     onImport(valid.map(m => ({
       ...m,
+      name: m.name || (m._isAddendum ? (m._addendumLabel || 'Side Dish') : 'Untitled Recipe'),
       // For drinks: directions are optional (a simple cocktail may just have ingredients)
       // Use generic fallbacks only when truly empty so the DB never gets undefined fields
       ingredients: m.ingredients?.length ? m.ingredients : [],
       directions: m.directions?.length ? m.directions : [],
+      notes: m.notes || '',
       importedAt: m.importedAt || new Date().toISOString(),
     })));
   };
@@ -751,6 +770,9 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
             <div className="preview-detail-list">
               {preview.map((m, idx) => (
                 <div key={idx} className="preview-detail-card">
+                  {m._isAddendum && (
+                    <div className="addendum-badge">＋ {m._addendumLabel || 'Side / Sauce'}</div>
+                  )}
                   {/* Header: image + title */}
                   <div className="preview-detail-header">
                     {m.imageUrl ? (
@@ -965,6 +987,8 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                             value={step}
                             placeholder="Describe this step..."
                             rows={2}
+                            onFocus={handleAutoExpand}
+                            onInput={handleAutoExpand}
                             onChange={e => {
                               const updated = [...preview];
                               const dirs = [...(updated[idx].directions || [])];
@@ -1024,8 +1048,70 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                       />
                     </div>
                   )}
+
+                  {/* Notes — auto-expand on tap, drag items in, free-form extras */}
+                  <div
+                    className={`preview-detail-section preview-notes-section ${dragOverField?.field === 'notes' && dragOverField?.recipeIdx === idx ? 'drop-active' : ''}`}
+                    data-field="notes"
+                    data-recipe-idx={idx}
+                    onDragOver={(e) => handleDragOver('notes', idx, e)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      if (!dragSource) return;
+                      const { field: srcField, index: srcIdx, recipeIdx: srcRecipeIdx } = dragSource;
+                      const updated = [...preview];
+                      const sourceItems = [...(updated[srcRecipeIdx][srcField] || [])];
+                      const [movedItem] = sourceItems.splice(srcIdx, 1);
+                      updated[srcRecipeIdx] = { ...updated[srcRecipeIdx], [srcField]: sourceItems };
+                      const currentNotes = updated[idx].notes || '';
+                      updated[idx] = { ...updated[idx], notes: currentNotes ? `${currentNotes}\n${movedItem}` : movedItem };
+                      setPreview(updated);
+                      setDragSource(null);
+                      setDragOverField(null);
+                    }}
+                    onDragLeave={() => setDragOverField(null)}
+                  >
+                    <label className="preview-label">
+                      <span className="preview-label-icon">📋</span>
+                      Notes
+                      <span className="preview-notes-hint">— tap to expand · drag items here</span>
+                    </label>
+                    <textarea
+                      className="preview-notes-textarea"
+                      value={m.notes || ''}
+                      placeholder="Extra info, chef's tips, variations, or anything that didn't fit above…"
+                      rows={1}
+                      onFocus={handleAutoExpand}
+                      onInput={handleAutoExpand}
+                      onChange={e => updateRecipeField(idx, 'notes', e.target.value)}
+                    />
+                  </div>
                 </div>
               ))}
+            </div>
+            <div className="preview-addendum-bar">
+              <button
+                className="btn-add-addendum"
+                title="Add a linked side dish, sauce, or sub-recipe"
+                onClick={() => {
+                  setPreview(prev => [
+                    ...(prev || []),
+                    {
+                      name: '',
+                      ingredients: [],
+                      directions: [],
+                      notes: '',
+                      imageUrl: '',
+                      link: prev?.[0]?.link || '',
+                      _isAddendum: true,
+                      _addendumLabel: 'Side / Sauce',
+                    },
+                  ]);
+                }}
+              >
+                ＋ Add Side / Sauce Recipe
+              </button>
             </div>
             <div className="modal-footer">
               <button className="btn-secondary" onClick={() => setPreview(null)}>← Back</button>

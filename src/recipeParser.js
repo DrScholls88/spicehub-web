@@ -1173,7 +1173,23 @@ async function extractInstagramEmbed(url) {
       } catch { /* oEmbed not available */ }
     }
 
-    if (!caption && !title) { console.log('[instagram-embed] No data found'); return null; }
+    if (!caption && !title) {
+      // No clean caption found — extract visible text from HTML for Gemini AI fallback
+      if (html && html.length > 500) {
+        const rawPageText = html
+          .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+          .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+          .replace(/\s+/g, ' ').trim().slice(0, 6000);
+        if (rawPageText.length > 300) {
+          console.log(`[instagram-embed] No caption — returning ${rawPageText.length}c page text for AI fallback`);
+          return { ok: false, rawPageText, imageUrl, sourceUrl: url };
+        }
+      }
+      console.log('[instagram-embed] No data found');
+      return null;
+    }
 
     console.log(`[instagram-embed] Success — caption: ${caption.length} chars, image: ${imageUrl ? 'yes' : 'no'}`);
     return { ok: true, type: 'caption', caption: stripSocialMetaPrefix(caption), title, imageUrl, sourceUrl: url };
@@ -3210,9 +3226,9 @@ export async function importFromInstagram(url, onProgress = () => {}) {
         // Weak caption: continue to Phase 2 (AI browser) to try to get more text
       } else if (embedData?.rawPageText) {
         // No clean caption but embed returned raw page text — Phase 3 will try Gemini on it
-        progress(1, 'done', 'No caption found — trying AI on page content');
+        progress(1, 'done', 'No caption — sending page content to Google AI…');
       } else {
-        progress(1, 'failed', 'No caption in embed page');
+        progress(1, 'failed', 'Caption not found — will try AI browser');
       }
     } catch { progress(1, 'failed', 'Embed fetch failed'); }
 
@@ -3246,6 +3262,24 @@ export async function importFromInstagram(url, onProgress = () => {}) {
   // ── Phase 3: Gemini AI structuring — ALWAYS runs on any captured text ─────────
   // Per unified plan: "Phase 3 is the always-run intelligence layer."
   // Runs on: caption text, yt-dlp text, OR raw embed page text as last resort.
+
+  // Last-resort: if we have zero text from all phases, try a raw proxy fetch of the URL
+  if (!capturedCaption?.trim() && !capturedRawPageText?.trim()) {
+    progress(3, 'running', '✨ Last resort — fetching page for AI…');
+    try {
+      const rawHtml = await fetchHtmlViaProxy(url, 15000);
+      if (rawHtml && rawHtml.length > 500) {
+        const extracted = rawHtml
+          .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+          .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+          .replace(/\s+/g, ' ').trim().slice(0, 6000);
+        if (extracted.length > 300) capturedRawPageText = extracted;
+      }
+    } catch { /* continue without it */ }
+  }
+
   const textForGemini = capturedCaption?.trim().length >= 20
     ? capturedCaption
     : capturedRawPageText?.trim().length >= 100 ? capturedRawPageText : '';
