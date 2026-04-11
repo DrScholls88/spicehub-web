@@ -68,11 +68,15 @@ export async function fetchHtmlViaProxy(url, timeoutMs = 15000) {
         if (proxyUrl.includes('allorigins.win/get?')) {
           try { const j = JSON.parse(text); if (j.contents) text = j.contents; } catch { /* not JSON */ }
         }
-        // Strict login wall detection — only reject pages that ARE login forms
+        // CB-08: Hardened login wall detection — Instagram rotates their login HTML
+        // selectors; added 2025/2026 patterns (data-testid, is_viewer_logged_in).
         const isLoginWall = (
           text.includes('id="loginForm"') ||
           (text.includes('name="username"') && text.includes('name="password"') && text.length < 30000) ||
-          (text.includes('"loginEndpoint"') && text.length < 10000)
+          (text.includes('"loginEndpoint"') && text.length < 10000) ||
+          text.includes('data-testid="login_password_input"') ||
+          text.includes('instagram://login') ||
+          (text.includes('"is_viewer_logged_in":false') && text.length < 15000)
         );
         if (isLoginWall) continue;
         if (text.length < 300) continue; // Likely an error or empty response
@@ -101,9 +105,12 @@ export function proxyImageUrl(imageUrl) {
 // ── Instagram embed extraction (client-side, no server needed) ────────────────
 
 function extractInstagramShortcode(url) {
+  // CB-07: Added /stories/<username>/ path variant — story posts have a different
+  // URL structure: /stories/{username}/{mediaId}/. We extract mediaId as shortcode.
   try {
     const u = new URL(url);
-    const m = u.pathname.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
+    const m = u.pathname.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/) ||
+              u.pathname.match(/\/stories\/[^/]+\/([A-Za-z0-9_-]+)/);
     return m ? m[1] : null;
   } catch { return null; }
 }
@@ -340,12 +347,13 @@ export function isInstagramCdnUrl(url) {
 export async function downloadInstagramImage(imageUrl) {
   if (!imageUrl || !isInstagramCdnUrl(imageUrl)) return imageUrl;
 
-  // Try multiple CORS proxies in order — Instagram CDN is picky
+  // CB-06: All proxy URLs now use encodeURIComponent — thingproxy was missing it,
+  // causing silent failures on CDN URLs that contain query strings or special chars.
   const tryProxies = [
     `https://api.allorigins.win/raw?url=${encodeURIComponent(imageUrl)}`,
     `https://corsproxy.io/?${encodeURIComponent(imageUrl)}`,
     `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(imageUrl)}`,
-    `https://thingproxy.freeboard.io/fetch/${imageUrl}`,
+    `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(imageUrl)}`,
   ];
 
   for (const proxyUrl of tryProxies) {
@@ -358,10 +366,11 @@ export async function downloadInstagramImage(imageUrl) {
 
       const blob = await resp.blob();
       if (!blob || blob.size < 100) continue; // Empty or too small
-      if (blob.size > 1.5 * 1024 * 1024) continue; // Skip if > 1.5 MB
+      if (blob.size > 2 * 1024 * 1024) continue; // Skip if > 2 MB (CB-08: raised from 1.5MB)
 
-      // Validate it's actually an image
-      if (!blob.type.startsWith('image/') && blob.size < 500) continue;
+      // CB-04: Fixed inverted MIME check — was `&& blob.size < 500` which accepted
+      // HTML error pages (>500 bytes) that aren't images. Now we reject all non-images.
+      if (!blob.type.startsWith('image/')) continue;
 
       const dataUrl = await new Promise((resolve, reject) => {
         const reader = new FileReader();

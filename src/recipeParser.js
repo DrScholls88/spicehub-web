@@ -106,7 +106,10 @@ const BULLET_RE = /^[-•*▪▸►◦‣⁃✓✔🔸🔹◽◾▫▪️🥄�
 const FRACTION_RE = /^[½¼¾⅓⅔⅛⅜⅝⅞\d]/;
 const NUM_UNIT_RE = /^[\d½¼¾⅓⅔⅛⅜⅝⅞][\d./\s]*\s*(cups?|tbsp|tsp|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|grams?|kg|ml|liters?|pinch|dash|bunch|cloves?|cans?|jars?|packages?|pkg|sticks?|slices?|handful|sprigs?|heads?|stalks?)/i;
 const STEP_NUM_RE = /^\d+[.):\s-]/;
-const COOKING_VERBS_RE = /^(mix|stir|add|combine|pour|heat|cook|bake|fry|saut[eé]|chop|dice|mince|preheat|whisk|blend|fold|season|serve|place|put|set|bring|let|cover|remove|transfer|slice|cut|grill|roast|simmer|boil|drain|rinse|prepare|arrange|sprinkle|drizzle|toss|marinate|refrigerate|chill|freeze|thaw|melt|beat|cream|knead|roll|shape|form|spread|layer|garnish|start|begin|first|then|next|finally|broil|brush|coat|press|squeeze|wash|peel|trim|shred|grate|crush|smash|pound|flatten|stuff|fill|top|finish|taste|adjust|reduce|deglaze|caramelize|brown|sear|steam|poach|microwave|stir-fry|deep.fry|pan.fry|air.fry)\b/i;
+// CB-02: Added 'm' flag so '^' matches start of each line in multiline captions,
+// fixing false negatives on recipes where the first cooking verb is not the first word
+// of the entire caption (e.g. "Basil, garlic\nBlend until smooth").
+const COOKING_VERBS_RE = /^(mix|stir|add|combine|pour|heat|cook|bake|fry|saut[eé]|chop|dice|mince|preheat|whisk|blend|fold|season|serve|place|put|set|bring|let|cover|remove|transfer|slice|cut|grill|roast|simmer|boil|drain|rinse|prepare|arrange|sprinkle|drizzle|toss|marinate|refrigerate|chill|freeze|thaw|melt|beat|cream|knead|roll|shape|form|spread|layer|garnish|start|begin|first|then|next|finally|broil|brush|coat|press|squeeze|wash|peel|trim|shred|grate|crush|smash|pound|flatten|stuff|fill|top|finish|taste|adjust|reduce|deglaze|caramelize|brown|sear|steam|poach|microwave|stir-fry|deep.fry|pan.fry|air.fry)\b/im;
 // Spoken/informal direction starters (YouTube Shorts, TikTok narration style)
 const SPOKEN_DIRECTION_RE = /^(you'?re? (?:gonna|going to)|go ahead and|now (?:we|you|I)|what (?:we|you|I) (?:do|did)|take (?:your|the|some)|grab (?:your|the|some)|throw (?:it|that|the|some) in|pop (?:it|that|the) in|toss (?:it|that|the) in|once (?:it|that|the|your)|when (?:it|that|the|your)|after (?:it|that|the|your|about)|make sure|be sure to|don'?t forget to|carefully|gently|slowly|quickly|keep (?:stirring|mixing|cooking)|continue|allow|until|while)\b/i;
 
@@ -230,27 +233,44 @@ export function cleanSocialCaption(text) {
 
 /**
  * isCaptionWeak — returns true if the caption is too thin to contain a full
- * recipe on its own. Triggers early yt-dlp subtitle fallback in BrowserAssist.
+ * recipe on its own. Triggers yt-dlp subtitle / AI fallback in BrowserAssist.
+ *
+ * CB-01: Signal detection now runs BEFORE length checks so that short but
+ *        valid recipes (TikTok cards, metric-only captions) are not rejected.
+ * CB-03: Compact metric notation (250g, 200ml, 1.5kg) detected separately since
+ *        UNITS_RE requires a word boundary before 'g'/'ml' that breaks on "250g".
  */
 export function isCaptionWeak(text) {
+  // Raw junk check — raw (uncleaned) text below 20 chars is never a recipe
   if (!text || text.trim().length < 20) return true;
   const cleaned = cleanSocialCaption(text);
-  // Very short after cleaning → definitely weak
-  if (cleaned.length < 50) return true;
 
-  // Recipe signals: units/measurements + food words + cooking verbs
-  const hasIngredientSignal = UNITS_RE.test(cleaned) || FOOD_RE.test(cleaned);
-  const hasDirectionSignal = COOKING_VERBS_RE.test(cleaned);
+  // CB-03: Compact metric units (e.g. "250g", "200ml", "1.5kg", "180°C")
+  // UNITS_RE misses these because \b requires a word boundary BEFORE 'g'/'ml',
+  // but a digit is a word char, so "250g" has no boundary between '0' and 'g'.
+  const hasMetricUnit = /\d+\s*(?:g|ml|kg|cl|dl|l|°[CF])\b/i.test(cleaned);
 
-  // Strong caption: has both ingredient AND direction signals → always good
+  // CB-01: Detect recipe signals BEFORE applying length penalties
+  const hasIngredientSignal = hasMetricUnit || UNITS_RE.test(cleaned) || FOOD_RE.test(cleaned);
+  const hasDirectionSignal = COOKING_VERBS_RE.test(cleaned) || SPOKEN_DIRECTION_RE.test(cleaned);
+
+  // Tier 1 (revised): Junk only if both short AND signal-free
+  // Old behaviour rejected all cleaned < 50 — too aggressive for "2 cups flour\nMix and fry"
+  if (cleaned.length < 50 && !hasIngredientSignal && !hasDirectionSignal) return true;
+
+  // Tier 2: Strong — both ingredient AND direction signals → always good
   if (hasIngredientSignal && hasDirectionSignal) return false;
 
-  // Medium caption with at least one signal and reasonable length → accept
-  // Narrated Reels often have 60–150 chars of real content but only one signal type
-  if ((hasIngredientSignal || hasDirectionSignal) && cleaned.length >= 80) return false;
+  // Tier 3 (lowered 80→60): One signal + sufficient length → accept
+  // 60 chars covers TikTok ingredient cards and terse metric recipes
+  if ((hasIngredientSignal || hasDirectionSignal) && cleaned.length >= 60) return false;
 
-  // Short single-signal caption → weak
-  if (cleaned.length < 150 && !(hasIngredientSignal && hasDirectionSignal)) return true;
+  // Tier 4 (new): Ingredient-only captions at ≥ 40 chars → accept
+  // Common pattern: creator lists ingredients in caption, shows technique in video
+  if (hasIngredientSignal && cleaned.length >= 40) return false;
+
+  // No usable recipe signal → definitely weak
+  if (!hasIngredientSignal && !hasDirectionSignal) return true;
 
   return false;
 }
@@ -3405,6 +3425,6 @@ export async function importRecipeFromUrl(url, onProgress = () => {}) {
     return recipe;
   }
 
-  // Non-Instagram social + recipe blogs: use existing generic pipeline
-  return await parseFromUrl(resolvedUrl, (msg) => onProgress(0, 'running', msg));
+// Non-Instagram social + recipe blogs: use existing generic pipeline
+  return await parseGeneric(url); // Completes the return statement
 }
