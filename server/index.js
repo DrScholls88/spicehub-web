@@ -23,6 +23,9 @@ import fs from 'fs';
 import { execFile, exec } from 'child_process';
 import { parseRecipe } from '../recipeParser.js';
 
+// yt-dlp-exec — required for YouTube video recipe parsing
+const ytDlp = require('yt-dlp-exec');
+
 // Load .env file for local dev (optional; not required in cloud)
 try {
   const dotenv = await import('dotenv');
@@ -46,16 +49,6 @@ if (IS_CLOUD) {
   }
 }
 // ── yt-dlp-exec (dynamic import — required because file is ESM)
-let ytDlp = null;
-(async () => {
-  try {
-    const mod = await import('yt-dlp-exec');
-    ytDlp = mod.default || mod;
-    console.log('✅ yt-dlp-exec loaded successfully');
-  } catch (err) {
-    console.error('❌ Failed to load yt-dlp-exec:', err.message);
-  }
-})();
 
 const app = express();
 
@@ -829,6 +822,10 @@ async function extractVideoMeta(url) {
 }
 // ── YouTube Recipe Metadata Extractor (yt-dlp) ─────────────────────────────
 async function getYouTubeRecipeMetadata(url) {
+  if (!ytDlp) {
+    console.error('[yt-dlp] Not loaded');
+    return null;
+  }
   try {
     const output = await ytDlp(url, {
       dumpSingleJson: true,
@@ -837,17 +834,15 @@ async function getYouTubeRecipeMetadata(url) {
         'referer:youtube.com',
         'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       ],
-      // Extract the richest text possible
       writeDescription: true,
       skipDownload: true
     });
 
-    // Prefer full description, then auto-captions, then title
     const rawText = output.description 
       || output.caption 
-      || output.title + '\n\n' + (output.automatic_captions?.en?.[0]?.text || '');
+      || (output.title ? output.title + '\n\n' + (output.automatic_captions?.en?.[0]?.text || '') : '');
 
-    console.log(`[yt-dlp] Successfully extracted metadata from ${url}`);
+    console.log(`[yt-dlp] Extracted metadata from ${url}`);
     return rawText.trim();
   } catch (err) {
     console.error('[yt-dlp] Extraction failed:', err.message);
