@@ -22,8 +22,44 @@ import os from 'os';
 import fs from 'fs';
 import { execFile, exec } from 'child_process';
 
-// Correct import for recipeParser.js (located in src/)
-import  parseRecipe  from '../src/recipeParser.js';
+// ── Server-safe parseRecipe (pure JS, no browser APIs) ───────────────────────
+function parseRecipe(rawText) {
+  if (!rawText || typeof rawText !== 'string') return { name: 'Imported Recipe', ingredients: [], directions: [] };
+
+  const lines = rawText
+    .replace(/[\u200B-\u200D\uFEFF\u00AD]/g, '')
+    .split('\n')
+    .map(l => l.trim())
+    .filter(l => l.length > 2);
+
+  const ingredients = [];
+  const directions = [];
+  let title = null;
+
+  const looksLikeIngredient = (line) => /^[\d½¼¾⅓⅔⅛⅜⅝⅞]/.test(line) || /\b(cups?|tbsp|tsp|oz|lbs?|grams?|pinch|dash|bunch|cloves?)\b/i.test(line);
+  const looksLikeDirection = (line) => /^(mix|stir|add|combine|pour|heat|cook|bake|fry|chop|dice|preheat|whisk|blend|season|serve|place|let|cover|remove|slice|cut|grill|roast|simmer|boil)/i.test(line) || /^\d+[.):-]/.test(line);
+
+  for (const line of lines) {
+    const lower = line.toLowerCase();
+
+    if (!title && line.length < 80 && !looksLikeIngredient(line)) {
+      title = line.replace(/^(recipe|how to|today we|making|my )/i, '').trim();
+      continue;
+    }
+
+    if (looksLikeIngredient(line) && !looksLikeDirection(line)) {
+      ingredients.push(line);
+    } else if (looksLikeDirection(line) || line.length > 40) {
+      directions.push(line);
+    }
+  }
+
+  return {
+    name: title || 'Imported Recipe',
+    ingredients: ingredients.length ? ingredients : ['See original post for ingredients'],
+    directions: directions.length ? directions : ['See original post for directions'],
+  };
+}
 
 // yt-dlp-exec — required for YouTube video recipe parsing
 const ytDlp = require('yt-dlp-exec');
