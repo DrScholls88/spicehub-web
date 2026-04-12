@@ -48,9 +48,6 @@ if (IS_CLOUD) {
     puppeteer = (await import('puppeteer')).default;
   }
 }
-// ── yt-dlp-exec (dynamic import — required because file is ESM)
-
-const app = express();
 
 // CORS: allow configured origins, or all origins for local dev
 const allowedOrigins = process.env.ALLOWED_ORIGINS
@@ -303,15 +300,7 @@ function isSocialUrl(url) {
     return SOCIAL_HOSTS.some(d => host === d || host.endsWith('.' + d));
   } catch { return false; }
 }
-// Video URL detector (YouTube + common video hosts)
-function isVideoUrl(url) {
-  try {
-    const host = new URL(url).hostname.replace(/^www\./, '');
-    return /youtube\.com|youtu\.be|vimeo\.com|facebook\.com|instagram\.com\/reel/i.test(host);
-  } catch {
-    return false;
-  }
-}
+
 // ── Instagram shortcode extraction from URL ──────────────────────────────────
 function extractInstagramShortcode(url) {
   try {
@@ -1151,7 +1140,7 @@ app.post('/api/extract-video', async (req, res) => {
     isShortForm,
     extractedVia: transcriptText ? 'yt-dlp-subtitles' : 'yt-dlp-metadata',
   });
-}),
+});
 
 // ── POST /api/extract-url ────────────────────────────────────────────────────
 // PRIMARY import endpoint — works from phone, desktop, anywhere.
@@ -1170,26 +1159,22 @@ app.post('/api/extract-url', async (req, res) => {
     if (embedResult && embedResult.ok && embedResult.caption) {
       return res.json(embedResult);
     }
-    console.log('[extract-url] Instagram embed failed, trying yt-dlp...');
+    console.log('[extract-url] yt-dlp failed or insufficient, trying headless Chrome...');
   }
 
-  // ── Video/Social URLs: try yt-dlp metadata + subtitles first (Mealie-inspired) ──
-  // yt-dlp is faster and more reliable than headless Chrome for supported sites.
+// ── Video/Social URLs: try yt-dlp metadata + subtitles first ──
   if (isVideoUrl(url) || isSocialUrl(url)) {
     const meta = await extractVideoMeta(url);
     if (meta && (meta.title || meta.description)) {
       console.log(`[extract-url] yt-dlp metadata: "${meta.title}" (${meta.duration}s)`);
 
-      // Try to get subtitles too
       const subtitleText = await downloadSubtitles(url, meta);
 
-      // Build combined text for caption parsing
       let captionText = '';
       if (meta.description && meta.description.length > 30) {
         captionText = meta.description;
       }
       if (subtitleText) {
-        // Subtitles are often richer than descriptions for recipe content
         if (captionText) {
           captionText += '\n\nTranscript:\n' + subtitleText;
         } else {
@@ -1209,10 +1194,8 @@ app.post('/api/extract-url', async (req, res) => {
           extractedVia: 'yt-dlp',
         });
       }
-    }
 
-      // yt-dlp got metadata but no useful text — if we have a title + thumbnail,
-      // return what we have (user can edit in preview)
+      // Fallback: return metadata even without good text
       if (meta.title && meta.thumbnail) {
         return res.json({
           ok: true,
@@ -1227,8 +1210,16 @@ app.post('/api/extract-url', async (req, res) => {
       }
     }
     console.log('[extract-url] yt-dlp failed or insufficient, trying headless Chrome...');
-  },
+  }
 
+  // ── Social media fallback to headless browser ──
+  if (isSocialUrl(url)) {
+    return extractWithHeadlessBrowser(url, res);
+  }
+
+  // ── Regular recipe blogs — fast HTTP fetch ──
+  return extractWithHttpFetch(url, res);
+});
 
 // ── Video/Social URLs: try yt-dlp metadata + subtitles first (Mealie-inspired) ──
 // yt-dlp is faster and more reliable than headless Chrome for supported sites.
@@ -1267,7 +1258,7 @@ app.post('/api/parse', async (req, res) => {
 
   // ── Regular recipe blogs → fast HTTP fetch
   return extractWithHttpFetch(url, res);
-}));
+});
 
 // ── Headless browser extraction (Instagram, TikTok, Facebook) ────────────────
 // Launches Chrome in headless mode, navigates to URL, waits for JS to render,
@@ -1579,6 +1570,15 @@ async function extractWithHeadlessBrowser(url, res) {
         }
         return res.json({ ok: true, type: 'none', isLoginWall: true, sourceUrl: url });
       }
+
+      function cleanTitle(title) {
+  if (!title) return '';
+  return title
+    .replace(/\s*on\s+(Instagram|TikTok|Facebook|YouTube)\s*$/i, '')
+    .replace(/\s*\(@[\w.]+\)\s*$/i, '')
+    .replace(/#\w[\w.]*/g, '')
+    .trim();
+}
 
       const caption = stripSocialMetaPrefix(data.caption || '');
       const title = (data.title || data.pageTitle || '')
