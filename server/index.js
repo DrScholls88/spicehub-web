@@ -21,6 +21,9 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 import { execFile, exec } from 'child_process';
+import { parseRecipe } from '../recipeParser.js';
+
+const ytDlp = require('yt-dlp-exec');
 
 // Load .env file for local dev (optional; not required in cloud)
 try {
@@ -44,6 +47,12 @@ if (IS_CLOUD) {
     puppeteer = (await import('puppeteer')).default;
   }
 }
+// ── yt-dlp-exec (dynamic import because we are in ESM)
+let ytDlp;
+(async () => {
+  const mod = await import('yt-dlp-exec');
+  ytDlp = mod.default || mod;
+})();
 
 const app = express();
 
@@ -298,7 +307,15 @@ function isSocialUrl(url) {
     return SOCIAL_HOSTS.some(d => host === d || host.endsWith('.' + d));
   } catch { return false; }
 }
-
+// Video URL detector (YouTube + common video hosts)
+function isVideoUrl(url) {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '');
+    return /youtube\.com|youtu\.be|vimeo\.com|facebook\.com|instagram\.com\/reel/i.test(host);
+  } catch {
+    return false;
+  }
+}
 // ── Instagram shortcode extraction from URL ──────────────────────────────────
 function extractInstagramShortcode(url) {
   try {
@@ -807,6 +824,33 @@ async function extractVideoMeta(url) {
     return null;
   }
 }
+// ── YouTube Recipe Metadata Extractor (yt-dlp) ─────────────────────────────
+async function getYouTubeRecipeMetadata(url) {
+  try {
+    const output = await ytDlp(url, {
+      dumpSingleJson: true,
+      noWarnings: true,
+      addHeader: [
+        'referer:youtube.com',
+        'user-agent:Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      ],
+      // Extract the richest text possible
+      writeDescription: true,
+      skipDownload: true
+    });
+
+    // Prefer full description, then auto-captions, then title
+    const rawText = output.description 
+      || output.caption 
+      || output.title + '\n\n' + (output.automatic_captions?.en?.[0]?.text || '');
+
+    console.log(`[yt-dlp] Successfully extracted metadata from ${url}`);
+    return rawText.trim();
+  } catch (err) {
+    console.error('[yt-dlp] Extraction failed:', err.message);
+    return null;
+  }
+}
 
 /**
  * Download subtitles/captions for a video URL via yt-dlp.
@@ -982,7 +1026,6 @@ app.get('/api/ytdlp-status', async (req, res) => {
 // Mealie-inspired video metadata + subtitle extraction endpoint.
 // Uses yt-dlp to get metadata and subtitles without downloading the video.
 // Zero cost — no AI, no API keys required.
-//
 // Returns structured data optimized for recipe parsing:
 //   { ok, type, title, description, thumbnail, uploader, duration,
 //     subtitleText, combinedText, hasSubtitles, sourceUrl,
@@ -1110,7 +1153,7 @@ app.post('/api/extract-video', async (req, res) => {
     isShortForm,
     extractedVia: transcriptText ? 'yt-dlp-subtitles' : 'yt-dlp-metadata',
   });
-});
+}),
 
 // ── POST /api/extract-url ────────────────────────────────────────────────────
 // PRIMARY import endpoint — works from phone, desktop, anywhere.
@@ -1168,6 +1211,7 @@ app.post('/api/extract-url', async (req, res) => {
           extractedVia: 'yt-dlp',
         });
       }
+    }
 
       // yt-dlp got metadata but no useful text — if we have a title + thumbnail,
       // return what we have (user can edit in preview)
@@ -1185,16 +1229,47 @@ app.post('/api/extract-url', async (req, res) => {
       }
     }
     console.log('[extract-url] yt-dlp failed or insufficient, trying headless Chrome...');
+  },
+
+
+// ── Video/Social URLs: try yt-dlp metadata + subtitles first (Mealie-inspired) ──
+// yt-dlp is faster and more reliable than headless Chrome for supported sites.
+// ── POST /api/parse ───────────────────────────────────────────────────────────
+// Main import endpoint used by ImportModal + BrowserAssist
+app.post('/api/parse', async (req, res) => {
+  const { url, type = 'recipe' } = req.body;
+  if (!url) return res.status(400).json({ success: false, error: 'URL required' });
+
+  // ── Video platforms (YouTube, etc.) → yt-dlp first (fastest + subtitles)
+  if (isVideoUrl(url)) {
+    const rawText = await getYouTubeRecipeMetadata(url);
+
+    if (!rawText) {
+      return res.status(400).json({
+        success: false,
+        error: 'Could not extract text from YouTube video'
+      });
+    }
+
+    const recipe = await parseRecipe(rawText);
+
+    return res.json({
+      success: true,
+      source: 'youtube',
+      rawText,
+      recipe,
+      extractedVia: 'yt-dlp'
+    });
   }
 
-  // ── Social media: use headless puppeteer as fallback ──
+  // ── Social media (Instagram, TikTok, etc.) → headless fallback
   if (isSocialUrl(url)) {
     return extractWithHeadlessBrowser(url, res);
   }
 
-  // ── Recipe blogs: fast HTTP fetch ──
+  // ── Regular recipe blogs → fast HTTP fetch
   return extractWithHttpFetch(url, res);
-});
+}));
 
 // ── Headless browser extraction (Instagram, TikTok, Facebook) ────────────────
 // Launches Chrome in headless mode, navigates to URL, waits for JS to render,
