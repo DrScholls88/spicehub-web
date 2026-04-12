@@ -23,8 +23,6 @@ import fs from 'fs';
 import { execFile, exec } from 'child_process';
 import { parseRecipe } from '../recipeParser.js';
 
-const ytDlp = require('yt-dlp-exec');
-
 // Load .env file for local dev (optional; not required in cloud)
 try {
   const dotenv = await import('dotenv');
@@ -47,11 +45,16 @@ if (IS_CLOUD) {
     puppeteer = (await import('puppeteer')).default;
   }
 }
-// ── yt-dlp-exec (dynamic import because we are in ESM)
-let ytDlp;
+// ── yt-dlp-exec (dynamic import — required because file is ESM)
+let ytDlp = null;
 (async () => {
-  const mod = await import('yt-dlp-exec');
-  ytDlp = mod.default || mod;
+  try {
+    const mod = await import('yt-dlp-exec');
+    ytDlp = mod.default || mod;
+    console.log('✅ yt-dlp-exec loaded successfully');
+  } catch (err) {
+    console.error('❌ Failed to load yt-dlp-exec:', err.message);
+  }
 })();
 
 const app = express();
