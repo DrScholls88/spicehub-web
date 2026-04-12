@@ -448,11 +448,27 @@ body {
   min-width: 44px;
   position: relative;
   -webkit-tap-highlight-color: transparent;
-  transition: transform 0.1s;
+  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1), background 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 0.7;
+}
+
+.wv-day-pill:hover {
+  opacity: 1;
+  background: rgba(245, 255, 245, 0.06);
+  border-radius: 8px;
 }
 
 .wv-day-pill:active {
   transform: scale(0.93);
+}
+
+/* ── Today's pill: scale up + opaque + mint tinted bg ── */
+.wv-day-pill.today {
+  opacity: 1;
+  transform: scale(1.08);
+  background: rgba(255, 107, 53, 0.08);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 107, 53, 0.2);
 }
 
 .wv-day-lbl {
@@ -461,10 +477,15 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--text-light);
+  transition: font-size 0.15s cubic-bezier(0.4, 0, 0.2, 1), font-weight 0.15s cubic-bezier(0.4, 0, 0.2, 1), color 0.15s cubic-bezier(0.4, 0, 0.2, 1), letter-spacing 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* ── Today's day label: bigger, bolder, zesty orange ── */
 .wv-day-pill.today .wv-day-lbl {
-  color: var(--primary);
+  font-size: 13px;
+  font-weight: 800;
+  color: #FF6B35;
+  letter-spacing: 0.1em;
 }
 
 .wv-day-num {
@@ -477,23 +498,41 @@ body {
   font-size: 15px;
   font-weight: 600;
   color: var(--text);
-  transition: all 0.15s;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* ── Today's day number: scale up + bold weight + glow + orange bg ── */
 .wv-day-num.today-ring {
-  color: var(--primary);
+  width: 40px;
+  height: 40px;
+  font-size: 20px;
+  font-weight: 900;
+  background: #FF6B35;
+  color: #121212;
+  box-shadow: 0 0 0 3px #FF6B35, 0 4px 16px rgba(255, 107, 53, 0.4);
 }
 
+/* ── Selected non-today day ── */
 .wv-day-pill.selected .wv-day-num {
   background: var(--primary);
   color: white;
   box-shadow: 0 2px 8px rgba(230, 81, 0, 0.35);
+  opacity: 1;
 }
 
+.wv-day-pill.selected {
+  opacity: 1;
+  background: rgba(245, 255, 245, 0.08);
+}
+
+/* ── Today + selected: priority to today styling ── */
 .wv-day-pill.today.selected .wv-day-num {
-  background: var(--primary);
+  background: #FF6B35;
+  color: #121212;
+  box-shadow: 0 0 0 3px #FF6B35, 0 4px 16px rgba(255, 107, 53, 0.4);
 }
 
+/* ── Meal indicator dot ── */
 .wv-day-dot {
   position: absolute;
   bottom: 0;
@@ -503,10 +542,21 @@ body {
   height: 5px;
   border-radius: 50%;
   background: var(--primary-light);
+  opacity: 0.5;
+  transition: width 0.15s cubic-bezier(0.4, 0, 0.2, 1), height 0.15s cubic-bezier(0.4, 0, 0.2, 1), background 0.15s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── Today's meal indicator: larger + orange + opaque ── */
+.wv-day-pill.today .wv-day-dot {
+  width: 8px;
+  height: 8px;
+  background: #FF6B35;
+  opacity: 1;
 }
 
 .wv-day-pill.selected .wv-day-dot {
   background: white;
+  opacity: 1;
 }
 
 /* ── Hero card (selected day) ── */
@@ -5703,7 +5753,7 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  background: var(--bg);
+  background: #121212;
   position: relative;
 }
 
@@ -5720,7 +5770,7 @@ body {
 
 .gl-empty-state p {
   font-size: 14px;
-  color: var(--text-light);
+  color: rgba(245, 255, 245, 0.6);
   margin: 0;
 }
 
@@ -5728,7 +5778,7 @@ body {
 .gl-progress-section {
   padding: 12px 16px;
   background: var(--card);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   position: sticky;
   top: 0;
   z-index: 10;
@@ -5736,7 +5786,7 @@ body {
 
 .gl-progress-bar {
   height: 4px;
-  background: #e0e0e0;
+  background: rgba(255, 255, 255, 0.12);
   border-radius: 2px;
   overflow: hidden;
   margin-bottom: 8px;
@@ -5744,14 +5794,14 @@ body {
 
 .gl-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--primary), var(--primary-light));
+  background: linear-gradient(90deg, #FF6B35, #FF8F5E);
   border-radius: 2px;
-  transition: width 0.3s ease;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .gl-progress-text {
   font-size: 11px;
-  color: var(--text-light);
+  color: rgba(245, 255, 245, 0.5);
   font-weight: 600;
   text-align: right;
 }
@@ -5762,7 +5812,7 @@ body {
   gap: 8px;
   padding: 10px 12px;
   background: var(--card);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   position: sticky;
   top: 48px;
   z-index: 9;
@@ -5777,12 +5827,12 @@ body {
   padding: 8px 12px;
   font-size: 12px;
   font-weight: 600;
-  border: 1px solid var(--border);
-  background: white;
-  color: var(--text);
-  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #F5FFF5;
+  border-radius: 8px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
   -webkit-tap-highlight-color: transparent;
   display: flex;
   align-items: center;
@@ -5794,12 +5844,13 @@ body {
 .gl-btn-auto-sort:active,
 .gl-btn-rebuild:active {
   transform: scale(0.96);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .gl-btn-batch.gl-active {
-  background: var(--primary);
+  background: #FF6B35;
   color: white;
-  border-color: var(--primary);
+  border-color: #FF6B35;
 }
 
 /* ── Batch Toolbar (Sticky) ── */
@@ -5807,8 +5858,8 @@ body {
   display: flex;
   gap: 8px;
   padding: 10px 12px;
-  background: #fff3e0;
-  border-bottom: 2px solid var(--primary);
+  background: rgba(255, 107, 53, 0.08);
+  border-bottom: 2px solid #FF6B35;
   position: sticky;
   top: 88px;
   z-index: 9;
@@ -5819,7 +5870,7 @@ body {
 .gl-batch-count {
   font-size: 12px;
   font-weight: 700;
-  color: var(--primary);
+  color: #FF6B35;
   min-width: max-content;
 }
 
@@ -5830,23 +5881,25 @@ body {
   padding: 8px 12px;
   font-size: 12px;
   font-weight: 600;
-  border: 1px solid var(--primary);
-  background: white;
-  color: var(--primary);
-  border-radius: 6px;
+  border: 1px solid #FF6B35;
+  background: transparent;
+  color: #FF6B35;
+  border-radius: 8px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
   -webkit-tap-highlight-color: transparent;
 }
 
 .gl-btn-assign-store:disabled {
-  opacity: 0.5;
+  opacity: 0.3;
   cursor: not-allowed;
+  border-color: rgba(255, 107, 53, 0.3);
 }
 
 .gl-btn-select-all:active,
 .gl-btn-assign-store:active:not(:disabled) {
   transform: scale(0.96);
+  background: rgba(255, 107, 53, 0.12);
 }
 
 /* ── Floating Action Buttons (Bottom Bar) ── */
@@ -5858,8 +5911,8 @@ body {
   display: flex;
   gap: 10px;
   padding: 10px 12px 16px;
-  background: linear-gradient(180deg, transparent, rgba(255, 248, 240, 0.98) 20%);
-  border-top: 1px solid var(--border);
+  background: linear-gradient(180deg, transparent, rgba(18, 18, 18, 0.95) 20%);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
   z-index: 50;
   max-width: 600px;
   margin: 0 auto;
@@ -5880,14 +5933,15 @@ body {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  transition: all 0.2s;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
   -webkit-tap-highlight-color: transparent;
 }
 
 .gl-btn-keep-primary {
   background: #FBBC04;
-  color: white;
+  color: #121212;
   box-shadow: 0 2px 8px rgba(251, 188, 4, 0.3);
+  font-weight: 700;
 }
 
 .gl-btn-keep-primary:active {
@@ -5895,13 +5949,14 @@ body {
 }
 
 .gl-btn-keep-secondary {
-  background: white;
-  color: var(--primary);
-  border: 2px solid var(--primary);
+  background: rgba(255, 255, 255, 0.08);
+  color: #F5FFF5;
+  border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .gl-btn-keep-secondary:active {
   transform: scale(0.96);
+  background: rgba(255, 255, 255, 0.12);
 }
 
 /* ── Bottom Sheet Overlay (Store Picker) ── */
@@ -5911,7 +5966,7 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.4);
+  background: rgba(0, 0, 0, 0.5);
   z-index: 40;
   animation: fadeIn 0.2s ease;
 }
@@ -5921,13 +5976,13 @@ body {
   bottom: 0;
   left: 0;
   right: 0;
-  background: var(--card);
+  background: #1A1A1A;
   border-radius: 20px 20px 0 0;
   z-index: 41;
   max-height: 90vh;
   display: flex;
   flex-direction: column;
-  animation: slideUp 0.3s ease;
+  animation: slideUp 300ms cubic-bezier(0.4, 0, 0.2, 1);
   max-width: 600px;
   margin: 0 auto;
   width: 100%;
@@ -5958,7 +6013,7 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 16px 16px 12px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
 }
 
@@ -5966,26 +6021,29 @@ body {
   font-size: 16px;
   font-weight: 700;
   margin: 0;
+  color: #F5FFF5;
 }
 
 .gl-sheet-close {
   width: 32px;
   height: 32px;
   border: none;
-  background: #f5f5f5;
+  background: rgba(255, 255, 255, 0.08);
   border-radius: 50%;
   cursor: pointer;
   font-size: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
   -webkit-tap-highlight-color: transparent;
   flex-shrink: 0;
+  color: #F5FFF5;
 }
 
 .gl-sheet-close:active {
   transform: scale(0.94);
+  background: rgba(255, 255, 255, 0.12);
 }
 
 .gl-sheet-content {
@@ -6002,20 +6060,20 @@ body {
   width: 100%;
   padding: 14px 16px;
   border: none;
-  background: none;
+  background: transparent;
   border-left: 4px solid transparent;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
   -webkit-tap-highlight-color: transparent;
   font-size: 15px;
   font-weight: 500;
-  color: var(--text);
+  color: #F5FFF5;
   text-align: left;
 }
 
 .gl-store-option:active {
   transform: scale(0.98);
-  background: rgba(0, 0, 0, 0.03);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .gl-store-option-name {
@@ -6023,7 +6081,7 @@ body {
 }
 
 .gl-store-option-arrow {
-  color: var(--text-light);
+  color: rgba(245, 255, 245, 0.4);
   font-size: 20px;
   margin-right: 4px;
 }
@@ -6038,18 +6096,21 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 10px 16px;
-  background: #fafafa;
+  background: transparent;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .gl-section-title {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 14px;
+  font-size: 11px;
   font-weight: 700;
-  color: var(--text);
-  border-left: 4px solid var(--primary);
-  padding-left: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(245, 255, 245, 0.4);
+  border-left: none;
+  padding-left: 0;
 }
 
 .gl-section-right {
@@ -6059,10 +6120,13 @@ body {
 }
 
 .gl-section-count {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  color: var(--text-light);
-  min-width: 28px;
+  color: rgba(245, 255, 245, 0.5);
+  background: rgba(245, 255, 245, 0.08);
+  border-radius: 100px;
+  padding: 2px 8px;
+  min-width: max-content;
   text-align: right;
 }
 
@@ -6071,12 +6135,12 @@ body {
   height: 32px;
   border: none;
   background: #FBBC04;
-  border-radius: 6px;
+  border-radius: 8px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
   -webkit-tap-highlight-color: transparent;
   padding: 0;
 }
@@ -6090,19 +6154,21 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-height: 52px;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
-  background: var(--card);
-  transition: all 0.15s;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: transparent;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
   -webkit-tap-highlight-color: transparent;
 }
 
 .gl-item.gl-item-checked {
-  opacity: 0.65;
+  opacity: 0.35;
+  background: rgba(255, 107, 53, 0.04);
 }
 
 .gl-item.gl-item-selected {
-  background: #fff3e0;
+  background: rgba(255, 107, 53, 0.1);
 }
 
 .gl-item-content {
@@ -6122,23 +6188,54 @@ body {
 }
 
 .gl-checkbox-input {
-  width: 24px;
-  height: 24px;
-  min-width: 24px;
+  appearance: none;
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
   cursor: pointer;
-  accent-color: var(--primary);
+  border: 1.5px solid rgba(245, 255, 245, 0.25);
+  border-radius: 50%;
+  background: transparent;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.gl-checkbox-input:hover {
+  border-color: #FF6B35;
+  box-shadow: 0 0 0 2px rgba(255, 107, 53, 0.1);
+}
+
+.gl-checkbox-input:checked {
+  background: #FF6B35;
+  border-color: #FF6B35;
+}
+
+.gl-checkbox-input:checked::after {
+  content: '✓';
+  position: absolute;
+  color: white;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .gl-item-text {
   font-size: 15px;
-  color: var(--text);
+  color: #F5FFF5;
   line-height: 1.4;
   word-break: break-word;
 }
 
 .gl-item-text-checked {
   text-decoration: line-through;
-  color: var(--text-light);
+  color: rgba(245, 255, 245, 0.35);
 }
 
 /* ── Item Actions ── */
@@ -6154,25 +6251,26 @@ body {
   width: 44px;
   height: 44px;
   border: none;
-  background: #f5f5f5;
-  color: var(--text-light);
-  border-radius: 6px;
+  background: transparent;
+  color: rgba(245, 255, 245, 0.35);
+  border-radius: 8px;
   cursor: pointer;
   font-size: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
   -webkit-tap-highlight-color: transparent;
 }
 
 .gl-btn-store:active {
   transform: scale(0.92);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .gl-btn-store.gl-btn-store-assigned {
-  background: var(--primary);
-  color: white;
+  background: transparent;
+  color: #FF6B35;
 }
 
 /* ── Pantry & Remove buttons ── */
@@ -6189,7 +6287,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
   flex-shrink: 0;
   -webkit-tap-highlight-color: transparent;
 }
@@ -6197,61 +6295,63 @@ body {
 .gl-btn-pantry:active {
   background: #4caf50;
   color: white;
+  transform: scale(0.92);
 }
 
 .gl-btn-remove {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
   border: none;
   background: transparent;
-  color: var(--text-light);
+  color: #F5FFF5;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
   flex-shrink: 0;
-  opacity: 0.5;
+  opacity: 0.3;
   -webkit-tap-highlight-color: transparent;
 }
 
 .gl-btn-remove:active {
   opacity: 1;
-  color: #d32f2f;
+  transform: scale(0.92);
 }
 
 .gl-btn-unpantry {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  border: 1px solid var(--border, #e0e0e0);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   background: transparent;
-  color: var(--text-light);
+  color: #F5FFF5;
   font-size: 14px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
   flex-shrink: 0;
   -webkit-tap-highlight-color: transparent;
 }
 
 .gl-btn-unpantry:active {
-  background: var(--surface-2, #f0f0f0);
+  background: rgba(255, 255, 255, 0.08);
+  transform: scale(0.92);
 }
 
 /* ── Pantry section ── */
 .gl-pantry-section {
-  opacity: 0.7;
+  opacity: 0.5;
 }
 
 .gl-item-pantry {
-  background: rgba(76, 175, 80, 0.05);
-  border-left: 3px solid #4caf50;
+  background: rgba(76, 175, 80, 0.08);
+  border-bottom: 1px solid rgba(76, 175, 80, 0.2);
 }
 
 .gl-pantry-check {
@@ -6265,7 +6365,7 @@ body {
 
 .gl-item-text-pantry {
   text-decoration: line-through;
-  color: var(--text-light);
+  color: rgba(245, 255, 245, 0.35);
 }
 
 .gl-pantry-badge {
@@ -6274,8 +6374,9 @@ body {
 }
 
 .gl-picker-pantry {
-  border-bottom: 1px solid var(--border, #e0e0e0) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
   font-weight: 600 !important;
+  color: #4caf50 !important;
 }
 
 /* ── Store Picker (Inline) ── */
@@ -6296,14 +6397,15 @@ body {
   max-width: 600px;
   margin: 0 auto;
   width: 100%;
-  background: var(--card);
+  background: #1A1A1A;
   border-radius: 16px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
   z-index: 31;
   overflow: hidden;
   max-height: 60vh;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .gl-picker-option {
@@ -6313,25 +6415,25 @@ body {
   width: 100%;
   padding: 12px 16px;
   border: none;
-  background: none;
+  background: transparent;
   border-left: 4px solid transparent;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
   -webkit-tap-highlight-color: transparent;
   font-size: 14px;
   font-weight: 500;
-  color: var(--text);
+  color: #F5FFF5;
   text-align: left;
 }
 
 .gl-picker-option:active {
   transform: scale(0.97);
-  background: rgba(0, 0, 0, 0.03);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .gl-picker-unsort {
-  color: var(--text-light);
-  border-left-color: #999 !important;
+  color: rgba(245, 255, 245, 0.5);
+  border-left-color: rgba(255, 255, 255, 0.15) !important;
 }
 
 /* ── Store Logo ── */
@@ -6344,12 +6446,14 @@ body {
   font-weight: 700;
   flex-shrink: 0;
   font-size: 11px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .gl-store-logo-img {
   border-radius: 50%;
   object-fit: cover;
   flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 /* ── Desktop Enhancements ── */
@@ -6359,7 +6463,7 @@ body {
     top: 48px;
     padding: 12px 16px;
     background: var(--card);
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
     border-top: none;
     position: sticky;
     z-index: 8;
@@ -6406,11 +6510,12 @@ body {
   .gl-btn-batch:hover,
   .gl-btn-auto-sort:hover,
   .gl-btn-rebuild:hover {
-    background: #f0f0f0;
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.15);
   }
 
   .gl-btn-batch.gl-active:hover {
-    background: var(--primary-dark);
+    background: #FF5420;
   }
 
   .gl-btn-keep-primary:hover {
@@ -6418,11 +6523,16 @@ body {
   }
 
   .gl-store-option:hover {
-    background: #f5f5f5;
+    background: rgba(255, 255, 255, 0.06);
   }
 
   .gl-picker-option:hover {
-    background: #f5f5f5;
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .gl-checkbox-input:hover {
+    border-color: #FF6B35;
+    box-shadow: 0 0 0 2px rgba(255, 107, 53, 0.1);
   }
 }
 

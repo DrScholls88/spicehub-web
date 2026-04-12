@@ -24,16 +24,37 @@ function fmtDate(d) {
 
 // ── Animations CSS (injected once) ───────────────────────────────────────────
 const SPIN_CSS = `
-  @keyframes sp-slotIn   { from{opacity:0;transform:translateY(10px) scale(.94)} to{opacity:1;transform:none} }
-  @keyframes sp-resolveP { 0%{transform:scale(.85);opacity:.4} 60%{transform:scale(1.06)} 100%{transform:scale(1);opacity:1} }
-  @keyframes sp-shimmer  { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
-  @keyframes sp-glow     { 0%,100%{box-shadow:0 0 0 0 rgba(230,81,0,0)} 50%{box-shadow:0 0 0 8px rgba(230,81,0,.22)} }
-  @keyframes sp-bounce   { 0%,100%{transform:translateY(0)} 40%{transform:translateY(-5px)} 70%{transform:translateY(2px)} }
-  @keyframes sp-confetti { 0%{transform:translateY(-20px) rotate(0deg);opacity:1} 100%{transform:translateY(70px) rotate(380deg);opacity:0} }
-  @keyframes sp-fadeIn   { from{opacity:0} to{opacity:1} }
+  @keyframes sp-slotIn {
+    from { opacity: 0; transform: translateY(16px) scale(0.96); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes sp-resolveP {
+    0% { transform: scale(0.85); opacity: 0.3; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+  @keyframes sp-shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+  }
+  @keyframes sp-glow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255, 107, 53, 0); }
+    50% { box-shadow: 0 0 0 8px rgba(255, 107, 53, 0.22); }
+  }
+  @keyframes sp-bounce {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-3px); }
+  }
+  @keyframes sp-confetti {
+    0% { transform: translateY(-20px) rotate(0deg); opacity: 1; }
+    100% { transform: translateY(70px) rotate(380deg); opacity: 0; }
+  }
+  @keyframes sp-fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
 `;
 
-const CONFETTI_COLORS = ['#e65100','#ff833a','#2e7d32','#1565c0','#7b1fa2','#f59e0b','#e91e63'];
+const CONFETTI_COLORS = ['#FF6B35','#F5FFF5','#2e7d32','#1565c0','#7b1fa2','#f59e0b','#e91e63'];
 
 function Confetti() {
   return (
@@ -178,12 +199,13 @@ export default function MealSpinner({
     <div
       onClick={e=>e.stopPropagation()}
       style={{
-        background:'var(--card)', borderRadius:24,
-        boxShadow:'0 24px 64px rgba(0,0,0,.3)',
+        background:'#121212', borderRadius:8,
+        border:'1px solid #333',
+        boxShadow:'0 24px 64px rgba(0,0,0,.5)',
         width:'100%', maxWidth:560, maxHeight:'88vh',
         overflowY:'auto', overflowX:'hidden',
         display:'flex', flexDirection:'column',
-        animation:'sp-slotIn .3s cubic-bezier(.32,.72,0,1) both',
+        animation:'sp-slotIn .35s cubic-bezier(0.4, 0, 0.2, 1) both',
         position:'relative',
       }}
     >
@@ -244,14 +266,14 @@ export default function MealSpinner({
             <div key={`${dayIdx}-${si}`} style={{
               display:'flex',flexDirection:'column',alignItems:'center',
               background: isRes
-                ? 'linear-gradient(160deg,rgba(230,81,0,.07),rgba(255,131,58,.04))'
+                ? 'linear-gradient(160deg,rgba(255,107,53,.08),rgba(255,107,53,.04))'
                 : 'var(--surface)',
-              border: isRes?'1.5px solid rgba(230,81,0,.25)':'1.5px solid var(--border)',
+              border: isRes?'1.5px solid rgba(255,107,53,.3)':'1.5px solid var(--border)',
               borderRadius:14, padding:'10px 6px',
               minWidth:slotW,
               transition:'all .3s ease',
               animation:`sp-slotIn .35s ${si*.04}s both ease`,
-              boxShadow: isRes?'0 4px 16px rgba(230,81,0,.1)':undefined,
+              boxShadow: isRes?'0 4px 16px rgba(255,107,53,.12)':undefined,
             }}>
               {/* Day label */}
               <span style={{fontSize:11,fontWeight:800,letterSpacing:'.5px',
