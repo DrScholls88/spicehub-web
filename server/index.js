@@ -22,6 +22,8 @@ import os from 'os';
 import fs from 'fs';
 import { execFile, exec } from 'child_process';
 
+const app = express();
+
 // ── Server-safe parseRecipe (pure JS, no browser APIs) ───────────────────────
 function parseRecipe(rawText) {
   if (!rawText || typeof rawText !== 'string') return { name: 'Imported Recipe', ingredients: [], directions: [] };
@@ -61,8 +63,13 @@ function parseRecipe(rawText) {
   };
 }
 
-// yt-dlp-exec — required for YouTube video recipe parsing
-const ytDlp = require('yt-dlp-exec');
+// yt-dlp-exec — optional; provides programmatic API for YouTube metadata.
+// Gracefully degrades to null if not installed; shell-based runYtdlp() remains functional.
+let ytDlp = null;
+try {
+  const ytDlpModule = await import('yt-dlp-exec');
+  ytDlp = ytDlpModule.default;
+} catch { /* yt-dlp-exec not installed — getYouTubeRecipeMetadata will return null */ }
 
 // Load .env file for local dev (optional; not required in cloud)
 try {
@@ -180,16 +187,6 @@ function stripSocialMetaPrefix(text) {
   cleaned = cleaned.replace(/^[\d.]+[KkMm]?\s*(likes?|comments?|views?)\s*[,·•\-]+\s*/gi, '');
   return cleaned.trim() || text;
 }
-
-      function cleanTitle(title) {
-  if (!title) return '';
-  return title
-    .replace(/\s*on\s+(Instagram|TikTok|Facebook|YouTube)\s*$/i, '')
-    .replace(/\s*\(@[\w.]+\)\s*$/i, '')
-    .replace(/#\w[\w.]*/g, '')
-    .trim();
-}
-
 
 // ── JS to inject: floating "Download Recipe" button ───────────────────────────
 // This runs inside Chrome/Instagram — just like Paprika's Download button overlay.
@@ -551,117 +548,6 @@ async function extractInstagramEmbed(url) {
     return null;
   }
 }
-
-// ── POST /api/extract-instagram-agent ─────────────────────────────────────────
-// Real Puppeteer-based extraction (replaces dead @vercel/agent-browser CLI)
-app.post('/api/extract-instagram-agent', async (req, res) => {
-  const { url } = req.body;
-  if (!url) return res.status(400).json({ ok: false, error: 'Missing url' });
-
-  console.log(`[agent-browser] Puppeteer extraction for: ${url}`);
-  let browser = null;
-  try {
-    browser = await puppeteer.launch(getLaunchOptions(true));
-    const page = await browser.newPage();
-
-    // Mobile viewport (iPhone 15 Pro equivalent)
-    await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true, deviceScaleFactor: 3 });
-    await page.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1');
-
-    // Anti-detection
-    await page.evaluateOnNewDocument(() => {
-      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-      Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
-      window.chrome = { runtime: {} };
-    });
-
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 25000 });
-
-    // Auto-expand "more" / "See more" caption buttons
-    try {
-      await page.evaluate(() => {
-        const moreButtons = document.querySelectorAll('button, span, a, div');
-        for (const btn of moreButtons) {
-          const text = (btn.textContent || '').trim().toLowerCase();
-          if (text === 'more' || text === 'see more' || text === '… more') {
-            btn.click();
-            break;
-          }
-        }
-      });
-      await new Promise(r => setTimeout(r, 1000));
-    } catch { /* caption may already be expanded */ }
-
-    // Extract caption via Instagram-specific CSS selectors
-    const caption = await page.evaluate(() => {
-      const selectors = [
-        '._a9zs span[dir="auto"]',
-        'article div[dir="auto"]',
-        '[data-testid="post-comment"] span',
-        '.x9f619 span[dir="auto"]',
-        'h1[dir="auto"]',
-      ];
-      for (const sel of selectors) {
-        const els = document.querySelectorAll(sel);
-        for (const el of els) {
-          const text = (el.textContent || '').trim();
-          if (text.length > 30) return text;
-        }
-      }
-      // Fallback: og:description
-      const ogMeta = document.querySelector('meta[property="og:description"]');
-      if (ogMeta) return ogMeta.getAttribute('content') || '';
-      return '';
-    });
-
-    // Extract title from og:title
-    const title = await page.evaluate(() => {
-      const ogTitle = document.querySelector('meta[property="og:title"]');
-      return ogTitle ? (ogTitle.getAttribute('content') || '') : '';
-    });
-
-    // Extract carousel images via srcset (largest resolution)
-    const imageUrls = await page.evaluate(() => {
-      const imgs = document.querySelectorAll('img[srcset], article img[src]');
-      const urls = [];
-      for (const img of imgs) {
-        const src = img.src || '';
-        if (src && src.startsWith('http') && !src.includes('profile_pic') && !src.includes('s150x150')) {
-          urls.push(src);
-        }
-      }
-      return [...new Set(urls)].slice(0, 5);
-    });
-
-    await browser.close();
-    browser = null;
-
-    const cleanedCaption = stripSocialMetaPrefix(caption || '');
-    const cleanedTitle = cleanTitle(
-      (title || '').replace(/\s*on\s+Instagram\s*$/i, '').replace(/\s*\(@[\w.]+\)\s*$/i, '').replace(/#\w[\w.]*/g, '').trim()
-    );
-
-    if (!cleanedCaption && !cleanedTitle) {
-      return res.json({ ok: false, type: 'none', error: 'No content found' });
-    }
-
-    return res.json({
-      ok: true,
-      type: 'caption',
-      caption: cleanedCaption,
-      title: cleanedTitle,
-      imageUrl: imageUrls[0] || '',
-      imageUrls: imageUrls || [],
-      subtitleText: '',
-      sourceUrl: url,
-      extractedVia: 'agent-puppeteer',
-    });
-  } catch (e) {
-    if (browser) { try { await browser.close(); } catch {} }
-    console.error(`[agent-browser] Puppeteer error: ${e.message}`);
-    return res.json({ ok: false, type: 'none', error: e.message });
-  }
-});
 
 // ── GET /api/image-proxy ─────────────────────────────────────────────────────
 // Proxies external recipe images to avoid CORS issues and expired CDN URLs.
@@ -2608,94 +2494,4 @@ app.post('/api/browser/close', async (req, res) => {
   res.json({ ok: true });
 });
 
-// ── GET /api/browser/status ────────────────────────────────────────────────────
-app.get('/api/browser/status', (req, res) => {
-  res.json({ open: !!activeBrowser, url: activeUrl || null });
-});
-
-// ── POST /api/structure-recipe ─────────────────────────────────────────────
-//   Uses Google Gemini Flash to convert messy caption/subtitle text into a
-//   clean recipe JSON: { title, ingredients:[{name,amount}], directions:[] }
-//   Requires: GOOGLE_GENERATIVE_AI_API_KEY env var (free tier: 1500 req/day)
-app.post('/api/structure-recipe', async (req, res) => {
-  const { rawText, title: hintTitle, imageUrl } = req.body;
-  if (!rawText || rawText.trim().length < 20) {
-    return res.status(400).json({ error: 'rawText too short to structure' });
-  }
-  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-  if (!apiKey) {
-    return res.status(503).json({ error: 'GOOGLE_GENERATIVE_AI_API_KEY not configured on server' });
-  }
-  try {
-    const { GoogleGenerativeAI } = await import('@google/generative-ai');
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-
-    const prompt = `You are a recipe extraction assistant. Convert the following messy social media post (which may include emojis, hashtags, promotional text, timestamps, and filler words) into a clean, structured recipe JSON.
-
-Return ONLY valid JSON matching this exact schema:
-{
-  "title": "string — short recipe name (no hashtags or emojis)",
-  "ingredients": [
-    { "name": "string — ingredient name", "amount": "string — quantity and unit, e.g. '2 cups'" }
-  ],
-  "directions": ["string — one clear step per item"],
-  "servings": "string or null",
-  "cookTime": "string or null",
-  "notes": "string or null — any tips, storage notes, or substitutions"
-}
-
-Rules:
-- Remove all hashtags, @mentions, sponsor text, and filler phrases like "link in bio"
-- Keep measurements precise; do not invent amounts if not given — use "to taste" or "as needed"
-- Split compound steps into separate direction strings
-- If the title hint is provided, use it as a starting point but clean it up
-- If no clear recipe exists, return { "error": "not a recipe" }
-
-${hintTitle ? `Title hint: "${hintTitle}"` : ''}
-
-Raw text:
----
-${rawText.slice(0, 6000)}
----`;
-
-    const result = await model.generateContent(prompt);
-    const text = result.response.text().trim();
-
-    // Strip markdown fences if Gemini wraps in ```json ... ```
-    const jsonText = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
-    const parsed = JSON.parse(jsonText);
-
-    if (parsed.error) {
-      return res.status(422).json({ error: parsed.error });
-    }
-
-    // Attach the image if we have one
-    if (imageUrl) parsed.image = imageUrl;
-
-    res.json({ ok: true, recipe: parsed });
-  } catch (err) {
-    console.error('[structure-recipe] Gemini error:', err.message);
-    res.status(500).json({ error: 'AI structuring failed', detail: err.message });
-  }
-});
-
-// ── Health check (for Render / Railway) ──────────────────────────────────────
-app.get('/health', (req, res) => res.json({ ok: true, mode: IS_CLOUD ? 'cloud' : 'local' }));
-
-// ── Start ──────────────────────────────────────────────────────────────────────
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, async () => {
-  console.log(`\n🌶️  SpiceHub Recipe Server (${IS_CLOUD ? 'CLOUD' : 'LOCAL'} mode)`);
-  console.log(`   Listening on port ${PORT}`);
-  if (!IS_CLOUD) {
-    const chromePath = findChrome();
-    console.log(chromePath
-      ? `   Chrome found: ${chromePath}`
-      : '   ⚠️  Chrome not found — install from google.com/chrome');
-  }
-  // Check yt-dlp availability on startup (installs/upgrades if YTDLP_VERSION is set)
-  if (YTDLP_VERSION) console.log(`   yt-dlp pinned version: ${YTDLP_VERSION}`);
-  await isYtdlpAvailable();
-  console.log('');
-});
+// ── GET /api/browser/status ───────────────────────────�
