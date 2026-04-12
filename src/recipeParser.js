@@ -7,8 +7,10 @@
  *   2. CORS PROXY    → fallback if server unreachable (limited for social media)
  *   3. CAPTION TEXT  → 4-pass heuristic parser (used internally on extracted captions)
  */
-import { downloadInstagramImage, isInstagramCdnUrl } from './api.js';
+import { downloadInstagramImage, isInstagramCdnUrl, fetchHtmlViaProxy as fetchHtmlViaProxyFromApi } from './api.js';
 import { cacheInstagramRecipe } from './db.js';
+import { isRedditUrl, isRedditPostUrl, tryRedditJson } from './scrapers/redditDiscovery.js';
+import { htmlToMarkdown, htmlLooksLikeRecipe } from './scrapers/markdownConverter.js';
 
 // ─── Title sanitizer (public export, delegates to cleanTitle) ────────────────
 export function sanitizeRecipeTitle(raw) {
@@ -1751,14 +1753,292 @@ function parseRecipeFromServerJsonLd(recipe) {
   };
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// SCRAPER TIER 0: ENDPOINT NUDGING
+// Try to find a background JSON endpoint the site is already serving.
+// Zero-cost, no DOM parsing, no CSS selectors — just smarter URL construction.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Endpoint nudging: check if the recipe site already serves structured JSON
+ * from a background endpoint (WordPress REST API, WP Recipe Maker API, etc.).
+ *
+ * Checks (in order):
+ *   1. WordPress REST API: /wp-json/wp/v2/posts?slug={slug}
+ *      → Returns post object with `content.rendered` (full HTML)
+ *   2. WP Recipe Maker public API: /wp-json/wprm/v1/recipe/{id}
+ *      → Returns structured { ingredients, instructions } (ideal)
+ *   3. Generic JSON suffix: {url}.json or {url}?format=json
+ *      → Some headless or JAMstack sites serve JSON versions
+ *
+ * @param {string} url - Original page URL
+ * @param {string|null} [fetchedHtml] - Already-fetched HTML (to extract WP post ID)
+ * @returns {object|null} Recipe object or null
+ */
+async function tryEndpointNudging(url, fetchedHtml = null) {
+  try {
+    const u = new URL(url);
+    const origin = u.origin;
+    const pathParts = u.pathname.replace(/\/$/, '').split('/').filter(Boolean);
+    const slug = pathParts[pathParts.length - 1] || '';
+
+    // ── Strategy 1: WordPress REST API by slug ──────────────────────────────
+    // Works on any site running WordPress (the majority of recipe blogs do).
+    // Endpoint: /wp-json/wp/v2/posts?slug={slug}&_fields=id,title,content
+    if (slug) {
+      const wpApiUrl = `${origin}/wp-json/wp/v2/posts?slug=${encodeURIComponent(slug)}&_fields=id,title,content,featured_media&per_page=1`;
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 6000);
+        const resp = await fetch(wpApiUrl, { signal: ctrl.signal });
+        clearTimeout(timer);
+        if (resp.ok) {
+          const posts = await resp.json();
+          if (Array.isArray(posts) && posts.length > 0) {
+            const post = posts[0];
+            const contentHtml = post.content?.rendered || '';
+            const title = post.title?.rendered || '';
+            if (contentHtml.length > 200) {
+              console.log(`[endpoint-nudge] WP REST API hit for slug "${slug}" (${contentHtml.length} chars)`);
+
+              // First try: JSON-LD inside the post content
+              const ldRecipes = findJsonLdRecipes(contentHtml);
+              if (ldRecipes.length > 0 && (ldRecipes[0].ingredients?.length > 0 || ldRecipes[0].directions?.length > 0)) {
+                return { ...ldRecipes[0], link: url, _extractedVia: 'wp-rest-jsonld' };
+              }
+
+              // Second try: CSS heuristics on the rendered content
+              const cssRecipe = extractRecipeByCSS(contentHtml);
+              if (cssRecipe && (cssRecipe.ingredients?.length > 0 || cssRecipe.directions?.length > 0)) {
+                cssRecipe.name = cssRecipe.name || cleanTitle(title);
+                return { ...cssRecipe, link: url, _extractedVia: 'wp-rest-css' };
+              }
+
+              // Third try: Turndown → Gemini on rendered content
+              const md = htmlToMarkdown(contentHtml, { focusSection: true });
+              if (md.length > 100) {
+                const aiResult = await structureWithAIClient(md, { title: cleanTitle(title), sourceUrl: url });
+                if (aiResult) return { ...aiResult, link: url, _extractedVia: 'wp-rest-ai' };
+              }
+            }
+
+            // Strategy 1b: WP Recipe Maker plugin JSON (if post has WPRM recipe)
+            const postId = post.id;
+            if (postId) {
+              const wprmUrl = `${origin}/wp-json/wprm/v1/recipe/${postId}`;
+              try {
+                const ctrl2 = new AbortController();
+                const t2 = setTimeout(() => ctrl2.abort(), 4000);
+                const r2 = await fetch(wprmUrl, { signal: ctrl2.signal });
+                clearTimeout(t2);
+                if (r2.ok) {
+                  const wprm = await r2.json();
+                  if (wprm && (wprm.ingredients?.length > 0 || wprm.instructions?.length > 0)) {
+                    console.log(`[endpoint-nudge] WPRM API hit for post ${postId}`);
+                    return normalizeWprmApiResponse(wprm, url);
+                  }
+                }
+              } catch { /* WPRM not installed or endpoint blocked */ }
+            }
+          }
+        }
+      } catch { /* WP REST API not available or CORS blocked */ }
+    }
+
+    // ── Strategy 2: Generic JSON suffix ────────────────────────────────────
+    // Some sites (Ghost, Craft CMS, some headless setups) serve JSON at ?format=json
+    const jsonSuffixUrls = [
+      `${url}${url.includes('?') ? '&' : '?'}format=json`,
+      `${url}.json`,
+    ];
+    for (const jsonUrl of jsonSuffixUrls) {
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 5000);
+        const resp = await fetch(jsonUrl, { signal: ctrl.signal });
+        clearTimeout(timer);
+        if (resp.ok && resp.headers.get('content-type')?.includes('json')) {
+          const data = await resp.json();
+          // Ghost CMS: { posts: [{ title, html, feature_image }] }
+          if (data?.posts?.[0]) {
+            const post = data.posts[0];
+            const md = htmlToMarkdown(post.html || '', { focusSection: false });
+            if (md.length > 100) {
+              const aiResult = await structureWithAIClient(md, {
+                title: cleanTitle(post.title || ''),
+                imageUrl: post.feature_image || '',
+                sourceUrl: url,
+              });
+              if (aiResult) return { ...aiResult, link: url, _extractedVia: 'json-suffix-ghost' };
+            }
+          }
+          // Recipe JSON-LD directly in JSON response
+          if (data?.['@type'] === 'Recipe' || data?.recipeIngredient) {
+            const recipe = parseRecipeNode(data);
+            if (recipe) return { ...recipe, link: url, _extractedVia: 'json-suffix-ld' };
+          }
+        }
+      } catch { /* endpoint doesn't exist or not JSON */ }
+    }
+  } catch (e) {
+    console.log(`[endpoint-nudge] Error: ${e.message}`);
+  }
+
+  return null;
+}
+
+/**
+ * Normalize a WP Recipe Maker API response to SpiceHub recipe format.
+ * WPRM API returns: { name, ingredients: [{...}], instructions: [{...}], image_url }
+ */
+function normalizeWprmApiResponse(wprm, sourceUrl) {
+  const name = cleanTitle(wprm.name || wprm.recipe_name || 'Imported Recipe');
+
+  // WPRM ingredients: [{ amount, unit: {name}, name, notes }]
+  const ingredients = (wprm.ingredients || [])
+    .flatMap(group => (group.ingredients || [group]))
+    .map(ing => {
+      const parts = [ing.amount, ing.unit?.name, ing.name, ing.notes ? `(${ing.notes})` : ''].filter(Boolean);
+      return parts.join(' ').replace(/\s+/g, ' ').trim();
+    })
+    .filter(Boolean);
+
+  // WPRM instructions: [{ text }] or [{ instructions: [{ text }] }]
+  const directions = (wprm.instructions || [])
+    .flatMap(group => (group.instructions || [group]))
+    .map(step => (step.text || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+
+  const imageUrl = wprm.image_url || wprm.image?.url || '';
+
+  return {
+    name,
+    ingredients: ingredients.length > 0 ? ingredients : [],
+    directions: directions.length > 0 ? directions : [],
+    imageUrl,
+    link: sourceUrl,
+    _extractedVia: 'wprm-api',
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SCRAPER TIER 1: TURNDOWN → GEMINI BLOG PIPELINE
+// Convert full blog HTML to clean Markdown via Turndown, then structure with AI.
+// Better than raw text stripping: preserves list structure, numbered steps,
+// and section headings that guide Gemini to correct ingredient/direction split.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Convert fetched HTML to Markdown and structure via Gemini.
+ * Called as a final fallback when JSON-LD, microdata, CSS patterns, and server
+ * extraction all fail. Requires VITE_GOOGLE_AI_KEY.
+ *
+ * @param {string} html - Raw HTML from CORS proxy
+ * @param {string} sourceUrl - Original URL (for link and title extraction)
+ * @returns {object|null} Recipe object or null
+ */
+async function tryMarkdownExtraction(html, sourceUrl) {
+  if (!html || html.length < 200) return null;
+  if (!htmlLooksLikeRecipe(html)) {
+    console.log('[md-extract] HTML does not look like a recipe — skipping Turndown pipeline');
+    return null;
+  }
+
+  try {
+    const titleHint = extractMeta(html, 'og:title') || extractMeta(html, 'twitter:title') || '';
+    const imageUrl = extractMeta(html, 'og:image') || '';
+
+    // Convert to Markdown — this is the key improvement over plain text stripping
+    const markdown = htmlToMarkdown(html, { focusSection: true, maxChars: 7000 });
+    if (!markdown || markdown.length < 100) {
+      console.log('[md-extract] Turndown produced empty/tiny output');
+      return null;
+    }
+
+    console.log(`[md-extract] Turndown → ${markdown.length} chars of Markdown — sending to Gemini`);
+
+    const aiResult = await structureWithAIClient(markdown, {
+      title: cleanTitle(titleHint),
+      imageUrl,
+      sourceUrl,
+    });
+
+    if (!aiResult) return null;
+
+    const hasContent =
+      aiResult.ingredients?.some(i => !/^see (original|recipe)/i.test(i)) ||
+      aiResult.directions?.some(d => !/^see (original|recipe)/i.test(d));
+
+    if (!hasContent) return null;
+
+    console.log(`[md-extract] Turndown+Gemini success — ${aiResult.ingredients?.length} ing, ${aiResult.directions?.length} dir`);
+    return { ...aiResult, link: sourceUrl, _extractedVia: 'turndown-gemini' };
+  } catch (e) {
+    console.log(`[md-extract] Error: ${e.message}`);
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SCRAPER TIER 2: REDDIT JSON RECIPE STRUCTURING
+// Parse Reddit selftext (already Markdown) through our caption parser + Gemini.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Given rawText from a Reddit post (already in Markdown), structure it into
+ * a full recipe object using parseCaption + Gemini fallback.
+ *
+ * @param {object} redditData - Result from tryRedditJson()
+ * @param {function} [onProgress]
+ * @returns {object|null}
+ */
+async function structureRedditRecipe(redditData, onProgress) {
+  if (!redditData || !redditData.rawText) return null;
+
+  const { rawText, name: rawName, imageUrl, link } = redditData;
+  const title = cleanTitle(rawName || '');
+
+  if (onProgress) onProgress('Structuring Reddit recipe...');
+
+  // Reddit selftext is Markdown — parseCaption handles it well
+  // (lists become bullet lines, numbered steps are detected by STEP_NUM_RE)
+  const parsed = parseCaption(rawText);
+
+  const hasContent =
+    (parsed.ingredients?.length > 0) ||
+    (parsed.directions?.length > 0);
+
+  if (hasContent) {
+    return {
+      name: parsed.title || title || 'Reddit Recipe',
+      ingredients: parsed.ingredients.length > 0 ? parsed.ingredients : [],
+      directions: parsed.directions.length > 0 ? parsed.directions : [],
+      imageUrl: imageUrl || '',
+      link: link || '',
+      _extractedVia: 'reddit-heuristic',
+    };
+  }
+
+  // Heuristic failed — try Gemini
+  if (onProgress) onProgress('Using AI to structure Reddit recipe...');
+  const aiResult = await structureWithAIClient(rawText, { title, imageUrl, sourceUrl: link });
+  if (aiResult) {
+    return { ...aiResult, link, _extractedVia: 'reddit-ai' };
+  }
+
+  return null;
+}
+
 /**
  * Main entry: parse recipe from a URL.
  * Mealie-inspired unified pipeline — tries multiple strategies automatically.
  *
  * Strategy (in order):
+ *   0. Reddit URLs → .json endpoint (zero-auth, no scraping)
  *   1. Instagram URLs → embed extraction, then server (yt-dlp + Chrome)
  *   2. Video/Social URLs → server (yt-dlp metadata + subtitles), then CORS proxy
- *   3. Recipe blogs → CORS proxy + JSON-LD / microdata / CSS heuristics
+ *   3. Recipe blogs → CORS proxy + JSON-LD / endpoint nudging / microdata /
+ *      CSS heuristics / Turndown+Gemini
  *   4. All strategies exhausted → guide user to Paste Text
  *
  * @param {string} url - The URL to import from
@@ -1768,6 +2048,44 @@ function parseRecipeFromServerJsonLd(recipe) {
  *      or null if completely failed
  */
 export async function parseFromUrl(url, onProgress) {
+
+  // ── 0. Reddit: zero-auth JSON endpoint (fastest non-Instagram path) ──────────
+  // Reddit's .json trick gives structured post data with no scraping, no auth,
+  // and no CORS proxy needed. Always try this first for reddit.com URLs.
+  if (isRedditUrl(url)) {
+    console.log('[SpiceHub] Reddit URL — trying .json API...');
+    if (onProgress) onProgress('Fetching Reddit post via JSON API...');
+
+    const redditData = await tryRedditJson(url, onProgress);
+
+    if (redditData) {
+      // Special case: link post pointing to external recipe site
+      if (redditData._isRedirectToExternal && redditData.externalUrl) {
+        console.log(`[SpiceHub] Reddit link post — redirecting to: ${redditData.externalUrl}`);
+        if (onProgress) onProgress('Following Reddit link to recipe site...');
+        // Recursively parse the external URL (without Reddit wrapper)
+        const externalRecipe = await parseFromUrl(redditData.externalUrl, onProgress);
+        if (externalRecipe && !externalRecipe._error) {
+          // Attach Reddit metadata
+          return {
+            ...externalRecipe,
+            link: redditData.link || url,
+            _redditTitle: redditData.name,
+            _extractedVia: (externalRecipe._extractedVia || 'external') + '+reddit-link',
+          };
+        }
+      }
+
+      // Text post with recipe content — structure it
+      const structured = await structureRedditRecipe(redditData, onProgress);
+      if (structured && (structured.ingredients?.length > 0 || structured.directions?.length > 0)) {
+        return structured;
+      }
+    }
+
+    // Reddit extraction failed — fall through to CORS proxy as final fallback
+    console.log('[SpiceHub] Reddit JSON API failed — trying CORS proxy fallback');
+  }
 
   // ── 1. Instagram: try embed first, then Agent extraction ──
   if (isInstagramUrl(url)) {
@@ -1845,9 +2163,18 @@ export async function parseFromUrl(url, onProgress) {
     return { _error: true, reason: 'social-fetch-failed', platform: getSocialPlatform(url) };
   }
 
-  // ── 3. Recipe blogs: CORS proxy first (fast), server fallback ──
+  // ── 3. Recipe blogs: multi-tier pipeline ───────────────────────────────────
+  //    3a. CORS proxy + JSON-LD / microdata / CSS heuristics (fast, reliable)
+  //    3b. Endpoint nudging (WordPress REST API, WP Recipe Maker API)
+  //    3c. Server-side extraction (yt-dlp, headless Chrome)
+  //    3d. Turndown → Gemini (HTML → clean Markdown → AI structuring)
+  //    3e. Raw text → Gemini (legacy fallback, coarser than Turndown)
+
   console.log('[SpiceHub] Fetching recipe via CORS proxy...');
   if (onProgress) onProgress('Extracting recipe from page...');
+
+  let fetchedHtml = null; // Keep a reference to avoid double-fetching in later steps
+
   try {
     let html = await fetchHtmlViaProxy(url);
     // Detect redirect pages (CORS proxy may return redirect HTML instead of following)
@@ -1859,6 +2186,8 @@ export async function parseFromUrl(url, onProgress) {
       html = null;
     }
     if (html) {
+      fetchedHtml = html;
+      // 3a: Standard JSON-LD / microdata / CSS extraction
       const recipe = parseHtml(html, url);
       if (recipe) return recipe;
     }
@@ -1866,16 +2195,36 @@ export async function parseFromUrl(url, onProgress) {
     console.log('[SpiceHub] CORS proxy failed:', e.message);
   }
 
-  // CORS proxy failed — try server-side extraction as fallback
+  // 3b: Endpoint nudging — try WP REST API, WPRM API, JSON suffix
+  // Only run if we have HTML (to extract slug) or can construct the API URL from the URL itself
+  if (onProgress) onProgress('Checking for structured data endpoints...');
+  const nudgedResult = await tryEndpointNudging(url, fetchedHtml);
+  if (nudgedResult) {
+    console.log(`[SpiceHub] Endpoint nudging succeeded via: ${nudgedResult._extractedVia}`);
+    return nudgedResult;
+  }
+
+  // 3c: Server-side extraction (yt-dlp + headless Chrome)
   if (onProgress) onProgress('Trying server-side extraction...');
   const serverResult = await tryServerExtraction(url, onProgress);
   if (serverResult && !serverResult._error) return serverResult;
 
-  // ── 4. Gemini AI fallback — if we fetched HTML but structural extraction failed ──
-  // Re-fetch once more and send a compressed version to Gemini to extract the recipe.
+  // 3d: Turndown → Gemini — better than raw text stripping
+  // Uses the HTML we already fetched (or refetches if needed)
+  if (onProgress) onProgress('Trying AI extraction with Markdown conversion...');
+  const htmlForTurndown = fetchedHtml || await fetchHtmlViaProxy(url, 20000).catch(() => null);
+  if (htmlForTurndown) {
+    fetchedHtml = htmlForTurndown; // Cache for step 3e if needed
+    const turndownResult = await tryMarkdownExtraction(htmlForTurndown, url);
+    if (turndownResult) return turndownResult;
+  }
+
+  // ── 4. Gemini AI fallback (legacy raw-text path) ─────────────────────────
+  // Kept as a last resort; Turndown pipeline above is better but may not always
+  // have access to the fetched HTML (e.g. all proxies timed out on both attempts).
   if (onProgress) onProgress('Trying AI extraction...');
   try {
-    const html2 = await fetchHtmlViaProxy(url, 20000);
+    const html2 = fetchedHtml || await fetchHtmlViaProxy(url, 20000).catch(() => null);
     if (html2 && html2.length > 500) {
       // Extract only meaningful text (no scripts/styles) for the AI prompt
       const pageText = html2
@@ -3426,5 +3775,5 @@ export async function importRecipeFromUrl(url, onProgress = () => {}) {
   }
 
 // Non-Instagram social + recipe blogs: use existing generic pipeline
-  return await parseGeneric(url); // Completes the return statement
+  return await parseGeneric(url); 
 }
