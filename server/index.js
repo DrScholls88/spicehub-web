@@ -662,9 +662,11 @@ let _ytdlpAvailable = null;
 let _ytdlpVersion = null;
 
 /**
- * Lightweight yt-dlp wrapper — runs yt-dlp with given args.
- * Handles timeout, buffer limits, and error logging consistently.
- * Inspired by social-to-mealie yt-dlp.ts pattern.
+ * Lightweight yt-dlp wrapper — runs yt-dlp with given args via Python module.
+ * Uses `python -m yt_dlp` instead of shell binary for better portability
+ * (especially on Render/Railway where PATH may not include yt-dlp).
+ *
+ * Fallback: tries `yt-dlp` shell command if Python module fails.
  *
  * @param {string[]} args - Command-line arguments for yt-dlp
  * @param {object} opts - { timeout?: number, maxBuffer?: number, label?: string }
@@ -678,13 +680,21 @@ function runYtdlp(args, opts = {}) {
   } = opts;
 
   return new Promise((resolve) => {
-    execFile('yt-dlp', args, { timeout, maxBuffer }, (err, stdout, stderr) => {
-      if (err) {
-        console.log(`[${label}] error: ${err.message}`);
-        resolve(null);
+    // Try Python module first (more reliable on cloud platforms)
+    execFile('python', ['-m', 'yt_dlp', ...args], { timeout, maxBuffer }, (err, stdout, stderr) => {
+      if (!err) {
+        resolve({ stdout: stdout || '', stderr: stderr || '' });
         return;
       }
-      resolve({ stdout: stdout || '', stderr: stderr || '' });
+      // Fallback: try shell binary
+      execFile('yt-dlp', args, { timeout, maxBuffer }, (err2, stdout2, stderr2) => {
+        if (err2) {
+          console.log(`[${label}] error: ${err.message} (Python) and ${err2.message} (shell)`);
+          resolve(null);
+          return;
+        }
+        resolve({ stdout: stdout2 || '', stderr: stderr2 || '' });
+      });
     });
   });
 }
@@ -747,8 +757,8 @@ function installYtdlp(version) {
         resolve(false);
         return;
       }
-      // Verify installation
-      exec('yt-dlp --version', { timeout: 5000 }, (err2, stdout2) => {
+      // Verify installation via Python module
+      execFile('python', ['-m', 'yt_dlp', '--version'], { timeout: 5000 }, (err2, stdout2) => {
         if (err2 || !stdout2.trim()) {
           console.log('   yt-dlp install verification failed');
           resolve(false);

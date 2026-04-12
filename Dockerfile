@@ -1,38 +1,61 @@
-# [Choice] Python version (use -bullseye variants on local arm64/Apple Silicon): 3, 3.10, 3.9, 3.8, 3.7, 3.6, 3-bullseye, 3.10-bullseye, 3.9-bullseye, 3.8-bullseye, 3.7-bullseye, 3.6-bullseye, 3-buster, 3.10-buster, 3.9-buster, 3.8-buster, 3.7-buster, 3.6-buster
-ARG VARIANT="3.12-bullseye"
-FROM mcr.microsoft.com/devcontainers/python:${VARIANT}
+# 1. Use Node.js for the main runtime
+FROM node:22-bullseye-slim
 
-# Remove outdated yarn GPG key, if it exists
-RUN rm -f /etc/apt/sources.list.d/yarn.list /usr/share/keyrings/yarn-archive-keyring.gpg || true
-
-# [Choice] Node.js version: none, lts/*, 16, 14, 12, 10
-ARG NODE_VERSION="none"
-RUN if [ "${NODE_VERSION}" != "none" ]; then su vscode -c "umask 0002 && . /usr/local/share/nvm/nvm.sh && nvm install ${NODE_VERSION} 2>&1"; fi
-
-RUN echo "export PROMPT_COMMAND='history -a'" >> /home/vscode/.bashrc \
-    && echo "export HISTFILE=~/commandhistory/.bash_history" >> /home/vscode/.bashrc \
-    && chown vscode:vscode -R /home/vscode/
-
-RUN npm install -g @go-task/cli
-RUN npm install -g json-schema-to-typescript
-
-# Install additional OS packages
-RUN apt-get update \
-    && apt-get install --no-install-recommends -y \
-    curl \
-    build-essential \
+# 2. Install Python, FFmpeg, and the "Hidden" Chrome libraries
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
     ffmpeg \
-    libpq-dev \
-    libwebp-dev \
-    libsasl2-dev libldap2-dev libssl-dev \
-    gnupg gnupg2 gnupg1
+    wget \
+    gnupg \
+    ca-certificates \
+    fonts-liberation \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libc6 \
+    libcairo2 \
+    libcups2 \
+    libdbus-1-3 \
+    libexpat1 \
+    libfontconfig1 \
+    libgbm1 \
+    libgcc1 \
+    libglib2.0-0 \
+    libgtk-3-0 \
+    libnspr4 \
+    libnss3 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libstdc++6 \
+    libx11-6 \
+    libx11-xcb1 \
+    libxcb1 \
+    libxcomposite1 \
+    libxcursor1 \
+    libxdamage1 \
+    libxext6 \
+    libxfixes3 \
+    libxi6 \
+    libxrandr2 \
+    libxrender1 \
+    libxss1 \
+    libxtst6 \
+    --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install uv
-RUN pip install uv
-ENV UV_LINK_MODE=copy
+# 3. Install yt-dlp globally
+RUN python3 -m pip install --no-cache-dir --break-system-packages yt-dlp
 
-# Install yt-dlp for video metadata/subtitle extraction
-RUN pip install yt-dlp
+# 4. Set up the App
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci --include=dev --legacy-peer-deps
+COPY . .
+RUN npm run build
 
-# Create directory for Docker Secrets
-RUN mkdir -p /run/secrets
+# 5. Download Chrome for Puppeteer
+RUN npx puppeteer browsers install chrome
+
+EXPOSE 10000
+CMD ["node", "server/index.js"]
