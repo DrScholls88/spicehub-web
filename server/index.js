@@ -2494,4 +2494,18 @@ app.post('/api/browser/close', async (req, res) => {
   res.json({ ok: true });
 });
 
+const PORT = parseInt(process.env.PORT, 10) || 3001;
+app.listen(PORT, () => {
+  console.log(`SpiceHub server listening on port ${PORT}`);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[unhandledRejection]', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[uncaughtException]', err);
+  process.exit(1);
+});
+
 // ── GET /api/browser/status ───────────────────────────�

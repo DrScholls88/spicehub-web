@@ -2,15 +2,15 @@
   "name": "spicehub-server",
   "version": "0.1.0",
   "type": "module",
-  "scripts": {
-    "start": "node index.js",
-    "dev": "node index.js"
-  },
+"scripts": {
+  "start": "node server/index.js",
+  "dev": "node server/index.js"
+},
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "puppeteer": "^23.11.1",
-    "yt-dlp-wrap": "^2.3.12",
+    "yt-dlp-exec": "^1.0.2",
     "@google/generative-ai": "^0.21.0"
   },
   "engines": {
