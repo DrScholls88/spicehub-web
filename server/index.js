@@ -23,7 +23,7 @@ import fs from 'fs';
 import { execFile, exec } from 'child_process';
 
 // Correct import for recipeParser.js (located in src/)
-import { parseRecipe } from '../src/recipeParser.js';
+import  parseRecipe  from '../src/recipeParser.js';
 
 // yt-dlp-exec — required for YouTube video recipe parsing
 const ytDlp = require('yt-dlp-exec');
