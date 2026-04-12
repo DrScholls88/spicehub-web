@@ -21,6 +21,8 @@ import path from 'path';
 import os from 'os';
 import fs from 'fs';
 import { execFile, exec } from 'child_process';
+
+// Correct import for recipeParser.js (located in src/)
 import { parseRecipe } from '../recipeParser.js';
 
 // yt-dlp-exec — required for YouTube video recipe parsing
@@ -142,6 +144,16 @@ function stripSocialMetaPrefix(text) {
   cleaned = cleaned.replace(/^[\d.]+[KkMm]?\s*(likes?|comments?|views?)\s*[,·•\-]+\s*/gi, '');
   return cleaned.trim() || text;
 }
+
+      function cleanTitle(title) {
+  if (!title) return '';
+  return title
+    .replace(/\s*on\s+(Instagram|TikTok|Facebook|YouTube)\s*$/i, '')
+    .replace(/\s*\(@[\w.]+\)\s*$/i, '')
+    .replace(/#\w[\w.]*/g, '')
+    .trim();
+}
+
 
 // ── JS to inject: floating "Download Recipe" button ───────────────────────────
 // This runs inside Chrome/Instagram — just like Paprika's Download button overlay.
@@ -1149,6 +1161,8 @@ app.post('/api/extract-video', async (req, res) => {
 //   2. Video URLs        → yt-dlp metadata + subtitles first, then headless Chrome
 //   3. Other social URLs → yt-dlp first, then headless Chrome
 //   4. Recipe blogs      → fast HTTP fetch + HTML parse (JSON-LD, OG tags)
+// ── POST /api/extract-url ────────────────────────────────────────────────────
+// PRIMARY import endpoint — works from phone, desktop, anywhere.
 app.post('/api/extract-url', async (req, res) => {
   const { url } = req.body;
   if (!url) return res.status(400).json({ ok: false, error: 'URL required' });
@@ -1159,10 +1173,10 @@ app.post('/api/extract-url', async (req, res) => {
     if (embedResult && embedResult.ok && embedResult.caption) {
       return res.json(embedResult);
     }
-    console.log('[extract-url] yt-dlp failed or insufficient, trying headless Chrome...');
+    console.log('[extract-url] Instagram embed failed, trying yt-dlp...');
   }
 
-// ── Video/Social URLs: try yt-dlp metadata + subtitles first ──
+  // ── Video/Social URLs: try yt-dlp metadata + subtitles first ──
   if (isVideoUrl(url) || isSocialUrl(url)) {
     const meta = await extractVideoMeta(url);
     if (meta && (meta.title || meta.description)) {
@@ -1570,15 +1584,6 @@ async function extractWithHeadlessBrowser(url, res) {
         }
         return res.json({ ok: true, type: 'none', isLoginWall: true, sourceUrl: url });
       }
-
-      function cleanTitle(title) {
-  if (!title) return '';
-  return title
-    .replace(/\s*on\s+(Instagram|TikTok|Facebook|YouTube)\s*$/i, '')
-    .replace(/\s*\(@[\w.]+\)\s*$/i, '')
-    .replace(/#\w[\w.]*/g, '')
-    .trim();
-}
 
       const caption = stripSocialMetaPrefix(data.caption || '');
       const title = (data.title || data.pageTitle || '')
