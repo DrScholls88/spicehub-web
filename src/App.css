@@ -10838,12 +10838,16 @@ body {
   /* overflow: hidden; -- removed to allow bartender quips to show above */
 }
 
-/* ── Bartender — positioned so torso is above the bar counter ── */
+/* ── Bartender sprite — z-index: 2 ─────────────────────────────────────────
+   Layer contract:  [back-shelf: 1] → [BARTENDER: 2] → [bar-surface: 5]
+   The bartender stands BETWEEN the back shelf and the bar countertop.
+   His lower body clips behind .bs-bar-surface (height 78px from bottom),
+   giving the illusion he's standing physically behind the mahogany counter. */
 .bs-bartender-wrap {
   position: absolute;
-  bottom: 30px; /* lower body clips behind bs-bar-surface (78px tall from bottom) */
+  bottom: 30px; /* raise him so torso is above the 78px counter */
   left: 0;
-  z-index: 2;   /* BELOW bs-bar-surface (z-index:5) → bar hides legs */
+  z-index: 2;   /* above back-shelf (1), below bar-surface (5) */
   pointer-events: none;
   will-change: transform;
 }
@@ -10853,17 +10857,29 @@ body {
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
 }
 
-/* ── Bar counter surface — positioned absolute so it overlaps the bartender ── */
+/* ── Bar counter surface — z-index:5 overlaps bartender (z-index:2) ─────── */
+/* Layering contract: [back-shelf z:1] → [bartender z:2] → [bar-surface z:5] */
 .bs-bar-surface {
-  position: absolute;          /* REQUIRED: without this, z-index and bottom/left/right do nothing */
-  background: linear-gradient(to bottom, #5d4037 0%, #3e2723 100%);
-  border-top: 4px solid #8d6e63;
-  box-shadow: inset 0 12px 30px rgba(0,0,0,0.6);
+  position: absolute;
+  /* Rich mahogany: warm mid-brown lip fades to deep espresso at bottom */
+  background: linear-gradient(
+    to bottom,
+    #6d4c41 0%,
+    #5d4037 30%,
+    #4e342e 70%,
+    #3e2723 100%
+  );
+  border-top: 3px solid #a1887f;   /* polished edge highlight */
+  box-shadow:
+    inset 0 8px 24px rgba(0, 0, 0, 0.5),
+    inset 0 -2px 8px rgba(0, 0, 0, 0.3),
+    0 -2px 12px rgba(0, 0, 0, 0.4); /* shadow cast upward by bar */
   bottom: 0;
   left: 0;
   right: 0;
-  height: 78px; /* counter lip height — bartender's lower body clips behind this */
-  z-index: 5;   /* above bs-bartender-wrap (z-index:2) → hides legs, shows torso */
+  height: 78px; /* counter lip — clips bartender's lower body */
+  z-index: 5;
+  overflow: hidden;
 }
 
 /* Polished top edge highlight */
@@ -10878,16 +10894,24 @@ body {
     rgba(255, 255, 255, 0.04));
 }
 
-/* Wood grain lines on bar surface */
+/* Rich wood grain — two overlapping repeating gradients for depth */
 .bs-bar-surface::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: repeating-linear-gradient(
-    90deg,
-    transparent 0px, transparent 12px,
-    rgba(0, 0, 0, 0.04) 12px, rgba(0, 0, 0, 0.04) 13px
-  );
+  background:
+    repeating-linear-gradient(
+      90deg,
+      transparent         0px,  transparent         14px,
+      rgba(0,0,0,0.06)    14px, rgba(0,0,0,0.06)    15px,
+      transparent         15px, transparent          28px,
+      rgba(0,0,0,0.03)    28px, rgba(0,0,0,0.03)    29px
+    ),
+    repeating-linear-gradient(
+      88deg,
+      transparent         0px,  transparent          40px,
+      rgba(255,255,255,0.025) 40px, rgba(255,255,255,0.025) 41px
+    );
 }
 
 /* Bar top coasters — sit on top of the counter surface */
@@ -11039,76 +11063,127 @@ body {
   100% { transform: rotate(0deg); }
 }
 
+/* ══════════════════════════════════════════════════════════════
+   SPEECH BUBBLE SYSTEM — Direction-aware, never covers the face
+   ══════════════════════════════════════════════════════════════
+   Bar environment Z-index contract:
+     z-index 1  → .bs-backbar       (back shelf display)
+     z-index 2  → .bs-bartender-wrap (bartender sprite — between shelf & bar top)
+     z-index 5  → .bs-bar-surface   (bar countertop — clips bartender's lower body)
+     z-index 6  → .bs-bar-rail      (brass foot rail — front edge of counter)
+     z-index 100 → .bs-quips-layer  (speech bubbles — always on top)
+   ══════════════════════════════════════════════════════════════ */
+
+/* Container moves with the bartender via translateX */
 .bs-quips-layer {
   position: absolute;
-  bottom: 155px; /* positioned above bartender's head */
+  bottom: 155px; /* floats above bartender's head */
   left: 0;
-  width: 120px; /* same as bartender svg width */
-  z-index: 100; /* on top of everything else in the bar-top */
+  width: 120px;  /* mirrors bartender SVG width */
+  z-index: 100;
   pointer-events: none;
-  display: flex;
-  justify-content: center;
+  /* No flex centering — children use absolute positioning */
 }
 
+/* ── BASE SPEECH BUBBLE ─────────────────────────────────────── */
+/* --bubble-x custom prop controls horizontal anchor.
+   Overridden by --left / --right modifier classes.            */
 .bs-bt-speech {
-  position: relative; /* relative to .bs-quips-layer now */
-  background: #fff;
-  color: #333;
+  --bubble-x: -50%;     /* default: centered (fallback only) */
+  position: absolute;
+  bottom: 0;
+  left: 50%;            /* anchor at horizontal center of layer */
+  transform: translateX(var(--bubble-x));
+  background: #fffef0;
+  color: #1a1200;
   font-size: 8px;
-  padding: 7px 12px;
-  border-radius: 8px;
+  padding: 8px 13px;
+  border-radius: 10px;
+  border: 2px solid rgba(0, 0, 0, 0.12);
   white-space: nowrap;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
-  animation: bsBtSpeechIn 0.3s ease-out;
+  box-shadow:
+    0 4px 18px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  animation: bsBtSpeechIn 0.28s cubic-bezier(0.32, 0.72, 0, 1);
   font-family: 'Press Start 2P', monospace;
   pointer-events: none;
+  line-height: 1.6;
 }
 
+/* Down-pointing triangle tail — positioned by modifier classes */
 .bs-bt-speech::after {
   content: '';
   position: absolute;
-  bottom: -5px;
-  left: 50%;
-  transform: translateX(-50%);
-  border: 5px solid transparent;
-  border-top-color: #fff;
+  bottom: -10px;
+  width: 0;
+  height: 0;
+  border: 6px solid transparent;
+  border-top-color: #fffef0;
 }
 
-/* Idle quip — fades in/out */
+/* ── DIRECTIONAL MODIFIERS ──────────────────────────────────────
+   --left  : bubble anchors LEFT  → use when bartender faces RIGHT
+             (his face is on the right side of the sprite; bubble
+              clears the face by sitting to the left of center)
+   --right : bubble anchors RIGHT → use when bartender faces LEFT
+             (sprite is mirrored; face is on the left; bubble goes right)
+   ─────────────────────────────────────────────────────────────── */
+.bs-bt-speech--left  { --bubble-x: -85%; }
+.bs-bt-speech--right { --bubble-x: -15%; }
+
+/* Tail aligns toward the bartender's face area */
+.bs-bt-speech--left::after  { right: 18px; left: auto;   } /* tail points right */
+.bs-bt-speech--right::after { left: 18px;  right: auto;  } /* tail points left  */
+
+/* ── VARIANT FLAVOURS ── */
+
+/* Idle quip — slow fade in/out */
 .bs-bt-speech-idle {
-  opacity: 0.7;
   animation: bsBtSpeechPulse 5s ease-in-out infinite;
 }
 
-/* Swig quip — bigger, more festive */
+/* Swig quip — golden, festive */
 .bs-bt-speech-swig {
   background: #ffcc02;
-  color: #333;
+  color: #2a1400;
   font-size: 9px;
-  animation: bsBtSwigSpeech 1.9s ease-out forwards;
-  border: 2px solid #e5a800;
+  border-color: #b8860b;
+  box-shadow:
+    0 4px 20px rgba(255, 204, 2, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  animation: bsBtSwigSpeech 1.9s cubic-bezier(0.32, 0.72, 0, 1) forwards;
 }
+.bs-bt-speech-swig::after { border-top-color: #ffcc02; }
 
-.bs-bt-speech-swig::after {
-  border-top-color: #ffcc02;
+/* Hat-tip quip */
+.bs-bt-speech-tip {
+  background: #e8f5e9;
+  color: #1a3520;
+  border-color: #a5d6a7;
 }
+.bs-bt-speech-tip::after { border-top-color: #e8f5e9; }
 
+/* ── KEYFRAMES ── */
+
+/* Slide in from below */
 @keyframes bsBtSpeechIn {
-  from { opacity: 0; transform: translateX(-50%) translateY(6px); }
-  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+  from { opacity: 0; transform: translateX(var(--bubble-x)) translateY(8px); }
+  to   { opacity: 1; transform: translateX(var(--bubble-x)) translateY(0);   }
 }
 
+/* Idle pulse — breathes in and out */
 @keyframes bsBtSpeechPulse {
-  0%, 100%  { opacity: 0; }
-  12%, 88%  { opacity: 0.7; }
+  0%, 100% { opacity: 0;    transform: translateX(var(--bubble-x)); }
+  12%, 88% { opacity: 0.85; transform: translateX(var(--bubble-x)); }
 }
 
+/* Swig pop — bounces in, stays, fades out */
 @keyframes bsBtSwigSpeech {
-  0%   { opacity: 0; transform: translateX(-50%) translateY(6px) scale(0.8); }
-  15%  { opacity: 1; transform: translateX(-50%) translateY(0)   scale(1.1); }
-  25%  { opacity: 1; transform: translateX(-50%) translateY(0)   scale(1); }
-  80%  { opacity: 1; transform: translateX(-50%) translateY(0); }
-  100% { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+  0%   { opacity: 0; transform: translateX(var(--bubble-x)) translateY(8px)  scale(0.8);  }
+  15%  { opacity: 1; transform: translateX(var(--bubble-x)) translateY(0)    scale(1.12); }
+  28%  { opacity: 1; transform: translateX(var(--bubble-x)) translateY(0)    scale(1);    }
+  80%  { opacity: 1; transform: translateX(var(--bubble-x)) translateY(0);                }
+  100% { opacity: 0; transform: translateX(var(--bubble-x)) translateY(-5px);             }
 }
 
 /* ══════════════════════════════════════════════════════════════

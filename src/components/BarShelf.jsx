@@ -839,7 +839,10 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport }) {
             />
           </div>
 
-          {/* Quips — now outside so they can be on top of everything */}
+          {/* Quips — direction-aware speech bubbles, never overlapping the bartender's face.
+               When facing right his face is on the right half of the sprite, so the bubble
+               anchors LEFT (--left). When facing left the sprite is mirrored, face is on
+               the left half, so the bubble anchors RIGHT (--right).                        */}
           <div
             className="bs-quips-layer"
             style={{
@@ -849,25 +852,25 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport }) {
           >
             {/* Speech bubble — presenting */}
             {bartenderState === 'presenting' && selectedDrink && (
-              <div className="bs-bt-speech">
+              <div className={`bs-bt-speech ${facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'}`}>
                 <span>Here ya go!</span>
               </div>
             )}
             {/* Speech bubble — swigging */}
             {bartenderState === 'swigging' && swigQuip && (
-              <div className="bs-bt-speech bs-bt-speech-swig">
+              <div className={`bs-bt-speech bs-bt-speech-swig ${facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'}`}>
                 <span>{swigQuip}</span>
               </div>
             )}
-            {/* Speech bubble — tipping */}
+            {/* Speech bubble — tipping hat */}
             {bartenderState === 'tipping' && (
-              <div className="bs-bt-speech bs-bt-speech-tip">
+              <div className={`bs-bt-speech bs-bt-speech-tip ${facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'}`}>
                 <span>Much obliged!</span>
               </div>
             )}
-            {/* Speech bubble — idle */}
+            {/* Speech bubble — idle (cycles through IDLE_QUIPS every 5s) */}
             {bartenderState === 'idle' && !selectedDrink && (
-              <div className="bs-bt-speech bs-bt-speech-idle">
+              <div className={`bs-bt-speech bs-bt-speech-idle ${facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'}`}>
                 <span>{IDLE_QUIPS[idleQuip]}</span>
               </div>
             )}
