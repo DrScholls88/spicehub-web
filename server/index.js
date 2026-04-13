@@ -2507,5 +2507,3 @@ process.on('uncaughtException', (err) => {
   console.error('[uncaughtException]', err);
   process.exit(1);
 });
-
-// ── GET /api/browser/status ───────────────────────────�
