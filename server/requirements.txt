@@ -1,0 +1,4 @@
+recipe-scrapers==15.*
+playwright==1.49.*
+playwright-stealth==2.*
+pydantic==2.*

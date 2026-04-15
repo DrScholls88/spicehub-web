@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "name": "spicehub-web",
+  "buildCommand": "npm ci --include=dev && npm run build",
+  "installCommand": "npm ci --include=dev",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "env": {
+    "VITE_SERVER_URL": "https://spicehub-backend.onrender.com"
+  }
+}

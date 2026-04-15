@@ -1,0 +1,404 @@
+/**
+ * SpiceHub — Client-side API helpers.
+ *
+ * FULLY CLIENT-SIDE — no backend server required.
+ * All recipe extraction runs in the browser using CORS proxies.
+ * Deployed on Vercel with zero backend costs.
+ *
+ * Strategy:
+ *   1. Instagram URLs → embed page fetch via CORS proxy
+ *   2. Recipe blog URLs → CORS proxy fetch → JSON-LD / microdata / CSS heuristic parse
+ *   3. All URLs → OG meta tag fallback
+ *   4. Social media → guide user to Paste Text tab
+ */
+
+// ── CORS proxies (cycled on failure) ──────────────────────────────────────────
+// Ordered roughly by reliability. Rotation starts from last successful index.
+const PROXIES = [
+  url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+  url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+  url => `https://thingproxy.freeboard.io/fetch/${url}`,
+  url => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, // returns JSON {contents} — handled below
+];
+
+/**
+ * Normalize Instagram URL to canonical form for cache lookups.
+ * Strips UTM params, www., trailing slashes, and normalizes /p/ vs /reel/.
+ */
+export function normalizeInstagramUrl(url) {
+  try {
+    const u = new URL(url);
+    // Strip tracking params
+    ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','igshid','igsh','hl','ref'].forEach(p => u.searchParams.delete(p));
+    // Normalize hostname
+    u.hostname = 'www.instagram.com';
+    // Normalize path — strip trailing slash
+    u.pathname = u.pathname.replace(/\/$/, '');
+    return u.toString();
+  } catch { return url; }
+}
+
+// Track last successful proxy index to avoid always hammering proxy[0]
+let _lastGoodProxyIdx = 0;
+
+/**
+ * Fetch HTML from any URL via CORS proxy cascade.
+ * Rotates from last successful proxy; retries full cycle 2x on total failure.
+ * Returns HTML string or null.
+ */
+export async function fetchHtmlViaProxy(url, timeoutMs = 15000) {
+  const ordered = [
+    ...PROXIES.slice(_lastGoodProxyIdx),
+    ...PROXIES.slice(0, _lastGoodProxyIdx),
+  ];
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    for (let i = 0; i < ordered.length; i++) {
+      const makeProxy = ordered[i];
+      const proxyUrl = makeProxy(url);
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+        const resp = await fetch(proxyUrl, { signal: ctrl.signal });
+        clearTimeout(timer);
+        if (!resp.ok) continue;
+        let text = await resp.text();
+        // allorigins /get returns JSON wrapper — unwrap it
+        if (proxyUrl.includes('allorigins.win/get?')) {
+          try { const j = JSON.parse(text); if (j.contents) text = j.contents; } catch { /* not JSON */ }
+        }
+        // CB-08: Hardened login wall detection — Instagram rotates their login HTML
+        // selectors; added 2025/2026 patterns (data-testid, is_viewer_logged_in).
+        const isLoginWall = (
+          text.includes('id="loginForm"') ||
+          (text.includes('name="username"') && text.includes('name="password"') && text.length < 30000) ||
+          (text.includes('"loginEndpoint"') && text.length < 10000) ||
+          text.includes('data-testid="login_password_input"') ||
+          text.includes('instagram://login') ||
+          (text.includes('"is_viewer_logged_in":false') && text.length < 15000)
+        );
+        if (isLoginWall) continue;
+        if (text.length < 300) continue; // Likely an error or empty response
+        // Remember which proxy worked
+        _lastGoodProxyIdx = PROXIES.indexOf(makeProxy);
+        if (_lastGoodProxyIdx < 0) _lastGoodProxyIdx = 0;
+        return text;
+      } catch { /* try next */ }
+    }
+    // Brief pause between full cycle retries
+    if (attempt === 0) await new Promise(r => setTimeout(r, 800));
+  }
+  return null;
+}
+
+/**
+ * Proxy an image URL through CORS proxy (for displaying images that block cross-origin).
+ * Returns a proxied URL string that can be used as an <img> src.
+ */
+export function proxyImageUrl(imageUrl) {
+  if (!imageUrl || !imageUrl.startsWith('http')) return imageUrl;
+  // allorigins works well for images too
+  return `https://api.allorigins.win/raw?url=${encodeURIComponent(imageUrl)}`;
+}
+
+// ── Instagram embed extraction (client-side, no server needed) ────────────────
+
+function extractInstagramShortcode(url) {
+  // CB-07: Added /stories/<username>/ path variant — story posts have a different
+  // URL structure: /stories/{username}/{mediaId}/. We extract mediaId as shortcode.
+  try {
+    const u = new URL(url);
+    const m = u.pathname.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/) ||
+              u.pathname.match(/\/stories\/[^/]+\/([A-Za-z0-9_-]+)/);
+    return m ? m[1] : null;
+  } catch { return null; }
+}
+
+export function isInstagramUrl(url) {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '');
+    return host === 'instagram.com' || host.endsWith('.instagram.com');
+  } catch { return false; }
+}
+
+/**
+ * Extract recipe from Instagram embed page (client-side via CORS proxy).
+ * Instagram's /embed/captioned/ endpoint is lighter and often bypasses login walls.
+ * Tries both /p/ and /reel/ forms, returning the one with the longest caption.
+ * Returns { ok, type, caption, title, imageUrl, sourceUrl } or null.
+ */
+export async function extractInstagramEmbed(url) {
+  const shortcode = extractInstagramShortcode(url);
+  if (!shortcode) return null;
+
+  // Try both /p/ and /reel/ embed forms — Instagram may serve either
+  const embedUrls = [
+    `https://www.instagram.com/p/${shortcode}/embed/captioned/`,
+    `https://www.instagram.com/reel/${shortcode}/embed/captioned/`,
+  ];
+
+  let bestResult = null;
+  let bestCaptionLength = 0;
+
+  for (const embedUrl of embedUrls) {
+    console.log(`[instagram-embed] Trying embed page: ${embedUrl}`);
+
+    try {
+      const html = await fetchHtmlViaProxy(embedUrl, 15000);
+      if (!html) {
+        console.log('[instagram-embed] CORS proxy returned no data for ' + embedUrl);
+        continue;
+      }
+
+      // Check for actual login wall (not just pages that mention "login" in code)
+      if (
+        html.includes('"viewerId":null') ||
+        (html.length < 4000 && html.includes('"requiresLogin":true')) ||
+        (html.length < 3000 && !html.includes('EmbedCaption') && !html.includes('CaptionUsername') && !html.includes('"shortcode"'))
+      ) {
+        console.log('[instagram-embed] Login wall or empty embed detected for ' + embedUrl);
+        continue;
+      }
+
+      // ── Extract caption ──
+      let caption = '';
+      const captionPatterns = [
+        /<div\s+class="[^"]*Caption[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+        /<div\s+class="[^"]*EmbedCaption[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+        /class="[^"]*[Cc]aption[^"]*"[^>]*>[\s\S]*?<span[^>]*>([\s\S]*?)<\/span>/i,
+      ];
+      for (const re of captionPatterns) {
+        const m = re.exec(html);
+        if (m && m[1]) {
+          const text = m[1].replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+          if (text && text.length > 15) { caption = text; break; }
+        }
+      }
+
+      // Method 2: JSON data in scripts — expanded patterns for all IG embed formats
+      if (!caption) {
+        const dataPatterns = [
+          // Standard embed JSON: "caption":{"text":"..."}
+          /"caption"\s*:\s*\{\s*"text"\s*:\s*"((?:[^"\\]|\\.)*)"/,
+          // Newer embed format: "node":{"...","caption":"..."}
+          /"captionText"\s*:\s*"((?:[^"\\]|\\.){20,})"/,
+          // edge_media_to_caption edges
+          /"edges"\s*:\s*\[\s*\{[^}]*"text"\s*:\s*"((?:[^"\\]|\\.){20,})"/,
+          // accessibility_caption
+          /"accessibility_caption"\s*:\s*"((?:[^"\\]|\\.){20,})"/,
+          // Any long "text" value in a script block (heuristic, broad)
+          /"text"\s*:\s*"((?:[^"\\]|\\.){40,})"/,
+        ];
+        for (const re of dataPatterns) {
+          const m = re.exec(html);
+          if (m && m[1]) {
+            try {
+              const decoded = JSON.parse('"' + m[1] + '"');
+              if (decoded.length > 15) { caption = decoded; break; }
+            } catch {
+              if (m[1].length > 15) { caption = m[1]; break; }
+            }
+          }
+        }
+      }
+
+      // Method 2b: parse __additionalData / window.__InstagramWebSharedData JSON blobs
+      if (!caption) {
+        const scriptM = html.match(/window\.__additionalDataLoaded\([^,]+,(\{[\s\S]+?\})\);/) ||
+                        html.match(/<script[^>]*>window\._sharedData\s*=\s*(\{[\s\S]+?\});<\/script>/);
+        if (scriptM) {
+          try {
+            const data = JSON.parse(scriptM[1]);
+            // Recursively search for a caption text field
+            const findCaption = (obj, depth = 0) => {
+              if (!obj || typeof obj !== 'object' || depth > 8) return '';
+              if (typeof obj.text === 'string' && obj.text.length > 20) return obj.text;
+              if (typeof obj.caption === 'string' && obj.caption.length > 20) return obj.caption;
+              if (obj.caption?.text?.length > 20) return obj.caption.text;
+              for (const val of Object.values(obj)) {
+                const found = findCaption(val, depth + 1);
+                if (found) return found;
+              }
+              return '';
+            };
+            const found = findCaption(data);
+            if (found) caption = found;
+          } catch { /* not parseable */ }
+        }
+      }
+
+      // Method 3: OG description
+      if (!caption) {
+        const ogMatch = html.match(/<meta[^>]+property\s*=\s*["']og:description["'][^>]+content\s*=\s*["']([^"']*)["']/i)
+          || html.match(/<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+property\s*=\s*["']og:description["']/i);
+        if (ogMatch && ogMatch[1] && ogMatch[1].length > 15) {
+          caption = ogMatch[1].replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+        }
+      }
+
+      // ── Extract image ──
+      let imageUrl = '';
+      // OG image
+      const ogImgMatch = html.match(/<meta[^>]+property\s*=\s*["']og:image["'][^>]+content\s*=\s*["']([^"']*)["']/i)
+        || html.match(/<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+property\s*=\s*["']og:image["']/i);
+      if (ogImgMatch) imageUrl = ogImgMatch[1].replace(/&amp;/g, '&');
+
+      // Fallback image patterns
+      if (!imageUrl) {
+        const imgPatterns = [
+          /<img[^>]+class="[^"]*EmbedImage[^"]*"[^>]+src="([^"]+)"/i,
+          /<img[^>]+src="(https:\/\/[^"]*instagram[^"]*\/[^"]*_n\.jpg[^"]*)"/i,
+          /<img[^>]+src="(https:\/\/scontent[^"]+)"/i,
+          /"display_url"\s*:\s*"(https:[^"]+)"/i,
+          /"thumbnail_src"\s*:\s*"(https:[^"]+)"/i,
+          /background-image:\s*url\(['"]?(https:\/\/scontent[^'")\s]+)['"]?\)/i,
+        ];
+        for (const re of imgPatterns) {
+          const m = re.exec(html);
+          if (m) {
+            const candidate = m[1].replace(/&amp;/g, '&').replace(/\\u0026/g, '&');
+            if (candidate.startsWith('http')) { imageUrl = candidate; break; }
+          }
+        }
+      }
+
+      // ── Extract title ──
+      let title = '';
+      const ogTitleMatch = html.match(/<meta[^>]+property\s*=\s*["']og:title["'][^>]+content\s*=\s*["']([^"']*)["']/i)
+        || html.match(/<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+property\s*=\s*["']og:title["']/i);
+      if (ogTitleMatch) {
+        title = ogTitleMatch[1]
+          .replace(/\s*on\s+Instagram\s*$/i, '')
+          .replace(/\s*\(@[\w.]+\)\s*$/i, '')
+          .replace(/#\w[\w.]*/g, '')
+          .replace(/&amp;/g, '&').replace(/&quot;/g, '"')
+          .trim();
+      }
+
+      // Even with no caption, extract raw visible text from the embed page for Gemini fallback
+      let rawPageText = '';
+      if (!caption) {
+        // Strip all script/style/meta tags, collapse whitespace
+        rawPageText = html
+          .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+          .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+          .replace(/<!--[\s\S]*?-->/g, ' ')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 3000); // cap for Gemini
+      }
+
+      if (!caption && !title && !rawPageText) {
+        console.log('[instagram-embed] No content found in ' + embedUrl);
+        continue;
+      }
+
+      // Keep result if caption is longer than previous best
+      const effectiveLength = caption.length || (rawPageText.length > 200 ? rawPageText.length * 0.1 : 0);
+      if (effectiveLength > bestCaptionLength || (!bestResult && (caption || rawPageText))) {
+        bestCaptionLength = effectiveLength;
+        bestResult = {
+          ok: true,
+          type: 'caption',
+          caption: caption || '',
+          rawPageText: caption ? '' : rawPageText, // only used when caption is empty
+          title: title || '',
+          imageUrl,
+          sourceUrl: url,
+        };
+        console.log(`[instagram-embed] Found in ${embedUrl} — caption: ${caption.length} chars, rawText: ${rawPageText.length} chars, image: ${imageUrl ? 'yes' : 'no'}`);
+      }
+    } catch (e) {
+      console.log(`[instagram-embed] Error from ${embedUrl}: ${e.message}`);
+      continue;
+    }
+  }
+
+  if (bestResult) {
+    return bestResult;
+  }
+
+  console.log('[instagram-embed] No usable caption found from any URL variant');
+  return null;
+}
+
+// ── Instagram CDN image download → base64 data URL ───────────────────────────
+// Instagram/Meta CDN URLs (scontent.cdninstagram.com, fbcdn.net, etc.) expire
+// after hours and block hotlinking via Referer checks. The fix: download at
+// import time and store as a self-contained data URL in Dexie.
+
+const INSTAGRAM_CDN_RE = /\.(cdninstagram\.com|fbcdn\.net|fbsbx\.com|fna\.fbcdn\.net)/i;
+
+export function isInstagramCdnUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  try { return INSTAGRAM_CDN_RE.test(new URL(url).hostname); } catch { return false; }
+}
+
+/**
+ * Download an Instagram CDN image through a CORS proxy and return a base64 data URL.
+ * Returns the original URL if download fails (graceful degradation).
+ * Caps at ~1 MB to avoid storing giant images.
+ */
+export async function downloadInstagramImage(imageUrl) {
+  if (!imageUrl || !isInstagramCdnUrl(imageUrl)) return imageUrl;
+
+  // CB-06: All proxy URLs now use encodeURIComponent — thingproxy was missing it,
+  // causing silent failures on CDN URLs that contain query strings or special chars.
+  const tryProxies = [
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(imageUrl)}`,
+    `https://corsproxy.io/?${encodeURIComponent(imageUrl)}`,
+    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(imageUrl)}`,
+    `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(imageUrl)}`,
+  ];
+
+  for (const proxyUrl of tryProxies) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 8000);
+      const resp = await fetch(proxyUrl, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!resp.ok) continue;
+
+      const blob = await resp.blob();
+      if (!blob || blob.size < 100) continue; // Empty or too small
+      if (blob.size > 2 * 1024 * 1024) continue; // Skip if > 2 MB (CB-08: raised from 1.5MB)
+
+      // CB-04: Fixed inverted MIME check — was `&& blob.size < 500` which accepted
+      // HTML error pages (>500 bytes) that aren't images. Now we reject all non-images.
+      if (!blob.type.startsWith('image/')) continue;
+
+      const dataUrl = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+
+      if (dataUrl && dataUrl.startsWith('data:image')) {
+        console.log(`[SpiceHub] Downloaded Instagram image: ${Math.round(blob.size / 1024)}KB → data URL`);
+        return dataUrl;
+      }
+    } catch { /* try next proxy */ }
+  }
+
+  console.log(`[SpiceHub] Could not download Instagram image — will use original URL`);
+  return imageUrl; // Graceful fallback: original URL (may 403 later, but better than nothing)
+}
+
+// ── Legacy exports (kept for backward compat, now no-ops or thin wrappers) ──
+
+/** @deprecated Server no longer required. Returns false always. */
+export async function isServerAvailable() { return false; }
+
+/** @deprecated No-op. */
+export function resetServerAvailabilityCache() {}
+
+/** @deprecated Server extraction replaced by client-side. Returns unavailable. */
+export async function extractUrl(/* url */) {
+  return { ok: false, reason: 'server-unavailable' };
+}

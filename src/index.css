@@ -1,0 +1,40 @@
+/* SpiceHub - Base Reset */
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; }
+body { overscroll-behavior-y: none; }
+img { display: block; }
+button { font-family: inherit; }
+textarea { resize: vertical; }
+
+/* ── Premium UX (Phase 3) ── */
+.preview-editable-row {
+  transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.2s ease, opacity 0.2s ease, background-color 0.2s;
+  cursor: grab;
+  position: relative;
+}
+
+.preview-editable-row:hover {
+  transform: scale(1.01) translateX(2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+  z-index: 10;
+  background-color: var(--surface-hover, #fdfdfd);
+}
+
+.preview-editable-row:active {
+  cursor: grabbing;
+  transform: scale(0.98);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+
+.browser-assist-iframe-wrapper {
+  touch-action: pan-x pan-y pinch-zoom;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+  animation: fadeInSmooth 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+@keyframes fadeInSmooth {
+  0% { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
