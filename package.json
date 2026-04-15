@@ -1,0 +1,58 @@
+{
+  "name": "spicehub-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "vite",
+    "dev:server": "node server/index.js",
+    "dev:full": "concurrently --names \"vite,server\" --prefix-colors \"cyan,magenta\" \"npm run dev\" \"npm run dev:server\"",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@google/genai": "^1.48.0",
+    "@google/generative-ai": "^0.21.0",
+    "@playwright/test": "^1.59.1",
+    "cors": "^2.8.5",
+    "dexie": "^4.3.0",
+    "dexie-observable": "^4.0.1-beta.13",
+    "express": "^4.21.2",
+    "jszip": "^3.10.1",
+    "puppeteer": "^24.15.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "tesseract.js": "^5.1.1",
+    "turndown": "^7.2.0",
+    "xlsx": "^0.18.5",
+    "yt-dlp-exec": "^1.0.2"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "concurrently": "^9.1.2",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "globals": "^16.5.0",
+    "puppeteer-core": "^24.15.0",
+    "supertest": "^7.2.2",
+    "vite": "^7.3.1",
+    "vite-plugin-pwa": "^1.2.0",
+    "vitest": "^2.1.9",
+    "workbox-build": "^7.4.0",
+    "workbox-window": "^7.4.0"
+  },
+  "overrides": {
+    "glob": "^13.0.0",
+    "koa-router": "npm:@koa/router@^15.4.0",
+    "sourcemap-codec": "npm:@jridgewell/sourcemap-codec@^1.4.15",
+    "node-fetch": "^2.7.0"
+  }
+}
