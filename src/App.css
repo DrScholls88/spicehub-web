@@ -14393,3 +14393,309 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   max-width: 240px;
 }
 
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   SALOON STAGE — 3-layer immersive bar environment
+   Z-index contract: [.saloon-bg z:1] → [.saloon-mid z:2] → [.saloon-fg z:3]
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Stage container ──────────────────────────────────────────────────────── */
+.saloon-stage {
+  position: relative;
+  width: 100%;
+  min-height: 420px;
+  background: #1a0f0a;
+  overflow: hidden;
+}
+
+/* ── Layer 1: Background ─────────────────────────────────────────────────── */
+.saloon-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.saloon-brick-wall {
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 12px,
+      rgba(0,0,0,0.18) 12px,
+      rgba(0,0,0,0.18) 13px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 28px,
+      rgba(0,0,0,0.14) 28px,
+      rgba(0,0,0,0.14) 29px
+    ),
+    linear-gradient(180deg, #3d1a0a 0%, #2a1108 60%, #1a0c06 100%);
+  background-size: 58px 13px, 58px 13px, 100% 100%;
+}
+
+/* Amber radial vignette for warmth */
+.saloon-brick-wall::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 80% 60% at 50% 30%,
+    rgba(180,90,20,0.18) 0%,
+    transparent 70%
+  );
+}
+
+/* Decorative wall frames */
+.saloon-frames {
+  position: absolute;
+  inset: 0;
+}
+
+.saloon-frame {
+  position: absolute;
+  border: 3px solid #6b4220;
+  box-shadow: inset 0 0 0 2px #3d1f08, 0 0 0 1px #8b5a2b;
+}
+.saloon-frame-1 { top: 8%;  left: 6%;  width: 40px; height: 32px; }
+.saloon-frame-2 { top: 8%;  right: 6%; width: 40px; height: 32px; }
+.saloon-frame-3 { top: 10%; left: 50%; transform: translateX(-50%); width: 48px; height: 28px; }
+
+/* ── Hanging lanterns ────────────────────────────────────────────────────── */
+.saloon-lantern {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  animation: lanternSway 6s ease-in-out infinite;
+  transform-origin: top center;
+}
+
+.saloon-lantern--flicker rect:nth-child(3),
+.saloon-lantern--flicker rect:nth-child(4) {
+  animation: lanternFlicker 2.3s steps(2) infinite;
+}
+
+@keyframes lanternSway {
+  0%,100% { transform: translateX(-50%) rotate(-3deg); }
+  50%      { transform: translateX(-50%) rotate( 3deg); }
+}
+
+@keyframes lanternFlicker {
+  0%   { opacity: 0.9; }
+  25%  { opacity: 0.5; }
+  50%  { opacity: 0.95; }
+  75%  { opacity: 0.4; }
+  100% { opacity: 0.85; }
+}
+
+/* ── Steam particles ─────────────────────────────────────────────────────── */
+.saloon-steam-wrap {
+  position: absolute;
+  bottom: 40%;
+  right: 12%;
+  width: 32px;
+  height: 40px;
+}
+
+.steam-particle {
+  position: absolute;
+  bottom: 0;
+  left: calc(var(--i, 0) * 5px);
+  width: 4px;
+  height: 4px;
+  background: rgba(200,168,130,0.55);
+  border-radius: 50%;
+  animation: steamRise 2.4s cubic-bezier(0.4,0,0.6,1) infinite;
+  animation-delay: calc(var(--i, 0) * 0.4s);
+}
+
+@keyframes steamRise {
+  0%   { transform: translateY(0)   translateX(0)   scale(1);   opacity: 0.7; }
+  60%  { transform: translateY(-24px) translateX(4px)  scale(1.5); opacity: 0.35; }
+  100% { transform: translateY(-40px) translateX(-2px) scale(2);   opacity: 0; }
+}
+
+/* ── Layer 2: Mid-ground ─────────────────────────────────────────────────── */
+.saloon-mid {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+
+/* Lantern warm glow that follows the bartender */
+.lantern-glow {
+  position: absolute;
+  top: 0;
+  width: 120px;
+  height: 200px;
+  background: radial-gradient(ellipse 60% 80% at 50% 10%,
+    rgba(255,160,40,0.18) 0%,
+    transparent 70%
+  );
+  pointer-events: none;
+  transform: translateX(-50%);
+  /* transition handled inline for spring cubic-bezier */
+}
+
+/* Bartender and shelves inside mid layer keep their existing styles;
+   override positioning for saloon context */
+.saloon-mid .bs-backbar {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+}
+
+.saloon-mid .bs-bartender-wrap {
+  position: absolute;
+  bottom: 52px;
+  z-index: 4;
+}
+
+/* Quips layer — positioned absolutely, left driven by JS spring */
+.saloon-mid .bs-quips-layer {
+  position: absolute;
+  bottom: 100px;
+  z-index: 100;
+}
+
+/* ── Layer 3: Foreground ─────────────────────────────────────────────────── */
+.saloon-fg {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 190px;
+  z-index: 3;
+  pointer-events: none;
+}
+
+/* Allow bar surface buttons to still receive clicks */
+.saloon-fg .bs-bar-surface,
+.saloon-fg .bs-bar-rail {
+  pointer-events: auto;
+}
+
+/* ── Pixel stools ────────────────────────────────────────────────────────── */
+.saloon-stools {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
+}
+
+.saloon-stool {
+  position: absolute;
+  bottom: 52px;
+}
+
+/* ── Saloon door ─────────────────────────────────────────────────────────── */
+.saloon-door-wrap {
+  position: absolute;
+  bottom: 52px;
+  right: 16px;
+  display: flex;
+  gap: 0;
+  z-index: 5;
+}
+
+.saloon-door {
+  display: block;
+  transition: transform 0.4s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.saloon-door--left  { transform: perspective(80px) rotateY(0deg); transform-origin: left center; }
+.saloon-door--right { transform: perspective(80px) rotateY(0deg); transform-origin: right center; }
+
+.saloon-door-wrap--open .saloon-door--left  { transform: perspective(80px) rotateY(-55deg); }
+.saloon-door-wrap--open .saloon-door--right { transform: perspective(80px) rotateY( 55deg); }
+
+/* ── Sleeping pixel dog ──────────────────────────────────────────────────── */
+.saloon-dog-wrap {
+  position: absolute;
+  bottom: 48px;
+  left: 12px;
+  z-index: 4;
+}
+
+@keyframes dogTailWag {
+  0%,100% { transform: rotate(0deg);    transform-origin: right center; }
+  25%     { transform: rotate( 18deg);  transform-origin: right center; }
+  75%     { transform: rotate(-12deg);  transform-origin: right center; }
+}
+
+.saloon-dog-wag svg rect:last-child {
+  animation: dogTailWag 0.3s ease-in-out 4;
+}
+
+/* ── Secret pour easter egg ──────────────────────────────────────────────── */
+.secret-pour-wrap {
+  position: absolute;
+  bottom: 54px;
+  left: 0;
+  right: 0;
+  height: 24px;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.secret-pour-glass {
+  position: absolute;
+  left: -20px;
+  width: 14px;
+  height: 20px;
+  background: rgba(200,220,255,0.7);
+  border: 2px solid rgba(150,180,220,0.9);
+  border-radius: 2px;
+  animation: secretPourSlide 2s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+.secret-pour-trail {
+  position: absolute;
+  left: -20px;
+  top: 10px;
+  width: 60px;
+  height: 4px;
+  background: linear-gradient(90deg, transparent, rgba(200,220,255,0.4), transparent);
+  animation: secretPourSlide 2s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+@keyframes secretPourSlide {
+  0%   { left: -20px;    opacity: 1; }
+  70%  { left: 60%;      opacity: 1; }
+  85%  { left: 62%;      opacity: 1; }
+  100% { left: 64%;      opacity: 0; }
+}
+
+/* ── Ensure bs-bar-surface / bs-bar-rail sit at top of fg layer ─────────── */
+.saloon-fg .bs-bar-surface {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 6;
+}
+
+.saloon-fg .bs-bar-rail {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 7;
+}
+
+/* ── Reduced motion: kill all ambient animations ─────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .saloon-lantern,
+  .saloon-lantern--flicker rect,
+  .steam-particle,
+  .saloon-door,
+  .secret-pour-glass,
+  .secret-pour-trail {
+    animation: none !important;
+    transition: none !important;
+  }
+}

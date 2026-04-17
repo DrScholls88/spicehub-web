@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import { useState, useMemo, useEffect, useCallback, useReducer, useRef } from 'react';
 import useBackHandler from '../hooks/useBackHandler';
 
 /**
@@ -374,7 +374,7 @@ function PixelBartender({ state, holdingBottle, facingRight, swigBottle, swigQui
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────────
-const BOTTLES_PER_SHELF = 5;
+const BOTTLES_PER_SHELF = 6;
 const SHELVES_PER_PAGE  = 3;
 const BOTTLES_PER_PAGE  = BOTTLES_PER_SHELF * SHELVES_PER_PAGE; // 15
 
@@ -414,14 +414,163 @@ const IDLE_BEHAVIORS = [
   "tipping",
   "dozing",
 ];
+// ── Saloon ambient SVG components ─────────────────────────────────────────────
+
+function HangingLantern({ x = 50, flicker = true }) {
+  return (
+    <svg
+      className={`saloon-lantern${flicker ? ' saloon-lantern--flicker' : ''}`}
+      style={{ left: `${x}%`, imageRendering: 'pixelated' }}
+      width="24" height="36" viewBox="0 0 24 36"
+    >
+      {/* Chain */}
+      <rect x="11" y="0" width="2" height="6" fill="#6b4c2a" />
+      {/* Lantern body */}
+      <rect x="5" y="6" width="14" height="18" fill="#b5651d" rx="2" />
+      <rect x="7" y="8" width="10" height="14" fill="#ffe082" opacity="0.9" />
+      {/* Glow center */}
+      <rect x="9" y="10" width="6" height="10" fill="#fff9c4" opacity="0.95" />
+      {/* Frame bars */}
+      <rect x="5" y="6" width="2" height="18" fill="#5d4037" />
+      <rect x="17" y="6" width="2" height="18" fill="#5d4037" />
+      <rect x="5" y="14" width="14" height="2" fill="#5d4037" opacity="0.6" />
+      {/* Top + bottom cap */}
+      <rect x="4" y="4" width="16" height="4" fill="#4e342e" rx="1" />
+      <rect x="4" y="24" width="16" height="4" fill="#4e342e" rx="1" />
+      {/* Bottom hook */}
+      <rect x="11" y="28" width="2" height="8" fill="#6b4c2a" />
+    </svg>
+  );
+}
+
+function BarStool({ x = 0 }) {
+  return (
+    <svg
+      className="saloon-stool"
+      style={{ left: `${x}px`, imageRendering: 'pixelated' }}
+      width="28" height="44" viewBox="0 0 28 44"
+    >
+      {/* Seat */}
+      <rect x="2" y="0" width="24" height="6" fill="#5d4037" rx="2" />
+      <rect x="3" y="1" width="22" height="3" fill="#795548" rx="1" />
+      {/* Center post */}
+      <rect x="12" y="6" width="4" height="18" fill="#4e342e" />
+      {/* Foot ring */}
+      <rect x="4" y="20" width="20" height="3" fill="#6d4c41" rx="1" />
+      {/* Legs */}
+      <rect x="5"  y="23" width="3" height="18" fill="#4e342e" />
+      <rect x="20" y="23" width="3" height="18" fill="#4e342e" />
+      {/* Foot pads */}
+      <rect x="4"  y="39" width="5" height="3" fill="#3e2723" rx="1" />
+      <rect x="19" y="39" width="5" height="3" fill="#3e2723" rx="1" />
+    </svg>
+  );
+}
+
+function PixelDog({ wagging = false }) {
+  return (
+    <div className={`saloon-dog-wrap${wagging ? ' saloon-dog-wag' : ''}`} aria-hidden="true">
+      <svg width="36" height="20" viewBox="0 0 36 20" style={{ imageRendering: 'pixelated' }}>
+        {/* Body */}
+        <rect x="6" y="8" width="20" height="10" fill="#a1887f" rx="2" />
+        {/* Head */}
+        <rect x="22" y="4" width="12" height="10" fill="#a1887f" rx="2" />
+        {/* Ear */}
+        <rect x="28" y="2" width="4" height="5" fill="#8d6e63" rx="1" />
+        {/* Eye */}
+        <rect x="30" y="6" width="2" height="2" fill="#1a0f0a" />
+        {/* Nose */}
+        <rect x="33" y="9" width="2" height="2" fill="#5d4037" />
+        {/* Zzz text */}
+        <text x="36" y="4" fontSize="5" fill="#c8a882" opacity="0.7" fontFamily="monospace">z</text>
+        <text x="34" y="1" fontSize="4" fill="#c8a882" opacity="0.5" fontFamily="monospace">z</text>
+        {/* Legs */}
+        <rect x="8"  y="17" width="4" height="3" fill="#8d6e63" />
+        <rect x="14" y="17" width="4" height="3" fill="#8d6e63" />
+        <rect x="20" y="17" width="4" height="3" fill="#8d6e63" />
+        {/* Tail */}
+        <rect x="2" y="6" width="6" height="4" fill="#8d6e63" rx="1" />
+        <rect x="0" y="3" width="4" height="4" fill="#8d6e63" rx="1" />
+      </svg>
+    </div>
+  );
+}
+
+function SaloonDoor({ open = false }) {
+  return (
+    <div className={`saloon-door-wrap${open ? ' saloon-door-wrap--open' : ''}`} aria-hidden="true">
+      {/* Left panel */}
+      <svg className="saloon-door saloon-door--left" width="22" height="56" viewBox="0 0 22 56"
+           style={{ imageRendering: 'pixelated', transformOrigin: 'left center' }}>
+        <rect x="0" y="0" width="22" height="56" fill="#6b3a1f" rx="1" />
+        <rect x="2" y="4" width="18" height="20" fill="#7d4b28" rx="1" />
+        <rect x="2" y="30" width="18" height="20" fill="#7d4b28" rx="1" />
+        <rect x="10" y="0" width="2" height="56" fill="#5a3018" opacity="0.4" />
+        {/* Hinge */}
+        <rect x="0" y="10" width="3" height="5" fill="#c8a882" />
+        <rect x="0" y="40" width="3" height="5" fill="#c8a882" />
+      </svg>
+      {/* Right panel */}
+      <svg className="saloon-door saloon-door--right" width="22" height="56" viewBox="0 0 22 56"
+           style={{ imageRendering: 'pixelated', transformOrigin: 'right center' }}>
+        <rect x="0" y="0" width="22" height="56" fill="#6b3a1f" rx="1" />
+        <rect x="2" y="4" width="18" height="20" fill="#7d4b28" rx="1" />
+        <rect x="2" y="30" width="18" height="20" fill="#7d4b28" rx="1" />
+        <rect x="10" y="0" width="2" height="56" fill="#5a3018" opacity="0.4" />
+        {/* Hinge */}
+        <rect x="19" y="10" width="3" height="5" fill="#c8a882" />
+        <rect x="19" y="40" width="3" height="5" fill="#c8a882" />
+      </svg>
+    </div>
+  );
+}
+
+function SteamParticles({ count = 5 }) {
+  return (
+    <div className="saloon-steam-wrap" aria-hidden="true">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="steam-particle" style={{ '--i': i }} />
+      ))}
+    </div>
+  );
+}
+
+// ── Saloon stage constants ─────────────────────────────────────────────────────
+const WAYPOINTS = { left: 0.10, center: 0.42, right: 0.74 };
+
+// ── Saloon reducer ─────────────────────────────────────────────────────────────
+const initialSaloonState = {
+  mode:        'idle',    // 'idle' | 'walking' | 'swigwalk' | 'swigging' | 'swigreturn' | 'grabbing' | 'presenting' | 'returning' | 'polishing' | 'tipping' | 'dozing' | 'shaking'
+  doorOpen:    false,
+  dogWagging:  false,
+  secretPour:  false,
+};
+
+function saloonReducer(state, action) {
+  switch (action.type) {
+    case 'SET_MODE':       return { ...state, mode: action.mode };
+    case 'DOOR_OPEN':      return { ...state, doorOpen: true  };
+    case 'DOOR_CLOSE':     return { ...state, doorOpen: false };
+    case 'DOG_WAG':        return { ...state, dogWagging: true  };
+    case 'DOG_STILL':      return { ...state, dogWagging: false };
+    case 'SECRET_POUR_ON': return { ...state, secretPour: true  };
+    case 'SECRET_POUR_OFF':return { ...state, secretPour: false };
+    default:               return state;
+  }
+}
+
 // ══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ══════════════════════════════════════════════════════════════════════════════
 export default function BarShelf({ drinks, onViewDetail, onClose, onImport }) {
-  // State
-  const [selectedDrink, setSelectedDrink] = useState(null);
-  const [bartenderState, setBartenderState] = useState('idle');
+  // ── Reducer for discrete mode transitions ──────────────────────────────────
+  const [saloon, dispatch] = useReducer(saloonReducer, initialSaloonState);
+
+  // ── Frame-level animation position (not in reducer — updated 60fps) ─────────
   const [bartenderX, setBartenderX] = useState(140);
+
+  // ── Derived / legacy state kept for compatibility ───────────────────────────
+  const [selectedDrink, setSelectedDrink] = useState(null);
   const [facingRight, setFacingRight] = useState(true);
   const [holdingBottle, setHoldingBottle] = useState(null);
   const [swigBottle, setSwigBottle] = useState(null);
@@ -431,23 +580,119 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport }) {
   const [idleQuip, setIdleQuip] = useState(0);
   const [swipeStartY, setSwipeStartY] = useState(null);
 
-  // Refs
-  const bottleSlotsRef = useRef({});
-  const barTopRef      = useRef(null);
-  const animationRef   = useRef(null);
-  const timeoutRef     = useRef(null);
-  const swigTimerRef   = useRef(null);
-  const idleTimerRef   = useRef(null);
-  const behaviorTimerRef = useRef(null);
+  // Convenience alias so existing logic doesn't need rewriting
+  const bartenderState    = saloon.mode;
+  const setBartenderState = (mode) => dispatch({ type: 'SET_MODE', mode });
 
-  // Cleanup
+  // Refs
+  const bottleSlotsRef   = useRef({});
+  const barTopRef        = useRef(null);
+  const animationRef     = useRef(null);
+  const timeoutRef       = useRef(null);
+  const swigTimerRef     = useRef(null);
+  const idleTimerRef     = useRef(null);
+  const behaviorTimerRef = useRef(null);
+  const wanderTimerRef   = useRef(null);
+  const doorTimerRef     = useRef(null);
+  const dogTimerRef      = useRef(null);
+  const pourTimerRef     = useRef(null);
+  const walkToRef        = useRef(null);  // stable ref to walkTo so rAF closures don't go stale
+
+  // Cleanup — all timers cleared on unmount
   useEffect(() => () => {
     clearTimeout(behaviorTimerRef.current);
     clearTimeout(timeoutRef.current);
     cancelAnimationFrame(animationRef.current);
     clearTimeout(swigTimerRef.current);
     clearInterval(idleTimerRef.current);
+    clearTimeout(wanderTimerRef.current);
+    clearTimeout(doorTimerRef.current);
+    clearTimeout(dogTimerRef.current);
+    clearTimeout(pourTimerRef.current);
   }, []);
+
+  // ── Generic walk helper (stable ref prevents stale closure in rAF loops) ────
+  const walkTo = useCallback((targetX, onArrive) => {
+    cancelAnimationFrame(animationRef.current);
+    const startX    = bartenderX;
+    const walkTime  = Math.min(800, Math.max(200, Math.abs(targetX - startX) * 3));
+    const walkStart = performance.now();
+    setFacingRight(targetX > startX);
+    const step = (now) => {
+      const p = Math.min(1, (now - walkStart) / walkTime);
+      const e = 1 - Math.pow(1 - p, 3);
+      setBartenderX(startX + (targetX - startX) * e);
+      if (p < 1) {
+        animationRef.current = requestAnimationFrame(step);
+      } else {
+        setBartenderX(targetX);
+        onArrive?.();
+      }
+    };
+    animationRef.current = requestAnimationFrame(step);
+  }, [bartenderX]);
+  useEffect(() => { walkToRef.current = walkTo; }, [walkTo]);
+
+  // ── Bartender wander (12–25 s idle → picks new waypoint) ───────────────────
+  useEffect(() => {
+    if (bartenderState !== 'idle' || selectedDrink) {
+      clearTimeout(wanderTimerRef.current);
+      return;
+    }
+    const delay = 12000 + Math.random() * 13000;
+    wanderTimerRef.current = setTimeout(() => {
+      const barWidth = barTopRef.current?.clientWidth || 320;
+      const keys     = Object.keys(WAYPOINTS);
+      const key      = keys[Math.floor(Math.random() * keys.length)];
+      const targetX  = WAYPOINTS[key] * barWidth - 30;
+      setBartenderState('walking');
+      walkToRef.current?.(targetX, () => setBartenderState('idle'));
+    }, delay);
+    return () => clearTimeout(wanderTimerRef.current);
+  }, [bartenderState, selectedDrink]);
+
+  // ── Saloon door (20–60 s — opens, holds 1.5 s, swings back) ────────────────
+  useEffect(() => {
+    const schedule = () => {
+      doorTimerRef.current = setTimeout(() => {
+        dispatch({ type: 'DOOR_OPEN' });
+        doorTimerRef.current = setTimeout(() => {
+          dispatch({ type: 'DOOR_CLOSE' });
+          schedule();
+        }, 1500);
+      }, 20000 + Math.random() * 40000);
+    };
+    schedule();
+    return () => clearTimeout(doorTimerRef.current);
+  }, []);
+
+  // ── Pixel dog tail wag (15–45 s intervals) ──────────────────────────────────
+  useEffect(() => {
+    const schedule = () => {
+      dogTimerRef.current = setTimeout(() => {
+        dispatch({ type: 'DOG_WAG' });
+        dogTimerRef.current = setTimeout(() => {
+          dispatch({ type: 'DOG_STILL' });
+          schedule();
+        }, 1200);
+      }, 15000 + Math.random() * 30000);
+    };
+    schedule();
+    return () => clearTimeout(dogTimerRef.current);
+  }, []);
+
+  // ── Secret pour (1 % chance per 60–120 s window, only when idle) ────────────
+  useEffect(() => {
+    if (bartenderState !== 'idle' || selectedDrink) return;
+    const delay = 60000 + Math.random() * 60000;
+    pourTimerRef.current = setTimeout(() => {
+      if (Math.random() < 0.01) {
+        dispatch({ type: 'SECRET_POUR_ON' });
+        setTimeout(() => dispatch({ type: 'SECRET_POUR_OFF' }), 2000);
+      }
+    }, delay);
+    return () => clearTimeout(pourTimerRef.current);
+  }, [bartenderState, selectedDrink]);
 
   // ── Pagination ──────────────────────────────────────────────────────────────
   const totalPages        = Math.max(1, Math.ceil(drinks.length / BOTTLES_PER_PAGE));
@@ -752,61 +997,172 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport }) {
           )}
         </div>
 
-        {/* ═══ BACKBAR DISPLAY + BOTTLE SHELVES ═══ */}
-        <div className="bs-backbar">
-          {/* Ambient atmosphere */}
-          <div className="bs-backbar-glow" />
-          <div className="bs-ambient-left"  aria-hidden="true" />
-          <div className="bs-ambient-right" aria-hidden="true" />
-          <div className="bs-city-skyline" aria-hidden="true" />
+        {/* ═══ 3-LAYER SALOON STAGE ═══ */}
+        <div className="saloon-stage" ref={barTopRef}>
 
-          {/* LED menu board */}
-          <BarbackDisplay
-            selectedDrink={selectedDrink}
-            isPresenting={bartenderState === 'presenting'}
-          />
-
-          {/* Glass display case */}
-          <div className="bs-display-case">
-            {/* Paginated bottle shelves */}
-            <div className={`bs-backbar-shelves ${pageDirection !== 'none' ? `bs-page-${pageDirection}` : ''}`}>
-              {shelves.map((row, shelfIdx) => (
-                <div key={shelfIdx} className={`bs-shelf-row bs-shelf-wobble-${shelfIdx}`}>
-                  <div className="bs-bottles-row">
-                    {row.map((drink) => {
-                      const bottleStyle = getBottleStyle(drink);
-                      const isSelected  = selectedDrink?.id === drink.id;
-                      return (
-                        <button
-                          key={drink.id}
-                          ref={el => { if (el) bottleSlotsRef.current[drink.id] = el; }}
-                          className={`bs-bottle-slot ${isSelected ? 'bs-selected' : ''}`}
-                          onClick={() => handleBottleTap(drink)}
-                          title={drink.name}
-                        >
-                          <div className="bs-bottle-idle" style={{ opacity: isSelected && holdingBottle ? 0.2 : 1 }}>
-                            <PixelBottle style={bottleStyle} size={52} glow={isSelected} />
-                          </div>
-                          <span className="bs-bottle-label">
-                            {drink.name.length > 9 ? drink.name.slice(0, 8) + '…' : drink.name}
-                          </span>
-                        </button>
-                      );
-                    })}
-                    {row.length < BOTTLES_PER_SHELF && Array.from({ length: BOTTLES_PER_SHELF - row.length }).map((_, i) => (
-                      <div key={`empty-${i}`} className="bs-bottle-slot bs-empty-slot">
-                        <div className="bs-empty-bottle" />
-                      </div>
-                    ))}
-                  </div>
-                  <div className="bs-shelf-plank" />
-                </div>
-              ))}
+          {/* ── LAYER 1: Background — brick wall, lanterns, steam ── */}
+          <div className="saloon-bg" aria-hidden="true">
+            <div className="saloon-brick-wall" />
+            {/* Decorative picture frames on the wall */}
+            <div className="saloon-frames">
+              <div className="saloon-frame saloon-frame-1" />
+              <div className="saloon-frame saloon-frame-2" />
+              <div className="saloon-frame saloon-frame-3" />
             </div>
+            {/* Hanging lanterns with CSS flicker */}
+            <HangingLantern x={15} />
+            <HangingLantern x={50} flicker={false} />
+            <HangingLantern x={82} />
+            {/* Rising steam from hot drinks */}
+            <SteamParticles count={6} />
+            {/* Original ambient overlay preserved */}
+            <div className="bs-backbar-glow" />
+            <div className="bs-ambient-left" />
+            <div className="bs-ambient-right" />
+          </div>
+
+          {/* ── LAYER 2: Mid — shelves, bartender, LED board ── */}
+          <div className="saloon-mid">
+            {/* Lantern glow tracks bartender with spring lag */}
+            <div
+              className="lantern-glow"
+              style={{
+                left: `${bartenderX + 30}px`,
+                transition: 'left 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
+              }}
+              aria-hidden="true"
+            />
+
+            {/* LED menu board */}
+            <BarbackDisplay
+              selectedDrink={selectedDrink}
+              isPresenting={bartenderState === 'presenting'}
+            />
+
+            {/* Paginated bottle shelves */}
+            <div className="bs-backbar">
+              <div className="bs-display-case">
+                <div className={`bs-backbar-shelves ${pageDirection !== 'none' ? `bs-page-${pageDirection}` : ''}`}>
+                  {shelves.map((row, shelfIdx) => (
+                    <div key={shelfIdx} className={`bs-shelf-row bs-shelf-wobble-${shelfIdx}`}>
+                      <div className="bs-bottles-row">
+                        {row.map((drink) => {
+                          const bottleStyle = getBottleStyle(drink);
+                          const isSelected  = selectedDrink?.id === drink.id;
+                          return (
+                            <button
+                              key={drink.id}
+                              ref={el => { if (el) bottleSlotsRef.current[drink.id] = el; }}
+                              className={`bs-bottle-slot ${isSelected ? 'bs-selected' : ''}`}
+                              onClick={() => handleBottleTap(drink)}
+                              title={drink.name}
+                            >
+                              <div className="bs-bottle-idle" style={{ opacity: isSelected && holdingBottle ? 0.2 : 1 }}>
+                                <PixelBottle style={bottleStyle} size={52} glow={isSelected} />
+                              </div>
+                              <span className="bs-bottle-label">
+                                {drink.name.length > 9 ? drink.name.slice(0, 8) + '…' : drink.name}
+                              </span>
+                            </button>
+                          );
+                        })}
+                        {row.length < BOTTLES_PER_SHELF && Array.from({ length: BOTTLES_PER_SHELF - row.length }).map((_, i) => (
+                          <div key={`empty-${i}`} className="bs-bottle-slot bs-empty-slot">
+                            <div className="bs-empty-bottle" />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="bs-shelf-plank" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Bartender behind the bar */}
+            <div
+              className="bs-bartender-wrap"
+              style={{
+                transform: `translateX(${bartenderX}px)`,
+                transition: bartenderState === 'idle' ? 'transform 0.3s ease' : 'none',
+              }}
+            >
+              <PixelBartender
+                state={bartenderState}
+                holdingBottle={holdingBottle}
+                facingRight={facingRight}
+                swigBottle={swigBottle}
+                swigQuip={swigQuip}
+                idleQuip={IDLE_QUIPS[idleQuip]}
+              />
+            </div>
+
+            {/* Quips layer — spring elastic lag so bubbles trail the bartender */}
+            <div
+              className="bs-quips-layer"
+              style={{
+                left: `${bartenderX}px`,
+                transition: 'left 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
+              }}
+            >
+              {bartenderState === 'presenting' && selectedDrink && (
+                <div className={`bs-bt-speech ${facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'}`}>
+                  <span>Here ya go!</span>
+                </div>
+              )}
+              {bartenderState === 'swigging' && swigQuip && (
+                <div className={`bs-bt-speech bs-bt-speech-swig ${facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'}`}>
+                  <span>{swigQuip}</span>
+                </div>
+              )}
+              {bartenderState === 'tipping' && (
+                <div className={`bs-bt-speech bs-bt-speech-tip ${facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'}`}>
+                  <span>Much obliged!</span>
+                </div>
+              )}
+              {bartenderState === 'idle' && !selectedDrink && (
+                <div className={`bs-bt-speech bs-bt-speech-idle ${facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'}`}>
+                  <span>{IDLE_QUIPS[idleQuip]}</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── LAYER 3: Foreground — bar counter, stools, dog, door ── */}
+          <div className="saloon-fg">
+            {/* Pixel-art bar stools */}
+            <div className="saloon-stools" aria-hidden="true">
+              <BarStool x={18} />
+              <BarStool x={80} />
+              <BarStool x={148} />
+              <BarStool x={210} />
+            </div>
+
+            {/* Saloon door — occasionally swings open */}
+            <SaloonDoor open={saloon.doorOpen} />
+
+            {/* Sleeping pixel dog with tail wag */}
+            <PixelDog wagging={saloon.dogWagging} />
+
+            {/* Secret pour — rare easter egg sliding glass animation */}
+            {saloon.secretPour && (
+              <div className="secret-pour-wrap" aria-hidden="true">
+                <div className="secret-pour-glass" />
+                <div className="secret-pour-trail" />
+              </div>
+            )}
+
+            {/* Bar counter surface sits on top of everything */}
+            <div className="bs-bar-surface">
+              <div className="bs-bar-coaster bs-bar-coaster-1" />
+              <div className="bs-bar-coaster bs-bar-coaster-2" />
+              <div className="bs-bar-napkin" />
+            </div>
+            <div className="bs-bar-rail" />
           </div>
         </div>
 
-        {/* Page navigation — outside display case */}
+        {/* Page navigation — outside the stage */}
         {totalPages > 1 && (
           <div className="bs-page-nav">
             <button className="bs-page-btn" onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 0}>◀</button>
@@ -818,74 +1174,6 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport }) {
             <button className="bs-page-btn" onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages - 1}>▶</button>
           </div>
         )}
-
-        {/* ═══ BAR TOP — bartender stands BEHIND the counter ═══ */}
-        <div className="bs-bar-top" ref={barTopRef}>
-          {/* Bartender behind the bar (rendered first so counter sits on top) */}
-          <div
-            className="bs-bartender-wrap"
-            style={{
-              transform: `translateX(${bartenderX}px)`,
-              transition: bartenderState === 'idle' ? 'transform 0.3s ease' : 'none',
-            }}
-          >
-            <PixelBartender
-              state={bartenderState}
-              holdingBottle={holdingBottle}
-              facingRight={facingRight}
-              swigBottle={swigBottle}
-              swigQuip={swigQuip}
-              idleQuip={IDLE_QUIPS[idleQuip]}
-            />
-          </div>
-
-          {/* Quips — direction-aware speech bubbles, never overlapping the bartender's face.
-               When facing right his face is on the right half of the sprite, so the bubble
-               anchors LEFT (--left). When facing left the sprite is mirrored, face is on
-               the left half, so the bubble anchors RIGHT (--right).                        */}
-          <div
-            className="bs-quips-layer"
-            style={{
-              transform: `translateX(${bartenderX}px)`,
-              transition: bartenderState === 'idle' ? 'transform 0.3s ease' : 'none',
-            }}
-          >
-            {/* Speech bubble — presenting */}
-            {bartenderState === 'presenting' && selectedDrink && (
-              <div className={`bs-bt-speech ${facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'}`}>
-                <span>Here ya go!</span>
-              </div>
-            )}
-            {/* Speech bubble — swigging */}
-            {bartenderState === 'swigging' && swigQuip && (
-              <div className={`bs-bt-speech bs-bt-speech-swig ${facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'}`}>
-                <span>{swigQuip}</span>
-              </div>
-            )}
-            {/* Speech bubble — tipping hat */}
-            {bartenderState === 'tipping' && (
-              <div className={`bs-bt-speech bs-bt-speech-tip ${facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'}`}>
-                <span>Much obliged!</span>
-              </div>
-            )}
-            {/* Speech bubble — idle (cycles through IDLE_QUIPS every 5s) */}
-            {bartenderState === 'idle' && !selectedDrink && (
-              <div className={`bs-bt-speech bs-bt-speech-idle ${facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'}`}>
-                <span>{IDLE_QUIPS[idleQuip]}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Bar counter surface (z-index above bartender → hides lower body) */}
-          <div className="bs-bar-surface">
-            <div className="bs-bar-coaster bs-bar-coaster-1" />
-            <div className="bs-bar-coaster bs-bar-coaster-2" />
-            <div className="bs-bar-napkin" />
-          </div>
-
-          {/* Brass foot rail */}
-          <div className="bs-bar-rail" />
-        </div>
 
         {/* ── Selected bottle detail card ── */}
         {selectedDrink && bartenderState === 'presenting' && (
