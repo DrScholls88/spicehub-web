@@ -312,7 +312,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
               <div className="ml-tile-info">
                 <span className="ml-tile-name">{meal.name}</span>
                 <span className="ml-tile-meta">
-                  {meal.ingredients.length} ing · {meal.directions.length} steps
+                  {(meal.ingredients || []).length} ing · {(meal.directions || []).length} steps
                 </span>
                 {meal.notes && (
                   <span className="ml-tile-notes">

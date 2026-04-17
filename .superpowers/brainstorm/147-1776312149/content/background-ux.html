@@ -1,0 +1,26 @@
+<h2>When user closes the modal mid-import...</h2>
+<p class="subtitle">The import continues in the background. What does the user see?</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Silent Drop</h3>
+      <p>Nothing shown. Recipe card just appears in the library when done. User might think it failed — but no clutter.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Toast on Completion</h3>
+      <p>Nothing visible while processing. When done, a brief "✓ Recipe added!" toast pops up. Feels like magic — card appears and you get a nudge.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Subtle Activity Indicator</h3>
+      <p>A small spinner or pulsing dot in the header/toolbar while import is in-flight. Disappears on success. No ghost card.</p>
+    </div>
+  </div>
+</div>

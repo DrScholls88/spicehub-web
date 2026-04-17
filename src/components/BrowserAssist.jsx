@@ -27,7 +27,7 @@ import useOnlineStatus from '../hooks/useOnlineStatus';
  *   onRecipeExtracted  - callback(recipe) on success
  *   onFallbackToText   - callback() when user wants Paste Text
  */
-export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText }) {
+export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText, initialCapturedText = '' }) {
   const { isOnline } = useOnlineStatus();
 
   // phases:
@@ -41,6 +41,8 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
   //   'extracting' — manual extraction from iframe in progress
   const [phase, setPhase] = useState('loading');
   const [errorMsg, setErrorMsg] = useState('');
+  // Incrementing this re-triggers the extraction effect without a page reload
+  const [retryCount, setRetryCount] = useState(0);
 
   // ── Recipe extraction state ─────────────────────────────────────────────────
   const [autoRecipe, setAutoRecipe] = useState(null);
@@ -52,7 +54,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
   const [pipelineMessage, setPipelineMessage] = useState('');
 
   // ── Manual paste card state (fallback when pipeline fails) ─────────────────
-  const [manualText, setManualText] = useState('');
+  const [manualText, setManualText] = useState(initialCapturedText);
   const [isParsingManual, setIsParsingManual] = useState(false);
   const [manualError, setManualError] = useState('');
 
@@ -254,7 +256,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
 
     return () => { cancelled = true; clearTimeout(timeout); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url, isOnline]);
+  }, [url, isOnline, retryCount]);
 
   // ── Manual paste → AI parse ────────────────────────────────────────────────
   const handleParseManual = useCallback(async () => {
@@ -281,15 +283,21 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
   }, [manualText, url]);
 
   // ── Retry pipeline ─────────────────────────────────────────────────────────
+  // Increments retryCount to re-trigger the extraction useEffect cleanly —
+  // no page reload, full waterfall restarts from step 1 (subtitle scan first).
   const handleRetry = useCallback(() => {
     setManualText('');
     setManualError('');
     setAutoRecipe(null);
     setBannerRecipe(null);
+    setHtmlContent('');
+    setRawHtml('');
+    setErrorMsg('');
+    setPipelineSteps([]);
+    setPipelineMessage('');
+    setExtractionProgress({ step: 0, total: 0, message: '' });
     setPhase('loading');
-    // Force re-run of the useEffect by resetting state — component will reinitialize
-    // (The parent should re-mount this component, but we can also trigger re-fetch)
-    window.location.reload();
+    setRetryCount(c => c + 1); // triggers extraction useEffect
   }, []);
 
   // ── Clear Clutter (iframe only) ────────────────────────────────────────────
@@ -978,17 +986,25 @@ function extractImageUrlsFromHtml(html) {
   const urls = [];
   const seen = new Set();
   function addUrl(u) {
+    if (!u) return;
     const clean = u.replace(/&amp;/g, '&').replace(/\\u0026/g, '&').replace(/\\/g, '');
     if (isUsableImageUrl(clean) && !seen.has(clean)) { urls.push(clean); seen.add(clean); }
   }
+  // og:image — try all attribute orderings (property=… content=… or reversed)
   const ogM = html.match(/<meta[^>]+property\s*=\s*["']og:image["'][^>]+content\s*=\s*["']([^"']*)["']/i)
-    || html.match(/<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+property\s*=\s*["']og:image["']/i);
+    || html.match(/<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+property\s*=\s*["']og:image["']/i)
+    || html.match(/<meta[^>]+property=og:image[^>]+content\s*=\s*["']([^"']*)["']/i);
   if (ogM?.[1]) addUrl(ogM[1]);
   const twM = html.match(/<meta[^>]+name\s*=\s*["']twitter:image["'][^>]+content\s*=\s*["']([^"']*)["']/i)
     || html.match(/<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+name\s*=\s*["']twitter:image["']/i);
   if (twM?.[1]) addUrl(twM[1]);
+  // JSON-LD image fields
   for (const m of html.matchAll(/"image"\s*:\s*"(https:[^"]{10,})"/g)) addUrl(m[1]);
   for (const m of html.matchAll(/"image"\s*:\s*\[\s*"(https:[^"]{10,})"/g)) addUrl(m[1]);
+  // JSON-LD ImageObject url / contentUrl (AllRecipes, many schema.org sites)
+  for (const m of html.matchAll(/"url"\s*:\s*"(https:[^"]{10,}\.(?:jpg|jpeg|png|webp)[^"]*)"/gi)) addUrl(m[1]);
+  for (const m of html.matchAll(/"contentUrl"\s*:\s*"(https:[^"]{10,})"/g)) addUrl(m[1]);
+  // Social media specific
   for (const m of html.matchAll(/"display_url"\s*:\s*"(https:[^"]+)"/g)) addUrl(m[1]);
   for (const m of html.matchAll(/"thumbnail_src"\s*:\s*"(https:[^"]+)"/g)) addUrl(m[1]);
   for (const m of html.matchAll(/"thumbnail_url"\s*:\s*"(https:[^"]+)"/g)) addUrl(m[1]);
@@ -998,10 +1014,31 @@ function extractImageUrlsFromHtml(html) {
   const embedImgM = html.match(/<img[^>]+class="[^"]*EmbedImage[^"]*"[^>]+src="([^"]+)"/i)
     || html.match(/<img[^>]+src="([^"]+)"[^>]+class="[^"]*EmbedImage[^"]*"/i);
   if (embedImgM?.[1]) addUrl(embedImgM[1]);
+  // <img src="…"> — only large images (explicit size in URL or image extension)
   for (const m of html.matchAll(/<img[^>]+src="(https:\/\/[^"]{20,})"/gi)) {
     const u = m[1].replace(/&amp;/g, '&');
     if (/\d{3,4}[x_]\d{3,4}|\.(jpg|jpeg|png|webp)(\?|$)/i.test(u)) addUrl(u);
   }
+  // Lazy-loaded images — data-src, data-lazy-src, data-lazy (very common on recipe blogs)
+  for (const m of html.matchAll(/data-(?:src|lazy-src|lazy|original)="(https:\/\/[^"]{20,})"/gi)) {
+    const u = m[1].replace(/&amp;/g, '&');
+    if (/\.(jpg|jpeg|png|webp)|\d{3,4}[x_]\d{3,4}/i.test(u)) addUrl(u);
+  }
+  // <source srcset="url 1200w, url2 800w"> — pick largest
+  for (const m of html.matchAll(/<source[^>]+srcset="([^"]+)"/gi)) {
+    const srcset = m[1];
+    // Pick the URL with the largest width descriptor
+    const parts = srcset.split(',').map(s => s.trim());
+    let bestW = 0; let bestUrl = '';
+    for (const part of parts) {
+      const [u, w] = part.split(/\s+/);
+      const width = parseInt(w) || 0;
+      if (width > bestW) { bestW = width; bestUrl = u; }
+    }
+    if (!bestUrl && parts[0]) bestUrl = parts[0].split(/\s+/)[0];
+    if (bestUrl) addUrl(bestUrl.replace(/&amp;/g, '&'));
+  }
+  // CSS background images
   for (const m of html.matchAll(/background(?:-image)?\s*:\s*url\(['"]?(https:\/\/[^'")\s]{20,})['"]?\)/gi)) {
     addUrl(m[1]);
   }

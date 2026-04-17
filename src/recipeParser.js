@@ -831,8 +831,10 @@ function cleanTitle(title) {
   title = title
     // Remove "Username on Instagram: ..." prefix
     .replace(/^[\w.\s]+on\s+(Instagram|TikTok|Facebook)\s*:\s*/i, '')
-    // Remove "... | Instagram" / "... - TikTok" / "... - YouTube" suffix
-    .replace(/\s*[|\-–—•]\s*(Instagram|TikTok|Facebook|Pinterest|YouTube|Reels?).*$/i, '')
+    // Remove "... | Instagram" / "... - TikTok" / "... - YouTube" / "... | Allrecipes" suffix
+    .replace(/\s*[|\-–—•]\s*(Instagram|TikTok|Facebook|Pinterest|YouTube|Reels?|Allrecipes|AllRecipes|Food Network|Tasty|Delish|Serious Eats|Bon Appétit|Epicurious|Simply Recipes|The Pioneer Woman|Yummly|Skinnytaste|Love and Lemons|Half Baked Harvest|Cookie and Kate|Minimalist Baker|Budget Bytes).*$/i, '')
+    // Generic site-suffix strip: " | Word" or " - Word" at end where Word is 2-25 chars (likely a domain/brand)
+    .replace(/\s*[|]\s*[A-Z][A-Za-z0-9 &]{1,24}$/, '')
     .replace(/\s*on (Instagram|TikTok|Facebook).*$/i, '')
     // Remove social handle prefixes: "Chris • Ⓥ | " or "@username: "
     .replace(/^[^|]*[•\u24cb\u24b6-\u24E9][^|]*\|\s*/u, '')
@@ -2837,8 +2839,10 @@ function findRecipeInJson(obj) {
     return null;
   }
 
-  const type = (obj['@type'] || '').toString().toLowerCase();
-  if (type.includes('recipe')) return obj;
+  // @type can be a string or an array (e.g. ["Recipe","NewsArticle"])
+  const rawType = obj['@type'] || '';
+  const typeStr = (Array.isArray(rawType) ? rawType.join(',') : rawType.toString()).toLowerCase();
+  if (typeStr.includes('recipe')) return obj;
 
   if (obj['@graph']) {
     return findRecipeInJson(obj['@graph']);
@@ -2870,20 +2874,37 @@ function normalizeJsonLdRecipe(recipe) {
     }
   }
 
-  // Instructions can be string array or objects with @type: RecipeInstructions
-  if (recipe.recipeInstructions) {
-    const instrs = Array.isArray(recipe.recipeInstructions) ? recipe.recipeInstructions : [recipe.recipeInstructions];
-    for (const instr of instrs) {
-      if (typeof instr === 'string') {
-        directions.push(instr);
-      } else if (instr.text) {
-        directions.push(instr.text);
-      } else if (instr.itemListElement && Array.isArray(instr.itemListElement)) {
-        for (const item of instr.itemListElement) {
-          if (item.text) directions.push(item.text);
-        }
-      }
+  // Instructions: string | HowToStep | HowToSection (wraps itemListElement of HowToStep)
+  // AllRecipes often uses HowToSection > itemListElement > HowToStep pattern.
+  function flattenInstruction(instr) {
+    if (!instr) return;
+    if (typeof instr === 'string') {
+      const s = instr.trim();
+      if (s) directions.push(s);
+      return;
     }
+    if (typeof instr !== 'object') return;
+    // HowToStep / RecipeStep — direct text
+    if (instr.text) {
+      directions.push(instr.text.trim());
+      return;
+    }
+    // HowToSection — recurse into itemListElement
+    if (instr.itemListElement && Array.isArray(instr.itemListElement)) {
+      for (const item of instr.itemListElement) flattenInstruction(item);
+      return;
+    }
+    // ItemList (less common)
+    if (instr['@type']?.toString().toLowerCase().includes('itemlist') && Array.isArray(instr.item)) {
+      for (const item of instr.item) flattenInstruction(item);
+    }
+  }
+
+  if (recipe.recipeInstructions) {
+    const instrs = Array.isArray(recipe.recipeInstructions)
+      ? recipe.recipeInstructions
+      : [recipe.recipeInstructions];
+    for (const instr of instrs) flattenInstruction(instr);
   }
 
   return { title, ingredients, directions, imageUrl };
@@ -3348,7 +3369,7 @@ export function extractWithBrowserAPI(pageContent) {
     const pluginResult = detectRecipePlugins(html);
     if (pluginResult.type && (pluginResult.ingredients.length > 0 || pluginResult.directions.length > 0)) {
       return {
-        name: cleanTitle(pluginResult.title || 'Recipe'),
+        name: cleanTitle(pluginResult.title || extractTitleFromHtml() || 'Recipe'),
         ingredients: pluginResult.ingredients.length > 0
           ? pluginResult.ingredients
           : ['See recipe for ingredients'],
@@ -3400,8 +3421,10 @@ export function extractWithBrowserAPI(pageContent) {
     if (lines.length > 0) {
       const classified = smartClassifyLines(lines);
       if (classified.ingredients.length > 0 || classified.directions.length > 0) {
+        // Use the title we extracted from parseCaption, or from HTML meta if available
+        const fallbackTitle = classified.title || extractTitleFromHtml() || 'Recipe';
         return {
-          name: cleanTitle('Recipe'),
+          name: cleanTitle(fallbackTitle),
           ingredients: classified.ingredients.length > 0
             ? classified.ingredients
             : ['See recipe for ingredients'],

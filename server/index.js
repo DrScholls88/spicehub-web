@@ -2494,6 +2494,13 @@ app.post('/api/browser/close', async (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Unified Import Engine v2 routes ──────────────────────────────────────────
+import { registerImportRoutes } from './importRoutes.js';
+if (process.env.ENABLE_V2_IMPORT !== 'false') {
+  registerImportRoutes(app);
+  console.log('[SpiceHub] /api/v2/import routes registered');
+}
+
 const PORT = parseInt(process.env.PORT, 10) || 3001;
 app.listen(PORT, () => {
   console.log(`SpiceHub server listening on port ${PORT}`);

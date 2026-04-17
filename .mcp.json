@@ -1,35 +1,28 @@
 {
   "mcpServers": {
     "playwright": {
-      "command": "npx",
-      "args": [
-        "@playwright/mcp@latest"
-      ]
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@playwright/mcp@latest"]
     },
     "context7": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@upstash/context7-mcp"
-      ]
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@upstash/context7-mcp"]
     },
     "github": {
-      "url": "https://api.githubcopilot.com/mcp/"
-    },
-    "ruflo": {
-      "command": "npx",
+      "command": "cmd",
       "args": [
-        "ruflo@latest",
-        "mcp",
-        "start"
-      ]
+        "/c",
+        "npx",
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "YOUR_TOKEN_HERE"
+      }
     },
     "code-review-graph": {
       "command": "code-review-graph",
-      "args": [
-        "serve"
-      ],
-      "type": "stdio"
+      "args": ["serve"]
     }
   }
 }

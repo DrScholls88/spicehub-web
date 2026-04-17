@@ -43,6 +43,11 @@ db.version(8).stores({
   instagramCache: 'url, cachedAt',
 });
 
+// v9: Unified Import Engine — Ghost Recipe status + sourceHash + jobId on meals
+db.version(9).stores({
+  meals: '++id, name, status, sourceHash, jobId',
+});
+
 export default db;
 
 // ── Week plan persistence ─────────────────────────────────────────────────────

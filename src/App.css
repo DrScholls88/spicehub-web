@@ -162,7 +162,7 @@ body {
   font-weight: 600;
   color: var(--text-light);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   border-top: 3px solid transparent;
   display: flex;
   flex-direction: column;
@@ -199,7 +199,7 @@ body {
   font-size: 15px;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.2s var(--ease-spring);
+  transition: background-color 0.2s var(--ease-spring), color 0.2s var(--ease-spring), border-color 0.2s var(--ease-spring), box-shadow 0.2s var(--ease-spring), opacity 0.2s var(--ease-spring), transform 0.2s var(--ease-spring);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -236,7 +236,7 @@ body {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s var(--ease-spring);
+  transition: background-color 0.2s var(--ease-spring), color 0.2s var(--ease-spring), border-color 0.2s var(--ease-spring), box-shadow 0.2s var(--ease-spring), opacity 0.2s var(--ease-spring), transform 0.2s var(--ease-spring);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -263,7 +263,7 @@ body {
   border-radius: var(--radius-sm);
   font-size: 13px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -341,7 +341,7 @@ body {
   align-items: center;
   justify-content: center;
   box-shadow: var(--shadow);
-  transition: all 0.15s var(--ease-spring);
+  transition: background-color 0.15s var(--ease-spring), color 0.15s var(--ease-spring), border-color 0.15s var(--ease-spring), box-shadow 0.15s var(--ease-spring), opacity 0.15s var(--ease-spring), transform 0.15s var(--ease-spring);
   flex-shrink: 0;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
@@ -498,7 +498,7 @@ body {
   font-size: 15px;
   font-weight: 600;
   color: var(--text);
-  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 0.15s cubic-bezier(0.4,0,0.2,1), color 0.15s cubic-bezier(0.4,0,0.2,1), border-color 0.15s cubic-bezier(0.4,0,0.2,1), box-shadow 0.15s cubic-bezier(0.4,0,0.2,1), opacity 0.15s cubic-bezier(0.4,0,0.2,1), transform 0.15s cubic-bezier(0.4,0,0.2,1);
 }
 
 /* ── Today's day number: scale up + bold weight + glow + orange bg ── */
@@ -662,7 +662,7 @@ body {
   background: #f8f5f0;
   border-radius: 12px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -714,7 +714,7 @@ body {
   font-weight: 600;
   cursor: pointer;
   color: var(--danger);
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
 }
 
 .wv-clear-btn:active {
@@ -742,14 +742,14 @@ body {
   align-items: center;
   justify-content: center;
   background: #fdf8f2;
-  transition: all 0.22s var(--ease-spring);
+  transition: background-color 0.22s var(--ease-spring), color 0.22s var(--ease-spring), box-shadow 0.22s var(--ease-spring), opacity 0.22s var(--ease-spring), transform 0.22s var(--ease-spring);
 }
 
 .wv-empty-circle span {
   font-size: 30px;
   color: #c4b8ac;
   font-weight: 300;
-  transition: all 0.2s;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s, transform 0.2s;
 }
 
 .wv-hero-empty:active .wv-empty-circle {
@@ -806,7 +806,7 @@ body {
   padding: 12px 14px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   -webkit-tap-highlight-color: transparent;
   border: 1.5px solid transparent;
 }
@@ -934,7 +934,7 @@ body {
   font-size: 15px;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   -webkit-tap-highlight-color: transparent;
   padding: 14px 12px;
 }
@@ -1039,7 +1039,7 @@ body {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -1236,7 +1236,7 @@ body {
   box-shadow: var(--shadow);
   overflow: hidden;
   border: 1.5px solid var(--border);
-  transition: all 0.2s var(--ease-spring);
+  transition: background-color 0.2s var(--ease-spring), color 0.2s var(--ease-spring), border-color 0.2s var(--ease-spring), box-shadow 0.2s var(--ease-spring), opacity 0.2s var(--ease-spring), transform 0.2s var(--ease-spring);
 }
 
 .meal-card:hover {
@@ -1603,18 +1603,16 @@ body {
 .import-section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px;
-  background: #fafafa;
-  border-radius: 10px;
-  margin-bottom: 14px;
-  border: 1px solid var(--border);
+  gap: 12px;
+  /* No background or border — content lives directly in the modal without nested-card chrome */
+  padding: 0;
+  margin-bottom: 12px;
 }
 
 .help-text {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-light);
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
 .form-scroll {
@@ -1710,6 +1708,38 @@ body {
 /* ── Import Modal ── */
 .import-modal {}
 
+/* ── BrowserAssist fallback breadcrumb ── */
+.ba-fallback-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.ba-back-btn {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 0;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+}
+
+.ba-back-btn:hover { opacity: 0.75; }
+
+.ba-fallback-reason {
+  font-size: 12px;
+  color: var(--text-muted);
+  flex: 1;
+  text-align: right;
+}
+
 /* Expand modal when BrowserAssist is active */
 .import-browser-assist {
   padding: 0;
@@ -1746,20 +1776,30 @@ body {
   padding: 4px;
 }
 
+/* Primary tabs (URL, Paste, Photo) fill available space equally */
 .import-tabs button {
   flex: 1;
-  padding: 9px 4px;
+  padding: 10px 6px;
   border: none;
   background: none;
   border-radius: 9px;
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
-  transition: all 0.18s var(--ease-spring);
+  transition: background-color 0.18s var(--ease-spring), color 0.18s var(--ease-spring), box-shadow 0.18s var(--ease-spring);
   color: var(--text-light);
   white-space: nowrap;
   min-width: 0;
   -webkit-tap-highlight-color: transparent;
+}
+
+/* "⋯ More" button — fixed narrow width, doesn't compete with primary tabs */
+.import-tabs button.import-tabs-more {
+  flex: 0 0 auto;
+  padding: 10px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 52px;
 }
 
 .import-tabs button.active {
@@ -1974,7 +2014,7 @@ body {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   border: none;
   background: #FBBC04;
   color: #333;
@@ -2007,7 +2047,7 @@ body {
   border: 1.5px solid #FBBC04;
   background: #fffde7;
   color: #333;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
 }
 
 .btn-keep-sm:hover {
@@ -2073,7 +2113,7 @@ body {
   border: 1px solid #ffe0b2;
   color: var(--text);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
 }
 
 .special-chip:hover {
@@ -2140,7 +2180,7 @@ body {
   font-weight: 600;
   color: var(--text-light);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   flex-shrink: 0;
 }
 
@@ -2567,7 +2607,7 @@ body {
   margin: 0 4px 10px;
   padding: 18px;
   border: 1.5px dashed var(--border);
-  transition: all 0.2s var(--ease-spring);
+  transition: background-color 0.2s var(--ease-spring), color 0.2s var(--ease-spring), border-color 0.2s var(--ease-spring), box-shadow 0.2s var(--ease-spring), opacity 0.2s var(--ease-spring), transform 0.2s var(--ease-spring);
 }
 
 .wv2-hero.locked {
@@ -3659,6 +3699,16 @@ body {
 }
 
 /* ── Social detected bar (in URL tab, before browser panel) ── */
+@keyframes social-bar-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes social-bar-out {
+  from { opacity: 1; transform: translateY(0); max-height: 120px; }
+  to   { opacity: 0; transform: translateY(-4px); max-height: 0; }
+}
+
 .social-detected-bar {
   display: flex;
   flex-direction: column;
@@ -3668,6 +3718,7 @@ body {
   border-radius: 10px;
   border: 1px solid #a5d6a7;
   margin-top: 8px;
+  animation: social-bar-in 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .social-detected-bar>span {
@@ -3810,7 +3861,7 @@ body {
   color: var(--primary);
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   flex-shrink: 0;
 }
 
@@ -3893,7 +3944,7 @@ body {
   color: #6a1b9a;
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   flex-shrink: 0;
 }
 
@@ -4019,12 +4070,24 @@ body {
   height: 84px;
   border-radius: 12px;
   flex-shrink: 0;
-  background: linear-gradient(135deg, #f5ece0, #ede0d0);
+  background: linear-gradient(145deg, #f8f0e6, #ede0d0);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 32px;
-  color: var(--text-muted);
+  font-size: 30px;
+  color: #c4a882;
+  border: 1.5px dashed rgba(160, 120, 70, 0.2);
+  position: relative;
+  overflow: hidden;
+}
+
+.preview-detail-no-img::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.4) 0%, transparent 60%);
+  border-radius: inherit;
+  pointer-events: none;
 }
 
 .preview-detail-title-zone {
@@ -4106,7 +4169,7 @@ body {
   background: linear-gradient(135deg, #fff3e0, #ffe0b2);
   color: var(--primary);
   cursor: pointer;
-  transition: all 0.25s;
+  transition: background-color 0.25s, color 0.25s, border-color 0.25s, box-shadow 0.25s, opacity 0.25s, transform 0.25s;
   white-space: nowrap;
   touch-action: manipulation;
 }
@@ -4186,7 +4249,7 @@ body {
   gap: 5px;
   position: relative;
   padding: 3px 2px;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   border-radius: 8px;
   border: 1px solid transparent;
 }
@@ -4259,7 +4322,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
@@ -4285,7 +4348,7 @@ body {
   border-radius: 12px;
   margin: 6px 12px 10px;
   background: #fdf9f4;
-  transition: all 0.2s;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s, transform 0.2s;
   letter-spacing: 0.01em;
 }
 
@@ -4355,7 +4418,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   touch-action: manipulation;
 }
 
@@ -4779,7 +4842,7 @@ body {
   font-weight: bold;
   color: var(--primary);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4839,7 +4902,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s, transform 0.2s;
   flex-shrink: 0;
 }
 
@@ -4874,7 +4937,7 @@ body {
   font-size: 14px;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.2s var(--ease-spring);
+  transition: background-color 0.2s var(--ease-spring), color 0.2s var(--ease-spring), border-color 0.2s var(--ease-spring), box-shadow 0.2s var(--ease-spring), opacity 0.2s var(--ease-spring), transform 0.2s var(--ease-spring);
   border: 2px solid var(--border);
   background: var(--card);
   color: var(--text-light);
@@ -4984,7 +5047,7 @@ body {
   border-radius: 22px;
   font-size: 16px;
   outline: none;
-  transition: all 0.2s;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s, transform 0.2s;
   background: white;
   -webkit-tap-highlight-color: transparent;
 }
@@ -5033,7 +5096,7 @@ body {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   white-space: nowrap;
   flex-shrink: 0;
   -webkit-tap-highlight-color: transparent;
@@ -5301,7 +5364,7 @@ body {
   font-weight: 600;
   color: var(--text);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
 }
 
 .ml-qp-actions button:active {
@@ -5376,7 +5439,7 @@ body {
   align-items: center;
   justify-content: center;
   box-shadow: 0 4px 12px rgba(230, 81, 0, 0.4);
-  transition: all 0.2s;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s, transform 0.2s;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -5428,7 +5491,7 @@ body {
   border-radius: 50%;
   font-size: 20px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -5596,7 +5659,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -5692,7 +5755,7 @@ body {
   font-size: 15px;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -5832,7 +5895,7 @@ body {
   color: #F5FFF5;
   border-radius: 8px;
   cursor: pointer;
-  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
   -webkit-tap-highlight-color: transparent;
   display: flex;
   align-items: center;
@@ -5886,7 +5949,7 @@ body {
   color: #FF6B35;
   border-radius: 8px;
   cursor: pointer;
-  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -5933,7 +5996,7 @@ body {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -6035,7 +6098,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
   -webkit-tap-highlight-color: transparent;
   flex-shrink: 0;
   color: #F5FFF5;
@@ -6063,7 +6126,7 @@ body {
   background: transparent;
   border-left: 4px solid transparent;
   cursor: pointer;
-  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
   -webkit-tap-highlight-color: transparent;
   font-size: 15px;
   font-weight: 500;
@@ -6140,7 +6203,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
   -webkit-tap-highlight-color: transparent;
   padding: 0;
 }
@@ -6158,7 +6221,7 @@ body {
   padding: 12px 16px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   background: transparent;
-  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -6197,7 +6260,7 @@ body {
   border: 1.5px solid rgba(245, 255, 245, 0.25);
   border-radius: 50%;
   background: transparent;
-  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -6259,7 +6322,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -6287,7 +6350,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
   flex-shrink: 0;
   -webkit-tap-highlight-color: transparent;
 }
@@ -6311,7 +6374,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
   flex-shrink: 0;
   opacity: 0.3;
   -webkit-tap-highlight-color: transparent;
@@ -6334,7 +6397,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
   flex-shrink: 0;
   -webkit-tap-highlight-color: transparent;
 }
@@ -6418,7 +6481,7 @@ body {
   background: transparent;
   border-left: 4px solid transparent;
   cursor: pointer;
-  transition: all 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
   -webkit-tap-highlight-color: transparent;
   font-size: 14px;
   font-weight: 500;
@@ -6612,7 +6675,7 @@ body {
   font-weight: 500;
   color: var(--text);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s, transform 0.2s;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -6658,7 +6721,7 @@ body {
   border-radius: 12px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s, transform 0.2s;
   -webkit-tap-highlight-color: transparent;
   animation: blSlideInCard 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) backwards;
   border-left: 3px solid #9c27b0;
@@ -6747,7 +6810,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   -webkit-tap-highlight-color: transparent;
   flex-shrink: 0;
 }
@@ -6782,7 +6845,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s, transform 0.2s;
   z-index: 40;
   -webkit-tap-highlight-color: transparent;
 }
@@ -6872,7 +6935,7 @@ body {
   font-weight: 600;
   color: var(--text);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   -webkit-tap-highlight-color: transparent;
   display: flex;
   align-items: center;
@@ -6933,7 +6996,7 @@ body {
   font-size: 15px;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -6976,7 +7039,7 @@ body {
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   -webkit-tap-highlight-color: transparent;
   white-space: nowrap;
 }
@@ -6998,7 +7061,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -7036,7 +7099,7 @@ body {
   font-size: 15px;
   font-weight: 700;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s, transform 0.2s;
   -webkit-tap-highlight-color: transparent;
   box-shadow: 0 3px 12px rgba(123, 31, 162, 0.3);
 }
@@ -7216,7 +7279,7 @@ body {
   border-radius: 20px;
   font-size: 13px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -7353,7 +7416,7 @@ body {
   margin-bottom: 10px;
   border: 1px solid var(--border);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   animation: mealCardEnter 0.3s ease-out both;
   -webkit-tap-highlight-color: transparent;
 }
@@ -7535,7 +7598,7 @@ body {
   border-radius: 50%;
   background: #e0e0e0;
   cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 0.25s cubic-bezier(0.4,0,0.2,1), color 0.25s cubic-bezier(0.4,0,0.2,1), border-color 0.25s cubic-bezier(0.4,0,0.2,1), box-shadow 0.25s cubic-bezier(0.4,0,0.2,1), opacity 0.25s cubic-bezier(0.4,0,0.2,1), transform 0.25s cubic-bezier(0.4,0,0.2,1);
 }
 
 .cm-dot.active {
@@ -7697,7 +7760,7 @@ body {
   padding: 10px 16px;
   border-radius: 12px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s, transform 0.2s;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -7809,7 +7872,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -7833,7 +7896,7 @@ body {
   padding: 10px 12px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
   border: 1px solid #ffe0b2;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 0.25s cubic-bezier(0.4,0,0.2,1), color 0.25s cubic-bezier(0.4,0,0.2,1), border-color 0.25s cubic-bezier(0.4,0,0.2,1), box-shadow 0.25s cubic-bezier(0.4,0,0.2,1), opacity 0.25s cubic-bezier(0.4,0,0.2,1), transform 0.25s cubic-bezier(0.4,0,0.2,1);
   animation: cmSidebarIn 0.3s ease-out both;
   z-index: 2;
 }
@@ -8013,7 +8076,7 @@ body {
   font-weight: 700;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
 }
 
 .cm-qt-btn:active {
@@ -8040,7 +8103,7 @@ body {
   font-weight: 700;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
 }
 
 .cm-nav-btn:disabled {
@@ -8163,7 +8226,7 @@ body {
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.15);
   cursor: pointer;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: background-color 0.25s cubic-bezier(0.4,0,0.2,1), color 0.25s cubic-bezier(0.4,0,0.2,1), border-color 0.25s cubic-bezier(0.4,0,0.2,1), box-shadow 0.25s cubic-bezier(0.4,0,0.2,1), opacity 0.25s cubic-bezier(0.4,0,0.2,1), transform 0.25s cubic-bezier(0.4,0,0.2,1);
 }
 
 .mm-dot.active {
@@ -8276,7 +8339,7 @@ body {
   font-size: 16px;
   color: #e1bee7;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -8305,7 +8368,7 @@ body {
   font-size: 14px;
   font-weight: 800;
   color: #ce93d8;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
 }
 
 .mm-check-item.checked .mm-checkbox {
@@ -8329,7 +8392,7 @@ body {
   padding: 10px 16px;
   border-radius: 12px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s, transform 0.2s;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -8492,7 +8555,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -8677,7 +8740,7 @@ body {
   font-weight: 700;
   cursor: pointer;
   color: #ce93d8;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -8705,7 +8768,7 @@ body {
   font-weight: 700;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
 }
 
 .mm-nav-btn:disabled {
@@ -8977,7 +9040,7 @@ body {
   width: 14px;
   height: 14px;
   border-radius: 3px;
-  transition: all 0.2s;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s, transform 0.2s;
 }
 
 .ms-cal-cell.level-0 {
@@ -9136,7 +9199,7 @@ body {
   border-radius: 12px;
   background: var(--card);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -10193,7 +10256,7 @@ body {
   align-items: center;
   justify-content: center;
   -webkit-tap-highlight-color: transparent;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
 }
 
 .hdr-btn:active {
@@ -10214,7 +10277,7 @@ body {
   cursor: pointer;
   box-shadow: 0 4px 16px rgba(255, 152, 0, 0.35);
   -webkit-tap-highlight-color: transparent;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
 }
 
 .cook-mode-launch-btn:active {
@@ -10702,7 +10765,7 @@ body {
   min-height: 48px;
   min-width: 48px;
   border-radius: 2px;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   font-family: inherit;
 }
 
@@ -10730,7 +10793,7 @@ body {
   background: none;
   cursor: pointer;
   padding: 0;
-  transition: all 0.2s;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s, transform 0.2s;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -10749,7 +10812,7 @@ body {
   border: none;
   cursor: pointer;
   padding: 2px 4px;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   -webkit-tap-highlight-color: transparent;
   min-width: 48px;
   min-height: 60px;
@@ -11294,7 +11357,7 @@ body {
   text-align: center;
   font-family: 'Press Start 2P', monospace;
   -webkit-tap-highlight-color: transparent;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
 }
 
 .bs-action-btn:active { transform: scale(0.96); }
@@ -11551,7 +11614,7 @@ body {
   border-radius: 20px;
   font-size: 13px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   color: var(--text);
   -webkit-tap-highlight-color: transparent;
 }
@@ -11692,7 +11755,7 @@ body {
   margin-bottom: 10px;
   border: 1px solid var(--border);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
   animation: mealCardEnter 0.3s ease-out both;
   -webkit-tap-highlight-color: transparent;
 }
@@ -13178,7 +13241,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   background: var(--bg);
   border-radius: 12px;
   border: 2px solid transparent;
-  transition: all 0.3s ease;
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease, transform 0.3s ease;
   min-height: 48px;
 }
 
@@ -13616,7 +13679,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
 }
 
 .cal-today-btn:hover {
@@ -13634,7 +13697,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
 }
 
 .cal-select-toggle.active {
@@ -13896,7 +13959,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
 }
 
 .cal-act-btn:hover {
@@ -14014,7 +14077,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   white-space: nowrap;
   cursor: pointer;
   flex-shrink: 0;
-  transition: all 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
 }
 
 .cal-history-chip:hover {
@@ -14194,3 +14257,139 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 [data-theme="dark"] .btn-add-addendum:hover {
   background: rgba(255, 183, 77, 0.08);
 }
+
+/* ── Sync Import Progress Overlay ─────────────────────────────────────────── */
+.sync-import-progress {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 32px 24px;
+  min-height: 200px;
+}
+
+.sync-import-stages {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 320px;
+}
+
+.sync-stage {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 15px;
+  color: var(--text-muted);
+  transition: color 0.25s var(--ease-spring);
+}
+
+.sync-stage--active {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.sync-stage--done {
+  color: var(--text-muted);
+}
+
+.sync-stage-dot {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  flex-shrink: 0;
+  transition: background-color 0.25s var(--ease-spring), border-color 0.25s var(--ease-spring), transform 0.25s var(--ease-spring);
+}
+
+.sync-stage--active .sync-stage-dot {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  animation: sync-pulse 1.4s ease-in-out infinite;
+}
+
+.sync-stage--done .sync-stage-dot {
+  background: var(--text-muted);
+  border-color: var(--text-muted);
+  color: #fff;
+}
+
+@keyframes sync-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%       { transform: scale(1.18); opacity: 0.85; }
+}
+
+.sync-cancel-btn {
+  margin-top: 8px;
+  padding: 10px 28px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.sync-cancel-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+/* ── Sync Import Success Flash ─────────────────────────────────────────────── */
+@keyframes sync-success-pop {
+  0%   { opacity: 0; transform: scale(0.8); }
+  55%  { opacity: 1; transform: scale(1.08); }
+  80%  { transform: scale(0.97); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes sync-success-check-draw {
+  from { stroke-dashoffset: 32; opacity: 0; }
+  to   { stroke-dashoffset: 0;  opacity: 1; }
+}
+
+.sync-import-success {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #e8f5e9, #f1f8e9);
+  border: 1.5px solid #a5d6a7;
+  border-radius: 12px;
+  animation: sync-success-pop 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.sync-success-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #43a047;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+  flex-shrink: 0;
+  animation: sync-success-pop 0.36s 0.06s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.sync-success-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #2e7d32;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 240px;
+}
+

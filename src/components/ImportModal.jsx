@@ -8,6 +8,7 @@ import {
   scoreExtractionConfidence, tryVideoExtraction,
 } from '../recipeParser.js';
 import BrowserAssist from './BrowserAssist';
+import { normalizeInstagramUrl } from '../api.js';
 
 /**
  * ImportModal — four import paths:
@@ -54,6 +55,27 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   const [dragOverField, setDragOverField] = useState(null); // { field, recipeIdx } — shows which field is drop target
   const [touchDrag, setTouchDrag] = useState(null); // { field, index, recipeIdx, el, startY, currentY }
   const [autoSorting, setAutoSorting] = useState(false);
+
+  // ── Sync import progress ───────────────────────────────────────────────────
+  const API_BASE = import.meta.env.VITE_API_BASE || '';
+  // Stage labels only — timing is now driven by real fetch events, not wall-clock.
+  // Stages advance as:
+  //   0 → immediately on request start
+  //   1 → after 700ms if still waiting (slow network / cold server)
+  //   2 → after 3500ms if still waiting (Gemini AI call in progress)
+  //   3 → immediately when the response body arrives (always event-driven)
+  const STAGES = [
+    { key: 'scraping',    label: 'Reading the recipe…'     },
+    { key: 'fetching',    label: 'Extracting content…'     },
+    { key: 'structuring', label: 'Structuring with AI…'    },
+    { key: 'saving',      label: 'Almost done…'            },
+  ];
+  const [syncPhase, setSyncPhase] = useState('idle'); // 'idle'|'running'|'success'|'failed'
+  const [syncStageIdx, setSyncStageIdx] = useState(0);
+  const [syncSuccessName, setSyncSuccessName] = useState('');
+  const abortRef = useRef(null);
+  const stageTimersRef = useRef([]);
+  const capturedTextRef = useRef('');
 
   // ── Inline misclassification suggestion using classifyWithConfidence ────────
   const getMisplacedHint = useCallback((text, currentField) => {
@@ -179,6 +201,20 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     return () => { document.body.style.overflow = origOverflow; };
   }, []);
 
+  // Abort any in-flight sync fetch when the modal is closed mid-import.
+  useEffect(() => {
+    return () => {
+      abortRef.current?.abort();
+      stageTimersRef.current.forEach(clearTimeout);
+    };
+  }, []);
+
+  // Warmup Render on modal open so it's ready when user clicks Import.
+  // Always fires — empty API_BASE uses relative URL proxied by Vite in dev.
+  useEffect(() => {
+    fetch(`${API_BASE}/api/v2/ping`, { method: 'GET' }).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Handle shared content from share-target (Android/iOS share sheet) ────────
   useEffect(() => {
     if (sharedContent) {
@@ -237,12 +273,129 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     }
   };
 
+  // ── Synchronous import handler ────────────────────────────────────────────
+  // Stage advancement is event-driven, not wall-clock:
+  //   Stage 0 — immediately on start ("Reading the recipe…")
+  //   Stage 1 — after 700ms if still in flight ("Extracting content…")
+  //   Stage 2 — after 3500ms if still in flight ("Structuring with AI…")
+  //   Stage 3 — the moment response arrives ("Almost done…"), then brief pause → close
+  async function handleUrlImportSync(trimmedUrl) {
+    stageTimersRef.current.forEach(clearTimeout);
+    stageTimersRef.current = [];
+
+    // Clear stale captured text from any previous failed attempt so it never
+    // bleeds into BrowserAssist when a different URL is tried in the same session.
+    capturedTextRef.current = '';
+
+    setSyncPhase('running');
+    setSyncStageIdx(0);
+
+    // Patience timers — fire only if the request is slow; cancelled on response.
+    const t1 = setTimeout(() => setSyncStageIdx(1), 700);
+    const t2 = setTimeout(() => setSyncStageIdx(2), 3500);
+    stageTimersRef.current = [t1, t2];
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    const cancelTimers = () => {
+      stageTimersRef.current.forEach(clearTimeout);
+      stageTimersRef.current = [];
+    };
+
+    // One transparent retry on transient failures (5xx / network drop).
+    // 422 = intentional extraction failure → skip retry, go straight to BrowserAssist.
+    const attemptFetch = () => fetch(`${API_BASE}/api/v2/import/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: trimmedUrl }),
+      signal: controller.signal,
+    });
+
+    // Called when the server responds — cancels patience timers, flashes stage 3.
+    const onResponseArrived = async () => {
+      cancelTimers();
+      setSyncStageIdx(3); // "Almost done…" — real event, not fake
+      // Brief visual pause so the user sees the final stage before modal closes
+      await new Promise(r => setTimeout(r, 220));
+    };
+
+    try {
+      let resp = await attemptFetch();
+
+      // Transient server error — show "Retrying…" in current stage, retry once
+      if (resp.status >= 500) {
+        // Don't cancel timers yet — retry is still in flight
+        if (controller.signal.aborted) { cancelTimers(); setSyncPhase('idle'); return; }
+        resp = await attemptFetch();
+      }
+
+      await onResponseArrived();
+
+      if (!resp.ok) {
+        const errBody = await resp.json().catch(() => ({}));
+        capturedTextRef.current = errBody?.partial?.capturedText ?? '';
+        setSyncPhase('failed');
+        setBrowserAssistUrl(trimmedUrl);
+        setBrowserAssistMode('showing');
+        return;
+      }
+
+      const { recipe } = await resp.json();
+      // Show success flash, then hand off to App.jsx
+      setSyncSuccessName(recipe?.name || 'Recipe');
+      setSyncPhase('success');
+      await new Promise(r => setTimeout(r, 700));
+      setSyncPhase('idle');
+      onImport([recipe]);
+      onClose();
+
+    } catch (err) {
+      cancelTimers();
+      if (err.name === 'AbortError') {
+        setSyncPhase('idle');
+        return;
+      }
+      // Network error — retry once silently
+      try {
+        if (controller.signal.aborted) { setSyncPhase('idle'); return; }
+        await new Promise(r => setTimeout(r, 1200));
+        const resp2 = await attemptFetch();
+        await onResponseArrived();
+        if (resp2.ok) {
+          const { recipe } = await resp2.json();
+          setSyncSuccessName(recipe?.name || 'Recipe');
+          setSyncPhase('success');
+          await new Promise(r => setTimeout(r, 700));
+          setSyncPhase('idle');
+          onImport([recipe]);
+          onClose();
+          return;
+        }
+        const errBody2 = await resp2.json().catch(() => ({}));
+        capturedTextRef.current = errBody2?.partial?.capturedText ?? '';
+      } catch {
+        capturedTextRef.current = '';
+      }
+      setSyncPhase('failed');
+      setBrowserAssistUrl(trimmedUrl);
+      setBrowserAssistMode('showing');
+    }
+  }
+
+  function handleCancelImport() {
+    abortRef.current?.abort();
+    stageTimersRef.current.forEach(clearTimeout);
+    setSyncPhase('idle');
+    setSyncStageIdx(0);
+  }
+
   // ── Import from ANY URL ─────────────────────────────────────────────────────
   // Called by the Import button and Enter-key handler.
   // Routes single URLs through performUrlExtraction (which handles Instagram →
   // BrowserAssist, short URL resolution, social fallback, etc.) and multi-URL
   // pastes through handleBatchImport.
-  const handleUrlImport = () => {
+  const handleUrlImport = async () => {
     const trimmedUrl = url.trim();
     if (!trimmedUrl) {
       setError('Please enter a URL.');
@@ -259,10 +412,8 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       return;
     }
 
-    // Single URL — route through performUrlExtraction (handles Instagram → BrowserAssist)
-    setImporting(true);
-    setImportProgress('');
-    performUrlExtraction(trimmedUrl);
+    // Single URL — synchronous import with live progress
+    await handleUrlImportSync(trimmedUrl);
   };
 
   // ── Extract URL (reusable for auto-extraction on share-target) ──────────────────
@@ -373,6 +524,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       // Recipe successfully extracted from visible page
       setPreview([recipe]);
       setBrowserAssistMode('off');
+      setSyncPhase('idle');
     }
   };
 
@@ -381,6 +533,8 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     // import attempt doesn't carry stale URL / importing flags.
     setBrowserAssistMode('off');
     setBrowserAssistUrl(null);
+    setSyncPhase('idle');
+    setSyncStageIdx(0);
     setImporting(false);
     setImportProgress('');
     setSocialDetected(null);
@@ -739,11 +893,30 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
         )}
 
         {browserAssistMode === 'showing' ? (
-          <BrowserAssist
-            url={browserAssistUrl}
-            onRecipeExtracted={handleBrowserAssistRecipe}
-            onFallbackToText={handleBrowserAssistFallback}
-          />
+          <>
+            {/* Fallback breadcrumb — shown when BrowserAssist is a fallback after a failed sync import */}
+            <div className="ba-fallback-header">
+              <button
+                className="ba-back-btn"
+                onClick={() => {
+                  setBrowserAssistMode('off');
+                  setBrowserAssistUrl(null);
+                  setSyncPhase('idle');
+                  setSyncStageIdx(0);
+                  capturedTextRef.current = '';
+                }}
+              >
+                ← Try a different URL
+              </button>
+              <span className="ba-fallback-reason">Trying deeper extraction…</span>
+            </div>
+            <BrowserAssist
+              url={browserAssistUrl}
+              onRecipeExtracted={handleBrowserAssistRecipe}
+              onFallbackToText={handleBrowserAssistFallback}
+              initialCapturedText={capturedTextRef.current}
+            />
+          </>
         ) : /* ── Preview screen (full detail + editable) ──────────────────────── */
         preview ? (
           <div className="import-preview">
@@ -772,7 +945,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                     const level = conf >= 70 ? 'high' : conf >= 40 ? 'medium' : 'low';
                     return (
                       <span className={`confidence-badge confidence-${level}`} title={`Extraction confidence: ${conf}%`}>
-                        {conf >= 70 ? '✓ High' : conf >= 40 ? '~ Good' : '⚠ Low'} match
+                        {conf >= 70 ? '✓ High' : conf >= 40 ? '✓ Good' : '⚠ Low'} match
                       </span>
                     );
                   })()}
@@ -811,7 +984,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                       />
                     ) : null}
                     {!m.imageUrl && (
-                      <div className="preview-detail-no-img">📷</div>
+                      <div className="preview-detail-no-img">🍽️</div>
                     )}
                     <div className="preview-detail-title-zone">
                       <label className="preview-label">Recipe Name</label>
@@ -1143,7 +1316,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
           </div>
         ) : (
           <>
-            {/* ── Tab bar ─────────────────────────────────────────────────────── */}
+            {/* ── Tab bar — 3 primary + overflow ───────────────────────────── */}
             <div className="import-tabs">
               <button
                 className={mode === 'url' ? 'active' : ''}
@@ -1163,17 +1336,18 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
               >
                 From Photo
               </button>
+              {/* ⋯ overflow — reveals Spreadsheet and Paprika on demand */}
               <button
-                className={mode === 'spreadsheet' ? 'active' : ''}
-                onClick={() => { setMode('spreadsheet'); setSocialDetected(null); setError(''); }}
+                className={['spreadsheet', 'paprika'].includes(mode) ? 'active import-tabs-more' : 'import-tabs-more'}
+                onClick={() => {
+                  const next = mode === 'spreadsheet' ? 'paprika' : 'spreadsheet';
+                  setMode(next);
+                  setSocialDetected(null);
+                  setError('');
+                }}
+                title="More import options (Spreadsheet, Paprika)"
               >
-                Spreadsheet
-              </button>
-              <button
-                className={mode === 'paprika' ? 'active' : ''}
-                onClick={() => { setMode('paprika'); setSocialDetected(null); setError(''); }}
-              >
-                Paprika
+                {mode === 'spreadsheet' ? 'Spreadsheet' : mode === 'paprika' ? 'Paprika' : '⋯ More'}
               </button>
             </div>
 
@@ -1224,10 +1398,42 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                   </div>
                 )}
 
+                {/* Sync import progress */}
+                {syncPhase === 'running' && (
+                  <div className="sync-import-progress">
+                    <div className="sync-import-stages">
+                      {STAGES.map((stage, idx) => (
+                        <div
+                          key={stage.key}
+                          className={`sync-stage${idx < syncStageIdx ? ' sync-stage--done' : ''}${idx === syncStageIdx ? ' sync-stage--active' : ''}`}
+                        >
+                          <span className="sync-stage-dot">
+                            {idx < syncStageIdx ? '✓' : idx === syncStageIdx ? '●' : '○'}
+                          </span>
+                          <span className="sync-stage-label">{stage.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <button className="sync-cancel-btn" onClick={handleCancelImport}>
+                      Cancel
+                    </button>
+                  </div>
+                )}
+
+                {/* Success flash */}
+                {syncPhase === 'success' && (
+                  <div className="sync-import-success">
+                    <span className="sync-success-check">✓</span>
+                    <span className="sync-success-label">
+                      {syncSuccessName ? `"${syncSuccessName}" saved!` : 'Recipe saved!'}
+                    </span>
+                  </div>
+                )}
+
                 <button
                   className="btn-primary"
                   onClick={handleUrlImport}
-                  disabled={importing || !url.trim()}
+                  disabled={importing || syncPhase === 'running' || !url.trim()}
                 >
                   {importing ? (
                     <><span className="browser-spinner" /> {importProgress || 'Extracting recipe…'}</>
