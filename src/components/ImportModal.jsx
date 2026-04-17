@@ -10,6 +10,10 @@ import {
 import BrowserAssist from './BrowserAssist';
 import { normalizeInstagramUrl } from '../api.js';
 
+// Module-level flag — persists for the browser tab session so we only pay the
+// Render spin-up cost once per session, not on every import.
+let _serverWarm = false;
+
 /**
  * ImportModal — four import paths:
  *   1. From URL (recipe blogs, Instagram, TikTok)
@@ -386,6 +390,9 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   function handleCancelImport() {
     abortRef.current?.abort();
     stageTimersRef.current.forEach(clearTimeout);
+    // If cancelled during warmup, mark server warm anyway so the next attempt
+    // skips warmup (the ping already woke Render up).
+    if (syncPhase === 'warmup') _serverWarm = true;
     setSyncPhase('idle');
     setSyncStageIdx(0);
   }
@@ -412,9 +419,49 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       return;
     }
 
-    // Single URL — synchronous import with live progress
-    await handleUrlImportSync(trimmedUrl);
+    // Single URL — warmup then synchronous import
+    await handleUrlImportWithWarmup(trimmedUrl);
   };
+
+  // ── Render warmup ─────────────────────────────────────────────────────────
+  // On Render's free tier the instance spins down after inactivity. The first
+  // request gets stuck waiting for spin-up (5-30s) and times out. To mask
+  // this, we send a cheap ping immediately and show a branded gradient
+  // animation for the duration. Once the instance responds (or 5.5s max),
+  // we proceed with the real import — the server is now warm.
+  //
+  // _serverWarm is module-level so repeated imports in the same tab skip
+  // the warmup entirely (server stays warm between imports).
+  //
+  // Min 2s animation prevents a flash when the server is already warm.
+  async function handleUrlImportWithWarmup(trimmedUrl) {
+    const WARMUP_MIN_MS = 2000;
+    const WARMUP_MAX_MS = 5500;
+
+    if (!_serverWarm) {
+      setSyncPhase('warmup');
+
+      const t0 = Date.now();
+      // Fire ping — wakes Render, don't block on error
+      const pingPromise = fetch(`${API_BASE}/api/v2/ping`, { method: 'GET' })
+        .catch(() => {});
+      // Wait for ping OR max timeout, whichever is sooner
+      await Promise.race([pingPromise, new Promise(r => setTimeout(r, WARMUP_MAX_MS))]);
+
+      // Enforce minimum animation time so a fast warm-server doesn't flash
+      const elapsed = Date.now() - t0;
+      if (elapsed < WARMUP_MIN_MS) {
+        await new Promise(r => setTimeout(r, WARMUP_MIN_MS - elapsed));
+      }
+
+      _serverWarm = true;
+
+      // User may have cancelled during warmup — bail if so
+      if (syncPhase !== 'warmup') return;
+    }
+
+    await handleUrlImportSync(trimmedUrl);
+  }
 
   // ── Extract URL (reusable for auto-extraction on share-target) ──────────────────
   const performUrlExtraction = async (urlToExtract) => {
@@ -1398,6 +1445,16 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                   </div>
                 )}
 
+                {/* Render warmup animation */}
+                {syncPhase === 'warmup' && (
+                  <div className="warmup-phase">
+                    <span className="warmup-label">Preparing your recipe…</span>
+                    <button className="sync-cancel-btn warmup-cancel-btn" onClick={handleCancelImport}>
+                      Cancel
+                    </button>
+                  </div>
+                )}
+
                 {/* Sync import progress */}
                 {syncPhase === 'running' && (
                   <div className="sync-import-progress">
@@ -1433,7 +1490,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                 <button
                   className="btn-primary"
                   onClick={handleUrlImport}
-                  disabled={importing || syncPhase === 'running' || !url.trim()}
+                  disabled={importing || syncPhase === 'running' || syncPhase === 'warmup' || !url.trim()}
                 >
                   {importing ? (
                     <><span className="browser-spinner" /> {importProgress || 'Extracting recipe…'}</>
@@ -1788,66 +1845,4 @@ function classifyOcrLines(lines, recipe) {
  * Uses the native browser DecompressionStream API (Chrome 80+, Safari 16+, FF 113+).
  */
 async function decompressGzip(compressed) {
-  const ds = new DecompressionStream('gzip');
-  const writer = ds.writable.getWriter();
-  const reader = ds.readable.getReader();
-
-  writer.write(compressed);
-  writer.close();
-
-  const chunks = [];
-  let totalLen = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    totalLen += value.length;
-  }
-  const buf = new Uint8Array(totalLen);
-  let offset = 0;
-  for (const chunk of chunks) { buf.set(chunk, offset); offset += chunk.length; }
-  return new TextDecoder().decode(buf);
-}
-
-/**
- * Convert a Paprika recipe JSON object into a SpiceHub recipe object.
- */
-function parsePaprikaRecipe(rec) {
-  // Ingredients: newline-separated string
-  const ingredients = (rec.ingredients || '')
-    .split('\n')
-    .map(s => s.trim())
-    .filter(Boolean);
-
-  // Directions: block of text — try to detect numbered steps
-  const raw = (rec.directions || '').trim();
-  let directions = [];
-  if (raw) {
-    // Numbered steps: "1. Do this\n2. Do that" or "1) Do this\n2) Do that"
-    if (/^\d+[.)]\s/.test(raw)) {
-      directions = raw
-        .split(/\n(?=\d+[.)]\s)/)
-        .map(s => s.replace(/^\d+[.)]\s*/, '').trim())
-        .filter(Boolean);
-    } else {
-      // Split on double newlines first, then single
-      const blocks = raw.split(/\n{2,}/).map(s => s.trim()).filter(Boolean);
-      if (blocks.length > 1) {
-        directions = blocks;
-      } else {
-        directions = raw.split('\n').map(s => s.trim()).filter(Boolean);
-      }
-    }
-  }
-
-  return {
-    name: (rec.name || '').trim(),
-    ingredients,
-    directions,
-    imageUrl: rec.photo_url || rec.image_url || '',
-    link: rec.source_url || '',
-    notes: rec.notes || '',
-    servings: rec.servings || '',
-    cookTime: rec.total_time || rec.cook_time || '',
-  };
-}
+  const ds 

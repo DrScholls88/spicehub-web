@@ -14258,6 +14258,37 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   background: rgba(255, 183, 77, 0.08);
 }
 
+/* ── Render Warmup Animation ──────────────────────────────────────────────── */
+@keyframes warmup-gradient {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.warmup-phase {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px;
+  border-radius: 14px;
+  background: linear-gradient(-45deg, #f8f0e6, #ede0d0, #f5e8d5, #fdf5ec);
+  background-size: 300% 300%;
+  animation: warmup-gradient 5.5s ease infinite;
+  border: 1px solid rgba(160, 120, 70, 0.15);
+}
+
+.warmup-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #a07848;
+  letter-spacing: 0.01em;
+}
+
+.warmup-cancel-btn {
+  margin-top: 0;
+}
+
 /* ── Sync Import Progress Overlay ─────────────────────────────────────────── */
 .sync-import-progress {
   display: flex;
