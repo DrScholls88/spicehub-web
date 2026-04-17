@@ -80,6 +80,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   const abortRef = useRef(null);
   const stageTimersRef = useRef([]);
   const capturedTextRef = useRef('');
+  const autoImportTriggeredRef = useRef(null);
 
   // ── Inline misclassification suggestion using classifyWithConfidence ────────
   const getMisplacedHint = useCallback((text, currentField) => {
@@ -241,6 +242,8 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   // ── Auto-extract when shared URL is set and modal opens ──
   useEffect(() => {
     if (sharedContent?.mode === 'url' && sharedContent?.url && !preview && !importing) {
+      if (autoImportTriggeredRef.current === sharedContent.url) return;
+      autoImportTriggeredRef.current = sharedContent.url;
       const sharedUrl = sharedContent.url;
       setUrl(sharedUrl);
       if (isSocialMediaUrl(sharedUrl)) {
@@ -299,7 +302,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     const t2 = setTimeout(() => setSyncStageIdx(2), 3500);
     stageTimersRef.current = [t1, t2];
 
-    const controller = new AbortController();
+    const controller = abortRef.current || new AbortController();
     abortRef.current = controller;
 
     const cancelTimers = () => {
@@ -438,6 +441,9 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     const WARMUP_MIN_MS = 2000;
     const WARMUP_MAX_MS = 5500;
 
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     if (!_serverWarm) {
       setSyncPhase('warmup');
 
@@ -457,7 +463,10 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       _serverWarm = true;
 
       // User may have cancelled during warmup — bail if so
-      if (syncPhase !== 'warmup') return;
+      if (controller.signal.aborted) {
+        setSyncPhase('idle');
+        return;
+      }
     }
 
     await handleUrlImportSync(trimmedUrl);
@@ -1846,6 +1855,44 @@ function classifyOcrLines(lines, recipe) {
  */
 async function decompressGzip(compressed) {
   const ds = new DecompressionStream("gzip");
-  const decompressedStream = compressed.stream().pipeThrough(ds);
-  return await new Response(decompressedStream).blob();
+  const decompressedStream = new Response(compressed).body.pipeThrough(ds);
+  return await new Response(decompressedStream).text();
+}
+
+function splitSemicolon(str) {
+  if (!str) return [];
+  return str.split(';').map(s => s.trim()).filter(Boolean);
+}
+
+function parseCSVLine(line, delimiter = ',') {
+  const result = [];
+  let inQuotes = false;
+  let word = '';
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"' && line[i + 1] === '"') {
+      word += '"';
+      i++;
+    } else if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === delimiter && !inQuotes) {
+      result.push(word);
+      word = '';
+    } else {
+      word += char;
+    }
+  }
+  result.push(word);
+  return result;
+}
+
+function parsePaprikaRecipe(rec) {
+  return {
+    name: rec.name || 'Paprika Recipe',
+    ingredients: (rec.ingredients || '').split('\n').map(s => s.trim()).filter(Boolean),
+    directions: (rec.directions || '').split('\n').map(s => s.trim()).filter(Boolean),
+    notes: rec.notes || '',
+    link: rec.source_url || '',
+    imageUrl: rec.photo_url || ''
+  };
 }

@@ -243,8 +243,13 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
         } catch { /* fall through to iframe */ }
 
         if (!cancelled) {
-          setExtractionProgress({ step: 4, total: 4, message: 'Showing page for manual extraction' });
-          setPhase('iframe');
+          if (visibleText.length < 300) {
+            setErrorMsg('The website blocked access or requires JavaScript to load. Please use the "Paste Text" tab.');
+            setPhase('error');
+          } else {
+            setExtractionProgress({ step: 4, total: 4, message: 'Showing page for manual extraction' });
+            setPhase('iframe');
+          }
         }
       } catch (err) {
         if (!cancelled) {
@@ -1143,9 +1148,6 @@ function sanitizeHtmlForEmbed(html, baseUrl) {
         <style>
           body { font-family: system-ui, sans-serif !important; overflow-y: auto !important; }
           * { max-width: 100% !important; }
-          img { height: auto !important; }
-          [style*="display: none"], [style*="display:none"],
-          .hidden, [hidden] { display: block !important; visibility: visible !important; }
           .Caption, .EmbedCaption, [class*="Caption"] {
             max-height: none !important;
             overflow: visible !important;

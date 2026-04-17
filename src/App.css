@@ -1706,8 +1706,6 @@ body {
 }
 
 /* ── Import Modal ── */
-.import-modal {}
-
 /* ── BrowserAssist fallback breadcrumb ── */
 .ba-fallback-header {
   display: flex;
@@ -3220,6 +3218,7 @@ body {
   text-overflow: ellipsis;
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   max-width: 100%;
   word-break: break-word;
@@ -5236,6 +5235,7 @@ body {
   color: var(--text);
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -6640,6 +6640,7 @@ body {
   font-size: 16px;
   outline: none;
   -webkit-appearance: none;
+  appearance: none;
   -webkit-tap-highlight-color: transparent;
   padding: 0 8px;
 }
@@ -8986,7 +8987,6 @@ body {
   gap: 8px;
 }
 
-.ms-category-bar-wrapper {}
 
 .ms-category-label-row {
   display: flex;
@@ -10309,11 +10309,17 @@ body {
   background: rgba(0, 0, 0, 0.92);
   z-index: 550;
   animation: fadeIn 0.2s ease-out;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .bs-container {
-  position: fixed;
-  inset: 0;
+  position: relative;
+  width: 100%;
+  height: 100%;
+  max-width: 600px;
+  max-height: 100dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -10333,8 +10339,6 @@ body {
       #100808 75%,
       #0a0005 100%
     );
-  max-width: 600px;
-  margin: 0 auto;
 }
 
 /* Pixel font for retro vibe */
@@ -12819,10 +12823,12 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 /* iOS Safari: ensure animation plays (some iOS versions need explicit will-change) */
 .pipeline-spinner {
   -webkit-animation: pipelineSpin 0.75s linear infinite;
+  animation: pipelineSpin 0.75s linear infinite;
   will-change: transform;
 }
 .pipeline-message {
   -webkit-animation: pulseFade 2s ease-in-out infinite;
+  animation: pulseFade 2s ease-in-out infinite;
   will-change: opacity;
 }
 
@@ -13772,9 +13778,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   outline-offset: -2px;
 }
 
-.cal-cell.is-past {
-  /* slightly muted but still clickable */
-}
+/* .cal-cell.is-past slightly muted but still clickable */
 
 .cal-cell.is-active-day {
   background: rgba(230, 81, 0, 0.08);
@@ -14433,6 +14437,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 /* ── Stage container ──────────────────────────────────────────────────────── */
 .saloon-stage {
   position: relative;
+  flex: 1;
   width: 100%;
   min-height: 420px;
   background: #1a0f0a;
