@@ -1845,4 +1845,7 @@ function classifyOcrLines(lines, recipe) {
  * Uses the native browser DecompressionStream API (Chrome 80+, Safari 16+, FF 113+).
  */
 async function decompressGzip(compressed) {
-  const ds 
+  const ds = new DecompressionStream("gzip");
+  const decompressedStream = compressed.stream().pipeThrough(ds);
+  return await new Response(decompressedStream).blob();
+}
