@@ -3523,6 +3523,45 @@ function hasRecipeContent(recipe) {
 }
 
 /**
+ * Public — the inverse contract used by UI code (ImportModal / BrowserAssist).
+ *
+ * A "weak" result is one where the automatic pipeline didn't produce something
+ * the user can actually cook from. This is the trigger for auto-handoff to the
+ * internal browser: rather than dead-ending on an error or a placeholder card,
+ * we open BrowserAssist with the page loaded and let the user aim the parser.
+ *
+ * Returns true if ANY of:
+ *   • recipe is null/undefined
+ *   • recipe._error is set
+ *   • recipe._needsManualCaption is set
+ *   • BOTH ingredients AND directions are placeholder/empty
+ *   • ingredients has fewer than 2 real items AND directions has fewer than 2 real items
+ *     (heuristic: a recipe you can follow needs at least a couple of each)
+ */
+export function isWeakResult(recipe) {
+  if (!recipe) return true;
+  if (recipe._error || recipe._needsManualCaption) return true;
+  const PLACEHOLDERS = new Set([
+    'See original post for ingredients',
+    'See original post for directions',
+    'See recipe for ingredients',
+    'See recipe for directions',
+  ]);
+  const realIng = Array.isArray(recipe.ingredients)
+    ? recipe.ingredients.filter(x => typeof x === 'string' && x.trim() && !PLACEHOLDERS.has(x.trim()))
+    : [];
+  const realDir = Array.isArray(recipe.directions)
+    ? recipe.directions.filter(x => typeof x === 'string' && x.trim() && !PLACEHOLDERS.has(x.trim()))
+    : [];
+  // Confirmed strong: at least 2 of each
+  if (realIng.length >= 2 && realDir.length >= 2) return false;
+  // Borderline: at least 1 of each AND a non-placeholder name
+  const hasName = recipe.name && recipe.name !== 'Imported Recipe' && recipe.name.trim().length > 2;
+  if (realIng.length >= 1 && realDir.length >= 1 && hasName) return false;
+  return true;
+}
+
+/**
  * resolveShortUrl — attempts to follow short-URL redirects via the backend.
  * Falls back silently to the original URL on any error.
  */

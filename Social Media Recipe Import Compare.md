@@ -37,7 +37,7 @@ Paprika takes a simpler, more traditional approach focused on its built-in brows
 - **"Download Recipe" Button**: On recipe sites or social posts with visible text/captions, user taps a prominent download button.
 - **Extraction Method**:
   - Primarily **HTML scraping** of visible text, captions, JSON-LD (when present), and images.
-  - For Instagram/TikTok: Relies heavily on the caption text being visible/expanded in the browser.
+  - For Instagram/TikTok: Relies heavily on the caption text being visible/expanded in the internal browser.
   - No native video transcription or Whisper integration (as of 2026).
   - For video-heavy posts: Users often manually copy the caption or description and paste it.
 - **Image Handling**: Automatically grabs the best available image from the page (OG image, post image, etc.).

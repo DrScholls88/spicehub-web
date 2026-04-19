@@ -6,6 +6,7 @@ import {
   parseFromUrl, parseCaption,
   classifyWithConfidence, smartClassifyLines, normalizeAndDedupe,
   scoreExtractionConfidence, tryVideoExtraction,
+  isWeakResult,
 } from '../recipeParser.js';
 import BrowserAssist from './BrowserAssist';
 import { normalizeInstagramUrl } from '../api.js';
@@ -49,6 +50,10 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   // Browser Assist state
   const [browserAssistUrl, setBrowserAssistUrl] = useState(null);
   const [browserAssistMode, setBrowserAssistMode] = useState('off'); // 'off' | 'showing'
+  // When the auto-pipeline gives us something partial (title, hero image, one ingredient),
+  // we hand those to BrowserAssist as a "seed" so the user can keep what worked and
+  // only aim the parser at what's missing.
+  const [browserAssistSeed, setBrowserAssistSeed] = useState(null);
   const fileRef = useRef(null);
   const paprikaRef = useRef(null);
   const imageRef = useRef(null);
@@ -525,38 +530,21 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
         if (msg) setImportProgress(msg);
       });
 
-      // Placeholder rejection — these signal partial extraction. Route social
-      // URLs to BrowserAssist (live pipeline UI) so the user sees progress and
-      // can intervene manually; show an error for non-social URLs.
-      const isPlaceholderResult = (
-        result?.ingredients?.[0] === 'See original post for ingredients' ||
-        result?.directions?.[0] === 'See original post for directions' ||
-        result?.ingredients?.[0] === 'See recipe for ingredients' ||
-        result?.directions?.[0] === 'See recipe for directions'
-      );
-      const needsManual = !result || result._needsManualCaption || result._error;
-      if (needsManual || (isSocialMediaUrl(trimmedUrl) && isPlaceholderResult)) {
-        if (isSocialMediaUrl(trimmedUrl)) {
-          setImporting(false);
-          setImportProgress('');
-          setBrowserAssistUrl(trimmedUrl);
-          setBrowserAssistMode('showing');
-          return;
-        }
-        if (result?._error && result.reason === 'login-wall') {
-          setError(
-            `This ${result.platform || 'social media'} post requires login to view. ` +
-            'Copy the recipe caption from the app and use the "Paste Text" tab instead.'
-          );
-        } else {
-          setError(
-            'Could not extract a recipe from that URL. The site may block automated access. ' +
-            'Try the "Paste Text" tab to paste the recipe caption or text instead.'
-          );
-        }
-      } else {
-        setPreview([result]);
+      // Paprika-style fallback: ANY weak/empty/partial result routes to the
+      // internal browser so the user can aim the parser themselves. No more
+      // dead-end 'paste text' error cards as the primary fallback.
+      if (isWeakResult(result)) {
+        setImporting(false);
+        setImportProgress('');
+        setBrowserAssistUrl(trimmedUrl);
+        // Hand anything we DID scrape (title, image, partial ingredients) to the
+        // browser as a seed — the user keeps what worked, adds what didn't.
+        setBrowserAssistSeed(result && !result._error ? result : null);
+        setBrowserAssistMode('showing');
+        return;
       }
+
+      setPreview([result]);
     } catch (e) {
       setError('Import failed: ' + e.message);
     }
@@ -579,6 +567,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     // import attempt doesn't carry stale URL / importing flags.
     setBrowserAssistMode('off');
     setBrowserAssistUrl(null);
+    setBrowserAssistSeed(null);
     setSyncPhase('idle');
     setSyncStageIdx(0);
     setImporting(false);
@@ -961,6 +950,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
               onRecipeExtracted={handleBrowserAssistRecipe}
               onFallbackToText={handleBrowserAssistFallback}
               initialCapturedText={capturedTextRef.current}
+              seedRecipe={browserAssistSeed}
             />
           </>
         ) : /* ── Preview screen (full detail + editable) ──────────────────────── */

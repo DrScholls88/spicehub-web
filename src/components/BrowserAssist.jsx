@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins, isSocialMediaUrl, getSocialPlatform, tryVideoExtraction, extractInstagramAgent, scoreExtractionConfidence, structureWithAI, captionToRecipe, cleanSocialCaption, isCaptionWeak, importRecipeFromUrl } from '../recipeParser';
+import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins, isSocialMediaUrl, getSocialPlatform, tryVideoExtraction, extractInstagramAgent, scoreExtractionConfidence, structureWithAI, captionToRecipe, cleanSocialCaption, isCaptionWeak, importRecipeFromUrl, smartClassifyLines } from '../recipeParser';
 import { fetchHtmlViaProxy, proxyImageUrl } from '../api';
 import { queueRecipeImport } from '../db';
 import useOnlineStatus from '../hooks/useOnlineStatus';
@@ -27,7 +27,7 @@ import useOnlineStatus from '../hooks/useOnlineStatus';
  *   onRecipeExtracted  - callback(recipe) on success
  *   onFallbackToText   - callback() when user wants Paste Text
  */
-export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText, initialCapturedText = '' }) {
+export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText, initialCapturedText = '', seedRecipe = null }) {
   const { isOnline } = useOnlineStatus();
 
   // phases:
@@ -69,6 +69,22 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
   const [loadingDots, setLoadingDots] = useState('');
   const iframeRef = useRef(null);
   const extractionRef = useRef(null);
+
+  // ── Paprika-style aim-the-parser state ──────────────────────────────────────
+  // aimMode: when true, a tap inside the iframe routes that element's text
+  // straight to the parser instead of navigating the page.
+  const [aimMode, setAimMode] = useState(false);
+  const aimModeRef = useRef(false);
+  useEffect(() => { aimModeRef.current = aimMode; }, [aimMode]);
+  // The bin the next tap will drop into: 'auto' | 'title' | 'ingredients' | 'directions'
+  const [aimTarget, setAimTarget] = useState('auto');
+  const aimTargetRef = useRef('auto');
+  useEffect(() => { aimTargetRef.current = aimTarget; }, [aimTarget]);
+  // A running partial recipe built up from tap-to-aim actions. Merged with
+  // whatever the page scraper produces when the user hits Extract.
+  const [aimRecipe, setAimRecipe] = useState(null);
+  // Toast shown briefly after a successful aim-tap, e.g. "Added 3 ingredients".
+  const [aimToast, setAimToast] = useState('');
 
   const isSocial = isSocialMediaUrl(url);
   const platform = isSocial ? getSocialPlatform(url) : '';
@@ -114,6 +130,49 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
       container.removeEventListener('touchend', handleTouchEnd);
     };
   }, []); // intentionally empty — uses ref for current zoom
+
+  // ── Aim-parser: parent ↔ iframe message bridge ─────────────────────────────
+  // Receives spicehub:aim-pick messages (the user tapped a region in the iframe)
+  // and routes that text through the heuristic parser to build up aimRecipe.
+  useEffect(() => {
+    const handleMessage = (evt) => {
+      const data = evt?.data;
+      if (!data || typeof data !== 'object') return;
+      if (data.type === 'spicehub:aim-mode') {
+        setAimMode(!!data.on);
+        return;
+      }
+      if (data.type !== 'spicehub:aim-pick') return;
+      const text = (data.text || '').trim();
+      if (!text || text.length < 4) return;
+      // Route the captured text into the current aim target bin.
+      // 'auto' mode lets parseCaption + smartClassifyLines decide ing vs dir.
+      setAimRecipe(prev => mergeAimedText(prev || {}, text, aimTargetRef.current, url));
+      // Quick toast so user knows the tap registered
+      setAimToast(`Added to ${aimTargetRef.current === 'auto' ? 'recipe' : aimTargetRef.current}`);
+      setTimeout(() => setAimToast(''), 1600);
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [url]);
+
+  // ── Sync React aim-mode state INTO the iframe ──────────────────────────────
+  // When the user toggles aim mode from the OUTER React toolbar, we need to
+  // tell the injected handler so its capture-phase listener starts firing.
+  useEffect(() => {
+    const win = iframeRef.current?.contentWindow;
+    const doc = iframeRef.current?.contentDocument;
+    if (!win || !doc) return;
+    win.__spicehubAimOn = aimMode;
+    doc.documentElement?.setAttribute('data-spicehub-aim', aimMode ? '1' : '0');
+    if (doc.documentElement) doc.documentElement.style.cursor = aimMode ? 'crosshair' : '';
+    // Also update the inner toolbar's aim button label
+    const aimBtn = doc.querySelector('[data-spicehub-btn="aim"]');
+    if (aimBtn) {
+      aimBtn.textContent = aimMode ? '✖ Stop aim' : '🎯 Aim parser';
+      aimBtn.style.background = aimMode ? '#E53935' : '#2196F3';
+    }
+  }, [aimMode, htmlContent]);
 
   // ── Helper: update a specific pipeline step ───────────────────────────────
   const stepUpdater = useRef(null);
@@ -382,39 +441,136 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
     setTimeout(() => setClearingClutter(false), 900);
   }, [clearingClutter]);
 
-  // ── iframe onLoad: inject Extract button ──────────────────────────────────
+  // ── Expand captions from outer React toolbar ──────────────────────────────
+  // Runs the caption-expander on the iframe document. We also kick it on a
+  // short timer in case the site lazy-renders the "more" button after a beat.
+  const [expandedCount, setExpandedCount] = useState(null);
+  const handleExpandCaptions = useCallback(() => {
+    const doc = iframeRef.current?.contentDocument;
+    if (!doc) return;
+    let total = 0;
+    try { total += runCaptionExpander(doc); } catch { /* ignore */ }
+    // Second pass after 400ms — some sites defer render
+    setTimeout(() => {
+      try {
+        const d2 = iframeRef.current?.contentDocument;
+        if (d2) total += runCaptionExpander(d2);
+      } catch { /* ignore */ }
+      setExpandedCount(total);
+      setTimeout(() => setExpandedCount(null), 2000);
+    }, 400);
+  }, []);
+
+  // ── Aim-mode toggle from outer React toolbar ──────────────────────────────
+  const handleToggleAim = useCallback(() => {
+    setAimMode(prev => !prev);
+  }, []);
+
+  // ── Clear the running aim-recipe draft ────────────────────────────────────
+  const handleResetAim = useCallback(() => {
+    setAimRecipe(null);
+    setAimToast('Cleared');
+    setTimeout(() => setAimToast(''), 1400);
+    // Also clear any highlighted elements inside the iframe
+    try {
+      const doc = iframeRef.current?.contentDocument;
+      doc?.querySelectorAll('[data-spicehub-aimed]').forEach(el => {
+        el.removeAttribute('data-spicehub-aimed');
+      });
+    } catch { /* ignore */ }
+  }, []);
+
+  // ── iframe onLoad: inject floating toolbar + aim-capture bridge ────────────
+  // The srcDoc iframe is same-origin from the parent's perspective, so we can
+  // inject scripts and DOM freely. We add THREE interactive overlays:
+  //
+  //   1. Floating toolbar   — Extract / Expand / Aim buttons (touch-friendly,
+  //                            always visible, min 56px hit targets).
+  //   2. Expand-caption JS  — auto-taps 'more' / '...' / 'read more' buttons
+  //                            commonly used on IG/TikTok/FB/YT to unfurl long
+  //                            captions. Runs a few passes over ~3s.
+  //   3. Aim-parser bridge  — installs a capture-phase click listener that,
+  //                            when aim mode is active, intercepts taps and
+  //                            postMessage()s the tapped element's text to
+  //                            the parent React tree instead of navigating.
   const handleIframeLoad = useCallback(() => {
     if (!iframeRef.current) return;
     try {
       const doc = iframeRef.current.contentDocument;
       if (!doc || !doc.body) return;
-      doc.getElementById('spicehub-extract-btn')?.remove();
-      doc.getElementById('spicehub-helper')?.remove();
-      const btn = doc.createElement('button');
-      btn.id = 'spicehub-extract-btn';
-      btn.textContent = '\u{1F4E5} Extract Recipe';
-      btn.style.cssText = [
-        'position:fixed', 'bottom:16px', 'right:16px', 'z-index:2147483647',
-        'padding:14px 20px', 'background:#4CAF50', 'color:white', 'border:none',
-        'border-radius:12px', 'font-size:15px', 'font-weight:700', 'cursor:pointer',
-        'box-shadow:0 4px 16px rgba(0,0,0,0.35)', 'font-family:system-ui,sans-serif',
-        'touch-action:manipulation', '-webkit-tap-highlight-color:transparent',
+
+      // Clean up previous injections (onLoad fires on every srcDoc swap)
+      ['spicehub-toolbar', 'spicehub-helper', 'spicehub-aim-style', 'spicehub-extract-btn']
+        .forEach(id => doc.getElementById(id)?.remove());
+
+      // ── 1. Inject floating toolbar ────────────────────────────────────────
+      const tb = doc.createElement('div');
+      tb.id = 'spicehub-toolbar';
+      tb.style.cssText = [
+        'position:fixed', 'bottom:16px', 'left:50%', 'transform:translateX(-50%)',
+        'z-index:2147483647', 'display:flex', 'gap:8px', 'padding:8px',
+        'background:rgba(20,20,20,0.92)', 'border-radius:16px',
+        'box-shadow:0 8px 24px rgba(0,0,0,0.4)',
+        'font-family:-apple-system,system-ui,sans-serif',
+        'backdrop-filter:blur(8px)', '-webkit-backdrop-filter:blur(8px)',
+        'max-width:calc(100vw - 16px)', 'flex-wrap:wrap', 'justify-content:center',
       ].join(';');
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
+      const makeBtn = (label, bg, onClick, testId) => {
+        const b = doc.createElement('button');
+        b.textContent = label;
+        b.dataset.spicehubBtn = testId || label;
+        b.style.cssText = [
+          'min-width:56px', 'min-height:56px', 'padding:0 16px',
+          `background:${bg}`, 'color:white', 'border:none', 'border-radius:12px',
+          'font-size:14px', 'font-weight:700', 'cursor:pointer',
+          'touch-action:manipulation', '-webkit-tap-highlight-color:transparent',
+          'white-space:nowrap',
+        ].join(';');
+        b.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onClick(b);
+        });
+        return b;
+      };
+      const extractBtn = makeBtn('📥 Extract', '#4CAF50', () => {
         if (extractionRef.current) extractionRef.current();
-      });
-      doc.body.appendChild(btn);
+      }, 'extract');
+      const expandBtn = makeBtn('⬇ Expand captions', '#FF9800', (btn) => {
+        // Visual feedback while we hunt for "more" buttons
+        btn.textContent = '⏳ Expanding…';
+        const results = runCaptionExpander(doc);
+        btn.textContent = results > 0 ? `✓ Expanded ${results}` : '⚠ None found';
+        setTimeout(() => { btn.textContent = '⬇ Expand captions'; }, 2200);
+      }, 'expand');
+      const aimBtn = makeBtn('🎯 Aim parser', '#2196F3', (btn) => {
+        // Toggle aim mode. Communicate both ways via window.__spicehubAimOn flag.
+        const on = !doc.defaultView.__spicehubAimOn;
+        doc.defaultView.__spicehubAimOn = on;
+        btn.textContent = on ? '✖ Stop aim' : '🎯 Aim parser';
+        btn.style.background = on ? '#E53935' : '#2196F3';
+        try {
+          window.postMessage({ type: 'spicehub:aim-mode', on }, '*');
+        } catch { /* non-fatal */ }
+        // Visual highlight of aim mode on the page
+        doc.documentElement.style.cursor = on ? 'crosshair' : '';
+      }, 'aim');
+      tb.appendChild(extractBtn);
+      tb.appendChild(expandBtn);
+      tb.appendChild(aimBtn);
+      doc.body.appendChild(tb);
+
+      // ── 2. Ephemeral hint banner ──────────────────────────────────────────
       const helper = doc.createElement('div');
       helper.id = 'spicehub-helper';
       helper.style.cssText = [
         'position:fixed', 'top:0', 'left:0', 'right:0', 'z-index:2147483647',
-        'background:rgba(0,0,0,0.85)', 'color:white', 'padding:10px 16px',
-        'font-size:13px', 'font-family:system-ui,sans-serif',
+        'background:rgba(33,150,243,0.96)', 'color:white',
+        'padding:10px 16px', 'font-size:13px',
+        'font-family:-apple-system,system-ui,sans-serif',
         'text-align:center', 'line-height:1.4',
       ].join(';');
-      helper.textContent = 'Scroll to read the full recipe, then tap the green Extract button.';
+      helper.textContent = '💡 Tap ⬇ to unfurl captions, 🎯 to point at a recipe block, then 📥 Extract.';
       doc.body.appendChild(helper);
       setTimeout(() => {
         if (helper.parentNode) {
@@ -422,11 +578,71 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
           helper.style.opacity = '0';
           setTimeout(() => helper.remove(), 500);
         }
-      }, 6000);
+      }, 5500);
+
+      // ── 3. Aim-parser style (highlights hoverable blocks in aim mode) ────
+      const style = doc.createElement('style');
+      style.id = 'spicehub-aim-style';
+      style.textContent = `
+        html[data-spicehub-aim="1"] *:hover {
+          outline: 3px solid #2196F3 !important;
+          outline-offset: 2px !important;
+          background-color: rgba(33,150,243,0.08) !important;
+        }
+        [data-spicehub-aimed="1"] {
+          outline: 3px solid #4CAF50 !important;
+          outline-offset: 2px !important;
+        }
+      `;
+      doc.head?.appendChild(style);
+
+      // ── 4. Capture-phase click interceptor for aim mode ───────────────────
+      // Installed ONCE per iframe load. Reads window.__spicehubAimOn flag
+      // so toggling aim mode doesn't require re-injecting.
+      const aimHandler = (e) => {
+        const win = doc.defaultView;
+        if (!win || !win.__spicehubAimOn) return;
+        // Ignore taps on our own toolbar/helper
+        let el = e.target;
+        while (el && el !== doc.body) {
+          if (el.id === 'spicehub-toolbar' || el.id === 'spicehub-helper') return;
+          el = el.parentElement;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        const target = e.target?.closest?.('li,p,div,span,h1,h2,h3,h4,article,section,ul,ol,figcaption') || e.target;
+        if (!target) return;
+        target.setAttribute('data-spicehub-aimed', '1');
+        // Collect text — prefer innerText for rendered order, fall back to textContent
+        const text = (target.innerText || target.textContent || '').trim();
+        const html = target.outerHTML || '';
+        try {
+          window.postMessage({
+            type: 'spicehub:aim-pick',
+            text: text.slice(0, 8000),
+            html: html.slice(0, 16000),
+            tag: target.tagName,
+          }, '*');
+        } catch { /* non-fatal */ }
+      };
+      doc.addEventListener('click', aimHandler, true);
+      // Also catch touchend for better mobile responsiveness
+      doc.addEventListener('touchend', aimHandler, true);
+      // Update html[data-spicehub-aim] for the CSS highlight
+      const aimObserver = new (doc.defaultView.MutationObserver || window.MutationObserver)(() => {});
+      doc.defaultView.addEventListener('message', (evt) => {
+        if (evt.data?.type === 'spicehub:aim-mode-sync') {
+          doc.documentElement.setAttribute('data-spicehub-aim', evt.data.on ? '1' : '0');
+        }
+      });
+
+      // ── 5. Auto-run caption expander on first load for social media ──────
+      // (One pass only — user can hit the Expand button to run again)
+      if (isSocial) setTimeout(() => runCaptionExpander(doc), 900);
     } catch (err) {
       console.warn('[BrowserAssist] Could not inject into iframe:', err);
     }
-  }, []);
+  }, [isSocial]);
 
   // ── Manual extraction from iframe ──────────────────────────────────────────
   const handleExtraction = useCallback(async () => {
@@ -450,20 +666,37 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
       } catch { /* fall through */ }
       setExtractionProgress({ step: 3, total: 3, message: 'Sorting results…' });
       const best = (aiRecipe && hasRealContent(aiRecipe)) ? aiRecipe : heuristicResult;
-      if (best && hasRealContent(best)) {
-        setAutoRecipe(cleanRecipe({ ...best, extractedVia: aiRecipe ? 'ai-gemini-manual' : 'heuristic-manual' }));
+
+      // Merge order (highest trust last):
+      //   seedRecipe (auto-import partial)  →  heuristic/AI page scrape  →  aim-tapped text
+      // User-tapped content always wins because it's explicit intent.
+      const merged = mergeRecipeLayers(
+        seedRecipe,
+        best && hasRealContent(best) ? best : null,
+        aimRecipe,
+        url,
+        aiRecipe ? 'ai-gemini-manual' : 'heuristic-manual',
+      );
+      if (merged && hasRealContent(merged)) {
+        setAutoRecipe(cleanRecipe(merged));
         setPhase('preview');
         return;
       }
+
+      // Truly nothing — keep user on the browser so they can tap-to-aim
       setPhase('iframe');
       setExtractionProgress({ step: 0, total: 0, message: '' });
       try {
-        const btn = doc.getElementById('spicehub-extract-btn');
-        if (btn) {
-          btn.textContent = '⚠️ No recipe found — try selecting text first';
-          btn.style.background = '#f44336';
+        const tb = doc.getElementById('spicehub-toolbar');
+        const extractBtnEl = tb?.querySelector('[data-spicehub-btn="extract"]');
+        if (extractBtnEl) {
+          extractBtnEl.textContent = '⚠ Nothing yet — tap 🎯 to aim';
+          extractBtnEl.style.background = '#f44336';
           setTimeout(() => {
-            if (btn.parentNode) { btn.textContent = '📥 Extract Recipe'; btn.style.background = '#4CAF50'; }
+            if (extractBtnEl.parentNode) {
+              extractBtnEl.textContent = '📥 Extract';
+              extractBtnEl.style.background = '#4CAF50';
+            }
           }, 3500);
         }
       } catch { /* ignore */ }
@@ -471,7 +704,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
       setErrorMsg('Could not read page content: ' + err.message);
       setPhase('error');
     }
-  }, [url, rawHtml]);
+  }, [url, rawHtml, seedRecipe, aimRecipe]);
 
   useEffect(() => { extractionRef.current = handleExtraction; }, [handleExtraction]);
 
@@ -835,7 +1068,9 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
             <div className="browser-assist-toolbar-hint">
               {phase === 'extracting'
                 ? <span>⏳ {extractionProgress.message || 'Analyzing…'}</span>
-                : <span>📜 Scroll · pinch to zoom · tap <strong>Extract ↓</strong></span>
+                : aimMode
+                  ? <span>🎯 <strong>Aim mode on</strong> — tap the {aimTarget === 'auto' ? 'ingredients or directions' : aimTarget} on the page</span>
+                  : <span>📜 Scroll · pinch to zoom · tap <strong>Extract ↓</strong> or 🎯 Aim</span>
               }
             </div>
             <div className="browser-assist-zoom-controls browser-assist-zoom-inline">
@@ -853,6 +1088,193 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
               {clearingClutter ? '✓ Cleared!' : '🧹 Clear Clutter'}
             </button>
           </div>
+
+          {/* ── Paprika-style power row: Expand captions + Aim parser ─────────
+              These are the controls the user specifically asked for. They mirror
+              the floating buttons injected inside the iframe, but are bigger
+              and always-visible in the parent UI so they can't be covered by
+              the page's own overlays. */}
+          <div className="browser-assist-power-row" style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '8px',
+            padding: '8px 12px',
+            background: 'linear-gradient(180deg, rgba(33,150,243,0.08) 0%, rgba(33,150,243,0.03) 100%)',
+            borderTop: '1px solid rgba(33,150,243,0.15)',
+            borderBottom: '1px solid rgba(33,150,243,0.15)',
+            alignItems: 'center',
+          }}>
+            <button
+              type="button"
+              onClick={handleExpandCaptions}
+              disabled={phase === 'extracting'}
+              style={{
+                flex: '1 1 140px',
+                minHeight: '48px',
+                padding: '10px 14px',
+                fontSize: '15px',
+                fontWeight: 600,
+                background: expandedCount != null ? '#43A047' : '#1976D2',
+                color: 'white',
+                border: 'none',
+                borderRadius: '10px',
+                cursor: 'pointer',
+                boxShadow: '0 2px 6px rgba(0,0,0,0.12)',
+                transition: 'all 0.15s ease',
+              }}
+              aria-label="Expand all truncated captions on the page"
+            >
+              {expandedCount != null
+                ? (expandedCount > 0 ? `✓ Expanded ${expandedCount}` : '✓ Already expanded')
+                : '⬇ Expand captions'}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleToggleAim}
+              disabled={phase === 'extracting'}
+              style={{
+                flex: '1 1 140px',
+                minHeight: '48px',
+                padding: '10px 14px',
+                fontSize: '15px',
+                fontWeight: 700,
+                background: aimMode ? '#E53935' : '#FB8C00',
+                color: 'white',
+                border: 'none',
+                borderRadius: '10px',
+                cursor: 'pointer',
+                boxShadow: aimMode
+                  ? '0 0 0 3px rgba(229,57,53,0.25), 0 2px 6px rgba(0,0,0,0.18)'
+                  : '0 2px 6px rgba(0,0,0,0.12)',
+                transition: 'all 0.15s ease',
+              }}
+              aria-pressed={aimMode}
+              aria-label={aimMode ? 'Stop aiming the parser' : 'Start aiming the parser at specific parts of the page'}
+            >
+              {aimMode ? '✖ Stop aim' : '🎯 Aim parser'}
+            </button>
+
+            {/* Aim target segmented control — only shown when aim mode is active */}
+            {aimMode && (
+              <div
+                role="radiogroup"
+                aria-label="Aim target"
+                style={{
+                  flex: '2 1 260px',
+                  display: 'flex',
+                  gap: '4px',
+                  padding: '4px',
+                  background: 'rgba(255,255,255,0.7)',
+                  borderRadius: '10px',
+                  border: '1px solid rgba(0,0,0,0.12)',
+                }}
+              >
+                {[
+                  { key: 'auto', label: 'Auto', title: 'Let the parser decide' },
+                  { key: 'title', label: 'Title', title: 'Treat the tap as the recipe name' },
+                  { key: 'ingredients', label: 'Ingredients', title: 'Send to ingredients list' },
+                  { key: 'directions', label: 'Directions', title: 'Send to directions list' },
+                ].map(opt => {
+                  const active = aimTarget === opt.key;
+                  return (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      role="radio"
+                      aria-checked={active}
+                      title={opt.title}
+                      onClick={() => setAimTarget(opt.key)}
+                      style={{
+                        flex: 1,
+                        minHeight: '40px',
+                        padding: '6px 8px',
+                        fontSize: '13px',
+                        fontWeight: active ? 700 : 500,
+                        background: active ? '#1976D2' : 'transparent',
+                        color: active ? 'white' : '#333',
+                        border: 'none',
+                        borderRadius: '7px',
+                        cursor: 'pointer',
+                        transition: 'all 0.12s ease',
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Aim progress badge — shows how much content the user has tapped */}
+            {aimRecipe && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '6px 10px',
+                  background: 'white',
+                  border: '1px solid #43A047',
+                  borderRadius: '10px',
+                  fontSize: '13px',
+                  color: '#2E7D32',
+                  fontWeight: 600,
+                }}
+              >
+                <span>
+                  {(aimRecipe.ingredients?.length || 0)} ing · {(aimRecipe.directions?.length || 0)} dir
+                  {aimRecipe.name ? ' · title ✓' : ''}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleResetAim}
+                  title="Clear aim-tapped content"
+                  aria-label="Clear aim-tapped content"
+                  style={{
+                    minWidth: '32px',
+                    minHeight: '32px',
+                    padding: '0 8px',
+                    fontSize: '13px',
+                    background: '#EF5350',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    fontWeight: 700,
+                  }}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Aim toast — brief confirmation after a successful tap */}
+          {aimToast && (
+            <div
+              role="status"
+              aria-live="polite"
+              style={{
+                position: 'absolute',
+                top: '80px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                zIndex: 50,
+                padding: '10px 18px',
+                background: 'rgba(46,125,50,0.95)',
+                color: 'white',
+                fontSize: '14px',
+                fontWeight: 600,
+                borderRadius: '20px',
+                boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+                pointerEvents: 'none',
+                animation: 'fadeInOut 1.6s ease-out forwards',
+              }}
+            >
+              ✓ {aimToast}
+            </div>
+          )}
 
           <div className="browser-assist-iframe-container" aria-label="Recipe page — scroll and pinch to zoom">
             <div style={{
@@ -905,6 +1327,185 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
 // ═══════════════════════════════════════════════════════════════════════════════
 // Helpers
 // ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * mergeRecipeLayers — combines up to 3 recipe sources into one.
+ * Lower layers fill gaps in higher layers but never overwrite them.
+ * Layer priority (highest first): aim > scraped > seed.
+ *
+ *   seed    — partial data auto-import scraped (title/image often reliable here)
+ *   scraped — what the page heuristic+AI produced inside the internal browser
+ *   aim     — text the user tapped to aim at (most explicit intent; wins)
+ *
+ * Returns a cleaned recipe object or null if nothing usable.
+ */
+export function mergeRecipeLayers(seed, scraped, aim, sourceUrl, extractedVia) {
+  const isPlaceholder = (x) => typeof x === 'string' &&
+    /^see (original|recipe|full)/i.test(x.trim());
+  const clean = (arr) => Array.isArray(arr)
+    ? arr.map(x => (x || '').trim()).filter(x => x && !isPlaceholder(x))
+    : [];
+  const src = [seed, scraped, aim].filter(Boolean);
+  if (src.length === 0) return null;
+
+  // Name: aim > scraped > seed (prefer non-empty, non-generic)
+  const pickName = () => {
+    for (const s of [aim, scraped, seed]) {
+      const n = (s?.name || '').trim();
+      if (n && n !== 'Imported Recipe') return n;
+    }
+    return seed?.name || scraped?.name || aim?.name || '';
+  };
+
+  // For ingredients/directions, UNION all layers but keep order:
+  // scraped first (usually canonical ordering from JSON-LD/DOM), then aim
+  // additions (user's targeted picks), with seed as fallback if empty.
+  const unionList = (field) => {
+    const out = [];
+    const seen = new Set();
+    const push = (arr) => {
+      for (const it of clean(arr)) {
+        const k = it.toLowerCase();
+        if (!seen.has(k)) { seen.add(k); out.push(it); }
+      }
+    };
+    push(scraped?.[field]);
+    push(aim?.[field]);
+    if (out.length === 0) push(seed?.[field]);
+    return out;
+  };
+
+  return {
+    name: pickName(),
+    ingredients: unionList('ingredients'),
+    directions: unionList('directions'),
+    imageUrl: scraped?.imageUrl || seed?.imageUrl || aim?.imageUrl || '',
+    link: seed?.link || sourceUrl || '',
+    extractedVia: aim ? `${extractedVia}+aim` : extractedVia,
+    importedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * mergeAimedText — merges newly-tapped text into an aim-recipe draft.
+ * Routes lines by target:
+ *   'title'       → recipe.name (first non-trivial line wins)
+ *   'ingredients' → forced into ingredients[] (uses smartClassifyLines to split)
+ *   'directions'  → forced into directions[]
+ *   'auto'        → use smartClassifyLines to decide per-line
+ */
+export function mergeAimedText(prev, rawText, target, sourceUrl) {
+  const next = {
+    name: prev.name || '',
+    ingredients: Array.isArray(prev.ingredients) ? [...prev.ingredients] : [],
+    directions: Array.isArray(prev.directions) ? [...prev.directions] : [],
+    imageUrl: prev.imageUrl || '',
+    link: prev.link || sourceUrl || '',
+    _aimed: true,
+  };
+  const lines = rawText
+    .split(/\r?\n/)
+    .map(l => l.replace(/\s+/g, ' ').trim())
+    .filter(l => l.length > 2 && l.length < 400);
+  if (lines.length === 0) return next;
+
+  if (target === 'title') {
+    const pick = lines.find(l => l.length < 100) || lines[0];
+    if (pick && (!next.name || next.name.length < pick.length)) next.name = pick;
+    return next;
+  }
+  if (target === 'ingredients') {
+    for (const l of lines) {
+      if (!next.ingredients.includes(l)) next.ingredients.push(l);
+    }
+    return next;
+  }
+  if (target === 'directions') {
+    for (const l of lines) {
+      if (!next.directions.includes(l)) next.directions.push(l);
+    }
+    return next;
+  }
+  // 'auto' — use the heuristic line classifier imported at module scope
+  try {
+    const classified = smartClassifyLines(lines) || {};
+    for (const ing of (classified.ingredients || [])) {
+      if (!next.ingredients.includes(ing)) next.ingredients.push(ing);
+    }
+    for (const dir of (classified.directions || [])) {
+      if (!next.directions.includes(dir)) next.directions.push(dir);
+    }
+  } catch {
+    // Classifier unavailable — dump to directions (safer default)
+    for (const l of lines) {
+      if (!next.directions.includes(l)) next.directions.push(l);
+    }
+  }
+  return next;
+}
+
+/**
+ * runCaptionExpander — auto-clicks 'more' / '...' / 'read more' buttons that
+ * Instagram, TikTok, YouTube, Facebook, and Pinterest use to truncate long
+ * captions. Returns the number of elements we clicked so the UI can give
+ * feedback like "Expanded 3".
+ *
+ * The targeting is intentionally broad: we try selectors first, then fall
+ * back to textContent matching on small clickable elements. We skip anchors
+ * that would navigate away and anything inside our own toolbar.
+ */
+export function runCaptionExpander(doc) {
+  if (!doc || !doc.body) return 0;
+  const clicked = new Set();
+  // Selector-based pass — works on most modern social sites
+  const SELECTORS = [
+    // Instagram embed + web: "more" button inside caption
+    'button[aria-label="more" i]',
+    'button[aria-label="expand" i]',
+    'span[role="button"][aria-label*="more" i]',
+    // Generic "read more" patterns
+    '[data-testid*="readmore" i]',
+    '[data-testid*="expand" i]',
+    'button[class*="expand" i]',
+    'button[class*="readmore" i]',
+    'button[class*="more" i]',
+    // TikTok truncation
+    '[data-e2e="video-desc-seemore"]',
+    '[data-e2e*="seemore" i]',
+    // Facebook
+    'div[role="button"][tabindex="0"]',
+  ];
+  for (const sel of SELECTORS) {
+    try {
+      doc.querySelectorAll(sel).forEach(el => {
+        if (clicked.has(el)) return;
+        // Skip toolbar + anchors that would navigate away
+        if (el.closest('#spicehub-toolbar') || el.closest('#spicehub-helper')) return;
+        if (el.tagName === 'A' && el.href && !el.href.startsWith('javascript:')) return;
+        const text = (el.textContent || el.getAttribute('aria-label') || '').trim().toLowerCase();
+        // If textContent is set, only click things that look like expand controls
+        if (text && text.length > 80) return; // big blocks are not expand buttons
+        if (text && !/^(\.\.\.|…|more|read more|see more|show more|see all|expand|view more|continue reading)$/i.test(text)) {
+          // For generic role=button div fallback, require the expand-ish text
+          if (sel === 'div[role="button"][tabindex="0"]') return;
+        }
+        try { el.click(); clicked.add(el); } catch { /* ignore */ }
+      });
+    } catch { /* skip this selector */ }
+  }
+  // Text-content pass — find small clickable elements whose text is exactly
+  // one of the expand phrases. Catches sites that don't use aria-labels.
+  const EXPAND_TEXT = /^(\.\.\.|…|more|read more|see more|show more|see all|expand|view more|continue reading)$/i;
+  doc.querySelectorAll('button, span[role="button"], a[role="button"]').forEach(el => {
+    if (clicked.has(el)) return;
+    if (el.closest('#spicehub-toolbar') || el.closest('#spicehub-helper')) return;
+    const txt = (el.textContent || '').trim();
+    if (txt.length > 40) return;
+    if (!EXPAND_TEXT.test(txt)) return;
+    try { el.click(); clicked.add(el); } catch { /* ignore */ }
+  });
+  return clicked.size;
+}
 
 /** Instagram placeholder patterns that should NEVER pass as real content */
 const PLACEHOLDER_PATTERNS = [

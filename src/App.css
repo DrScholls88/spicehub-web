@@ -14735,3 +14735,11 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
     transition: none !important;
   }
 }
+
+/* ── BrowserAssist aim-toast animation ─────────────────────────────────── */
+@keyframes fadeInOut {
+  0%   { opacity: 0; transform: translateX(-50%) translateY(-6px); }
+  15%  { opacity: 1; transform: translateX(-50%) translateY(0); }
+  85%  { opacity: 1; transform: translateX(-50%) translateY(0); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-6px); }
+}
