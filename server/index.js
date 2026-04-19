@@ -999,6 +999,53 @@ app.post('/api/extract-video', async (req, res) => {
   // 2. Get metadata via yt-dlp
   const meta = await extractVideoMeta(url);
   if (!meta) {
+    // ── Fallback: og:meta fetch so we never return empty-handed when yt-dlp hiccups ──
+    // Many TikTok/Facebook URLs have og:title + og:description + og:image even when
+    // yt-dlp fails transiently. Giving the client SOMETHING beats a hard failure.
+    try {
+      const ogResp = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(12000),
+      });
+      if (ogResp.ok) {
+        const html = await ogResp.text();
+        const pickMeta = (name) => {
+          const re = new RegExp(`<meta[^>]+(?:property|name)\\s*=\\s*["']${name}["'][^>]+content\\s*=\\s*["']([^"']+)["']`, 'i');
+          const m = re.exec(html);
+          return m ? m[1] : '';
+        };
+        const ogTitle = pickMeta('og:title') || pickMeta('twitter:title') || '';
+        const ogDesc = stripSocialMetaPrefix(pickMeta('og:description') || pickMeta('twitter:description') || '');
+        const ogImg = pickMeta('og:image') || pickMeta('og:image:secure_url') || pickMeta('twitter:image') || '';
+        if (ogTitle || ogDesc || ogImg) {
+          console.log(`[extract-video] yt-dlp failed — returning og:meta fallback (title:${!!ogTitle} desc:${ogDesc.length} img:${!!ogImg})`);
+          return res.json({
+            ok: true,
+            type: 'video-meta',
+            title: ogTitle,
+            description: ogDesc,
+            thumbnail: ogImg,
+            uploader: '',
+            duration: 0,
+            subtitleText: '',
+            combinedText: ogDesc,
+            hasSubtitles: false,
+            sourceUrl: url,
+            platform,
+            isShortForm: true,
+            extractedVia: 'og-meta-fallback',
+          });
+        }
+      }
+    } catch (e) {
+      console.log(`[extract-video] og:meta fallback failed: ${e.message}`);
+    }
+
     return res.json({
       ok: false,
       error: 'Could not extract video metadata. yt-dlp may not be installed or the URL may not be supported.',

@@ -202,7 +202,28 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
 
     (async () => {
       try {
-        setExtractionProgress({ step: 1, total: 4, message: 'Fetching page…' });
+        // ── FAST PATH: Unified import engine first ────────────────────────────
+        // importRecipeFromUrl() routes through parseFromUrl's full blog pipeline
+        // (JSON-LD → microdata → CSS heuristics → endpoint nudging → Markdown → Gemini)
+        // with aggressive image extraction & base64 persistence for CDN hosts.
+        // This gives us one unified source of truth before falling back to the
+        // iframe-based manual extraction flow unique to BrowserAssist.
+        setExtractionProgress({ step: 1, total: 4, message: 'Extracting recipe…' });
+        try {
+          const unified = await importRecipeFromUrl(url, (_phase, _status, msg) => {
+            if (cancelled) return;
+            if (msg) setExtractionProgress(p => ({ ...p, message: msg }));
+          });
+          if (!cancelled && unified && !unified._needsManualCaption && hasRealContent(unified)) {
+            setAutoRecipe(cleanRecipe(unified));
+            setPhase('preview');
+            return;
+          }
+        } catch { /* fall through to iframe-based extraction */ }
+
+        if (cancelled) return;
+
+        setExtractionProgress({ step: 2, total: 4, message: 'Fetching page for manual extraction…' });
         const html = await fetchHtmlViaProxy(url, 35000);
         if (cancelled) return;
 

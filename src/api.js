@@ -339,51 +339,167 @@ export function isInstagramCdnUrl(url) {
   try { return INSTAGRAM_CDN_RE.test(new URL(url).hostname); } catch { return false; }
 }
 
-/**
- * Download an Instagram CDN image through a CORS proxy and return a base64 data URL.
- * Returns the original URL if download fails (graceful degradation).
- * Caps at ~1 MB to avoid storing giant images.
- */
-export async function downloadInstagramImage(imageUrl) {
-  if (!imageUrl || !isInstagramCdnUrl(imageUrl)) return imageUrl;
+// ── Generic retry-with-backoff wrapper ───────────────────────────────────────
+// Used for flaky endpoints (Gemini API, extract-video, image CDNs).
+// Always resolves — on total failure returns { ok: false, error } rather than throwing.
 
-  // CB-06: All proxy URLs now use encodeURIComponent — thingproxy was missing it,
-  // causing silent failures on CDN URLs that contain query strings or special chars.
+/**
+ * Sleep helper (cancellable via AbortSignal).
+ */
+function _sleep(ms, signal) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(resolve, ms);
+    if (signal) {
+      signal.addEventListener('abort', () => { clearTimeout(t); reject(new Error('aborted')); }, { once: true });
+    }
+  });
+}
+
+/**
+ * Fetch with exponential backoff retry. Never throws — returns the Response or null.
+ *
+ * @param {string|Request} input — URL or Request
+ * @param {RequestInit} [init] — fetch init
+ * @param {object} [opts]
+ * @param {number} [opts.retries=2] — retry attempts after the first try (so total = retries+1)
+ * @param {number} [opts.timeoutMs=12000] — per-attempt timeout
+ * @param {number} [opts.backoffMs=600] — initial backoff; doubles each attempt (+/- jitter)
+ * @param {(status:number)=>boolean} [opts.shouldRetryStatus] — return true to retry on non-2xx
+ * @returns {Promise<Response|null>}
+ */
+export async function fetchWithRetry(input, init = {}, opts = {}) {
+  const {
+    retries = 2,
+    timeoutMs = 12000,
+    backoffMs = 600,
+    shouldRetryStatus = (s) => s === 429 || s >= 500,
+  } = opts;
+
+  let attempt = 0;
+  const total = retries + 1;
+  let lastErr = null;
+
+  while (attempt < total) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+
+    // Honor caller-supplied signal
+    if (init.signal) {
+      if (init.signal.aborted) { clearTimeout(timer); return null; }
+      init.signal.addEventListener('abort', () => ctrl.abort(), { once: true });
+    }
+
+    try {
+      const resp = await fetch(input, { ...init, signal: ctrl.signal });
+      clearTimeout(timer);
+      if (resp.ok) return resp;
+      if (!shouldRetryStatus(resp.status) || attempt === total - 1) return resp;
+    } catch (err) {
+      clearTimeout(timer);
+      lastErr = err;
+      // AbortError with no pending retries — bail
+      if (err?.name === 'AbortError' && attempt === total - 1) break;
+    }
+
+    // Exponential backoff with ±25% jitter
+    const base = backoffMs * Math.pow(2, attempt);
+    const jitter = base * (0.75 + Math.random() * 0.5);
+    try { await _sleep(Math.round(jitter)); } catch { /* aborted */ }
+    attempt++;
+  }
+
+  if (lastErr) console.log(`[SpiceHub] fetchWithRetry gave up: ${lastErr.message}`);
+  return null;
+}
+
+/**
+ * Convert a fetched Blob → base64 data URL. Validates image MIME and size.
+ * Returns null on any failure (caller decides fallback strategy).
+ */
+async function _blobToValidatedDataUrl(resp, { maxBytes = 2 * 1024 * 1024, minBytes = 100 } = {}) {
+  if (!resp || !resp.ok) return null;
+  let blob;
+  try { blob = await resp.blob(); } catch { return null; }
+  if (!blob || blob.size < minBytes || blob.size > maxBytes) return null;
+  // Some proxies strip MIME — sniff magic bytes as backup
+  if (!blob.type.startsWith('image/')) {
+    try {
+      const head = new Uint8Array(await blob.slice(0, 12).arrayBuffer());
+      const isJpeg = head[0] === 0xFF && head[1] === 0xD8 && head[2] === 0xFF;
+      const isPng = head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4E && head[3] === 0x47;
+      const isWebp = head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46 &&
+                     head[8] === 0x57 && head[9] === 0x45 && head[10] === 0x42 && head[11] === 0x50;
+      const isGif = head[0] === 0x47 && head[1] === 0x49 && head[2] === 0x46;
+      if (!(isJpeg || isPng || isWebp || isGif)) return null;
+    } catch { return null; }
+  }
+  try {
+    return await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  } catch { return null; }
+}
+
+/**
+ * Generic image downloader — works for any host. Tries direct fetch first
+ * (cheapest, may succeed for CORS-friendly hosts), then falls back through the
+ * proxy cascade. Returns a base64 data URL on success, or `null` on failure.
+ *
+ * Use this for ephemeral CDN URLs that may 403/expire (Instagram, TikTok, FB, Pinterest).
+ * For already-persistent images (recipe blog hero images, data URLs) prefer
+ * leaving the URL alone — browsers will cache them normally.
+ *
+ * @param {string} imageUrl
+ * @param {object} [opts]
+ * @param {number} [opts.timeoutMs=9000]
+ * @param {number} [opts.maxBytes=2*1024*1024]
+ * @returns {Promise<string|null>} data URL or null
+ */
+export async function downloadImageAsDataUrl(imageUrl, opts = {}) {
+  if (!imageUrl || typeof imageUrl !== 'string' || !imageUrl.startsWith('http')) return null;
+  const { timeoutMs = 9000, maxBytes = 2 * 1024 * 1024 } = opts;
+
+  // ── Attempt 1: direct fetch (many CDNs now allow CORS for img-src) ──
+  try {
+    const resp = await fetchWithRetry(imageUrl, { mode: 'cors' }, { retries: 0, timeoutMs });
+    const dataUrl = await _blobToValidatedDataUrl(resp, { maxBytes });
+    if (dataUrl) return dataUrl;
+  } catch { /* fall through */ }
+
+  // ── Attempt 2: proxy cascade with retry ──
   const tryProxies = [
     `https://api.allorigins.win/raw?url=${encodeURIComponent(imageUrl)}`,
     `https://corsproxy.io/?${encodeURIComponent(imageUrl)}`,
     `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(imageUrl)}`,
     `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(imageUrl)}`,
   ];
-
   for (const proxyUrl of tryProxies) {
-    try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 8000);
-      const resp = await fetch(proxyUrl, { signal: ctrl.signal });
-      clearTimeout(timer);
-      if (!resp.ok) continue;
+    const resp = await fetchWithRetry(proxyUrl, {}, { retries: 1, timeoutMs, backoffMs: 400 });
+    const dataUrl = await _blobToValidatedDataUrl(resp, { maxBytes });
+    if (dataUrl) return dataUrl;
+  }
+  return null;
+}
 
-      const blob = await resp.blob();
-      if (!blob || blob.size < 100) continue; // Empty or too small
-      if (blob.size > 2 * 1024 * 1024) continue; // Skip if > 2 MB (CB-08: raised from 1.5MB)
+/**
+ * Download an Instagram CDN image through a CORS proxy and return a base64 data URL.
+ * Returns the original URL if download fails (graceful degradation).
+ * Caps at ~2 MB to avoid storing giant images.
+ *
+ * Uses the generic downloader under the hood but preserves the "return original
+ * URL on failure" contract so existing callers don't break.
+ */
+export async function downloadInstagramImage(imageUrl) {
+  if (!imageUrl || !isInstagramCdnUrl(imageUrl)) return imageUrl;
 
-      // CB-04: Fixed inverted MIME check — was `&& blob.size < 500` which accepted
-      // HTML error pages (>500 bytes) that aren't images. Now we reject all non-images.
-      if (!blob.type.startsWith('image/')) continue;
-
-      const dataUrl = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-
-      if (dataUrl && dataUrl.startsWith('data:image')) {
-        console.log(`[SpiceHub] Downloaded Instagram image: ${Math.round(blob.size / 1024)}KB → data URL`);
-        return dataUrl;
-      }
-    } catch { /* try next proxy */ }
+  const dataUrl = await downloadImageAsDataUrl(imageUrl, { timeoutMs: 8000, maxBytes: 2 * 1024 * 1024 });
+  if (dataUrl) {
+    const kb = Math.round((dataUrl.length * 3 / 4) / 1024);
+    console.log(`[SpiceHub] Downloaded Instagram image: ~${kb}KB → data URL`);
+    return dataUrl;
   }
 
   console.log(`[SpiceHub] Could not download Instagram image — will use original URL`);

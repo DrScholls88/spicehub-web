@@ -7,7 +7,7 @@
  *   2. CORS PROXY    → fallback if server unreachable (limited for social media)
  *   3. CAPTION TEXT  → 4-pass heuristic parser (used internally on extracted captions)
  */
-import { downloadInstagramImage, isInstagramCdnUrl, fetchHtmlViaProxy as fetchHtmlViaProxyFromApi } from './api.js';
+import { downloadInstagramImage, isInstagramCdnUrl, fetchHtmlViaProxy as fetchHtmlViaProxyFromApi, downloadImageAsDataUrl } from './api.js';
 import { cacheInstagramRecipe } from './db.js';
 import { isRedditUrl, isRedditPostUrl, tryRedditJson } from './scrapers/redditDiscovery.js';
 import { htmlToMarkdown, htmlLooksLikeRecipe } from './scrapers/markdownConverter.js';
@@ -1428,8 +1428,9 @@ export async function tryVideoExtraction(url, onProgress) {
   try {
     if (onProgress) onProgress('Connecting to extraction server...');
     const ctrl = new AbortController();
-    // 8s timeout — fail fast when server unavailable (Vercel production doesn't run this)
-    const timer = setTimeout(() => ctrl.abort(), 8000);
+    // 45s timeout — yt-dlp can take 15-30s on cold Render dyno (subtitle fetch + thumbnail).
+    // Raised from 8s (which was aborting before yt-dlp could respond, killing Phase 0 entirely).
+    const timer = setTimeout(() => ctrl.abort(), 45000);
 
     if (onProgress) onProgress('Downloading video metadata & subtitles...');
     const resp = await fetch(`${serverUrl}/api/extract-video`, {
@@ -2274,6 +2275,34 @@ export async function parseFromUrl(url, onProgress) {
  *   4. OG meta tags fallback
  */
 export function parseHtml(html, sourceUrl) {
+  // Aggressive image extraction — tries every known source, returns first non-empty.
+  // Order: caller-provided → JSON-LD (via selectBestImage) → og:image → twitter:image
+  //        → schema itemprop="image" → video poster → largest recipe-context <img>.
+  // Designed so "recipe blogs missing the main image" becomes nearly impossible.
+  const _pickImage = (...preferred) => {
+    for (const p of preferred) {
+      if (p && typeof p === 'string' && p.trim()) return p.trim();
+    }
+    const og = extractMeta(html, 'og:image') || extractMeta(html, 'og:image:secure_url');
+    if (og) return og;
+    const tw = extractMeta(html, 'twitter:image') || extractMeta(html, 'twitter:image:src');
+    if (tw) return tw;
+    const itempropM = /<(?:meta|link)[^>]+itemprop\s*=\s*["']image["'][^>]+(?:content|href)\s*=\s*["']([^"']+)["']/i.exec(html);
+    if (itempropM) return itempropM[1];
+    const posterM = /<video[^>]*poster\s*=\s*["']([^"']+)["']/i.exec(html);
+    if (posterM) return posterM[1];
+    // Last resort: first reasonably-large <img> with "recipe" in alt/class/src.
+    const imgRe = /<img[^>]+src\s*=\s*["']([^"']+)["'][^>]*>/gi;
+    let m;
+    while ((m = imgRe.exec(html)) !== null) {
+      const tag = m[0];
+      const src = m[1];
+      if (!src || src.startsWith('data:') || /\.(svg|gif)(\?|$)/i.test(src)) continue;
+      if (/(recipe|food|dish|hero|wp-post-image|featured)/i.test(tag)) return src;
+    }
+    return '';
+  };
+
   // 1. JSON-LD (best, most reliable)
   // IMPORTANT: Only accept if it has at least a title + some content (ingredients OR directions).
   // Many sites have a Recipe JSON-LD schema stub with empty arrays — falling through lets CSS
@@ -2282,7 +2311,8 @@ export function parseHtml(html, sourceUrl) {
   if (jsonLdRecipe) {
     const hasContent = jsonLdRecipe.ingredients?.length > 0 || jsonLdRecipe.directions?.length > 0;
     if (hasContent) {
-      return { ...jsonLdRecipe, link: sourceUrl };
+      // Always reinforce imageUrl with aggressive fallbacks — many JSON-LD stubs lack an image.
+      return { ...jsonLdRecipe, link: sourceUrl, imageUrl: _pickImage(jsonLdRecipe.imageUrl) };
     }
     // Has a name but no content — continue to CSS/microdata for the actual recipe data.
     // We'll merge the JSON-LD name/image back in at the end if CSS finds content.
@@ -2294,7 +2324,7 @@ export function parseHtml(html, sourceUrl) {
   if (microdataRecipe) {
     // Merge in JSON-LD title/image if better
     const name = (jsonLdRecipe?.name && !microdataRecipe.name) ? jsonLdRecipe.name : microdataRecipe.name;
-    const imageUrl = microdataRecipe.imageUrl || jsonLdRecipe?.imageUrl || '';
+    const imageUrl = _pickImage(microdataRecipe.imageUrl, jsonLdRecipe?.imageUrl);
     return { ...microdataRecipe, name, imageUrl, link: sourceUrl };
   }
 
@@ -2303,19 +2333,14 @@ export function parseHtml(html, sourceUrl) {
   if (heuristicRecipe) {
     // Merge JSON-LD title/image if CSS didn't find them
     const name = heuristicRecipe.name || jsonLdRecipe?.name || '';
-    const imageUrl = heuristicRecipe.imageUrl || jsonLdRecipe?.imageUrl || extractMeta(html, 'og:image') || '';
+    const imageUrl = _pickImage(heuristicRecipe.imageUrl, jsonLdRecipe?.imageUrl);
     return { ...heuristicRecipe, name, imageUrl, link: sourceUrl };
   }
 
   // 4. Meta tags fallback
   let title = extractMeta(html, 'og:title') || extractMeta(html, 'twitter:title');
   let description = extractMeta(html, 'og:description') || extractMeta(html, 'twitter:description');
-  let imageUrl = extractMeta(html, 'og:image') || extractMeta(html, 'twitter:image') || '';
-
-  if (!imageUrl) {
-    const posterM = /<video[^>]*poster\s*=\s*["']([^"']+)["']/i.exec(html);
-    if (posterM) imageUrl = posterM[1];
-  }
+  let imageUrl = _pickImage();
 
   if (!title) return null;
   title = cleanTitle(title);
@@ -3729,74 +3754,358 @@ export async function importFromInstagram(url, onProgress = () => {}) {
   return { _needsManualCaption: true, sourceUrl: url };
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// UNIFIED IMPORT ENGINE — helpers for importRecipeFromUrl
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** TikTok URL detection (tiktok.com + vm.tiktok.com). */
+function _isTikTokUrl(url) {
+  try { return /(^|\.)tiktok\.com$/i.test(new URL(url).hostname); } catch { return false; }
+}
+
+/** YouTube Shorts URL (youtube.com/shorts/... or youtu.be/...). */
+function _isYouTubeShortUrl(url) {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, '');
+    if (host === 'youtu.be') return true;
+    if ((host === 'youtube.com' || host.endsWith('.youtube.com')) && u.pathname.startsWith('/shorts/')) return true;
+    return false;
+  } catch { return false; }
+}
+
+/** Facebook Reel / Watch URL (fb.watch or facebook.com/reel/ or /watch). */
+function _isFacebookReelUrl(url) {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, '');
+    if (host === 'fb.watch') return true;
+    if (host.includes('facebook.com') && (u.pathname.includes('/reel/') || u.pathname.includes('/watch'))) return true;
+    return false;
+  } catch { return false; }
+}
+
+/** Short-form video URL suitable for Phase 0 (yt-dlp first). Excludes Instagram (handled separately). */
+function _isVideoFirstUrl(url) {
+  return _isTikTokUrl(url) || _isYouTubeShortUrl(url) || _isFacebookReelUrl(url);
+}
+
 /**
- * importRecipeFromUrl — single entry point for all recipe imports.
+ * Persist an image URL so the recipe remains offline-viewable.
+ * - Instagram/Meta CDN URLs are fetched and converted to base64 data URLs
+ *   (these URLs expire and block hotlinking).
+ * - Existing base64 / blob URLs pass through untouched.
+ * - Other remote URLs pass through untouched (kept as remote; preview still renders).
+ * Always graceful: never throws.
+ */
+async function _ensurePersistentImage(imageUrl) {
+  if (!imageUrl || typeof imageUrl !== 'string') return '';
+  if (imageUrl.startsWith('data:') || imageUrl.startsWith('blob:')) return imageUrl;
+
+  // Hosts that serve signed/ephemeral URLs which expire or block hotlinking.
+  // These MUST be persisted to base64 or the image will vanish offline.
+  const EPHEMERAL_HOSTS = /(?:cdninstagram\.com|fbcdn\.net|fbsbx\.com|tiktokcdn|tiktok(?:v)?\.com|pinimg\.com|sndcdn\.com|snapcdn|bytecdn\.cn|muscdn\.com)/i;
+
+  try {
+    if (isInstagramCdnUrl(imageUrl)) {
+      const persisted = await downloadInstagramImage(imageUrl);
+      return persisted || imageUrl;
+    }
+    // Non-Instagram ephemeral CDNs — try generic persist, keep original on failure
+    try {
+      const host = new URL(imageUrl).hostname;
+      if (EPHEMERAL_HOSTS.test(host)) {
+        const persisted = await downloadImageAsDataUrl(imageUrl, { timeoutMs: 7000 });
+        if (persisted) return persisted;
+      }
+    } catch { /* malformed URL — leave alone */ }
+  } catch { /* graceful degradation */ }
+  return imageUrl;
+}
+
+/**
+ * Normalize a recipe object into the standard shape consumed by ImportModal/BrowserAssist.
+ * Ensures: name, ingredients[], directions[], imageUrl, link, _extractedVia, importedAt.
+ * Never mutates placeholders into real content, but guarantees the fields exist so the
+ * preview card always renders without crashes.
+ */
+function _finalizeRecipe(recipe, { sourceUrl, extractedVia }) {
+  if (!recipe || recipe._needsManualCaption || recipe._error) return recipe;
+  const ing = Array.isArray(recipe.ingredients) && recipe.ingredients.length
+    ? recipe.ingredients : ['See original post for ingredients'];
+  const dir = Array.isArray(recipe.directions) && recipe.directions.length
+    ? recipe.directions : ['See original post for directions'];
+  return {
+    ...recipe,
+    name: (recipe.name && String(recipe.name).trim()) || 'Imported Recipe',
+    ingredients: ing,
+    directions: dir,
+    imageUrl: recipe.imageUrl || '',
+    link: recipe.link || sourceUrl,
+    _extractedVia: recipe._extractedVia || extractedVia || 'import',
+    importedAt: recipe.importedAt || new Date().toISOString(),
+  };
+}
+
+/**
+ * Build a safe 3-arg progress callback. Swallows exceptions so a misbehaving
+ * UI callback can never break the pipeline. Callers pass (phase, status, msg).
+ */
+function _safeProgress(onProgress) {
+  return (phase, status, msg) => {
+    try { onProgress(phase, status, msg); } catch { /* non-fatal */ }
+  };
+}
+
+/**
+ * Instagram flow: cache lookup → importFromInstagram → image persistence → cache write.
+ * Extracted from importRecipeFromUrl for clarity.
+ */
+async function _importInstagramFlow(url, progress) {
+  // Normalize URL for consistent cache key (strip UTM params, trailing slash)
+  let cacheKey = url;
+  try {
+    const { normalizeInstagramUrl } = await import('./api.js');
+    cacheKey = normalizeInstagramUrl(url);
+  } catch { /* use raw URL */ }
+
+  // Dexie cache hit — instant return
+  try {
+    const { getCachedInstagramRecipe } = await import('./db.js');
+    const cached = await getCachedInstagramRecipe(cacheKey);
+    if (cached) {
+      progress(0, 'done', 'Loaded from cache ✓');
+      progress(1, 'skipped', 'Cached');
+      progress(2, 'skipped', 'Cached');
+      progress(3, 'done', 'Loaded from cache ✓');
+      return { ...cached, _fromCache: true };
+    }
+  } catch { /* cache unavailable, continue */ }
+
+  // Run the 4-phase Instagram pipeline
+  const recipe = await importFromInstagram(url, progress);
+
+  // Persist image (Instagram CDN → base64) and write cache
+  if (recipe && !recipe._needsManualCaption) {
+    if (recipe.imageUrl) {
+      try {
+        progress(3, 'running', 'Saving image locally…');
+        recipe.imageUrl = await _ensurePersistentImage(recipe.imageUrl);
+      } catch (err) {
+        console.warn('[SpiceHub] Image persistence failed:', err?.message || err);
+      }
+    }
+
+    try {
+      await cacheInstagramRecipe(cacheKey, recipe);
+    } catch (err) {
+      console.warn('[SpiceHub] Cache write failed:', err?.message || err);
+    }
+
+    progress(3, 'done', 'Recipe saved ✓');
+    return _finalizeRecipe(recipe, { sourceUrl: url, extractedVia: recipe._extractedVia || 'instagram' });
+  }
+
+  return recipe || { _needsManualCaption: true, sourceUrl: url };
+}
+
+/**
+ * Video-first flow for TikTok, YouTube Shorts, Facebook Reels.
+ * Phase 0: yt-dlp subtitles + metadata (richest source for short-form video).
+ * Phase 1–2: parseFromUrl deeper extraction as fallback.
+ * Phase 3: Gemini polish (always runs when we have any captured text).
+ */
+async function _importVideoFirstFlow(url, progress) {
+  let videoRecipe = null;
+  let videoText = '';
+
+  // ── Phase 0: yt-dlp ──
+  progress(0, 'running', 'Scanning video for subtitles & metadata…');
+  try {
+    videoRecipe = await tryVideoExtraction(url, (msg) => progress(0, 'running', msg));
+    if (videoRecipe && hasRecipeContent(videoRecipe)) {
+      progress(0, 'done', `Video data extracted ✓${videoRecipe._hasSubtitles ? ' (subtitles)' : ''}`);
+      progress(1, 'skipped', 'Video data sufficient');
+      progress(2, 'skipped', 'Video data sufficient');
+
+      // Gemini polish — re-structure spoken-word transcripts into clean recipe JSON
+      videoText = [
+        videoRecipe.name || '',
+        ...(videoRecipe.ingredients || []),
+        ...(videoRecipe.directions || []),
+      ].filter(Boolean).join('\n');
+      progress(3, 'running', '✨ Polishing with Google AI…');
+      try {
+        const polished = await structureWithAIClient(videoText, {
+          title: videoRecipe.name,
+          imageUrl: videoRecipe.imageUrl,
+          sourceUrl: url,
+        });
+        if (polished && hasRecipeContent(polished)) {
+          videoRecipe = {
+            ...videoRecipe,
+            name: polished.name || videoRecipe.name,
+            ingredients: Array.isArray(polished.ingredients) && polished.ingredients.length
+              ? polished.ingredients : videoRecipe.ingredients,
+            directions: Array.isArray(polished.directions) && polished.directions.length
+              ? polished.directions : videoRecipe.directions,
+            imageUrl: polished.imageUrl || videoRecipe.imageUrl,
+            _extractedVia: 'yt-dlp+ai',
+          };
+        }
+      } catch { /* AI optional; keep yt-dlp result */ }
+
+      videoRecipe.imageUrl = await _ensurePersistentImage(videoRecipe.imageUrl);
+      progress(3, 'done', 'Recipe ready ✓');
+      return _finalizeRecipe(videoRecipe, { sourceUrl: url, extractedVia: videoRecipe._extractedVia || 'yt-dlp' });
+    }
+    // Partial yt-dlp data — save text for later AI pass
+    if (videoRecipe && !videoRecipe._error) {
+      videoText = [
+        videoRecipe.name || '',
+        ...(videoRecipe.ingredients || []),
+        ...(videoRecipe.directions || []),
+      ].filter(Boolean).join('\n');
+      progress(0, 'done', 'Partial video data — trying deeper extraction');
+    } else {
+      progress(0, 'failed', 'No video subtitles available');
+    }
+  } catch (err) {
+    progress(0, 'failed', `Video extraction error: ${(err?.message || '').slice(0, 50)}`);
+  }
+
+  // ── Phase 1–2: parseFromUrl deep extraction (agent browser, CORS proxy, etc.) ──
+  progress(1, 'running', 'Trying deeper extraction…');
+  try {
+    const fallback = await parseFromUrl(url, (msg) => progress(1, 'running', msg));
+    if (fallback && hasRecipeContent(fallback)) {
+      progress(1, 'done', 'Deep extraction succeeded ✓');
+      progress(2, 'skipped', 'Not needed');
+      fallback.imageUrl = await _ensurePersistentImage(fallback.imageUrl || videoRecipe?.imageUrl);
+      progress(3, 'done', 'Recipe ready ✓');
+      return _finalizeRecipe(fallback, { sourceUrl: url, extractedVia: fallback._extractedVia || 'deep-extract' });
+    }
+    progress(1, 'failed', 'Deep extraction returned no recipe');
+  } catch (err) {
+    progress(1, 'failed', `Deep extraction failed: ${(err?.message || '').slice(0, 40)}`);
+  }
+  progress(2, 'skipped', 'Not needed');
+
+  // ── Phase 3: Gemini safety net on any captured text ──
+  if (videoText && videoText.length >= 20) {
+    progress(3, 'running', '✨ Structuring with Google AI…');
+    try {
+      const aiRecipe = await captionToRecipe(videoText, {
+        imageUrl: videoRecipe?.imageUrl,
+        sourceUrl: url,
+      });
+      if (aiRecipe && hasRecipeContent(aiRecipe)) {
+        aiRecipe.imageUrl = await _ensurePersistentImage(aiRecipe.imageUrl || videoRecipe?.imageUrl);
+        progress(3, 'done', 'Recipe structured ✓');
+        return _finalizeRecipe(aiRecipe, { sourceUrl: url, extractedVia: 'yt-dlp+ai-salvage' });
+      }
+    } catch { /* give up cleanly */ }
+  }
+
+  // Last-ditch: return partial yt-dlp data (title + image only) if we have it
+  if (videoRecipe && !videoRecipe._error) {
+    progress(3, 'done', 'Using partial video data');
+    videoRecipe.imageUrl = await _ensurePersistentImage(videoRecipe.imageUrl);
+    return _finalizeRecipe(videoRecipe, { sourceUrl: url, extractedVia: 'yt-dlp-partial' });
+  }
+
+  progress(3, 'failed', 'Could not extract recipe automatically');
+  return { _needsManualCaption: true, sourceUrl: url };
+}
+
+/**
+ * Generic flow for recipe blogs (AllRecipes, NYT Cooking, Serious Eats, etc.).
+ * Delegates to parseFromUrl (the well-tested multi-tier blog pipeline) and wraps
+ * it with phase-based progress reporting + image persistence + shape finalization.
+ */
+async function _importGenericFlow(url, progress) {
+  progress(0, 'running', 'Fetching page…');
+  progress(1, 'running', 'Looking for structured recipe data…');
+
+  try {
+    const recipe = await parseFromUrl(url, (msg) => progress(1, 'running', msg));
+
+    if (recipe && hasRecipeContent(recipe)) {
+      progress(0, 'done', 'Page fetched ✓');
+      progress(1, 'done', 'Recipe found ✓');
+      progress(2, 'skipped', 'Not needed');
+      progress(3, 'running', 'Saving image locally…');
+      recipe.imageUrl = await _ensurePersistentImage(recipe.imageUrl);
+      progress(3, 'done', 'Recipe ready ✓');
+      return _finalizeRecipe(recipe, {
+        sourceUrl: url,
+        extractedVia: recipe._extractedVia || 'parse-url',
+      });
+    }
+
+    // parseFromUrl returned a recipe with only placeholder content — keep image+title
+    if (recipe && !recipe._error) {
+      progress(1, 'done', 'Partial data extracted');
+      progress(2, 'skipped', 'Not needed');
+      recipe.imageUrl = await _ensurePersistentImage(recipe.imageUrl);
+      progress(3, 'done', 'Recipe ready (partial)');
+      return _finalizeRecipe(recipe, { sourceUrl: url, extractedVia: recipe._extractedVia || 'partial' });
+    }
+  } catch (err) {
+    console.warn('[SpiceHub] Generic import failed:', err?.message || err);
+  }
+
+  progress(0, 'failed', 'Page fetch failed');
+  progress(1, 'failed', 'No recipe found');
+  progress(3, 'failed', 'Could not extract recipe automatically');
+  return { _needsManualCaption: true, sourceUrl: url };
+}
+
+/**
+ * importRecipeFromUrl — THE single public entry point for all recipe imports.
  *
- * - Resolves short URLs first (bit.ly, vm.tiktok.com, etc.)
- * - Routes Instagram through importFromInstagram() (yt-dlp-first pipeline)
- * - Routes everything else through parseFromUrl() (generic extraction)
+ * Multi-phase pipeline (routed by URL type):
+ *   • Instagram  → _importInstagramFlow (cache + importFromInstagram 4-phase engine)
+ *   • TikTok, YouTube Shorts, Facebook Reels → _importVideoFirstFlow (yt-dlp first)
+ *   • Everything else → _importGenericFlow (parseFromUrl blog pipeline)
  *
- * @param {string} url - Any recipe URL (social or blog)
- * @param {function} onProgress - callback(phaseIndex, status, message)
- * @returns {Object} Structured recipe or { _needsManualCaption: true }
+ * Contract (preserved for BrowserAssist + ImportModal):
+ *   @param {string} url  - Any recipe URL
+ *   @param {function} onProgress  - (phase 0-3, status, message) callback
+ *   @returns {Promise<Object>} One of:
+ *     • {name, ingredients[], directions[], imageUrl, link, _extractedVia, importedAt, ...}
+ *     • {_needsManualCaption: true, sourceUrl}
+ *     • {_fromCache: true, ...recipe}
+ *
+ * All branches are wrapped so the function NEVER throws and NEVER returns null.
+ * Progress callbacks are always phase-indexed (0-3) so BrowserAssist's UI stays consistent.
  */
 export async function importRecipeFromUrl(url, onProgress = () => {}) {
-  // Resolve URL shorteners before routing
+  const progress = _safeProgress(onProgress);
+
+  if (!url || typeof url !== 'string') {
+    progress(3, 'failed', 'Invalid URL');
+    return { _needsManualCaption: true, sourceUrl: url || '' };
+  }
+
+  // ── 1. Resolve short URLs (bit.ly, vm.tiktok.com, etc.) ──
   let resolvedUrl = url;
-  try { resolvedUrl = await resolveShortUrl(url); } catch { /* use original */ }
+  try {
+    resolvedUrl = await resolveShortUrl(url);
+  } catch { /* keep original URL */ }
 
-  if (isInstagramUrl(resolvedUrl)) {
-    // ── Normalize URL for consistent cache key (strip UTM params, trailing slash) ──
-    let cacheKey = resolvedUrl;
-    try {
-      const { normalizeInstagramUrl } = await import('./api.js');
-      cacheKey = normalizeInstagramUrl(resolvedUrl);
-    } catch { /* use raw URL */ }
-
-    // ── Check Dexie cache first (offline-first, 7-day TTL) ──
-    try {
-      const { getCachedInstagramRecipe } = await import('./db.js');
-      const cached = await getCachedInstagramRecipe(cacheKey);
-      if (cached) {
-        onProgress(0, 'done', 'Loaded from cache ✓');
-        onProgress(1, 'skipped', 'Cached');
-        onProgress(2, 'skipped', 'Cached');
-        onProgress(3, 'done', 'Loaded from cache ✓');
-        return { ...cached, _fromCache: true };
-      }
-    } catch { /* cache unavailable, continue */ }
-
-    const recipe = await importFromInstagram(resolvedUrl, onProgress);
-
-    // ── Download Instagram image as base64 data URL before storing ──────────────
-    // Instagram/Meta CDN URLs expire and block hotlinking. Converting to base64
-    // at import time means the image is permanently stored in Dexie, not CDN-dependent.
-    if (recipe && !recipe._needsManualCaption && recipe.imageUrl) {
-      try {
-        onProgress(3, 'running', 'Saving image locally…');
-        if (isInstagramCdnUrl(recipe.imageUrl)) {
-          const localImage = await downloadInstagramImage(recipe.imageUrl);
-          recipe.imageUrl = localImage; // mutate before cache write
-        }
-        onProgress(3, 'done', 'Recipe saved ✓');
-    } catch (err) { 
-    console.error("Image download failed:", err);
-  }
-}
-
-    // ── Save successful result to cache (keyed by normalized URL) ──
-    if (recipe && !recipe._needsManualCaption) {
-      try {
-        const { cacheInstagramRecipe } = await import('./db.js');
-        await cacheInstagramRecipe(cacheKey, recipe);
+  // ── 2. Route by URL type ──
+  try {
+    if (isInstagramUrl(resolvedUrl)) {
+      return await _importInstagramFlow(resolvedUrl, progress);
+    }
+    if (_isVideoFirstUrl(resolvedUrl)) {
+      return await _importVideoFirstFlow(resolvedUrl, progress);
+    }
+    return await _importGenericFlow(resolvedUrl, progress);
   } catch (err) {
-    console.error("Cache write failed:", err);
+    console.error('[SpiceHub] importRecipeFromUrl uncaught error:', err);
+    progress(3, 'failed', 'Unexpected error — please paste manually');
+    return { _needsManualCaption: true, sourceUrl: resolvedUrl };
   }
-}
-
-    return recipe;
-  }
-
-// Non-Instagram social + recipe blogs: use existing generic pipeline
-  return await parseGeneric(url); 
 }

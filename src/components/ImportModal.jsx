@@ -512,40 +512,30 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
         return;
       }
 
-// ── Non-Instagram URLs ──
+      // ── Non-Instagram URLs: unified import engine ──
+      // Single source of truth — importRecipeFromUrl() routes to:
+      //   • Video-first flow for TikTok / YT Shorts / FB Reels (yt-dlp first)
+      //   • Generic blog pipeline for recipe blogs (JSON-LD → Markdown → Gemini)
+      // Always returns either a finalized recipe or {_needsManualCaption: true}.
       setError('');
       setBrowserAssistMode('off');
+      setImportProgress('Extracting recipe…');
 
-      // For social/video URLs, try the dedicated video extraction endpoint first
-      // This gives faster results via yt-dlp metadata + subtitles
-      if (isSocialMediaUrl(trimmedUrl)) {
-        setImportProgress('Step 1/2 — Extracting video subtitles & metadata...');
-        try {
-          const videoResult = await tryVideoExtraction(trimmedUrl, (progress) => {
-            setImportProgress(`Step 1/2 — ${progress}`);
-          });
-          if (videoResult && !videoResult._error && videoResult.ingredients?.[0] !== 'See original post for ingredients') {
-            setPreview([videoResult]);
-            setImporting(false);
-            setImportProgress('');
-            return;
-          }
-        } catch { /* fall through to parseFromUrl */ }
-      }
-
-      setImportProgress(isSocialMediaUrl(trimmedUrl) ? 'Step 2/2 — Extracting recipe page...' : 'Extracting recipe...');
-      const result = await parseFromUrl(trimmedUrl, (progress) => {
-        setImportProgress(isSocialMediaUrl(trimmedUrl) ? `Step 2/2 — ${progress}` : progress);
+      const result = await importRecipeFromUrl(trimmedUrl, (_phase, _status, msg) => {
+        if (msg) setImportProgress(msg);
       });
 
-      // Reject placeholder results for social URLs — route to BrowserAssist instead
+      // Placeholder rejection — these signal partial extraction. Route social
+      // URLs to BrowserAssist (live pipeline UI) so the user sees progress and
+      // can intervene manually; show an error for non-social URLs.
       const isPlaceholderResult = (
         result?.ingredients?.[0] === 'See original post for ingredients' ||
         result?.directions?.[0] === 'See original post for directions' ||
         result?.ingredients?.[0] === 'See recipe for ingredients' ||
         result?.directions?.[0] === 'See recipe for directions'
       );
-      if (!result || result._error || (isSocialMediaUrl(trimmedUrl) && isPlaceholderResult)) {
+      const needsManual = !result || result._needsManualCaption || result._error;
+      if (needsManual || (isSocialMediaUrl(trimmedUrl) && isPlaceholderResult)) {
         if (isSocialMediaUrl(trimmedUrl)) {
           setImporting(false);
           setImportProgress('');
