@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
 import { saveStoreMemory as dbSaveStoreMemory, getStoreMemory as dbGetStoreMemory } from '../db';
 
 const STORES = [
@@ -10,31 +11,22 @@ const STORES = [
   { id: 'other',      name: 'Other',         color: '#666',    logo: '' },
 ];
 
-// "In Pantry" is a special status meaning "already have it"
 const PANTRY_ID = '__pantry__';
 const PANTRY_STORE = { id: PANTRY_ID, name: 'In Pantry', color: '#4caf50', logo: '' };
 
-// ── Store memory: remembers which store each ingredient was last assigned to ──
 async function rememberStore(ingredientName, storeId) {
   const key = ingredientName.toLowerCase().trim();
   await dbSaveStoreMemory(key, storeId || '');
-  // Update window cache for instant UI feedback
   window._storeMemory = window._storeMemory || {};
-  if (storeId) {
-    window._storeMemory[key] = storeId;
-  } else {
-    delete window._storeMemory[key];
-  }
+  if (storeId) window._storeMemory[key] = storeId;
+  else delete window._storeMemory[key];
 }
 
-// ── Share / export helper ────────────────────────────────────────────────────
 function sendToKeep(title, content, onToast) {
-  // Mobile: native share sheet (user picks Google Keep from the sheet)
   if (navigator.share) {
     navigator.share({ title, text: content }).catch(() => {});
     return;
   }
-  // Desktop: copy to clipboard, then open Google Keep in a new tab
   navigator.clipboard.writeText(`${title}\n\n${content}`).then(() => {
     if (onToast) onToast('Copied to clipboard — paste into Google Keep', 'success');
     window.open('https://keep.google.com/#NOTE', '_blank');
@@ -48,38 +40,79 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
   const [selectedItems, setSelectedItems] = useState(new Set());
   const [batchStoreOverlayOpen, setBatchStoreOverlayOpen] = useState(false);
 
-  // ── Item actions ────────────────────────────────────────────────────────────
-  const toggleCheck = (index) => {
-    setItems(prev => prev.map((item, i) => i === index ? { ...item, checked: !item.checked } : item));
-  };
+  // View modes
+  const [viewMode, setViewMode] = useState('simple'); // 'simple' | 'detailed'
 
-  const removeItem = useCallback((index) => {
-    setItems(prev => prev.filter((_, i) => i !== index));
+  // Drag State
+  const [draggedItems, setDraggedItems] = useState(null);
+
+  const consolidateItems = useCallback((itemList) => {
+    if (viewMode === 'detailed') return itemList.map(i => ({...i, indices: [i._idx], names: [i.name]}));
+    const map = new Map();
+    itemList.forEach(item => {
+      const key = item.name.toLowerCase().trim();
+      if (!map.has(key)) {
+        map.set(key, { ...item, indices: [item._idx], names: [item.name], quantity: 1, allChecked: item.checked });
+      } else {
+        const existing = map.get(key);
+        existing.indices.push(item._idx);
+        existing.names.push(item.name);
+        existing.quantity += 1;
+        existing.allChecked = existing.allChecked && item.checked;
+      }
+    });
+    return Array.from(map.values()).map(g => ({ ...g, checked: g.allChecked, _idx: g.indices[0], isConsolidated: g.quantity > 1 }));
+  }, [viewMode]);
+
+  // ── Item actions ────────────────────────────────────────────────────────────
+  const toggleCheck = useCallback((indices) => {
+    setItems(prev => {
+      const anyUnchecked = indices.some(idx => !prev[idx].checked);
+      return prev.map((item, i) => indices.includes(i) ? { ...item, checked: anyUnchecked } : item);
+    });
   }, [setItems]);
 
-  const markAsPantry = useCallback((index) => {
-    rememberStore(items[index].name, PANTRY_ID);
-    setItems(prev => prev.map((item, i) => i === index ? { ...item, store: PANTRY_ID } : item));
-  }, [setItems, items]);
+  const removeItem = useCallback((indices) => {
+    setItems(prev => prev.filter((_, i) => !indices.includes(i)));
+  }, [setItems]);
 
-  const unmarkPantry = useCallback((index) => {
-    rememberStore(items[index].name, '');
-    setItems(prev => prev.map((item, i) => i === index ? { ...item, store: '' } : item));
-  }, [setItems, items]);
+  const markAsPantry = useCallback((indices, names) => {
+    names.forEach(n => rememberStore(n, PANTRY_ID));
+    setItems(prev => prev.map((item, i) => indices.includes(i) ? { ...item, store: PANTRY_ID } : item));
+  }, [setItems]);
 
-  const setStore = useCallback((index, storeId) => {
-    rememberStore(items[index].name, storeId); // Save to IndexedDB
-    setItems(prev => prev.map((item, i) => {
-      if (i === index) { return { ...item, store: storeId }; }
-      return item;
-    }));
-  }, [setItems, items]);
+  const unmarkPantry = useCallback((indices, names) => {
+    names.forEach(n => rememberStore(n, ''));
+    setItems(prev => prev.map((item, i) => indices.includes(i) ? { ...item, store: '' } : item));
+  }, [setItems]);
+
+  const setStore = useCallback((indices, names, storeId) => {
+    names.forEach(n => rememberStore(n, storeId));
+    setItems(prev => prev.map((item, i) => indices.includes(i) ? { ...item, store: storeId } : item));
+  }, [setItems]);
+
+  // Drag & Drop Handlers
+  const handleDragStart = (e, indices, names) => {
+    setDraggedItems({indices, names});
+    e.dataTransfer.effectAllowed = "move";
+  };
+  const handleDrop = (e, storeId) => {
+    e.preventDefault();
+    if (draggedItems) {
+      if (storeId === PANTRY_ID) markAsPantry(draggedItems.indices, draggedItems.names);
+      else if (storeId === 'unsorted') unmarkPantry(draggedItems.indices, draggedItems.names);
+      else setStore(draggedItems.indices, draggedItems.names, storeId);
+    }
+    setDraggedItems(null);
+  };
+  const handleDragOver = (e) => e.preventDefault();
 
   // ── Batch operations ────────────────────────────────────────────────────────
-  const toggleSelect = (index) => {
+  const toggleSelect = (indices) => {
     setSelectedItems(prev => {
       const next = new Set(prev);
-      if (next.has(index)) next.delete(index); else next.add(index);
+      const isSelected = indices.every(idx => next.has(idx));
+      indices.forEach(idx => isSelected ? next.delete(idx) : next.add(idx));
       return next;
     });
   };
@@ -90,13 +123,8 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
   };
 
   const batchAssignStore = (storeId) => {
-    // Save all selected items to IndexedDB
     selectedItems.forEach(i => rememberStore(items[i].name, storeId));
-
-    setItems(prev => prev.map((item, i) => {
-      if (selectedItems.has(i)) { return { ...item, store: storeId }; }
-      return item;
-    }));
+    setItems(prev => prev.map((item, i) => selectedItems.has(i) ? { ...item, store: storeId } : item));
     setSelectedItems(new Set());
     setBatchStoreOverlayOpen(false);
     setBatchMode(false);
@@ -113,56 +141,6 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
       return item;
     }));
     if (assigned > 0 && onToast) onToast(`Auto-assigned ${assigned} items from memory`, 'success');
-    else if (onToast) onToast('No remembered store assignments found', 'info');
-  };
-
-  // ── Group items ──────────────────────────────────────────────────────────────
-  const unsorted = useMemo(() =>
-    items.map((item, i) => ({ ...item, _idx: i })).filter(i => !i.store),
-  [items]);
-
-  const pantryItems = useMemo(() =>
-    items.map((item, i) => ({ ...item, _idx: i })).filter(i => i.store === PANTRY_ID),
-  [items]);
-
-  const byStore = useMemo(() =>
-    STORES.map(s => ({
-      ...s,
-      items: items.map((item, idx) => ({ ...item, _idx: idx })).filter(i => i.store === s.id),
-    })).filter(g => g.items.length > 0),
-  [items]);
-
-  // Items that need to be purchased (not pantry)
-  const activeItems = items.filter(i => i.store !== PANTRY_ID);
-  const checkedCount = activeItems.filter(i => i.checked).length;
-  const progressPercent = activeItems.length > 0
-    ? Math.round((checkedCount / activeItems.length) * 100)
-    : 0;
-
-  // ── Export text builders ──────────────────────────────────────────────────────
-  const buildStoreText = (storeId) => {
-    return items
-      .filter(i => i.store === storeId && !i.checked)
-      .map(i => i.name)
-      .join('\n');
-  };
-
-  const buildFullGroceryText = () => {
-    const lines = [];
-    const storeGroups = STORES.map(s => ({
-      ...s,
-      items: items.filter(i => i.store === s.id && !i.checked),
-    })).filter(g => g.items.length > 0);
-    const unsortedItems = items.filter(i => !i.store && !i.checked && i.store !== PANTRY_ID);
-    for (const group of storeGroups) {
-      lines.push(`\n--- ${group.name} ---`);
-      for (const item of group.items) lines.push(item.name);
-    }
-    if (unsortedItems.length > 0) {
-      lines.push('\n--- Other ---');
-      for (const item of unsortedItems) lines.push(item.name);
-    }
-    return lines.join('\n').trim();
   };
 
   const buildWeekPlanText = () => {
@@ -175,12 +153,46 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
     }).join('\n');
   };
 
-  // ── Keep export handlers ──────────────────────────────────────────────────────
+  const buildFullGroceryText = () => {
+    const lines = [];
+    lines.push('🎯 THIS WEEK’S PLAN');
+    lines.push(buildWeekPlanText());
+    lines.push('\n🛒 GROCERY LIST');
+    
+    const storeGroups = STORES.map(s => ({
+      ...s,
+      items: items.map((item, i) => ({...item, _idx: i})).filter(i => i.store === s.id && !i.checked),
+    })).filter(g => g.items.length > 0);
+    const unsortedItems = items.map((item, i) => ({...item, _idx: i})).filter(i => !i.store && !i.checked && i.store !== PANTRY_ID);
+    
+    for (const group of storeGroups) {
+      lines.push(`\n--- ${group.name} ---`);
+      for (const item of consolidateItems(group.items)) {
+         lines.push(`• ${item.name}${item.quantity > 1 ? ` (×${item.quantity})` : ''}`);
+      }
+    }
+    if (unsortedItems.length > 0) {
+      lines.push('\n--- Other ---');
+      for (const item of consolidateItems(unsortedItems)) {
+         lines.push(`• ${item.name}${item.quantity > 1 ? ` (×${item.quantity})` : ''}`);
+      }
+    }
+    return lines.join('\n').trim();
+  };
+
+  const buildStoreText = (storeId) => {
+    const lines = [];
+    lines.push(`🛒 ${STORES.find(s=>s.id===storeId)?.name || 'Store'} List`);
+    const storeItems = items.map((item, i) => ({...item, _idx: i})).filter(i => i.store === storeId && !i.checked);
+    for (const item of consolidateItems(storeItems)) {
+        lines.push(`• ${item.name}${item.quantity > 1 ? ` (×${item.quantity})` : ''}`);
+    }
+    return lines.join('\n');
+  };
+
   const sendStoreToKeep = (storeId) => {
     const store = STORES.find(s => s.id === storeId);
-    const content = buildStoreText(storeId);
-    if (!content) return;
-    sendToKeep(`${store.name} Shopping List`, content, onToast);
+    sendToKeep(`${store.name} Shopping List`, buildStoreText(storeId), onToast);
   };
 
   const sendFullGroceryToKeep = () => {
@@ -191,7 +203,22 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
     sendToKeep('Meal Plan - SpiceHub', buildWeekPlanText(), onToast);
   };
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  // Group views
+  const rawUnsorted = items.map((item, i) => ({ ...item, _idx: i })).filter(i => !i.store);
+  const rawPantry = items.map((item, i) => ({ ...item, _idx: i })).filter(i => i.store === PANTRY_ID);
+
+  const unsortedList = consolidateItems(rawUnsorted);
+  const pantryList = consolidateItems(rawPantry);
+  
+  const byStore = STORES.map(s => ({
+    ...s,
+    items: consolidateItems(items.map((item, idx) => ({ ...item, _idx: idx })).filter(i => i.store === s.id)),
+  })).filter(g => g.items.length > 0);
+
+  const activeItems = items.filter(i => i.store !== PANTRY_ID);
+  const checkedCount = activeItems.filter(i => i.checked).length;
+  const progressPercent = activeItems.length > 0 ? Math.round((checkedCount / activeItems.length) * 100) : 0;
+
   if (items.length === 0) {
     return (
       <div className="gl-container">
@@ -211,11 +238,11 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
       {/* ── Progress bar ── */}
       <div className="gl-progress-section">
         <div className="gl-progress-bar">
-          <div className="gl-progress-fill" style={{ width: `${progressPercent}%` }}></div>
+          <motion.div className="gl-progress-fill" animate={{ width: `${progressPercent}%` }} layout />
         </div>
         <div className="gl-progress-text">
           {checkedCount}/{activeItems.length} items
-          {pantryItems.length > 0 && <span className="gl-pantry-badge"> · {pantryItems.length} in pantry</span>}
+          {pantryList.length > 0 && <span className="gl-pantry-badge"> · {rawPantry.length} in pantry</span>}
         </div>
       </div>
 
@@ -225,23 +252,25 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
           className={`gl-btn-batch ${batchMode ? 'gl-active' : ''}`}
           onClick={() => { setBatchMode(!batchMode); setSelectedItems(new Set()); setBatchStoreOverlayOpen(false); }}
         >
-          {batchMode ? '✕' : '⟂'} {batchMode ? 'Done' : 'Batch'}
+          {batchMode ? '✕ Done' : '⟂ Batch'}
         </button>
-        {unsorted.length > 0 && (
+        <button className="gl-btn-auto-sort" onClick={() => setViewMode(v => v === 'simple' ? 'detailed' : 'simple')}>
+          {viewMode === 'simple' ? '≣ Detailed' : '≡ Simple'}
+        </button>
+        {rawUnsorted.length > 0 && !batchMode && (
           <button className="gl-btn-auto-sort" onClick={autoAssignFromMemory}>
             ◆ Auto Sort
           </button>
         )}
-        <button className="gl-btn-rebuild" onClick={onRebuild}>⟲ Rebuild</button>
       </div>
 
       {/* ── Batch mode sticky toolbar ── */}
       {batchMode && (
         <div className="gl-batch-toolbar">
           <span className="gl-batch-count">{selectedItems.size} selected</span>
-          {unsorted.length > 0 && (
+          {rawUnsorted.length > 0 && (
             <button className="gl-btn-select-all" onClick={selectAllUnsorted}>
-              Select All
+              Select All Unsorted
             </button>
           )}
           <button
@@ -254,290 +283,244 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
         </div>
       )}
 
-      {/* ── Floating action buttons (bottom bar) ── */}
+      {/* ── Floating actions (bottom bar) ── */}
       <div className="gl-floating-actions">
         <button className="gl-btn-keep-primary" onClick={sendFullGroceryToKeep}>
-          <KeepIcon /> Send All to Keep
+          <KeepIcon /> Keep Export
         </button>
         <button className="gl-btn-keep-secondary" onClick={sendWeekPlanToKeep}>
-          📅 Meal Plan
+          📅 Week
         </button>
       </div>
 
-      {/* ── Batch store picker overlay (full-screen bottom sheet) ── */}
+      {/* ── Batch store picker overlay ── */}
+      <AnimatePresence>
       {batchStoreOverlayOpen && (
         <>
-          <div className="gl-overlay-backdrop" onClick={() => setBatchStoreOverlayOpen(false)}></div>
-          <div className="gl-overlay-sheet">
+          <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="gl-overlay-backdrop" onClick={() => setBatchStoreOverlayOpen(false)}></motion.div>
+          <motion.div initial={{y:'100%'}} animate={{y:0}} exit={{y:'100%'}} transition={{friction: 20}} className="gl-overlay-sheet">
             <div className="gl-sheet-header">
-              <h2>Assign Store to {selectedItems.size} items</h2>
+              <h2>Assign Store ({selectedItems.size} items)</h2>
               <button className="gl-sheet-close" onClick={() => setBatchStoreOverlayOpen(false)}>✕</button>
             </div>
             <div className="gl-sheet-content">
-              <button
-                className="gl-store-option"
-                style={{ borderLeftColor: '#4caf50' }}
-                onClick={() => batchAssignStore(PANTRY_ID)}
-              >
+              <button className="gl-store-option" style={{ borderLeftColor: '#4caf50' }} onClick={() => batchAssignStore(PANTRY_ID)}>
                 <span className="gl-store-logo-letter" style={{ background: '#4caf50', width: 28, height: 28, fontSize: 15, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', color: 'white', fontWeight: 700, flexShrink: 0 }}>✓</span>
                 <span className="gl-store-option-name">In Pantry</span>
-                <span className="gl-store-option-arrow">›</span>
               </button>
               {STORES.map(s => (
-                <button
-                  key={s.id}
-                  className="gl-store-option"
-                  style={{ borderLeftColor: s.color }}
-                  onClick={() => batchAssignStore(s.id)}
-                >
+                <button key={s.id} className="gl-store-option" style={{ borderLeftColor: s.color }} onClick={() => batchAssignStore(s.id)}>
                   <StoreLogo store={s} size={28} />
                   <span className="gl-store-option-name">{s.name}</span>
-                  <span className="gl-store-option-arrow">›</span>
                 </button>
               ))}
             </div>
-          </div>
+          </motion.div>
         </>
       )}
+      </AnimatePresence>
 
-      {/* ── Unsorted section ── */}
-      {unsorted.length > 0 && (
-        <div className="gl-section">
-          <div className="gl-section-header">
-            <div className="gl-section-title">Unsorted</div>
-            <span className="gl-section-count">{unsorted.length}</span>
-          </div>
-          {unsorted.map(item => (
-            <GroceryItem
-              key={item._idx}
-              item={item}
-              batchMode={batchMode}
-              isSelected={selectedItems.has(item._idx)}
-              onToggleCheck={() => toggleCheck(item._idx)}
-              onToggleSelect={() => toggleSelect(item._idx)}
-              onSetStore={(storeId) => setStore(item._idx, storeId)}
-              onMarkPantry={() => markAsPantry(item._idx)}
-              onRemove={() => removeItem(item._idx)}
-              stores={STORES}
-            />
-          ))}
-        </div>
-      )}
+      <div style={{ paddingBottom: '90px' }}>
+        <AnimatePresence>
+        {/* ── Unsorted section ── */}
+        {unsortedList.length > 0 && (
+          <motion.div layout initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="gl-section" onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, 'unsorted')}>
+            <div className="gl-section-header">
+              <div className="gl-section-title">Unsorted</div>
+              <span className="gl-section-count">{rawUnsorted.length}</span>
+            </div>
+            {unsortedList.map(item => (
+              <GroceryItem
+                key={item._idx}
+                item={item}
+                batchMode={batchMode}
+                isSelected={item.indices.every(idx => selectedItems.has(idx))} // True only if all underlying selected
+                onToggleCheck={() => toggleCheck(item.indices)}
+                onToggleSelect={() => toggleSelect(item.indices)}
+                onSetStore={(storeId) => setStore(item.indices, item.names, storeId)}
+                onMarkPantry={() => markAsPantry(item.indices, item.names)}
+                onRemove={() => removeItem(item.indices)}
+                onDragStart={(e) => handleDragStart(e, item.indices, item.names)}
+                stores={STORES}
+              />
+            ))}
+          </motion.div>
+        )}
 
-      {/* ── Store sections ── */}
-      {byStore.map(group => (
-        <div key={group.id} className="gl-section">
-          <div className="gl-section-header">
-            <div className="gl-section-title" style={{ borderLeftColor: group.color }}>
-              <StoreLogo store={group} size={20} />
-              {group.name}
-            </div>
-            <div className="gl-section-right">
-              <span className="gl-section-count">{group.items.length}</span>
-              <button
-                className="gl-btn-keep-section"
-                onClick={() => sendStoreToKeep(group.id)}
-                title={`Send ${group.name} to Google Keep`}
-              >
-                <KeepIcon size={16} />
-              </button>
-            </div>
-          </div>
-          {group.items.map(item => (
-            <GroceryItem
-              key={item._idx}
-              item={item}
-              batchMode={batchMode}
-              isSelected={selectedItems.has(item._idx)}
-              onToggleCheck={() => toggleCheck(item._idx)}
-              onToggleSelect={() => toggleSelect(item._idx)}
-              onSetStore={(storeId) => setStore(item._idx, storeId)}
-              onMarkPantry={() => markAsPantry(item._idx)}
-              onRemove={() => removeItem(item._idx)}
-              stores={STORES}
-              isAssigned
-            />
-          ))}
-        </div>
-      ))}
-
-      {/* ── Pantry section (items already in stock) ── */}
-      {pantryItems.length > 0 && (
-        <div className="gl-section gl-pantry-section">
-          <div className="gl-section-header">
-            <div className="gl-section-title" style={{ borderLeftColor: '#4caf50' }}>
-              <span className="gl-store-logo-letter" style={{ background: '#4caf50', width: 20, height: 20, fontSize: 11 }}>✓</span>
-              In Pantry
-            </div>
-            <span className="gl-section-count">{pantryItems.length}</span>
-          </div>
-          {pantryItems.map(item => (
-            <div key={item._idx} className="gl-item gl-item-pantry">
-              <div className="gl-item-content">
-                <span className="gl-pantry-check">✓</span>
-                <span className="gl-item-text gl-item-text-pantry">{item.name}</span>
+        {/* ── Store sections ── */}
+        {byStore.map(group => (
+          <motion.div layout initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} key={group.id} className="gl-section" onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, group.id)}>
+            <div className="gl-section-header">
+              <div className="gl-section-title" style={{ borderLeftColor: group.color }}>
+                <StoreLogo store={group} size={20} />
+                {group.name}
               </div>
-              <div className="gl-item-actions">
-                <button
-                  className="gl-btn-unpantry"
-                  onClick={() => unmarkPantry(item._idx)}
-                  title="Move back to grocery list"
-                >
-                  ↩
-                </button>
-                <button
-                  className="gl-btn-remove"
-                  onClick={() => removeItem(item._idx)}
-                  title="Remove from list"
-                >
-                  ✕
+              <div className="gl-section-right">
+                <span className="gl-section-count">{group.items.reduce((acc, i) => acc + i.quantity, 0)}</span>
+                <button className="gl-btn-keep-section" onClick={() => sendStoreToKeep(group.id)}>
+                  <KeepIcon size={16} />
                 </button>
               </div>
             </div>
-          ))}
-        </div>
-      )}
+            {group.items.map(item => (
+              <GroceryItem
+                key={item._idx}
+                item={item}
+                batchMode={batchMode}
+                isSelected={item.indices.every(idx => selectedItems.has(idx))}
+                onToggleCheck={() => toggleCheck(item.indices)}
+                onToggleSelect={() => toggleSelect(item.indices)}
+                onSetStore={(storeId) => setStore(item.indices, item.names, storeId)}
+                onMarkPantry={() => markAsPantry(item.indices, item.names)}
+                onRemove={() => removeItem(item.indices)}
+                onDragStart={(e) => handleDragStart(e, item.indices, item.names)}
+                stores={STORES}
+                isAssigned
+              />
+            ))}
+          </motion.div>
+        ))}
 
-      {/* Bottom padding for floating action bar */}
-      <div style={{ height: '80px' }}></div>
+        {/* ── Pantry section ── */}
+        {pantryList.length > 0 && (
+          <motion.div layout initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="gl-section gl-pantry-section" onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, PANTRY_ID)}>
+            <div className="gl-section-header">
+              <div className="gl-section-title" style={{ borderLeftColor: '#4caf50' }}>
+                <span className="gl-store-logo-letter" style={{ background: '#4caf50', width: 20, height: 20, fontSize: 11 }}>✓</span>
+                In Pantry
+              </div>
+              <span className="gl-section-count">{rawPantry.length}</span>
+            </div>
+            {pantryList.map(item => (
+              <motion.div layout key={item._idx} className="gl-item gl-item-pantry" draggable onDragStart={(e) => handleDragStart(e, item.indices, item.names)}>
+                <div className="gl-item-content">
+                  <span className="gl-pantry-check">✓</span>
+                  <span className="gl-item-text gl-item-text-pantry">{item.name} {item.quantity > 1 && <span style={{marginLeft:4, opacity: 0.6}}>×{item.quantity}</span>}</span>
+                </div>
+                <div className="gl-item-actions">
+                  <button className="gl-btn-unpantry" onClick={() => unmarkPantry(item.indices, item.names)}>↩</button>
+                  <button className="gl-btn-remove" onClick={() => removeItem(item.indices)}>✕</button>
+                </div>
+              </motion.div>
+            ))}
+          </motion.div>
+        )}
+        </AnimatePresence>
+      </div>
     </div>
   );
 }
 
-// ── Individual grocery item ─────────────────────────────────────────────────
-function GroceryItem({ item, batchMode, isSelected, onToggleCheck, onToggleSelect, onSetStore, onMarkPantry, onRemove, stores, isAssigned }) {
+// ── Individual grocery item ──
+function GroceryItem({ item, batchMode, isSelected, onToggleCheck, onToggleSelect, onSetStore, onMarkPantry, onRemove, stores, isAssigned, onDragStart }) {
   const [pickerOpen, setPickerOpen] = useState(false);
+  const x = useMotionValue(0);
+  
+  // Dynamic colors for swipe reveals
+  const background = useTransform(x, [-100, 0, 100], ['#e8f5e9', 'var(--surface)', '#ffebee']);
+  const pantryOpacity = useTransform(x, [-80, -30], [1, 0]);
+  const removeOpacity = useTransform(x, [30, 80], [0, 1]);
+
+  const handleDragEnd = (event, info) => {
+    const threshold = 60;
+    if (info.offset.x > threshold && onRemove) {
+      onRemove();
+    } else if (info.offset.x < -threshold && onMarkPantry) {
+      onMarkPantry();
+    }
+  };
 
   return (
-    <div className={`gl-item ${item.checked ? 'gl-item-checked' : ''} ${isSelected ? 'gl-item-selected' : ''}`}>
-      <div className="gl-item-content">
-        {batchMode ? (
-          <label className="gl-checkbox-label" onClick={onToggleSelect}>
-            <input
-              type="checkbox"
-              className="gl-checkbox-input"
-              checked={isSelected}
-              onChange={onToggleSelect}
-              aria-label={`Select ${item.name}`}
-            />
-            <span className="gl-item-text">{item.name}</span>
-          </label>
-        ) : (
-          <label className="gl-checkbox-label">
-            <input
-              type="checkbox"
-              className="gl-checkbox-input"
-              checked={item.checked}
-              onChange={onToggleCheck}
-              aria-label={`Check off ${item.name}`}
-            />
-            <span className={`gl-item-text ${item.checked ? 'gl-item-text-checked' : ''}`}>
-              {item.name}
-            </span>
-          </label>
-        )}
-      </div>
-
+    <motion.div layout initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
+      style={{ position: 'relative', overflow: 'hidden', background: 'var(--surface)', borderRadius: 'var(--radius-sm)', marginBottom: '4px' }}
+      className={`gl-item ${item.checked ? 'gl-item-checked' : ''} ${isSelected ? 'gl-item-selected' : ''}`}
+    >
+      {/* Swipe reveal layers */}
       {!batchMode && (
-        <div className="gl-item-actions">
-          {onMarkPantry && (
-            <button
-              className="gl-btn-pantry"
-              onClick={onMarkPantry}
-              title="Mark as In Pantry (already have it)"
-            >
-              ✓
-            </button>
-          )}
-          <button
-            className={`gl-btn-store ${isAssigned ? 'gl-btn-store-assigned' : ''}`}
-            onClick={() => setPickerOpen(!pickerOpen)}
-            title={isAssigned ? 'Change store' : 'Assign store'}
-            aria-expanded={pickerOpen}
-          >
-            {isAssigned ? '◈' : '◇'}
-          </button>
-          {onRemove && (
-            <button
-              className="gl-btn-remove"
-              onClick={onRemove}
-              title="Remove from list"
-            >
-              ✕
-            </button>
-          )}
+        <motion.div style={{ position: 'absolute', inset: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 20px', zIndex: 0, background }}>
+           <motion.span style={{ color: '#f44336', fontWeight: 600, opacity: removeOpacity }}>✕ Remove</motion.span>
+           <motion.span style={{ color: '#4caf50', fontWeight: 600, opacity: pantryOpacity }}>✓ To Pantry</motion.span>
+        </motion.div>
+      )}
 
-          {pickerOpen && (
-            <>
-              <div className="gl-picker-backdrop" onClick={() => setPickerOpen(false)}></div>
-              <div className="gl-item-picker">
-                <button
-                  className="gl-picker-option gl-picker-pantry"
-                  style={{ borderLeftColor: '#4caf50' }}
-                  onClick={() => { onMarkPantry?.(); setPickerOpen(false); }}
-                >
-                  <span className="gl-store-logo-letter" style={{ background: '#4caf50', width: 20, height: 20, fontSize: 11, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', color: 'white', fontWeight: 700, flexShrink: 0 }}>✓</span>
-                  In Pantry
-                </button>
-                {stores.map(s => (
-                  <button
-                    key={s.id}
-                    className="gl-picker-option"
-                    style={{ borderLeftColor: s.color }}
-                    onClick={() => { onSetStore(s.id); setPickerOpen(false); }}
-                  >
-                    <StoreLogo store={s} size={20} />
-                    {s.name}
-                  </button>
-                ))}
-                {isAssigned && (
-                  <button
-                    className="gl-picker-option gl-picker-unsort"
-                    onClick={() => { onSetStore(''); setPickerOpen(false); }}
-                  >
-                    ◇ Unsort
-                  </button>
-                )}
-              </div>
-            </>
+      {/* Main draggable surface */}
+      <motion.div 
+        style={{ x, position: 'relative', zIndex: 1, background: 'var(--card)', width: '100%', display: 'flex', alignItems: 'center', height: '100%' }}
+        drag={batchMode ? false : "x"}
+        dragConstraints={{ left: 0, right: 0 }}
+        dragElastic={0.4}
+        onDragEnd={handleDragEnd}
+        draggable={!batchMode}
+        onDragStart={(e) => {
+          if (!pickerOpen && onDragStart) onDragStart(e);
+        }}
+      >
+        <div className="gl-item-content" style={{ flex: 1 }}>
+          {batchMode ? (
+            <label className="gl-checkbox-label" onClick={onToggleSelect}>
+              <input type="checkbox" className="gl-checkbox-input" checked={isSelected} onChange={onToggleSelect} />
+              <span className="gl-item-text">{item.name} {item.quantity > 1 && <strong style={{ color: 'var(--primary)', marginLeft: 6 }}>×{item.quantity}</strong>}</span>
+            </label>
+          ) : (
+            <label className="gl-checkbox-label" 
+              onContextMenu={(e) => { e.preventDefault(); setPickerOpen(true); }} // Long press logic
+            >
+              <input type="checkbox" className="gl-checkbox-input" checked={item.checked} onChange={onToggleCheck} />
+              <span className={`gl-item-text ${item.checked ? 'gl-item-text-checked' : ''}`}>
+                {item.name} {item.quantity > 1 && <strong style={{ color: 'var(--primary)', marginLeft: 6, opacity: item.checked ? 0.5 : 1 }}>×{item.quantity}</strong>}
+              </span>
+            </label>
           )}
         </div>
-      )}
-    </div>
+
+        {!batchMode && (
+          <div className="gl-item-actions" style={{ paddingRight: '8px' }}>
+            <button className={`gl-btn-store ${isAssigned ? 'gl-btn-store-assigned' : ''}`} onClick={() => setPickerOpen(true)}>
+              {isAssigned ? '◈' : '◇'}
+            </button>
+            
+            {/* Quick picker overlay for this item */}
+            <AnimatePresence>
+            {pickerOpen && (
+              <>
+                <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="gl-picker-backdrop" style={{position:'fixed', zIndex: 90}} onClick={() => setPickerOpen(false)}></motion.div>
+                <motion.div initial={{opacity:0, scale:0.95}} animate={{opacity:1, scale:1}} exit={{opacity:0, scale:0.95}} className="gl-item-picker" style={{zIndex: 91, right: '40px', bottom: 'auto', top: '50%', transform: 'translateY(-50%)'}}>
+                  <div style={{fontSize: 12, fontWeight: 700, padding: '8px 12px', borderBottom: '1px solid var(--border)', color: 'var(--text-light)'}}>Assign Store</div>
+                  <button className="gl-picker-option" style={{ borderLeftColor: '#4caf50' }} onClick={() => { onMarkPantry(); setPickerOpen(false); }}>
+                    <span className="gl-store-logo-letter" style={{ background: '#4caf50', width: 20, height: 20, fontSize: 11 }}>✓</span> In Pantry
+                  </button>
+                  {stores.map(s => (
+                    <button key={s.id} className="gl-picker-option" style={{ borderLeftColor: s.color }} onClick={() => { onSetStore(s.id); setPickerOpen(false); }}>
+                      <StoreLogo store={s} size={20} /> {s.name}
+                    </button>
+                  ))}
+                  {isAssigned && (
+                    <button className="gl-picker-option gl-picker-unsort" onClick={() => { onSetStore(''); setPickerOpen(false); }}>
+                      ◇ Unsort
+                    </button>
+                  )}
+                </motion.div>
+              </>
+            )}
+            </AnimatePresence>
+          </div>
+        )}
+      </motion.div>
+    </motion.div>
   );
 }
 
-// ── Store logo: favicon with letter fallback ────────────────────────────────
 function StoreLogo({ store, size = 20 }) {
   if (!store.logo) {
-    return (
-      <span
-        className="gl-store-logo-letter"
-        style={{ background: store.color, width: size, height: size, fontSize: size * 0.55 }}
-      >
-        {store.name[0]}
-      </span>
-    );
+    return <span className="gl-store-logo-letter" style={{ background: store.color, width: size, height: size, fontSize: size * 0.55 }}>{store.name[0]}</span>;
   }
-  return (
-    <img
-      src={store.logo}
-      alt=""
-      className="gl-store-logo-img"
-      style={{ width: size, height: size }}
-      onError={e => {
-        // Fallback: replace with letter badge
-        const span = document.createElement('span');
-        span.className = 'gl-store-logo-letter';
-        span.style.cssText = `background:${store.color};width:${size}px;height:${size}px;font-size:${size * 0.55}px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;color:white;font-weight:700;flex-shrink:0;`;
-        span.textContent = store.name[0];
-        e.target.replaceWith(span);
-      }}
-    />
-  );
+  return <img src={store.logo} alt="" className="gl-store-logo-img" style={{ width: size, height: size }} onError={e => {
+    const span = document.createElement('span'); span.className = 'gl-store-logo-letter';
+    span.style.cssText = `background:${store.color};width:${size}px;height:${size}px;font-size:${size * 0.55}px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;color:white;font-weight:700;flex-shrink:0;`;
+    span.textContent = store.name[0]; e.target.replaceWith(span);
+  }}/>;
 }
 
-// ── Tiny Google Keep icon ───────────────────────────────────────────────────
 function KeepIcon({ size = 16 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>

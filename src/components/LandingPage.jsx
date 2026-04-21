@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import SafeMediaImage from './SafeMediaImage.jsx';
 import './LandingPage.css';
 
@@ -363,12 +364,16 @@ function DayPhotoCard({ date, meal, isToday, onClick }) {
   const specialEmoji = meal?._special ? meal.icon : null;
 
   return (
-    <button
+    <motion.button
+      whileHover={{ y: -4, boxShadow: '0 8px 16px rgba(0,0,0,0.1)' }}
+      whileTap={{ scale: 0.95 }}
       onClick={onClick}
       style={{
         ...STYLES.dayCard,
         ...(isToday && STYLES.dayCardToday),
         border: isToday ? '2px solid var(--primary)' : '1.5px solid var(--border)',
+        position: 'relative',
+        outline: 'none',
       }}
     >
       {/* Photo / fallback */}
@@ -391,8 +396,10 @@ function DayPhotoCard({ date, meal, isToday, onClick }) {
         <div style={{
           ...STYLES.dayCardDayLabel,
           ...(isToday && STYLES.dayCardDayLabelToday),
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center'
         }}>
-          {dayLabel} {dateNum}
+          <span>{dayLabel} {dateNum}</span>
+          {meal?._locked && <span style={{ fontSize: '12px' }} title="Locked">🔒</span>}
         </div>
         {meal ? (
           <div style={STYLES.dayCardMealName}>{meal.name}</div>
@@ -400,7 +407,7 @@ function DayPhotoCard({ date, meal, isToday, onClick }) {
           <div style={STYLES.dayCardEmpty}>Nothing yet</div>
         )}
       </div>
-    </button>
+    </motion.button>
   );
 }
 
@@ -546,15 +553,15 @@ export default function LandingPage({
   const tiles = useMemo(() => [
     {
       id: 'planWeek',
-      emoji: '📅',
-      title: 'Plan Week',
-      subtitle: rotationCount > 0 ? `${rotationCount} in rotation` : 'Organize your meals',
+      emoji: '🎲',
+      title: 'The Rotation',
+      subtitle: rotationCount > 0 ? `${rotationCount} meals active` : 'Set up your meals',
       accent: TILE_COLORS.planWeek,
       onClick: () => onNavigate('week'),
     },
     {
       id: 'myMeals',
-      emoji: '🍳',
+      emoji: '📓',
       title: 'My Meals',
       subtitle: `${meals.length} recipes saved`,
       accent: TILE_COLORS.myMeals,
@@ -562,9 +569,9 @@ export default function LandingPage({
     },
     {
       id: 'bar',
-      emoji: '🍹',
-      title: 'The Bar',
-      subtitle: `${drinks.length} drinks saved`,
+      emoji: '🍸',
+      title: 'Bar Shelf',
+      subtitle: drinks.length > 0 ? "Tonight's Cocktail" : `${drinks.length} drinks saved`,
       accent: TILE_COLORS.bar,
       onClick: () => onNavigate('bar'),
     },
@@ -572,7 +579,7 @@ export default function LandingPage({
       id: 'grocery',
       emoji: '🛒',
       title: 'Grocery List',
-      subtitle: 'Build from your week',
+      subtitle: 'Build shopping list',
       accent: TILE_COLORS.grocery,
       onClick: () => onNavigate('grocery'),
     },
@@ -601,11 +608,33 @@ export default function LandingPage({
 
   return (
     <div style={STYLES.container}>
-      {/* Header */}
-      <div style={STYLES.header}>
-        <div style={STYLES.headerGreeting}>{greeting}</div>
-        <div style={STYLES.headerDate}>{formattedDate}</div>
-      </div>
+      {/* Hero Section */}
+      <motion.div 
+        className="hero-container" 
+        style={{ padding: '24px 20px', minHeight: 'auto', borderRadius: 'var(--radius)', marginBottom: '24px', position: 'relative', overflow: 'hidden' }}
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: "easeOut" }}
+      >
+        <div className="hero-content" style={{ zIndex: 2, position: 'relative' }}>
+          <h1 className="hero-headline" style={{ animation: 'none', opacity: 1 }}>{greeting}</h1>
+          <p className="hero-subheadline" style={{ animation: 'none', opacity: 0.9, marginTop: 4 }}>
+            {formattedDate} • {streak > 0 ? <span style={{ color: 'var(--primary)', fontWeight: 700 }}>{streak} Day Streak 🔥</span> : 'Ready to spin?'}
+          </p>
+          <div className="hero-actions" style={{ animation: 'none', opacity: 1, marginTop: '20px' }}>
+            <motion.button 
+              className="btn-primary" 
+              onClick={onGenerate}
+              whileHover={{ scale: 1.05, boxShadow: "0 8px 16px rgba(255,107,53,0.3)" }}
+              whileTap={{ scale: 0.95 }}
+            >
+              Spin the Week 🎲
+            </motion.button>
+          </div>
+        </div>
+        {/* Subtle decorative glow */}
+        <div style={{ position: 'absolute', top: '-50%', right: '-10%', width: '300px', height: '300px', background: 'radial-gradient(circle, var(--primary) 0%, transparent 70%)', opacity: 0.15, filter: 'blur(40px)', zIndex: 1, pointerEvents: 'none' }} />
+      </motion.div>
 
       {/* ── Next 5 Days ── */}
       <div style={STYLES.nextDaysSection}>
@@ -641,34 +670,44 @@ export default function LandingPage({
       </div>
 
       {/* ── Navigation tiles ── */}
-      <div style={STYLES.tilesGrid}>
+      <motion.div 
+        style={STYLES.tilesGrid}
+        initial="hidden"
+        animate="visible"
+        variants={{ visible: { transition: { staggerChildren: 0.05 } } }}
+      >
         {tiles.map((tile) => (
-          <button
+          <motion.button
             key={tile.id}
             onClick={tile.onClick}
-            onMouseEnter={() => setHoveredTile(tile.id)}
-            onMouseLeave={() => setHoveredTile(null)}
-            style={getTileStyle(tile.id)}
+            variants={{ hidden: { opacity: 0, scale: 0.9 }, visible: { opacity: 1, scale: 1, transition: { type: "spring", stiffness: 300, damping: 24 } } }}
+            whileHover={{ scale: 0.97, y: -2, boxShadow: 'var(--shadow)', opacity: 0.98 }}
+            whileTap={{ scale: 0.94 }}
+            style={{ ...STYLES.tile, padding: '16px 16px 16px 20px', textAlign: 'left', outline: 'none' }}
           >
             <div style={{ ...STYLES.tileAccent, backgroundColor: tile.accent }} />
             <div style={STYLES.tileEmoji}>{tile.emoji}</div>
             <div style={STYLES.tileTitle}>{tile.title}</div>
             <div style={STYLES.tileSubtitle}>{tile.subtitle}</div>
-          </button>
+          </motion.button>
         ))}
-      </div>
+      </motion.div>
 
       {/* ── Stats strip ── */}
       {(streak > 0 || topMeal) && (
-        <button
+        <motion.button
           onClick={onOpenStats}
-          onMouseEnter={() => setHoveredStats(true)}
-          onMouseLeave={() => setHoveredStats(false)}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          whileHover={{ scale: 1.02, backgroundColor: '#faf7f0', boxShadow: 'var(--shadow)' }}
+          whileTap={{ scale: 0.98 }}
           style={{
             ...STYLES.statsStrip,
-            ...(hoveredStats && { background: '#faf7f0', boxShadow: 'var(--shadow)' }),
             outline: 'none',
-            border: hoveredStats ? '1px solid var(--border)' : '1px solid var(--border)',
+            border: '1px solid var(--border)',
+            width: '100%',
+            justifyContent: 'center',
+            marginBottom: '24px'
           }}
         >
           {streak > 0 && (
@@ -683,7 +722,7 @@ export default function LandingPage({
               <span>{topMeal?.name || topMeal}</span>
             </div>
           )}
-        </button>
+        </motion.button>
       )}
 
       {/* ── Day preview bottom sheet ── */}

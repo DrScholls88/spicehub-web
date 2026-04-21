@@ -23,6 +23,7 @@
     "dexie": "^4.3.0",
     "dexie-observable": "^4.0.1-beta.13",
     "express": "^4.21.2",
+    "framer-motion": "^12.38.0",
     "jszip": "^3.10.1",
     "puppeteer": "^24.15.0",
     "react": "^19.2.0",
