@@ -4,9 +4,9 @@
 **Goal**: Zero-cost downloadable PWA (Vercel + installable on Android/iOS/Windows) with strong device local storage, offline-first behavior, and functional Instagram/social media recipe import.
 
 ## Core Principles (Non-Negotiable)
-- Instagram import is the keystone feature — it must feel automatic, reliable, and premium.
-- Maximum usability and touch-friendly mobile experience.
-- Security: Never hardcode secrets. Use environment variables only.
+Extraction Excellence: The Instagram/Social import is the product. It must utilize LLM-based parsing to transform messy captions into structured, high-fidelity recipe data (Schema.org compliant) with near-zero manual correction required.
+Offline Sovereignty: The app must be fully functional without an internet connection. State must sync optimistically; all user actions are queued and persisted locally (IndexedDB/LocalStorage) before hitting the network.
+Security-First Architecture: Zero tolerance for hardcoded secrets. Environment variables and secure headers are mandatory. API routes must be rate-limited and protected.
 
 ## Preferred Tools & Workflow
 - Conventional Commit cmd provided for every change package

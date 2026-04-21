@@ -7,6 +7,7 @@ import {
   classifyWithConfidence, smartClassifyLines, normalizeAndDedupe,
   scoreExtractionConfidence, tryVideoExtraction,
   isWeakResult,
+  detectImportType,
 } from '../recipeParser.js';
 import BrowserAssist from './BrowserAssist';
 import { normalizeInstagramUrl } from '../api.js';
@@ -32,6 +33,10 @@ let _serverWarm = false;
 export default function ImportModal({ onImport, onClose, title = 'Import Recipe', sharedContent = null }) {
   const [mode, setMode] = useState('url');         // 'url' | 'image' | 'paste' | 'spreadsheet' | 'paprika'
   const [url, setUrl] = useState('');
+  // itemType — 'meal' | 'drink'. Auto-detected from URL + paste text, user-overridable
+  // via the one-tap badge next to the URL input. Threaded into importRecipeFromUrl.
+  const [itemType, setItemType] = useState('meal');
+  const [itemTypeUserOverride, setItemTypeUserOverride] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState('');
   const [error, setError] = useState('');
@@ -282,6 +287,13 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       setSocialDetected({ platform: getSocialPlatform(val) });
     } else {
       setSocialDetected(null);
+    }
+    // Re-run type auto-detection on every URL change (unless user overrode it).
+    if (!itemTypeUserOverride && val.trim()) {
+      try {
+        const detected = detectImportType(val.trim(), pasteText || '');
+        if (detected && detected !== itemType) setItemType(detected);
+      } catch { /* detection is best-effort */ }
     }
   };
 
@@ -546,8 +558,11 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       setBrowserAssistMode('off');
       setImportProgress('Extracting recipe…');
 
-      const result = await importRecipeFromUrl(trimmedUrl, (_phase, _status, msg) => {
-        if (msg) setImportProgress(msg);
+      const result = await importRecipeFromUrl(trimmedUrl, {
+        type: itemType,
+        onProgress: (_phase, _status, msg) => {
+          if (msg) setImportProgress(msg);
+        },
       });
 
       // Paprika-style fallback: ANY weak/empty/partial result routes to the
@@ -971,6 +986,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
               onFallbackToText={handleBrowserAssistFallback}
               initialCapturedText={capturedTextRef.current}
               seedRecipe={browserAssistSeed}
+              type={itemType}
             />
           </>
         ) : /* ── Preview screen (full detail + editable) ──────────────────────── */
@@ -1410,6 +1426,58 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
             {/* ── URL tab ─────────────────────────────────────────────────────── */}
             {mode === 'url' && (
               <div className="import-section">
+                {/* Drink / Meal type toggle — one tap overrides auto-detect */}
+                <div
+                  className="item-type-toggle"
+                  role="group"
+                  aria-label="Import type"
+                  style={{
+                    display: 'flex',
+                    gap: 8,
+                    marginBottom: 10,
+                    fontSize: 14,
+                    alignItems: 'center',
+                  }}
+                >
+                  <span style={{ opacity: 0.75 }}>Type:</span>
+                  <button
+                    type="button"
+                    onClick={() => { setItemType('meal'); setItemTypeUserOverride(true); }}
+                    aria-pressed={itemType === 'meal'}
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: 999,
+                      border: itemType === 'meal' ? '2px solid #0ea5e9' : '1px solid rgba(0,0,0,0.15)',
+                      background: itemType === 'meal' ? 'rgba(14,165,233,0.12)' : 'transparent',
+                      fontWeight: itemType === 'meal' ? 600 : 400,
+                      minHeight: 40,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    🍽️ Meal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setItemType('drink'); setItemTypeUserOverride(true); }}
+                    aria-pressed={itemType === 'drink'}
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: 999,
+                      border: itemType === 'drink' ? '2px solid #f59e0b' : '1px solid rgba(0,0,0,0.15)',
+                      background: itemType === 'drink' ? 'rgba(245,158,11,0.14)' : 'transparent',
+                      fontWeight: itemType === 'drink' ? 600 : 400,
+                      minHeight: 40,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    🍹 Drink
+                  </button>
+                  {!itemTypeUserOverride && url.trim() && (
+                    <span style={{ marginLeft: 'auto', fontSize: 12, opacity: 0.65 }}>
+                      auto
+                    </span>
+                  )}
+                </div>
                 <input
                   type="url"
                   placeholder="Paste recipe URL — Instagram, TikTok, AllRecipes, etc."

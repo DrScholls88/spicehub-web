@@ -27,7 +27,7 @@ import useOnlineStatus from '../hooks/useOnlineStatus';
  *   onRecipeExtracted  - callback(recipe) on success
  *   onFallbackToText   - callback() when user wants Paste Text
  */
-export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText, initialCapturedText = '', seedRecipe = null }) {
+export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText, initialCapturedText = '', seedRecipe = null, type = 'meal' }) {
   const { isOnline } = useOnlineStatus();
 
   // phases:
@@ -226,8 +226,11 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
         };
 
         try {
-          const result = await importRecipeFromUrl(url, (phase, status, msg) => {
-            if (!cancelled) update(phase, status, msg);
+          const result = await importRecipeFromUrl(url, {
+            type,
+            onProgress: (phase, status, msg) => {
+              if (!cancelled) update(phase, status, msg);
+            },
           });
 
           if (cancelled) return;
@@ -269,9 +272,12 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
         // iframe-based manual extraction flow unique to BrowserAssist.
         setExtractionProgress({ step: 1, total: 4, message: 'Extracting recipe…' });
         try {
-          const unified = await importRecipeFromUrl(url, (_phase, _status, msg) => {
-            if (cancelled) return;
-            if (msg) setExtractionProgress(p => ({ ...p, message: msg }));
+          const unified = await importRecipeFromUrl(url, {
+            type,
+            onProgress: (_phase, _status, msg) => {
+              if (cancelled) return;
+              if (msg) setExtractionProgress(p => ({ ...p, message: msg }));
+            },
           });
           if (!cancelled && unified && !unified._needsManualCaption && hasRealContent(unified)) {
             setAutoRecipe(cleanRecipe(unified));
@@ -353,7 +359,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
     setIsParsingManual(true);
     setManualError('');
     try {
-      const recipe = await captionToRecipe(text, { sourceUrl: url });
+      const recipe = await captionToRecipe(text, { sourceUrl: url, type });
       if (recipe && hasRealContent(recipe)) {
         setAutoRecipe(cleanRecipe(recipe));
         setPhase('preview');
@@ -662,7 +668,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
       setExtractionProgress({ step: 2, total: 3, message: '✨ Google AI parsing text…' });
       let aiRecipe = null;
       try {
-        aiRecipe = await captionToRecipe(visibleText.slice(0, 8000), { imageUrl: imageUrls[0] || '', sourceUrl: url });
+        aiRecipe = await captionToRecipe(visibleText.slice(0, 8000), { imageUrl: imageUrls[0] || '', sourceUrl: url, type });
       } catch { /* fall through */ }
       setExtractionProgress({ step: 3, total: 3, message: 'Sorting results…' });
       const best = (aiRecipe && hasRealContent(aiRecipe)) ? aiRecipe : heuristicResult;

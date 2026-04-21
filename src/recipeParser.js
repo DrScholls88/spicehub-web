@@ -293,38 +293,71 @@ export function parseManualCaption(captionText, sourceUrl) {
 // Uses VITE_GOOGLE_AI_KEY if set. Runs in the browser without a backend hop,
 // giving faster results and working even when the backend server is cold/offline.
 // The API key is bundled into the client build — acceptable for personal/family apps.
-export async function structureWithAIClient(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '' } = {}) {
-  const clientKey = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_GOOGLE_AI_KEY : null;
-  if (!clientKey || !rawText || rawText.trim().length < 20) return null;
-
-  const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${clientKey}`;
-
-  const prompt = `You are a ReciME-style recipe extraction assistant. Extract a clean, structured recipe from the following text (from an Instagram caption, TikTok description, YouTube video, or recipe blog).
-
-Return ONLY valid JSON matching this exact schema — no markdown, no explanation:
-{
+/**
+ * Build the Gemini system prompt. Meal vs drink prompts differ materially:
+ * cocktails use oz/dash/splash/float units and often have terse directions,
+ * while meal recipes tend toward cups/tbsp and step-by-step instructions.
+ * Keeping both prompts local (rather than a remote config) makes the engine
+ * fully offline-capable for prompt changes.
+ */
+function _buildExtractionPrompt(rawText, { hintTitle = '', type = 'meal' } = {}) {
+  const isDrink = type === 'drink';
+  const subjectNoun = isDrink ? 'cocktail/drink' : 'recipe';
+  const schema = isDrink
+    ? `{
+  "title": "string — concise drink name, no hashtags, no emojis, no brand names",
+  "ingredients": [{ "name": "string — spirit/mixer/garnish", "amount": "string — e.g. '2 oz', '1 dash', '3 slices', 'splash'" }],
+  "directions": ["string — one clear step per array item (e.g. 'Muddle mint in shaker', 'Shake with ice', 'Strain into coupe')"],
+  "glass": "string or null — e.g. 'coupe', 'rocks', 'highball', 'martini', 'collins', 'nick & nora'",
+  "garnish": "string or null — e.g. 'lime wheel', 'orange peel', 'mint sprig'",
+  "servings": "string or null — usually '1' for cocktails",
+  "notes": "string or null"
+}`
+    : `{
   "title": "string — concise recipe name, no hashtags, no emojis, no brand names",
   "ingredients": [{ "name": "string", "amount": "string — e.g. '2 cups' or 'to taste'" }],
   "directions": ["string — one clear cooking step per array item, written as an instruction"],
   "servings": "string or null",
   "cookTime": "string or null",
   "notes": "string or null"
-}
+}`;
+
+  const rulesCommon = `- TITLE: Extract the ${subjectNoun} name only. Remove phrases like "on Instagram", "@username", hashtags.
+- CLEANING: Aggressively remove social chrome — hashtags, @mentions, "link in bio", "save this recipe", "follow me", sponsor disclosures, timestamps, view counts, and any text that isn't part of the ${subjectNoun}.
+- If the text contains a spoken/narrated ${subjectNoun} (video transcript), extract the ${subjectNoun} the speaker is describing.
+- If no ${subjectNoun} can be found at all, return: { "error": "not a ${subjectNoun}" }`;
+
+  const rulesDrink = `- INGREDIENTS: Recognize mixology units: oz, ml, cl, dash, splash, barspoon, part, float, drops. Garnishes (e.g. "3 slices jalapeño", "1 orange peel") also go in ingredients.
+- DIRECTIONS: Cocktails often have 2-4 terse steps (shake/stir/strain/pour/top/garnish). Do not pad — brevity is correct.
+- SORTING: Lines with oz/ml/dash + a spirit or mixer name → ingredients[]. Action verbs (shake, stir, muddle, build, strain, top, float, garnish, rim) → directions[].
+- GLASS / GARNISH: If mentioned anywhere, extract separately into the glass and garnish fields even if they already appear in a direction.`;
+
+  const rulesMeal = `- INGREDIENTS: Each item = one ingredient with its measurement. Normalize fractions (½ → 1/2).
+- DIRECTIONS: Each step = one action. Split compound steps at ". Then" / ". Next" / sentence breaks.
+- SORTING: Lines with measurements + food words → ingredients[]. Lines with cooking verbs (mix, bake, sauté, etc.) → directions[].`;
+
+  return `You are a ReciME-style ${subjectNoun} extraction assistant. Extract a clean, structured ${subjectNoun} from the following text (from an Instagram caption, TikTok description, YouTube video, or ${isDrink ? 'cocktail/liquor' : 'recipe'} blog).
+
+Return ONLY valid JSON matching this exact schema — no markdown, no explanation:
+${schema}
 
 Extraction rules (follow strictly):
-- TITLE: Extract the dish name only. Remove phrases like "on Instagram", "@username", hashtags.
-- INGREDIENTS: Each item = one ingredient with its measurement. Normalize fractions (½ → 1/2).
-- DIRECTIONS: Each step = one action. Split compound steps at ". Then" / ". Next" / sentence breaks.
-- CLEANING: Aggressively remove social chrome — hashtags, @mentions, "link in bio", "save this recipe", "follow me", sponsor disclosures, timestamps, view counts, and any text that isn't part of the recipe.
-- SORTING: Lines with measurements + food words → ingredients[]. Lines with cooking verbs (mix, bake, sauté, etc.) → directions[].
-- If the text contains a spoken/narrated recipe (video transcript), extract the recipe the speaker is describing.
-- If no recipe can be found at all, return: { "error": "not a recipe" }
-${hintTitle ? `\nDish name hint: "${hintTitle}"` : ''}
+${rulesCommon}
+${isDrink ? rulesDrink : rulesMeal}
+${hintTitle ? `\nName hint: "${hintTitle}"` : ''}
 
 Text to parse:
 ---
 ${rawText.slice(0, 7000)}
 ---`;
+}
+
+export async function structureWithAIClient(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal' } = {}) {
+  const clientKey = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_GOOGLE_AI_KEY : null;
+  if (!clientKey || !rawText || rawText.trim().length < 20) return null;
+
+  const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${clientKey}`;
+  const prompt = _buildExtractionPrompt(rawText, { hintTitle, type });
 
   try {
     const res = await fetch(GEMINI_ENDPOINT, {
@@ -343,14 +376,17 @@ ${rawText.slice(0, 7000)}
     const ingredients = Array.isArray(parsed.ingredients)
       ? parsed.ingredients.map(ing => typeof ing === 'string' ? ing : [ing.amount, ing.name].filter(Boolean).join(' ').trim()).filter(Boolean)
       : [];
+    // IMPORTANT: Leave empty arrays empty. Don't inject "See original post…"
+    // placeholder strings — the UI decides how to present thin results.
     return {
       name: parsed.title || hintTitle || 'Imported Recipe',
-      ingredients: ingredients.length > 0 ? ingredients : ['See original post for ingredients'],
-      directions: Array.isArray(parsed.directions) && parsed.directions.length > 0
-        ? parsed.directions : ['See original post for directions'],
+      ingredients,
+      directions: Array.isArray(parsed.directions) ? parsed.directions.filter(Boolean) : [],
       servings: parsed.servings || null,
       cookTime: parsed.cookTime || null,
       notes: parsed.notes || null,
+      // Drink-specific fields survive as extras on the result; meal flow ignores them.
+      ...(type === 'drink' ? { glass: parsed.glass || null, garnish: parsed.garnish || null, _type: 'drink' } : { _type: 'meal' }),
       imageUrl: imageUrl || '',
       link: sourceUrl || '',
       _aiStructured: true,
@@ -364,13 +400,13 @@ ${rawText.slice(0, 7000)}
 // ─── AI-powered structuring via server /api/structure-recipe (Gemini Flash) ───
 // Falls back to direct client call if VITE_GOOGLE_AI_KEY is configured.
 // Returns a SpiceHub recipe object on success, null if unavailable.
-export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '' } = {}) {
+export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal' } = {}) {
   if (!rawText || rawText.trim().length < 20) return null;
 
   // Try client-side Gemini first (faster, no backend roundtrip)
   try {
-    const clientResult = await structureWithAIClient(rawText, { title: hintTitle, imageUrl, sourceUrl });
-    if (clientResult && clientResult.ingredients?.length && clientResult.directions?.length) {
+    const clientResult = await structureWithAIClient(rawText, { title: hintTitle, imageUrl, sourceUrl, type });
+    if (clientResult && (clientResult.ingredients?.length || clientResult.directions?.length)) {
       return clientResult;
     }
   } catch { /* fall through to server */ }
@@ -382,7 +418,7 @@ export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl
     const res = await fetch(`${serverBase}/api/structure-recipe`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rawText, title: hintTitle, imageUrl }),
+      body: JSON.stringify({ rawText, title: hintTitle, imageUrl, type }),
       signal: AbortSignal.timeout(15000),
     });
     if (!res.ok) return null;
@@ -396,15 +432,15 @@ export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl
         return [ing.amount, ing.name].filter(Boolean).join(' ').trim();
       }).filter(Boolean)
       : [];
+    // IMPORTANT: Empty arrays remain empty — never inject placeholder strings.
     return {
       name: r.title || hintTitle || 'Imported Recipe',
-      ingredients: ingredients.length > 0 ? ingredients : ['See original post for ingredients'],
-      directions: Array.isArray(r.directions) && r.directions.length > 0
-        ? r.directions
-        : ['See original post for directions'],
+      ingredients,
+      directions: Array.isArray(r.directions) ? r.directions.filter(Boolean) : [],
       servings: r.servings || null,
       cookTime: r.cookTime || null,
       notes: r.notes || null,
+      ...(type === 'drink' ? { glass: r.glass || null, garnish: r.garnish || null, _type: 'drink' } : { _type: 'meal' }),
       imageUrl: imageUrl || '',
       link: sourceUrl || '',
       _aiStructured: true,
@@ -417,7 +453,7 @@ export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl
 // ─── captionToRecipe: Gemini-first structuring with heuristic fallback ────────
 // Takes raw caption text and returns a structured recipe object.
 // Used by BrowserAssist Pass 0 and extractInstagramAgent to get clean results.
-export async function captionToRecipe(captionText, { title = '', imageUrl = '', sourceUrl = '' } = {}) {
+export async function captionToRecipe(captionText, { title = '', imageUrl = '', sourceUrl = '', type = 'meal' } = {}) {
   if (!captionText || captionText.trim().length < 20) return null;
 
   // ReciME-style: aggressively clean social chrome before sending to AI
@@ -426,7 +462,7 @@ export async function captionToRecipe(captionText, { title = '', imageUrl = '', 
 
   // Try Gemini AI structuring first (most reliable for social media captions)
   try {
-    const aiResult = await structureWithAI(textForAI, { title, imageUrl, sourceUrl });
+    const aiResult = await structureWithAI(textForAI, { title, imageUrl, sourceUrl, type });
     if (aiResult) {
       const hasRealIngs = (aiResult.ingredients || []).some(i => i && !/^see (original post|recipe) for/i.test(i.trim()));
       const hasRealDirs = (aiResult.directions || []).some(d => d && !/^see (original post|recipe) for/i.test(d.trim()));
@@ -1574,7 +1610,7 @@ export async function tryVideoExtraction(url, onProgress) {
  *
  * Returns a parsed recipe object with imageUrls[] or null on failure.
  */
-export async function extractInstagramAgent(url, onProgress) {
+export async function extractInstagramAgent(url, onProgress, { type = 'meal' } = {}) {
   const serverUrl = await detectServer();
   if (!serverUrl) return null;
 
@@ -1940,7 +1976,7 @@ function normalizeWprmApiResponse(wprm, sourceUrl) {
  * @param {string} sourceUrl - Original URL (for link and title extraction)
  * @returns {object|null} Recipe object or null
  */
-async function tryMarkdownExtraction(html, sourceUrl) {
+async function tryMarkdownExtraction(html, sourceUrl, { type = 'meal' } = {}) {
   if (!html || html.length < 200) return null;
   if (!htmlLooksLikeRecipe(html)) {
     console.log('[md-extract] HTML does not look like a recipe — skipping Turndown pipeline');
@@ -1964,6 +2000,7 @@ async function tryMarkdownExtraction(html, sourceUrl) {
       title: cleanTitle(titleHint),
       imageUrl,
       sourceUrl,
+      type,
     });
 
     if (!aiResult) return null;
@@ -2050,7 +2087,7 @@ async function structureRedditRecipe(redditData, onProgress) {
  *      or { _error: true, reason } on failure
  *      or null if completely failed
  */
-export async function parseFromUrl(url, onProgress) {
+export async function parseFromUrl(url, onProgress, { type = 'meal' } = {}) {
 
   // ── 0. Reddit: zero-auth JSON endpoint (fastest non-Instagram path) ──────────
   // Reddit's .json trick gives structured post data with no scraping, no auth,
@@ -2106,7 +2143,7 @@ export async function parseFromUrl(url, onProgress) {
 
     // Try dedicated Agent extraction (agent-browser + vision)
     if (onProgress) onProgress('Trying Agent Browser extraction...');
-    const agentResult = await extractInstagramAgent(url, onProgress);
+    const agentResult = await extractInstagramAgent(url, onProgress, { type });
     if (agentResult && !agentResult._error && agentResult.ingredients?.[0] !== 'See original post for ingredients') {
       return agentResult;
     }
@@ -2130,7 +2167,7 @@ export async function parseFromUrl(url, onProgress) {
 
     // Step A: Agent Browser (Full DOM parsing, carousels, subtitles)
     if (onProgress) onProgress('Trying Agent Browser extraction...');
-    const agentResult = await extractInstagramAgent(url, onProgress);
+    const agentResult = await extractInstagramAgent(url, onProgress, { type });
     if (agentResult && !agentResult._error && agentResult.ingredients?.[0] !== 'See original post for ingredients') {
       return agentResult;
     }
@@ -2218,7 +2255,7 @@ export async function parseFromUrl(url, onProgress) {
   const htmlForTurndown = fetchedHtml || await fetchHtmlViaProxy(url, 20000).catch(() => null);
   if (htmlForTurndown) {
     fetchedHtml = htmlForTurndown; // Cache for step 3e if needed
-    const turndownResult = await tryMarkdownExtraction(htmlForTurndown, url);
+    const turndownResult = await tryMarkdownExtraction(htmlForTurndown, url, { type });
     if (turndownResult) return turndownResult;
   }
 
@@ -2247,7 +2284,7 @@ export async function parseFromUrl(url, onProgress) {
       if (pageText.length > 200) {
         const titleHint = extractMeta(html2, 'og:title') || '';
         const imageUrl = extractMeta(html2, 'og:image') || '';
-        const aiRecipe = await structureWithAIClient(pageText, { title: titleHint, imageUrl, sourceUrl: url });
+        const aiRecipe = await structureWithAIClient(pageText, { title: titleHint, imageUrl, sourceUrl: url, type });
         if (aiRecipe) {
           const hasContent = (aiRecipe.ingredients?.length > 0 && !aiRecipe.ingredients[0].includes('See original')) ||
                             (aiRecipe.directions?.length > 0 && !aiRecipe.directions[0].includes('See original'));
@@ -3599,7 +3636,7 @@ export async function resolveShortUrl(url) {
  *   status: 'running' | 'done' | 'failed' | 'skipped' | 'pending'
  * @returns {Object} Structured recipe or { _needsManualCaption: true }
  */
-export async function importFromInstagram(url, onProgress = () => {}) {
+export async function importFromInstagram(url, onProgress = () => {}, { type = 'meal' } = {}) {
   const progress = (phase, status, msg) => onProgress(phase, status, msg);
 
   // Placeholders to explicitly reject from any phase result
@@ -3695,7 +3732,7 @@ export async function importFromInstagram(url, onProgress = () => {}) {
     if (!skipAgent) {
       progress(2, 'running', 'Launching AI browser…');
       try {
-        const agentResult = await extractInstagramAgent(url, (msg) => progress(2, 'running', msg));
+        const agentResult = await extractInstagramAgent(url, (msg) => progress(2, 'running', msg), { type });
         if (agentResult) {
           const rawCaption = agentResult.caption || '';
           const agentCaption = rawCaption ? cleanSocialCaption(rawCaption) : '';
@@ -3749,7 +3786,7 @@ export async function importFromInstagram(url, onProgress = () => {}) {
       progress(3, 'running', '✨ Structuring recipe with Gemini…');
     }
     try {
-      const recipe = await captionToRecipe(textForGemini, { imageUrl: capturedImageUrl, sourceUrl: url });
+      const recipe = await captionToRecipe(textForGemini, { imageUrl: capturedImageUrl, sourceUrl: url, type });
       if (recipe && !isPlaceholder(recipe.ingredients) && !isPlaceholder(recipe.directions)) {
         progress(3, 'done', 'Recipe structured successfully!');
         return {
@@ -3843,23 +3880,93 @@ async function _ensurePersistentImage(imageUrl) {
 
   // Hosts that serve signed/ephemeral URLs which expire or block hotlinking.
   // These MUST be persisted to base64 or the image will vanish offline.
-  const EPHEMERAL_HOSTS = /(?:cdninstagram\.com|fbcdn\.net|fbsbx\.com|tiktokcdn|tiktok(?:v)?\.com|pinimg\.com|sndcdn\.com|snapcdn|bytecdn\.cn|muscdn\.com)/i;
+  // Expanded coverage: Instagram, Facebook, TikTok, Pinterest, Snapchat, YouTube
+  // thumbnails, Twitter/X media CDNs, Reddit preview CDN, Imgur, Cloudfront-signed.
+  const EPHEMERAL_HOSTS = /(?:cdninstagram\.com|fbcdn\.net|fbsbx\.com|tiktokcdn|tiktok(?:v)?\.com|pinimg\.com|sndcdn\.com|snapcdn|bytecdn\.cn|muscdn\.com|ytimg\.com|twimg\.com|redditmedia\.com|redd\.it|imgur\.com|i\.imgur\.com|s-video-.*cdn|cloudfront\.net)/i;
+
+  // Signed URL heuristic — querystring contains token/signature/expiry params
+  const looksSigned = /[?&](?:sig|signature|token|x-amz-signature|x-goog-signature|expires|e=\d+|se=\d+|oe=\d+)=/i.test(imageUrl);
 
   try {
     if (isInstagramCdnUrl(imageUrl)) {
       const persisted = await downloadInstagramImage(imageUrl);
       return persisted || imageUrl;
     }
-    // Non-Instagram ephemeral CDNs — try generic persist, keep original on failure
+    // Non-Instagram ephemeral CDNs OR signed URLs — try generic persist,
+    // keep original URL on failure (preview still renders while online).
     try {
       const host = new URL(imageUrl).hostname;
-      if (EPHEMERAL_HOSTS.test(host)) {
+      if (EPHEMERAL_HOSTS.test(host) || looksSigned) {
         const persisted = await downloadImageAsDataUrl(imageUrl, { timeoutMs: 7000 });
         if (persisted) return persisted;
       }
     } catch { /* malformed URL — leave alone */ }
   } catch { /* graceful degradation */ }
   return imageUrl;
+}
+
+/**
+ * Universal image hunt helper — fetches a page URL and returns the best
+ * image we can find. Strategy (in order):
+ *   1. og:image / og:image:secure_url
+ *   2. twitter:image / twitter:image:src
+ *   3. JSON-LD image[] from Recipe / Article / Product / NewsArticle
+ *   4. schema itemprop="image"
+ *   5. <video poster=...>
+ *   6. first reasonably-large <img> in the page
+ * Returns '' on any failure. Never throws.
+ */
+async function _huntPageImage(url) {
+  if (!url || typeof url !== 'string') return '';
+  try {
+    const html = await fetchHtmlViaProxy(url, 15000).catch(() => null);
+    if (!html || html.length < 200) return '';
+
+    // 1–2: OG / Twitter meta
+    const og = extractMeta(html, 'og:image') || extractMeta(html, 'og:image:secure_url');
+    if (og) return og;
+    const tw = extractMeta(html, 'twitter:image') || extractMeta(html, 'twitter:image:src');
+    if (tw) return tw;
+
+    // 3: JSON-LD image
+    try {
+      const ldMatches = [...html.matchAll(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)];
+      for (const m of ldMatches) {
+        try {
+          const json = JSON.parse(m[1].trim());
+          const arr = Array.isArray(json) ? json : [json];
+          for (const node of arr) {
+            const candidates = [
+              node?.image,
+              node?.image?.url,
+              Array.isArray(node?.image) ? node.image[0] : null,
+              Array.isArray(node?.image) ? node.image[0]?.url : null,
+              node?.primaryImageOfPage?.contentUrl,
+              node?.thumbnailUrl,
+            ];
+            for (const c of candidates) {
+              if (typeof c === 'string' && c.trim()) return c.trim();
+            }
+          }
+        } catch { /* bad json, keep looking */ }
+      }
+    } catch { /* ignore */ }
+
+    // 4: schema itemprop
+    const ip = /<(?:meta|link)[^>]+itemprop\s*=\s*["']image["'][^>]+(?:content|href)\s*=\s*["']([^"']+)["']/i.exec(html);
+    if (ip) return ip[1];
+
+    // 5: video poster
+    const poster = /<video[^>]*poster\s*=\s*["']([^"']+)["']/i.exec(html);
+    if (poster) return poster[1];
+
+    // 6: first <img> with a plausible recipe-image size or class
+    const imgs = [...html.matchAll(/<img[^>]+src\s*=\s*["']([^"']+\.(?:jpg|jpeg|png|webp)(?:\?[^"']*)?)["'][^>]*>/gi)];
+    for (const [, src] of imgs) {
+      if (!/\b(?:logo|sprite|avatar|icon|placeholder|pixel|spacer)\b/i.test(src)) return src;
+    }
+  } catch { /* graceful */ }
+  return '';
 }
 
 /**
@@ -3870,10 +3977,21 @@ async function _ensurePersistentImage(imageUrl) {
  */
 function _finalizeRecipe(recipe, { sourceUrl, extractedVia }) {
   if (!recipe || recipe._needsManualCaption || recipe._error) return recipe;
-  const ing = Array.isArray(recipe.ingredients) && recipe.ingredients.length
-    ? recipe.ingredients : ['See original post for ingredients'];
-  const dir = Array.isArray(recipe.directions) && recipe.directions.length
-    ? recipe.directions : ['See original post for directions'];
+
+  // Keep empty arrays empty. The preview UI is responsible for rendering an
+  // empty-state — faking "See original post for …" placeholders as if they
+  // were real content was the biggest source of user pain with the import
+  // preview. The UI can show BrowserAssist/manual-paste when fields are thin.
+  const ing = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
+  const dir = Array.isArray(recipe.directions) ? recipe.directions : [];
+
+  // If we truly got nothing useful AND nothing distinguishing (no title, no
+  // image), flip to manual-paste rather than pretending we succeeded.
+  const hasName = recipe.name && String(recipe.name).trim() && String(recipe.name).trim() !== 'Imported Recipe';
+  if (ing.length === 0 && dir.length === 0 && !hasName && !recipe.imageUrl) {
+    return { _needsManualCaption: true, sourceUrl, link: sourceUrl };
+  }
+
   return {
     ...recipe,
     name: (recipe.name && String(recipe.name).trim()) || 'Imported Recipe',
@@ -3900,7 +4018,7 @@ function _safeProgress(onProgress) {
  * Instagram flow: cache lookup → importFromInstagram → image persistence → cache write.
  * Extracted from importRecipeFromUrl for clarity.
  */
-async function _importInstagramFlow(url, progress) {
+async function _importInstagramFlow(url, progress, { type = 'meal' } = {}) {
   // Normalize URL for consistent cache key (strip UTM params, trailing slash)
   let cacheKey = url;
   try {
@@ -3921,11 +4039,19 @@ async function _importInstagramFlow(url, progress) {
     }
   } catch { /* cache unavailable, continue */ }
 
-  // Run the 4-phase Instagram pipeline
-  const recipe = await importFromInstagram(url, progress);
+  // Run the 4-phase Instagram pipeline (type-aware)
+  const recipe = await importFromInstagram(url, progress, { type });
 
   // Persist image (Instagram CDN → base64) and write cache
   if (recipe && !recipe._needsManualCaption) {
+    // If Instagram pipeline didn't produce an image, try og:image / twitter:image
+    // from the post URL via CORS proxy as last-chance fallback.
+    if (!recipe.imageUrl) {
+      try {
+        const hunted = await _huntPageImage(url);
+        if (hunted) recipe.imageUrl = hunted;
+      } catch { /* graceful */ }
+    }
     if (recipe.imageUrl) {
       try {
         progress(3, 'running', 'Saving image locally…');
@@ -3954,7 +4080,7 @@ async function _importInstagramFlow(url, progress) {
  * Phase 1–2: parseFromUrl deeper extraction as fallback.
  * Phase 3: Gemini polish (always runs when we have any captured text).
  */
-async function _importVideoFirstFlow(url, progress) {
+async function _importVideoFirstFlow(url, progress, { type = 'meal' } = {}) {
   let videoRecipe = null;
   let videoText = '';
 
@@ -3979,6 +4105,7 @@ async function _importVideoFirstFlow(url, progress) {
           title: videoRecipe.name,
           imageUrl: videoRecipe.imageUrl,
           sourceUrl: url,
+          type,
         });
         if (polished && hasRecipeContent(polished)) {
           videoRecipe = {
@@ -3994,6 +4121,11 @@ async function _importVideoFirstFlow(url, progress) {
         }
       } catch { /* AI optional; keep yt-dlp result */ }
 
+      // Image guarantee: if yt-dlp didn't produce one, hunt the origin page
+      if (!videoRecipe.imageUrl) {
+        const hunted = await _huntPageImage(url);
+        if (hunted) videoRecipe.imageUrl = hunted;
+      }
       videoRecipe.imageUrl = await _ensurePersistentImage(videoRecipe.imageUrl);
       progress(3, 'done', 'Recipe ready ✓');
       return _finalizeRecipe(videoRecipe, { sourceUrl: url, extractedVia: videoRecipe._extractedVia || 'yt-dlp' });
@@ -4016,11 +4148,13 @@ async function _importVideoFirstFlow(url, progress) {
   // ── Phase 1–2: parseFromUrl deep extraction (agent browser, CORS proxy, etc.) ──
   progress(1, 'running', 'Trying deeper extraction…');
   try {
-    const fallback = await parseFromUrl(url, (msg) => progress(1, 'running', msg));
+    const fallback = await parseFromUrl(url, (msg) => progress(1, 'running', msg), { type });
     if (fallback && hasRecipeContent(fallback)) {
       progress(1, 'done', 'Deep extraction succeeded ✓');
       progress(2, 'skipped', 'Not needed');
-      fallback.imageUrl = await _ensurePersistentImage(fallback.imageUrl || videoRecipe?.imageUrl);
+      let img = fallback.imageUrl || videoRecipe?.imageUrl;
+      if (!img) img = await _huntPageImage(url);
+      fallback.imageUrl = await _ensurePersistentImage(img);
       progress(3, 'done', 'Recipe ready ✓');
       return _finalizeRecipe(fallback, { sourceUrl: url, extractedVia: fallback._extractedVia || 'deep-extract' });
     }
@@ -4037,9 +4171,12 @@ async function _importVideoFirstFlow(url, progress) {
       const aiRecipe = await captionToRecipe(videoText, {
         imageUrl: videoRecipe?.imageUrl,
         sourceUrl: url,
+        type,
       });
       if (aiRecipe && hasRecipeContent(aiRecipe)) {
-        aiRecipe.imageUrl = await _ensurePersistentImage(aiRecipe.imageUrl || videoRecipe?.imageUrl);
+        let img = aiRecipe.imageUrl || videoRecipe?.imageUrl;
+        if (!img) img = await _huntPageImage(url);
+        aiRecipe.imageUrl = await _ensurePersistentImage(img);
         progress(3, 'done', 'Recipe structured ✓');
         return _finalizeRecipe(aiRecipe, { sourceUrl: url, extractedVia: 'yt-dlp+ai-salvage' });
       }
@@ -4049,6 +4186,10 @@ async function _importVideoFirstFlow(url, progress) {
   // Last-ditch: return partial yt-dlp data (title + image only) if we have it
   if (videoRecipe && !videoRecipe._error) {
     progress(3, 'done', 'Using partial video data');
+    if (!videoRecipe.imageUrl) {
+      const hunted = await _huntPageImage(url);
+      if (hunted) videoRecipe.imageUrl = hunted;
+    }
     videoRecipe.imageUrl = await _ensurePersistentImage(videoRecipe.imageUrl);
     return _finalizeRecipe(videoRecipe, { sourceUrl: url, extractedVia: 'yt-dlp-partial' });
   }
@@ -4062,18 +4203,22 @@ async function _importVideoFirstFlow(url, progress) {
  * Delegates to parseFromUrl (the well-tested multi-tier blog pipeline) and wraps
  * it with phase-based progress reporting + image persistence + shape finalization.
  */
-async function _importGenericFlow(url, progress) {
+async function _importGenericFlow(url, progress, { type = 'meal' } = {}) {
   progress(0, 'running', 'Fetching page…');
   progress(1, 'running', 'Looking for structured recipe data…');
 
   try {
-    const recipe = await parseFromUrl(url, (msg) => progress(1, 'running', msg));
+    const recipe = await parseFromUrl(url, (msg) => progress(1, 'running', msg), { type });
 
     if (recipe && hasRecipeContent(recipe)) {
       progress(0, 'done', 'Page fetched ✓');
       progress(1, 'done', 'Recipe found ✓');
       progress(2, 'skipped', 'Not needed');
       progress(3, 'running', 'Saving image locally…');
+      if (!recipe.imageUrl) {
+        const hunted = await _huntPageImage(url);
+        if (hunted) recipe.imageUrl = hunted;
+      }
       recipe.imageUrl = await _ensurePersistentImage(recipe.imageUrl);
       progress(3, 'done', 'Recipe ready ✓');
       return _finalizeRecipe(recipe, {
@@ -4086,6 +4231,10 @@ async function _importGenericFlow(url, progress) {
     if (recipe && !recipe._error) {
       progress(1, 'done', 'Partial data extracted');
       progress(2, 'skipped', 'Not needed');
+      if (!recipe.imageUrl) {
+        const hunted = await _huntPageImage(url);
+        if (hunted) recipe.imageUrl = hunted;
+      }
       recipe.imageUrl = await _ensurePersistentImage(recipe.imageUrl);
       progress(3, 'done', 'Recipe ready (partial)');
       return _finalizeRecipe(recipe, { sourceUrl: url, extractedVia: recipe._extractedVia || 'partial' });
@@ -4119,8 +4268,14 @@ async function _importGenericFlow(url, progress) {
  * All branches are wrapped so the function NEVER throws and NEVER returns null.
  * Progress callbacks are always phase-indexed (0-3) so BrowserAssist's UI stays consistent.
  */
-export async function importRecipeFromUrl(url, onProgress = () => {}) {
+export async function importRecipeFromUrl(url, onProgressOrOptions = () => {}) {
+  // Backwards-compatible: second arg may be a function (legacy onProgress) OR
+  // an options object { type, initialText, onProgress }.
+  const isFnArg = typeof onProgressOrOptions === 'function';
+  const opts = isFnArg ? { onProgress: onProgressOrOptions } : (onProgressOrOptions || {});
+  const onProgress = opts.onProgress || (() => {});
   const progress = _safeProgress(onProgress);
+  const initialText = typeof opts.initialText === 'string' ? opts.initialText : '';
 
   if (!url || typeof url !== 'string') {
     progress(3, 'failed', 'Invalid URL');
@@ -4133,18 +4288,118 @@ export async function importRecipeFromUrl(url, onProgress = () => {}) {
     resolvedUrl = await resolveShortUrl(url);
   } catch { /* keep original URL */ }
 
-  // ── 2. Route by URL type ──
+  // ── 2. Determine item type (meal vs drink) ──
+  // Explicit opts.type wins; otherwise auto-detect from URL + initialText.
+  const type = (opts.type === 'drink' || opts.type === 'meal')
+    ? opts.type
+    : detectImportType(resolvedUrl, initialText);
+
+  // ── 3. Route by URL type with a top-level 60s timeout guard ──
+  //    Individual phases have their own shorter timeouts; this is a safety
+  //    net so Reels/Shorts can't infinite-spin when every downstream step
+  //    hangs on slow servers. Returns a manual-caption stub on timeout.
+  const globalTimeoutMs = (opts.timeoutMs && Number.isFinite(opts.timeoutMs))
+    ? opts.timeoutMs
+    : 60000;
+  const runPipeline = async () => {
+    if (isInstagramUrl(resolvedUrl)) return _importInstagramFlow(resolvedUrl, progress, { type });
+    if (_isVideoFirstUrl(resolvedUrl)) return _importVideoFirstFlow(resolvedUrl, progress, { type });
+    return _importGenericFlow(resolvedUrl, progress, { type });
+  };
+  const timeoutSentinel = Symbol('spicehub-import-timeout');
+  const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve(timeoutSentinel), globalTimeoutMs));
+
   try {
-    if (isInstagramUrl(resolvedUrl)) {
-      return await _importInstagramFlow(resolvedUrl, progress);
+    const raced = await Promise.race([runPipeline(), timeoutPromise]);
+    if (raced === timeoutSentinel) {
+      progress(3, 'failed', 'Import timed out — try BrowserAssist or paste caption');
+      return { _needsManualCaption: true, sourceUrl: resolvedUrl, _type: type, _timedOut: true };
     }
-    if (_isVideoFirstUrl(resolvedUrl)) {
-      return await _importVideoFirstFlow(resolvedUrl, progress);
+    // Tag every successful result with the resolved type so the UI badge can
+    // confirm "Detected as 🍹 Drink" / "🍽️ Meal" without re-running detection.
+    if (raced && !raced._needsManualCaption && !raced._error) {
+      raced._type = raced._type || type;
     }
-    return await _importGenericFlow(resolvedUrl, progress);
+    return raced;
   } catch (err) {
     console.error('[SpiceHub] importRecipeFromUrl uncaught error:', err);
     progress(3, 'failed', 'Unexpected error — please paste manually');
-    return { _needsManualCaption: true, sourceUrl: resolvedUrl };
+    return { _needsManualCaption: true, sourceUrl: resolvedUrl, _type: type };
   }
+}
+
+/**
+ * importItemFromUrl — canonical PUBLIC entry point (per constitution).
+ * Thin wrapper around importRecipeFromUrl; exists so callers have a single
+ * obvious name to reach regardless of whether the item is a meal or a drink.
+ *
+ * @param {string} url
+ * @param {{type?: 'meal'|'drink', initialText?: string, onProgress?: Function}} [options]
+ * @returns {Promise<Object>} Always resolves — never throws, never null.
+ */
+export async function importItemFromUrl(url, options = {}) {
+  return importRecipeFromUrl(url, options);
+}
+
+/**
+ * detectImportType — classify a URL (and optional accompanying text) as
+ * 'drink' or 'meal'. Uses fast URL heuristics first, then a keyword scan on
+ * any initialText the caller provides (e.g. clipboard/share text). No network
+ * calls — fully synchronous + offline-safe. Defaults to 'meal' when uncertain.
+ *
+ * @param {string} url
+ * @param {string} [initialText]
+ * @returns {'drink' | 'meal'}
+ */
+export function detectImportType(url = '', initialText = '') {
+  const u = String(url || '').toLowerCase();
+  const t = String(initialText || '').toLowerCase();
+
+  // ── Strong URL hints — host and path ──────────────────────────────────────
+  // Cocktail / liquor / bar publications
+  const DRINK_HOSTS = /(?:^|\/\/)(?:www\.)?(?:liquor\.com|diffordsguide\.com|imbibemagazine\.com|punchdrink\.com|cocktailsdistilled\.com|tuxedono2\.com|drinkswithmommy\.com|garnishcocktails\.com|kindredcocktails\.com|thespruceeats\.com|cocktailparty\.com|tasteofhome\.com\/recipes\/cocktails)/i;
+  if (DRINK_HOSTS.test(u)) return 'drink';
+  // URL path hints — "cocktail", "drink", "bar", "cocktails" slug anywhere
+  if (/\/(cocktails?|drinks?|bar|mixology|bartender|spirits?|mocktails?|liqueurs?)(?:\/|-|_|$)/i.test(u)) {
+    return 'drink';
+  }
+
+  const MEAL_HOSTS = /(?:^|\/\/)(?:www\.)?(?:allrecipes\.com|foodnetwork\.com|seriouseats\.com|bonappetit\.com|epicurious\.com|food\.com|cooking\.nytimes\.com|bbcgoodfood\.com|simplyrecipes\.com|smittenkitchen\.com|budgetbytes\.com|delish\.com|tasty\.co|minimalistbaker\.com|foodwishes\.com)/i;
+  if (MEAL_HOSTS.test(u)) return 'meal';
+
+  // ── Keyword scan on URL path + accompanying text ─────────────────────────
+  const haystack = `${u} ${t}`;
+  const DRINK_WORDS = [
+    // Mixology verbs
+    'shake', 'stir', 'muddle', 'strain', 'rim', 'garnish', 'build in glass',
+    // Units distinctive to cocktails
+    ' oz ', ' ml ', 'dash of', 'splash of', 'barspoon', 'jigger', 'float of',
+    // Spirits
+    'vodka', 'gin', 'rum', 'tequila', 'mezcal', 'whiskey', 'whisky', 'bourbon',
+    'scotch', 'rye', 'cognac', 'brandy', 'aperol', 'campari', 'vermouth',
+    'amaro', 'absinthe', 'liqueur', 'chartreuse', 'curaçao', 'triple sec',
+    'sherry', 'port wine', 'prosecco', 'champagne',
+    // Cocktail-specific nouns
+    'cocktail', 'mocktail', 'highball', 'old fashioned', 'martini', 'manhattan',
+    'daiquiri', 'margarita', 'negroni', 'mojito', 'spritz', 'sour', 'collins',
+    'bitters', 'simple syrup', 'coupe glass', 'rocks glass', 'nick and nora',
+  ];
+  const MEAL_WORDS = [
+    'bake', 'roast', 'sauté', 'saute', 'simmer', 'boil', 'broil', 'grill',
+    'fry', 'deep-fry', 'preheat oven', 'knead', 'proof', 'marinate',
+    'casserole', 'lasagna', 'pasta', 'risotto', 'soup', 'stew', 'curry',
+    'sandwich', 'salad', 'dessert', 'cookie', 'cake', 'pie', 'bread',
+    'meatballs', 'stir-fry', 'stir fry', 'tacos', 'enchilada',
+  ];
+
+  let drinkScore = 0, mealScore = 0;
+  for (const w of DRINK_WORDS) if (haystack.includes(w)) drinkScore += 1;
+  for (const w of MEAL_WORDS) if (haystack.includes(w)) mealScore += 1;
+
+  // Weight: strong oz/dash/splash signal tips it drink-ward even with 1 hit
+  if (/\b\d+(?:\.\d+)?\s*oz\b/.test(haystack)) drinkScore += 2;
+  if (/\bdash(?:es)?\s+of\b/.test(haystack)) drinkScore += 1;
+
+  if (drinkScore > mealScore && drinkScore >= 2) return 'drink';
+  return 'meal';
 }
