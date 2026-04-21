@@ -629,8 +629,8 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
       // Also catch touchend for better mobile responsiveness
       doc.addEventListener('touchend', aimHandler, true);
       // Update html[data-spicehub-aim] for the CSS highlight
-      const aimObserver = new (doc.defaultView.MutationObserver || window.MutationObserver)(() => {});
-      doc.defaultView.addEventListener('message', (evt) => {
+      const aimObserver = new ((doc.defaultView?.MutationObserver) || window.MutationObserver)(() => {});
+      doc.defaultView?.addEventListener('message', (evt) => {
         if (evt.data?.type === 'spicehub:aim-mode-sync') {
           doc.documentElement.setAttribute('data-spicehub-aim', evt.data.on ? '1' : '0');
         }
@@ -1289,7 +1289,12 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
                 title="Recipe Page"
                 className="browser-assist-iframe"
                 srcDoc={htmlContent}
-                sandbox="allow-same-origin"
+                /* allow-scripts is intentional: sanitizeHtmlForEmbed strips ALL
+                    <script> tags before content reaches here, so no recipe-site JS
+                    runs. allow-scripts is required so Chrome 111+ loads external CSS
+                    correctly inside srcDoc iframes and so our parent-injected
+                    toolbar/aim-bridge event handlers actually fire. */
+                sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
                 onLoad={handleIframeLoad}
               />
             </div>
@@ -1760,8 +1765,18 @@ function sanitizeHtmlForEmbed(html, baseUrl) {
   let base = '';
   try { base = new URL(baseUrl).origin; } catch { /* ignore */ }
   return html
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<\/?noscript[^>]*>/gi, '')
+    // ── Script removal ─────────────────────────────────────────────────────────
+    // Remove complete <script>…</script> blocks (inline and src-based).
+    .replace(/<script\b[\s\S]*?<\/script>/gi, '')
+    // Remove any orphaned opening <script> tags with no closing tag.
+    .replace(/<script\b[^>]*>/gi, '')
+    // ── Block javascript: URI schemes ──────────────────────────────────────────
+    // Rewrite href/src/action values that start with "javascript:" so they can't
+    // execute code even though we've enabled allow-scripts in the sandbox.
+    .replace(/\b(href|src|action)\s*=\s*(["']?)\s*javascript:/gi, '$1=$2data:text/plain,blocked:')
+    // ── Noscript cleanup ───────────────────────────────────────────────────────
+    .replace(/<\/?noscript\b[^>]*>/gi, '')
+    // ── Head injection ─────────────────────────────────────────────────────────
     .replace(
       /<head([^>]*)>/i,
       `<head$1>

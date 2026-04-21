@@ -354,6 +354,18 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       }
 
       const { recipe } = await resp.json();
+
+      // If the backend returned a partial/weak recipe (missing ingredients or
+      // directions), route to BrowserAssist so the user can aim the parser
+      // instead of silently saving an incomplete record.
+      if (isWeakResult(recipe)) {
+        setSyncPhase('idle');
+        setBrowserAssistUrl(trimmedUrl);
+        setBrowserAssistSeed(recipe && !recipe._error ? recipe : null);
+        setBrowserAssistMode('showing');
+        return;
+      }
+
       // Show success flash, then hand off to App.jsx
       setSyncSuccessName(recipe?.name || 'Recipe');
       setSyncPhase('success');
@@ -376,6 +388,14 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
         await onResponseArrived();
         if (resp2.ok) {
           const { recipe } = await resp2.json();
+          // Same weak-result check as the primary path
+          if (isWeakResult(recipe)) {
+            setSyncPhase('idle');
+            setBrowserAssistUrl(trimmedUrl);
+            setBrowserAssistSeed(recipe && !recipe._error ? recipe : null);
+            setBrowserAssistMode('showing');
+            return;
+          }
           setSyncSuccessName(recipe?.name || 'Recipe');
           setSyncPhase('success');
           await new Promise(r => setTimeout(r, 700));
