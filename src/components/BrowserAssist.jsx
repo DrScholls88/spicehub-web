@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins, isSocialMediaUrl, getSocialPlatform, tryVideoExtraction, extractInstagramAgent, scoreExtractionConfidence, structureWithAI, captionToRecipe, cleanSocialCaption, isCaptionWeak, importRecipeFromUrl, smartClassifyLines } from '../recipeParser';
+import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins, isSocialMediaUrl, getSocialPlatform, tryVideoExtraction, extractInstagramAgent, scoreExtractionConfidence, structureWithAI, captionToRecipe, cleanSocialCaption, isCaptionWeak, importRecipeFromUrl, smartClassifyLines, isWeakResult } from '../recipeParser';
 import { fetchHtmlViaProxy, proxyImageUrl } from '../api';
 import { queueRecipeImport } from '../db';
 import useOnlineStatus from '../hooks/useOnlineStatus';
@@ -27,7 +27,8 @@ import useOnlineStatus from '../hooks/useOnlineStatus';
  *   onRecipeExtracted  - callback(recipe) on success
  *   onFallbackToText   - callback() when user wants Paste Text
  */
-export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText, initialCapturedText = '', seedRecipe = null, type = 'meal' }) {
+export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText, initialCapturedText = '', seedRecipe = null, type = 'meal', defaultVisualMode = false }) {
+  const API_BASE = import.meta.env.VITE_API_BASE || '';
   const { isOnline } = useOnlineStatus();
 
   // phases:
@@ -85,6 +86,12 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
   const [aimRecipe, setAimRecipe] = useState(null);
   // Toast shown briefly after a successful aim-tap, e.g. "Added 3 ingredients".
   const [aimToast, setAimToast] = useState('');
+
+  // ── Visual scrape mode ───────────────────────────────────────────────────────
+  // defaultVisualMode prop auto-enables visual parse for social URLs (IG/TikTok)
+  // since those sites need layout-based detection most.
+  const [visualScrapeMode, setVisualScrapeMode] = useState(defaultVisualMode);
+  const [visualScrapeRunning, setVisualScrapeRunning] = useState(false);
 
   const isSocial = isSocialMediaUrl(url);
   const platform = isSocial ? getSocialPlatform(url) : '';
@@ -650,6 +657,116 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
     }
   }, [isSocial]);
 
+  // ── Visual scrape — Paprika-style DOM walker ──────────────────────────────
+  // Walks the iframe's DOM, captures text nodes with computed styles + bounding
+  // rects, then POSTs to /api/import/visual-parse for layout-based extraction.
+  // Falls back silently to the existing extraction flow on any failure.
+  const runVisualScrape = useCallback(async () => {
+    setVisualScrapeRunning(true);
+    setAimToast('Visual parse active — detecting structure by layout');
+    setTimeout(() => setAimToast(''), 3000);
+
+    try {
+      const iframe = iframeRef.current;
+      if (!iframe) throw new Error('No iframe');
+
+      const doc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (!doc) throw new Error('Cannot access iframe document');
+
+      // DOM walker — injected as a string and eval'd via iframe.contentWindow
+      // (allowed because sandbox has allow-same-origin + allow-scripts)
+      const walkerScript = `(function() {
+        var nodes = [];
+        var viewport = { width: window.innerWidth, height: window.innerHeight };
+        var SKIP = {'SCRIPT':1,'STYLE':1,'NOSCRIPT':1,'HEAD':1,'META':1,'LINK':1,'TITLE':1,'SVG':1,'PATH':1};
+        function walk(el, depth) {
+          if (!el || SKIP[el.tagName]) return;
+          var childNodes = el.childNodes;
+          for (var i = 0; i < childNodes.length; i++) {
+            var child = childNodes[i];
+            if (child.nodeType === 3) { // TEXT_NODE
+              var text = child.textContent ? child.textContent.trim() : '';
+              if (text.length < 3) continue;
+              var rect = el.getBoundingClientRect();
+              if (rect.width < 20 || rect.height < 8) continue;
+              var style = window.getComputedStyle(el);
+              var fs = parseFloat(style.fontSize) || 14;
+              if (fs < 10) continue;
+              nodes.push({
+                text: text,
+                tagName: el.tagName,
+                rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height), top: Math.round(rect.top) },
+                style: {
+                  fontSize: style.fontSize,
+                  fontWeight: style.fontWeight,
+                  color: style.color,
+                  backgroundColor: style.backgroundColor,
+                  lineHeight: style.lineHeight,
+                },
+                depth: depth,
+                zIndex: parseInt(style.zIndex) || 0
+              });
+            }
+          }
+          if (el.tagName === 'IMG' && el.src) {
+            var r = el.getBoundingClientRect();
+            if (r.width > 80 && r.height > 80) {
+              nodes.push({ text: el.alt || '', tagName: 'IMG', src: el.src, rect: { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height), top: Math.round(r.top) }, style: {}, depth: depth, zIndex: 0 });
+            }
+          }
+          var children = el.children;
+          for (var j = 0; j < children.length; j++) walk(children[j], depth + 1);
+        }
+        walk(document.body, 0);
+        // Cap at 800 nodes for < 50ms latency
+        var visible = nodes.filter(function(n) { return n.rect.top < viewport.height * 4; }).slice(0, 800);
+        return JSON.stringify({ url: window.location.href, viewport: viewport, scrollY: Math.round(window.scrollY), nodes: visible });
+      })()`;
+
+      let visualJson;
+      try {
+        const result = iframe.contentWindow.eval(walkerScript);
+        visualJson = JSON.parse(result);
+      } catch (evalErr) {
+        throw new Error('DOM walker failed: ' + evalErr.message);
+      }
+
+      if (!visualJson?.nodes?.length) throw new Error('No text nodes captured');
+
+      // Payload size guard — trim if > 400KB to keep latency low
+      if (JSON.stringify(visualJson).length > 400000) {
+        visualJson = { ...visualJson, nodes: visualJson.nodes.slice(0, 400) };
+      }
+
+      const resp = await fetch(`${API_BASE}/api/import/visual-parse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(visualJson),
+      });
+
+      if (!resp.ok) throw new Error('Server error: ' + resp.status);
+      const { recipe } = await resp.json();
+
+      if (recipe && !isWeakResult(recipe)) {
+        setVisualScrapeRunning(false);
+        onRecipeExtracted(recipe);
+        return;
+      }
+
+      // Weak result — fall through to existing aim/manual flow
+      setAimToast('Visual parse: partial result — tap 🎯 Aim to fill gaps');
+      setTimeout(() => setAimToast(''), 3000);
+    } catch (err) {
+      console.warn('[BrowserAssist] Visual scrape failed, falling back:', err.message);
+      setAimToast('Visual parse unavailable — using standard mode');
+      setTimeout(() => setAimToast(''), 2500);
+    }
+
+    setVisualScrapeRunning(false);
+    // Fall through: continue with existing extraction flow
+    extractionRef.current?.();
+  }, [API_BASE, iframeRef, onRecipeExtracted]);
+
   // ── Manual extraction from iframe ──────────────────────────────────────────
   const handleExtraction = useCallback(async () => {
     setPhase('extracting');
@@ -1161,6 +1278,32 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
               {aimMode ? '✖ Stop aim' : '🎯 Aim parser'}
             </button>
 
+            {/* Visual scrape mode toggle — Paprika-style layout detection */}
+            <button
+              type="button"
+              onClick={() => setVisualScrapeMode(v => !v)}
+              disabled={phase === 'extracting' || visualScrapeRunning}
+              title={visualScrapeMode ? 'Visual parse mode active (click to disable)' : 'Enable visual parse mode (Paprika-style)'}
+              aria-pressed={visualScrapeMode}
+              aria-label="Toggle visual parse mode"
+              style={{
+                minWidth: '48px',
+                minHeight: '48px',
+                padding: '10px 12px',
+                fontSize: '15px',
+                fontWeight: 700,
+                background: visualScrapeMode ? '#7B1FA2' : 'rgba(123,31,162,0.12)',
+                color: visualScrapeMode ? 'white' : '#7B1FA2',
+                border: visualScrapeMode ? 'none' : '2px solid #7B1FA2',
+                borderRadius: '10px',
+                cursor: 'pointer',
+                boxShadow: visualScrapeMode ? '0 0 0 3px rgba(123,31,162,0.25), 0 2px 6px rgba(0,0,0,0.12)' : 'none',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              {visualScrapeRunning ? '⏳' : 'V'}
+            </button>
+
             {/* Aim target segmented control — only shown when aim mode is active */}
             {aimMode && (
               <div
@@ -1309,8 +1452,8 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
           <div className="browser-assist-actions">
             <button
               className="btn-primary browser-assist-extract-btn"
-              onClick={handleExtraction}
-              disabled={phase === 'extracting'}
+              onClick={visualScrapeMode ? runVisualScrape : handleExtraction}
+              disabled={phase === 'extracting' || visualScrapeRunning}
             >
               {phase === 'extracting' ? '⏳ AI Reading…' : '📥 Extract Recipe'}
             </button>

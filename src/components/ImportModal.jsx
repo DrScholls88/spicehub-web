@@ -384,7 +384,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       await new Promise(r => setTimeout(r, 700));
       setSyncPhase('idle');
       onImport([recipe]);
-      onClose();
+      handleClose();
 
     } catch (err) {
       cancelTimers();
@@ -413,7 +413,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
           await new Promise(r => setTimeout(r, 700));
           setSyncPhase('idle');
           onImport([recipe]);
-          onClose();
+          handleClose();
           return;
         }
         const errBody2 = await resp2.json().catch(() => ({}));
@@ -509,6 +509,10 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     await handleUrlImportSync(trimmedUrl);
   }
 
+  // LEGACY: performUrlExtraction is only called by the sharedContent auto-trigger
+  // useEffect below. For button-triggered URL imports, all traffic goes through
+  // handleUrlImport → handleUrlImportWithWarmup → handleUrlImportSync.
+  // Do NOT call this from the URL import button.
   // ── Extract URL (reusable for auto-extraction on share-target) ──────────────────
   const performUrlExtraction = async (urlToExtract) => {
     if (!urlToExtract?.trim()) {
@@ -586,6 +590,24 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     setImporting(false);
     setImportProgress('');
   };
+
+  // ── Close handler — always wipes transient import state before closing ──────
+  // This prevents state from a previous import attempt bleeding through when the
+  // modal is closed and reopened (e.g., lingering BrowserAssist URL, error messages,
+  // sync phase state). _serverWarm is intentionally NOT reset — the Render server
+  // stays warm between modal opens and we don't want to pay spin-up cost twice.
+  const handleClose = useCallback(() => {
+    capturedTextRef.current = '';
+    setBrowserAssistUrl(null);
+    setBrowserAssistMode('off');
+    setBrowserAssistSeed(null);
+    setSyncPhase('idle');
+    setSyncStageIdx(0);
+    setError('');
+    setImporting(false);
+    setImportProgress('');
+    onClose();
+  }, [onClose]);
 
   // ── Browser Assist callbacks ───────────────────────────────────────────────────
   const handleBrowserAssistRecipe = (recipe) => {
@@ -948,11 +970,11 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={handleClose}>
       <div className="modal-content import-modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <h2>{title}</h2>
-          <button className="btn-icon" onClick={onClose}>✕</button>
+          <button className="btn-icon" onClick={handleClose}>✕</button>
         </div>
 
         {error && (
@@ -987,6 +1009,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
               initialCapturedText={capturedTextRef.current}
               seedRecipe={browserAssistSeed}
               type={itemType}
+              defaultVisualMode={isSocialMediaUrl(browserAssistUrl || '')}
             />
           </>
         ) : /* ── Preview screen (full detail + editable) ──────────────────────── */

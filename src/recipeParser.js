@@ -3599,6 +3599,185 @@ export function isWeakResult(recipe) {
 }
 
 /**
+ * parseVisualJSON — Paprika-style layout-based recipe extractor.
+ *
+ * CONTRACT:
+ *   Input:  visualJson { url, viewport: { width, height }, scrollY, nodes[] }
+ *   Each node: { text, tagName, rect: { x, y, width, height, top },
+ *                style: { fontSize, fontWeight, color, backgroundColor,
+ *                         fontFamily, lineHeight, textDecoration },
+ *                depth, zIndex, src? (for IMG nodes) }
+ *   Output: standard SpiceHub recipe schema — same shape as parseFromHTML / parseFromText.
+ *
+ * Strategy:
+ *   1. Score every text node by visual weight (font-size × font-weight × position bias).
+ *   2. Pick title: highest-weight node in the top 40% of viewport, 5-80 chars.
+ *   3. Identify ingredients: medium-weight nodes that match ingredient patterns
+ *      (bullets, fractions, quantity words) or cluster tightly with ones that do.
+ *   4. Identify instructions: numbered or long paragraph blocks below ingredients.
+ *   5. Filter noise: tiny text, footer/comment zones (> 3× viewport height).
+ *   6. IG/TikTok captions: high-zIndex or semi-transparent background nodes captured first.
+ */
+export function parseVisualJSON(visualJson, url) {
+  // Guard: return error shape on bad input so callers can use isWeakResult() to detect
+  if (!visualJson || !Array.isArray(visualJson.nodes) || visualJson.nodes.length === 0) {
+    return { _error: true, name: 'Imported Recipe', ingredients: [], directions: [] };
+  }
+
+  const { nodes, viewport = { width: 390, height: 844 }, scrollY = 0 } = visualJson;
+  const sourceUrl = url || visualJson.url || '';
+  const vpH = viewport.height || 844;
+  const vpW = viewport.width || 390;
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  const parseFontSize = (s) => parseFloat(s) || 14;
+  const parseFontWeight = (s) => {
+    if (!s) return 400;
+    if (s === 'bold') return 700;
+    if (s === 'normal') return 400;
+    return parseInt(s) || 400;
+  };
+
+  // Ingredient-line patterns: starts with bullet, fraction, digit+unit, or common measure
+  const INGREDIENT_PATTERN = /^[\u2022\-\*\u00bc\u00bd\u00be\u2153\u2154\u215b\d]|^\s*(cup|tbsp|tsp|tablespoon|teaspoon|pound|lb|oz|gram|ml|clove|pinch|dash|handful|slice|piece)/i;
+  const INSTRUCTION_PATTERN = /^\d+[\.\)]\s|^Step\s+\d+/i;
+
+  // Visual weight score (higher = more prominent)
+  const nodeScore = (n) => {
+    const fs = parseFontSize(n.style?.fontSize);
+    const fw = parseFontWeight(n.style?.fontWeight);
+    const topBias = 1 - Math.min(n.rect.top / (vpH * 3), 1); // closer to top = higher score
+    return fs * (fw / 400) * (1 + topBias * 0.5);
+  };
+
+  // Filter out noise nodes
+  const isNoisy = (n) => {
+    if (!n.text || n.text.trim().length < 3) return true;
+    if (n.rect.width < 20 || n.rect.height < 8) return true;
+    const fs = parseFontSize(n.style?.fontSize);
+    if (fs < 10) return true;
+    if (n.rect.top > vpH * 4) return true; // deep footer / comments
+    return false;
+  };
+
+  // ── Caption / overlay detection (Instagram Reels, TikTok) ────────────────
+  // High z-index or semi-transparent background = video caption overlay
+  const captionNodes = nodes.filter(n =>
+    !isNoisy(n) &&
+    (n.zIndex > 5 ||
+      (n.style?.backgroundColor && n.style.backgroundColor !== 'transparent' &&
+       n.style.backgroundColor !== 'rgba(0, 0, 0, 0)' &&
+       !n.style.backgroundColor.startsWith('rgb(255') &&
+       !n.style.backgroundColor.startsWith('rgb(248') &&
+       !n.style.backgroundColor.startsWith('rgb(250')))
+  );
+
+  // ── Working set: clean, non-noisy nodes ───────────────────────────────────
+  const clean = nodes.filter(n => !isNoisy(n));
+
+  // ── 1. Title detection ────────────────────────────────────────────────────
+  // Highest visual weight + top 40% of viewport + 5-80 chars text
+  const titleCandidates = clean.filter(n => {
+    const text = n.text.trim();
+    return text.length >= 5 && text.length <= 120 &&
+           n.rect.top < vpH * 0.5 &&
+           parseFontSize(n.style?.fontSize) >= 16 &&
+           parseFontWeight(n.style?.fontWeight) >= 500;
+  });
+  titleCandidates.sort((a, b) => nodeScore(b) - nodeScore(a));
+  const titleNode = titleCandidates[0] || null;
+  const title = titleNode ? titleNode.text.trim() : 'Imported Recipe';
+
+  // Exclude the title node from further parsing
+  const titleTop = titleNode ? titleNode.rect.top : -1;
+
+  // ── 2. Ingredient detection ───────────────────────────────────────────────
+  // Look below the title for clustered medium-weight nodes matching ingredient patterns
+  const belowTitle = clean.filter(n => n.rect.top > titleTop + 20);
+
+  // Primary: nodes directly matching ingredient pattern
+  const directIngNodes = belowTitle.filter(n => INGREDIENT_PATTERN.test(n.text.trim()));
+
+  // Secondary: if we have ≥ 3 direct matches, also pull in nearby (vertical gap < 60px)
+  // nodes of similar style that likely belong to the same list
+  let ingredientNodes = [...directIngNodes];
+  if (directIngNodes.length >= 2) {
+    const ingTops = directIngNodes.map(n => n.rect.top);
+    const ingMinTop = Math.min(...ingTops) - 80;
+    const ingMaxTop = Math.max(...ingTops) + 120;
+    const avgFs = directIngNodes.reduce((s, n) => s + parseFontSize(n.style?.fontSize), 0) / directIngNodes.length;
+    const avgFw = directIngNodes.reduce((s, n) => s + parseFontWeight(n.style?.fontWeight), 0) / directIngNodes.length;
+    const proxNodes = belowTitle.filter(n =>
+      !directIngNodes.includes(n) &&
+      n.rect.top >= ingMinTop && n.rect.top <= ingMaxTop &&
+      Math.abs(parseFontSize(n.style?.fontSize) - avgFs) < 4 &&
+      Math.abs(parseFontWeight(n.style?.fontWeight) - avgFw) < 150 &&
+      n.text.trim().length > 3 && n.text.trim().length < 200
+    );
+    ingredientNodes = [...directIngNodes, ...proxNodes];
+  }
+
+  // Sort by vertical position
+  ingredientNodes.sort((a, b) => a.rect.top - b.rect.top);
+  const ingredients = ingredientNodes.map(n => n.text.trim()).filter(Boolean);
+
+  // ── 3. Instruction detection ──────────────────────────────────────────────
+  // Numbered blocks or longer text paragraphs below ingredients
+  const ingMaxTop = ingredientNodes.length > 0
+    ? Math.max(...ingredientNodes.map(n => n.rect.top))
+    : titleTop + 100;
+
+  const instructionNodes = belowTitle.filter(n => {
+    if (n.rect.top < ingMaxTop - 50) return false; // above ingredients
+    const text = n.text.trim();
+    if (text.length < 15) return false; // too short to be an instruction
+    if (INSTRUCTION_PATTERN.test(text)) return true; // numbered step
+    if (text.length > 40 && parseFontWeight(n.style?.fontWeight) <= 500) return true; // paragraph
+    return false;
+  });
+  instructionNodes.sort((a, b) => a.rect.top - b.rect.top);
+  const directions = instructionNodes.map(n => n.text.trim()).filter(Boolean);
+
+  // ── 4. Caption fallback (social / video overlay) ─────────────────────────
+  // If ingredients/directions are empty, try to extract from caption nodes
+  const effectiveIngredients = ingredients.length > 0 ? ingredients
+    : captionNodes.filter(n => INGREDIENT_PATTERN.test(n.text.trim())).map(n => n.text.trim());
+  const effectiveDirections = directions.length > 0 ? directions
+    : captionNodes.filter(n => n.text.trim().length > 20).map(n => n.text.trim()).slice(0, 20);
+
+  // ── 5. Image detection ────────────────────────────────────────────────────
+  const imgNode = nodes.find(n => n.tagName === 'IMG' && n.src && n.rect.width > 80);
+  const image = imgNode ? imgNode.src : null;
+
+  // ── 6. Confidence score ───────────────────────────────────────────────────
+  const classified = (titleNode ? 1 : 0) + Math.min(effectiveIngredients.length, 5) + Math.min(effectiveDirections.length, 5);
+  const total = clean.length > 0 ? clean.length : 1;
+  const confidence = Math.min(classified / Math.min(total, 15), 1);
+
+  // ── Debug logging (development only) ─────────────────────────────────────
+  const isDev = (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development')
+    || (typeof import.meta !== 'undefined' && import.meta.env?.DEV);
+  if (isDev) {
+    console.debug('[parseVisualJSON] title:', title,
+      '| ingredients:', effectiveIngredients.length,
+      '| directions:', effectiveDirections.length,
+      '| confidence:', confidence.toFixed(2),
+      '| titleNode:', titleNode?.text?.slice(0, 40),
+      '| captionNodes:', captionNodes.length);
+  }
+
+  return {
+    name: title,
+    ingredients: effectiveIngredients,
+    directions: effectiveDirections,
+    image,
+    sourceUrl,
+    _visualParsed: true,
+    _visualConfidence: confidence,
+  };
+}
+
+/**
  * resolveShortUrl — attempts to follow short-URL redirects via the backend.
  * Falls back silently to the original URL on any error.
  */
