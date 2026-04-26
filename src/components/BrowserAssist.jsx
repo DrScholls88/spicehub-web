@@ -271,27 +271,32 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
 
     (async () => {
       try {
-        // ── FAST PATH: Unified import engine first ────────────────────────────
-        // importRecipeFromUrl() routes through parseFromUrl's full blog pipeline
-        // (JSON-LD → microdata → CSS heuristics → endpoint nudging → Markdown → Gemini)
-        // with aggressive image extraction & base64 persistence for CDN hosts.
-        // This gives us one unified source of truth before falling back to the
-        // iframe-based manual extraction flow unique to BrowserAssist.
-        setExtractionProgress({ step: 1, total: 4, message: 'Extracting recipe…' });
+        // ── FAST PATH: Server-side Python scraper (primary for recipe blogs) ─────
+        // Calls /api/v2/import/sync → coordinator.runWaterfallSync() which runs:
+        //   1. metadata_pass.py  — recipe-scrapers library (500+ site-specific parsers)
+        //   2. Gemini AI structuring
+        // This is the same pipeline ImportModal used as its hidden sync path; by
+        // running it here we get Python doing the heavy lifting for recipe blogs
+        // while BrowserAssist provides the progress UI.
+        // If the server is down or times out we fall through to the local path.
+        setExtractionProgress({ step: 1, total: 4, message: 'Reading the recipe…' });
         try {
-          const unified = await importRecipeFromUrl(url, {
-            type,
-            onProgress: (_phase, _status, msg) => {
-              if (cancelled) return;
-              if (msg) setExtractionProgress(p => ({ ...p, message: msg }));
-            },
+          const resp = await fetch(`${API_BASE}/api/v2/import/sync`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url }),
           });
-          if (!cancelled && unified && !unified._needsManualCaption && hasRealContent(unified)) {
-            setAutoRecipe(cleanRecipe(unified));
-            setPhase('preview');
-            return;
+          if (!cancelled && resp.ok) {
+            const { recipe } = await resp.json();
+            if (!isWeakResult(recipe) && hasRealContent(recipe)) {
+              setAutoRecipe(cleanRecipe(recipe));
+              setPhase('preview');
+              return;
+            }
           }
-        } catch { /* fall through to iframe-based extraction */ }
+          // 422 = intentional extraction failure (no structured data found) — fall through
+          // 5xx = server error — fall through to local extraction
+        } catch { /* server unreachable — fall through to iframe-based extraction */ }
 
         if (cancelled) return;
 

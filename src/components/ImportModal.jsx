@@ -452,10 +452,11 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     const clean = normalizeInstagramUrl(trimmedUrl) || trimmedUrl;
     const sourceHash = await shaHex(clean);
 
-    // Dedupe: if a row already exists (processing/done/failed), reuse it.
+    // Dedupe: if a row already exists (processing/done/failed), just close.
+    // The row is already in the library — no need to add it again.
+    // (handleImport's put() would clobber the existing ghost data if we passed it.)
     const existing = await db.meals.where('sourceHash').equals(sourceHash).first();
     if (existing) {
-      onImport([existing]);
       handleClose();
       return;
     }
@@ -464,7 +465,10 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       : `job-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     const hostname = (() => { try { return new URL(clean).hostname; } catch { return clean; } })();
 
-    const ghostId = await db.meals.add({
+    // Build ghost meal in memory — do NOT add to DB here.
+    // handleImport (in App.jsx) will call db.meals.put(ghostMeal) and then
+    // loadMeals(), so the row appears in the library and the UI refreshes atomically.
+    const ghostMeal = {
       status: 'processing',
       name: `Importing from ${hostname}…`,
       sourceHash,
@@ -473,7 +477,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       importProgress: 'Queued',
       createdAt: new Date().toISOString(),
       _type: itemType,
-    });
+    };
 
     // Fire-and-forget — importWorker (mounted at App root) handles polling
     fetch(`${API_BASE}/api/v2/import`, {
@@ -482,7 +486,8 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       body: JSON.stringify({ jobId, url: clean, sourceHash }),
     }).catch(() => { /* worker retries */ });
 
-    onImport([{ id: ghostId }]);
+    // Pass full ghost meal — handleImport adds it and reloads the library
+    onImport([ghostMeal]);
     handleClose();
   }
 
@@ -519,8 +524,13 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       }
     }
 
-    // Single URL — warmup then synchronous import (default)
-    await handleUrlImportWithWarmup(trimmedUrl);
+    // BrowserAssist is the default UI for all single-URL imports.
+    // It runs the server-side Python scraper (non-social) or the social
+    // pipeline (Instagram/TikTok/etc.) and shows live progress + preview.
+    // The hidden sync waterfall only ran behind the scenes and gave users
+    // no visibility; routing here first fixes the "3 pipelines" problem.
+    setBrowserAssistUrl(trimmedUrl);
+    setBrowserAssistMode('showing');
   };
 
   // ── Render warmup ─────────────────────────────────────────────────────────

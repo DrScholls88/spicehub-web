@@ -58,11 +58,6 @@ const SPECIAL_DAYS = [
 
 export default function App() {
   const { isOnline } = useOnlineStatus();
-  // Hybrid Engine: polls Dexie for any 'processing' ghost rows (from async V2
-  // imports or stalled imports across browser restarts) and hydrates them as
-  // jobs complete. Safe no-op when no ghost rows exist. Mount at App root so
-  // it survives modal close / route changes.
-  useImportWorker();
   const [tab, setTab] = useState('home');
   const [meals, setMeals] = useState([]);
   const [drinks, setDrinks] = useState([]);
@@ -123,7 +118,20 @@ export default function App() {
   // ── Data loaders ─────────────────────────────────────────────────────────────
   const loadMeals = useCallback(async () => {
     const all = await db.meals.toArray();
-    setMeals(all);
+    // Ghost rows from the V2 optimistic import path have status:'processing' or
+    // 'failed' and no real recipe content. Exclude them from the library so they
+    // don't appear as broken placeholder cards. useImportWorker hydrates them in
+    // the background (setting status to 'done' with full recipe data), at which
+    // point loadMeals() is called again and they appear normally.
+    const realMeals = all.filter(m => {
+      if (!m.status || m.status === 'done') return true;  // normal meal or hydrated ghost
+      if (m.status === 'processing' || m.status === 'failed') {
+        // Only show if already hydrated with real recipe data
+        return !!(m.ingredients?.length && m.name && !m.name.startsWith('Importing from'));
+      }
+      return true;
+    });
+    setMeals(realMeals);
     setLoading(false);
   }, []);
 
@@ -131,6 +139,11 @@ export default function App() {
     const all = await db.drinks.toArray();
     setDrinks(all);
   }, []);
+
+  // Hybrid Engine: polls Dexie for any 'processing' ghost rows and hydrates them
+  // when the backend job finishes. Safe no-op when no ghost rows exist.
+  // Wired to loadMeals so the library auto-refreshes when a background import completes.
+  useImportWorker(loadMeals);
 
   useEffect(() => {
     loadMeals();
@@ -437,15 +450,35 @@ useEffect(() => {
   const handleImport = useCallback(async (imported) => {
     const target = showImportFor;
     setShowImportFor(null);
-    for (const r of imported) {
-      if (target === 'drinks') { await db.drinks.add(r); }
-      else { await db.meals.add(r); }
+
+    // Ghost rows (from V2 optimistic path) arrive with an `id` already set in Dexie.
+    // Normal recipes have no `id` yet — Dexie auto-generates it.
+    // We use put() for everything: it upserts, so ghost rows re-save harmlessly
+    // and new recipes get inserted. add() would throw ConstraintError on ghost refs.
+    try {
+      for (const r of imported) {
+        // Skip bare ghost-row references ({id} only) — row is already in DB.
+        // These have no name/ingredients and would clobber the real ghost row data.
+        if (r.id && !r.name && !r.ingredients) continue;
+
+        if (target === 'drinks') { await db.drinks.put(r); }
+        else { await db.meals.put(r); }
+      }
+    } catch (err) {
+      console.error('[handleImport] DB write failed:', err);
+    } finally {
+      // Always reload — ensures ghost rows created before onImport also appear,
+      // and that a DB error doesn't leave the library stale.
+      if (target === 'drinks') { await loadDrinks(); }
+      else { await loadMeals(); }
     }
-    if (target === 'drinks') { await loadDrinks(); }
-    else { await loadMeals(); }
-    const count = imported.length;
+
+    // Only show toast for recipes that actually had content
+    const real = imported.filter(r => r.name);
+    if (!real.length) return;
+    const count = real.length;
     const noun = target === 'drinks' ? (count === 1 ? 'drink' : 'drinks') : (count === 1 ? 'recipe' : 'recipes');
-    const name = count === 1 ? imported[0].name : `${count} ${noun}`;
+    const name = count === 1 ? (real[0].name || 'Recipe') : `${count} ${noun}`;
     showToast(`Added ${name} to ${target === 'drinks' ? 'The Bar' : 'your library'}`);
   }, [showImportFor, loadMeals, loadDrinks, showToast]);
 

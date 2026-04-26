@@ -9,7 +9,8 @@ Offline Sovereignty: The app must be fully functional without an internet connec
 Security-First Architecture: Zero tolerance for hardcoded secrets. Environment variables and secure headers are mandatory. API routes must be rate-limited and protected.
 
 ## Preferred Tools & Workflow
-- Conventional Commit cmd provided for every change package
+- Conventional Commit cmd provided for every change package. 
+- CLAUDE ONLY PROVIDES THE GIT COMMIT CMDS, DO NOT ATTEMPT TO COMMIT TO GIT, User will manually make the commits to ensure they go to the right place
 
 ## High-Priority Focus Areas (Current Sprint)
 1. Instagram Import
@@ -21,9 +22,6 @@ Security-First Architecture: Zero tolerance for hardcoded secrets. Environment v
    - Clear progress feedback during imports
    - Inviting empty states and Week View polish
 
-## Ruflo Usage Rules
-- End every swarm with conventional commit suggestions + testing plan
-- Keep graceful fallbacks and offline queue intact
 
 You are now operating under this constitution.
 
