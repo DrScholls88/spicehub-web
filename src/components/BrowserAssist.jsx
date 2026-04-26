@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins, isSocialMediaUrl, getSocialPlatform, tryVideoExtraction, extractInstagramAgent, scoreExtractionConfidence, structureWithAI, captionToRecipe, cleanSocialCaption, isCaptionWeak, importRecipeFromUrl, smartClassifyLines, isWeakResult } from '../recipeParser';
+import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins, isSocialMediaUrl, getSocialPlatform, tryVideoExtraction, extractInstagramAgent, scoreExtractionConfidence, structureWithAI, captionToRecipe, cleanSocialCaption, isCaptionWeak, importRecipeFromUrl, smartClassifyLines, isWeakResult, parseHybrid } from '../recipeParser';
 import { fetchHtmlViaProxy, proxyImageUrl } from '../api';
 import { queueRecipeImport } from '../db';
 import useOnlineStatus from '../hooks/useOnlineStatus';
@@ -738,14 +738,21 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
         visualJson = { ...visualJson, nodes: visualJson.nodes.slice(0, 400) };
       }
 
-      const resp = await fetch(`${API_BASE}/api/import/visual-parse`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(visualJson),
+      // Hybrid engine: visual first (local parseVisualJSON on the scraped DOM),
+      // auto-escalate to deep V2 pipeline (importRecipeFromUrl) if confidence
+      // is below threshold. Zero extra round-trip for the visual path — the
+      // heuristics run client-side against the payload we already captured.
+      const recipe = await parseHybrid(visualJson.url || url, {
+        useVisual: true,
+        visualJson,
+        type,
+        onProgress: (phase, _status, msg) => {
+          if (msg) {
+            setAimToast(msg);
+            setTimeout(() => setAimToast(''), 2500);
+          }
+        },
       });
-
-      if (!resp.ok) throw new Error('Server error: ' + resp.status);
-      const { recipe } = await resp.json();
 
       if (recipe && !isWeakResult(recipe)) {
         setVisualScrapeRunning(false);
@@ -754,7 +761,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
       }
 
       // Weak result — fall through to existing aim/manual flow
-      setAimToast('Visual parse: partial result — tap 🎯 Aim to fill gaps');
+      setAimToast('Hybrid parse: partial result — tap 🎯 Aim to fill gaps');
       setTimeout(() => setAimToast(''), 3000);
     } catch (err) {
       console.warn('[BrowserAssist] Visual scrape failed, falling back:', err.message);
@@ -765,7 +772,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
     setVisualScrapeRunning(false);
     // Fall through: continue with existing extraction flow
     extractionRef.current?.();
-  }, [API_BASE, iframeRef, onRecipeExtracted]);
+  }, [url, type, onRecipeExtracted]);
 
   // ── Manual extraction from iframe ──────────────────────────────────────────
   const handleExtraction = useCallback(async () => {

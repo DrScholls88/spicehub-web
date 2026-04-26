@@ -11,6 +11,8 @@ import {
 } from '../recipeParser.js';
 import BrowserAssist from './BrowserAssist';
 import { normalizeInstagramUrl } from '../api.js';
+import db from '../db.js';
+import { shaHex } from '../shaHex.js';
 
 // Module-level flag — persists for the browser tab session so we only pay the
 // Render spin-up cost once per session, not on every import.
@@ -437,6 +439,53 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     setSyncStageIdx(0);
   }
 
+  // ── V2 ghost-recipe optimistic handler (feature-flagged) ───────────────────
+  // Flag: VITE_USE_V2_IMPORT=true  → modal closes in <300ms with a "processing"
+  // placeholder; useImportWorker polls /api/v2/import/status and hydrates the
+  // row when the server pipeline finishes.
+  // Flag unset/false → falls through to the synchronous hybrid flow (default).
+  // This is the exact pattern from feat/unified-import-engine, brought over
+  // so it can be toggled on once users validate the sync path is stable.
+  const USE_V2_OPTIMISTIC = import.meta.env.VITE_USE_V2_IMPORT === 'true';
+
+  async function handleUrlImportV2(trimmedUrl) {
+    const clean = normalizeInstagramUrl(trimmedUrl) || trimmedUrl;
+    const sourceHash = await shaHex(clean);
+
+    // Dedupe: if a row already exists (processing/done/failed), reuse it.
+    const existing = await db.meals.where('sourceHash').equals(sourceHash).first();
+    if (existing) {
+      onImport([existing]);
+      handleClose();
+      return;
+    }
+
+    const jobId = (crypto.randomUUID ? crypto.randomUUID()
+      : `job-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const hostname = (() => { try { return new URL(clean).hostname; } catch { return clean; } })();
+
+    const ghostId = await db.meals.add({
+      status: 'processing',
+      name: `Importing from ${hostname}…`,
+      sourceHash,
+      jobId,
+      sourceUrl: clean,
+      importProgress: 'Queued',
+      createdAt: new Date().toISOString(),
+      _type: itemType,
+    });
+
+    // Fire-and-forget — importWorker (mounted at App root) handles polling
+    fetch(`${API_BASE}/api/v2/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jobId, url: clean, sourceHash }),
+    }).catch(() => { /* worker retries */ });
+
+    onImport([{ id: ghostId }]);
+    handleClose();
+  }
+
   // ── Import from ANY URL ─────────────────────────────────────────────────────
   // Called by the Import button and Enter-key handler.
   // Routes single URLs through performUrlExtraction (which handles Instagram →
@@ -459,7 +508,18 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       return;
     }
 
-    // Single URL — warmup then synchronous import
+    // V2 optimistic path — only when flag is explicitly enabled
+    if (USE_V2_OPTIMISTIC) {
+      try {
+        await handleUrlImportV2(trimmedUrl);
+        return;
+      } catch (err) {
+        console.warn('[ImportModal] V2 optimistic failed, falling back to sync:', err?.message);
+        // fall through to sync path
+      }
+    }
+
+    // Single URL — warmup then synchronous import (default)
     await handleUrlImportWithWarmup(trimmedUrl);
   };
 

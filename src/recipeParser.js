@@ -4582,3 +4582,84 @@ export function detectImportType(url = '', initialText = '') {
   if (drinkScore > mealScore && drinkScore >= 2) return 'drink';
   return 'meal';
 }
+
+// ─── parseHybrid — "First man to bat" Paprika visual + deep V2 fallback ──────
+/**
+ * Seamless hybrid import entry point.
+ *
+ * Philosophy:
+ *   • Paprika visual heuristics are fastest and most deterministic for social
+ *     media and layout-heavy pages, so they bat first when a DOM payload is
+ *     available (e.g. BrowserAssist has already scraped the page).
+ *   • If no visualJson is supplied, or visual confidence is below threshold,
+ *     we automatically escalate to the Unified Import Engine v2 server
+ *     pipeline (stealth fetch → recipe-scrapers → Gemini AI → image persist).
+ *   • The caller never has to know which path produced the recipe — just hand
+ *     a URL (and optionally a visualJson payload) and get a finalized recipe.
+ *
+ * @param {string} url                        Source URL.
+ * @param {Object} [options]
+ * @param {boolean} [options.useVisual=true]  Allow visual path (false = force deep).
+ * @param {Object}  [options.visualJson]      Pre-scraped DOM payload from BrowserAssist.
+ *                                            Shape: { url, viewport, scrollY, nodes[] }
+ * @param {number}  [options.minConfidence=70] Confidence floor for visual path.
+ * @param {'meal'|'drink'} [options.type]     Item type hint (auto-detected if omitted).
+ * @param {function} [options.onProgress]     Progress callback (phase, status, message).
+ * @param {number}  [options.timeoutMs=60000] Global safety timeout (deep path only).
+ * @param {AbortSignal} [options.signal]      Abort signal for the deep path.
+ * @returns {Promise<Object>} Finalized recipe object (with _hybridPath: 'visual'|'deep').
+ */
+export async function parseHybrid(url, options = {}) {
+  const {
+    useVisual = true,
+    visualJson = null,
+    minConfidence = 70,
+    type,
+    onProgress,
+    timeoutMs,
+    signal,
+  } = options || {};
+
+  const safeEmit = (phase, status, msg) => {
+    try { if (typeof onProgress === 'function') onProgress(phase, status, msg); } catch { /* no-op */ }
+  };
+
+  // ── First man to bat: Paprika visual heuristics ────────────────────────────
+  // Only run when the caller actually provides a scraped DOM payload. A URL
+  // alone can't be parsed visually from this layer — BrowserAssist is the
+  // DOM walker that produces visualJson.
+  if (useVisual && visualJson && Array.isArray(visualJson.nodes) && visualJson.nodes.length) {
+    try {
+      safeEmit('visual', 'running', 'Reading page layout…');
+      const visualResult = parseVisualJSON(visualJson, url);
+      const conf = Number(visualResult?.confidence ?? 0);
+      if (visualResult && !visualResult._error && conf >= minConfidence) {
+        safeEmit('visual', 'success', `Matched layout (confidence ${conf})`);
+        return { ...visualResult, _hybridPath: 'visual' };
+      }
+      safeEmit('visual', 'weak', `Confidence ${conf} below ${minConfidence} — escalating`);
+    } catch (err) {
+      console.warn('[parseHybrid] visual path threw, escalating:', err?.message || err);
+      safeEmit('visual', 'error', 'Visual parse failed — escalating to deep pipeline');
+    }
+  } else if (!useVisual) {
+    safeEmit('deep', 'forced', 'Deep mode forced — skipping visual path');
+  }
+
+  // ── Deep fallback: Unified Import Engine v2 full waterfall ────────────────
+  // importRecipeFromUrl is the canonical pipeline (server sync → IG agent →
+  // video-first → og-meta → Gemini AI → image hunt). It already handles the
+  // 60s global timeout, image persistence, and _needsManualCaption signalling.
+  safeEmit('deep', 'running', 'Running deep extraction pipeline…');
+  const deepOpts = {
+    type,
+    onProgress,
+    timeoutMs,
+    signal,
+  };
+  // Strip undefined so importRecipeFromUrl's defaults kick in.
+  Object.keys(deepOpts).forEach(k => deepOpts[k] === undefined && delete deepOpts[k]);
+
+  const deepResult = await importRecipeFromUrl(url, deepOpts);
+  return { ...(deepResult || {}), _hybridPath: 'deep' };
+}

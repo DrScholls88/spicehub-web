@@ -84,6 +84,72 @@ export function registerImportRoutes(app, {
       updatedAt: job.updatedAt,
     });
   });
+
+  // ── Hybrid router alias /api/import ───────────────────────────────────────
+  // Single seamless entry point that routes by `mode` in the request body:
+  //   mode: 'visual'      → Paprika layout heuristics (requires nodes[])
+  //   mode: 'deep' | 'sync' | undefined → Unified v2 synchronous waterfall
+  //   mode: 'async' or with jobId       → Background async job + polling
+  //
+  // Callers that don't know which path they want can just hit /api/import —
+  // if they send a visual payload (nodes[]) we parse visually, otherwise we
+  // run the deep pipeline. This keeps the client side dead simple.
+  app.post('/api/import', async (req, res) => {
+    const body = req.body || {};
+    const mode = body.mode;
+
+    // Explicit visual mode OR visual payload detected → Paprika fast path
+    if (mode === 'visual' || (Array.isArray(body.nodes) && body.nodes.length > 0)) {
+      const visualJson = Array.isArray(body.nodes) ? body : body.visualJson;
+      if (!visualJson || !Array.isArray(visualJson.nodes) || visualJson.nodes.length === 0) {
+        return res.status(400).json({ error: 'visual mode requires nodes[] payload' });
+      }
+      try {
+        const recipe = parseVisualPayload(visualJson);
+        return res.json({ recipe, path: 'visual' });
+      } catch (err) {
+        console.error('[hybrid /api/import visual error]', err.message);
+        return res.json({
+          recipe: { _error: true, name: 'Imported Recipe', ingredients: [], directions: [] },
+          path: 'visual',
+        });
+      }
+    }
+
+    // Explicit async mode OR jobId present → background job
+    if (mode === 'async' || body.jobId) {
+      const { jobId, url, sourceHash } = body;
+      if (!jobId || !url) return res.status(400).json({ error: 'async mode requires jobId and url' });
+      const existing = jobStore.get(jobId);
+      if (existing) return res.status(202).json({ jobId, status: existing.status, path: 'async' });
+      jobStore.put(jobId, { status: 'queued', url, sourceHash });
+      Promise.resolve()
+        .then(() => runWaterfall({ jobId, url, sourceHash }))
+        .catch((err) => jobStore.put(jobId, { status: 'failed', error: err.message || String(err) }));
+      return res.status(202).json({ jobId, status: 'queued', path: 'async' });
+    }
+
+    // Default: deep synchronous waterfall (Unified v2)
+    const { url } = body;
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: 'url is required' });
+    }
+    try {
+      const recipe = await runWaterfallSync({ url });
+      return res.json({ recipe, path: 'deep' });
+    } catch (err) {
+      if (err instanceof ExtractError || err?.name === 'ExtractError') {
+        return res.status(422).json({
+          error: 'extraction_failed',
+          message: err.message,
+          partial: { capturedText: err.capturedText || '' },
+          path: 'deep',
+        });
+      }
+      console.error('[hybrid /api/import deep error]', err);
+      return res.status(500).json({ error: 'internal_error', message: err.message, path: 'deep' });
+    }
+  });
 }
 
 // ── parseVisualPayload ────────────────────────────────────────────────────────

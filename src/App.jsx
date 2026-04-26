@@ -26,6 +26,7 @@ import { isMobileDevice } from './isMobile';
 import useOnlineStatus, { onOnlineStatusChange } from './hooks/useOnlineStatus';
 import useBackHandler from './hooks/useBackHandler';
 import useSwipeDismiss from './hooks/useSwipeDismiss';
+import { useImportWorker } from './importWorker';
 import './App.css';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -57,6 +58,11 @@ const SPECIAL_DAYS = [
 
 export default function App() {
   const { isOnline } = useOnlineStatus();
+  // Hybrid Engine: polls Dexie for any 'processing' ghost rows (from async V2
+  // imports or stalled imports across browser restarts) and hydrates them as
+  // jobs complete. Safe no-op when no ghost rows exist. Mount at App root so
+  // it survives modal close / route changes.
+  useImportWorker();
   const [tab, setTab] = useState('home');
   const [meals, setMeals] = useState([]);
   const [drinks, setDrinks] = useState([]);
