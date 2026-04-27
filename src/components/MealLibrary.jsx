@@ -307,12 +307,21 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                 {meal.category && meal.category !== 'Dinners' && (
                   <span className="ml-tile-cat">{meal.category}</span>
                 )}
+                {/* Ghost row badges — visible indicator for stuck imports */}
+                {meal.status === 'processing' && (
+                  <span className="ml-tile-cat" style={{background:'rgba(0,0,0,0.55)',fontSize:'10px'}}>⏳ Importing…</span>
+                )}
+                {meal.status === 'failed' && (
+                  <span className="ml-tile-cat" style={{background:'rgba(180,0,0,0.7)',fontSize:'10px'}}>⚠ Failed</span>
+                )}
               </div>
               {/* Info row */}
               <div className="ml-tile-info">
                 <span className="ml-tile-name">{meal.name}</span>
                 <span className="ml-tile-meta">
-                  {(meal.ingredients || []).length} ing · {(meal.directions || []).length} steps
+                  {meal.status === 'processing' ? 'Import in progress…'
+                    : meal.status === 'failed' ? (meal.importError || 'Import failed — tap to delete')
+                    : `${(meal.ingredients || []).length} ing · ${(meal.directions || []).length} steps`}
                 </span>
                 {meal.notes && (
                   <span className="ml-tile-notes">

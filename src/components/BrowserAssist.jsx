@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins, isSocialMediaUrl, getSocialPlatform, tryVideoExtraction, extractInstagramAgent, scoreExtractionConfidence, structureWithAI, captionToRecipe, cleanSocialCaption, isCaptionWeak, importRecipeFromUrl, smartClassifyLines, isWeakResult, parseHybrid } from '../recipeParser';
 import { fetchHtmlViaProxy, proxyImageUrl } from '../api';
 import { queueRecipeImport } from '../db';
@@ -26,8 +26,13 @@ import useOnlineStatus from '../hooks/useOnlineStatus';
  *   url                - Page URL
  *   onRecipeExtracted  - callback(recipe) on success
  *   onFallbackToText   - callback() when user wants Paste Text
+ *   onError            - callback({ message, originalError }) when visual scrape fails
+ *   onBlocksSelected   - callback(selectedIds: string[]) when user changes block selection
+ *
+ * Ref (via forwardRef):
+ *   triggerVisualScrape() — kick off visual scrape from parent without requiring a button click
  */
-export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText, initialCapturedText = '', seedRecipe = null, type = 'meal', defaultVisualMode = false }) {
+const BrowserAssist = forwardRef(function BrowserAssist({ url, onRecipeExtracted, onFallbackToText, initialCapturedText = '', seedRecipe = null, type = 'meal', defaultVisualMode = false, onError, onBlocksSelected }, ref) {
   const API_BASE = import.meta.env.VITE_API_BASE || '';
   const { isOnline } = useOnlineStatus();
 
@@ -92,6 +97,13 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
   // since those sites need layout-based detection most.
   const [visualScrapeMode, setVisualScrapeMode] = useState(defaultVisualMode);
   const [visualScrapeRunning, setVisualScrapeRunning] = useState(false);
+  // Classified blocks returned by the server's parseVisualPayload — used to
+  // render color-coded overlays inside the iframe scale wrapper. Client trusts
+  // the server's type field and never re-classifies.
+  // type: 'title' (yellow) | 'ingredient' (green) | 'instruction' (purple) | 'caption' (orange) | 'other'
+  const [visualBlocks, setVisualBlocks] = useState([]);
+  // IDs of blocks the user has clicked to select (format: block array index as string)
+  const [selectedBlockIds, setSelectedBlockIds] = useState([]);
 
   const isSocial = isSocialMediaUrl(url);
   const platform = isSocial ? getSocialPlatform(url) : '';
@@ -180,6 +192,22 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
       aimBtn.style.background = aimMode ? '#E53935' : '#2196F3';
     }
   }, [aimMode, htmlContent]);
+
+  // ── Notify parent when block selection changes ────────────────────────────
+  // Parent can store selected block IDs for future "refine selected blocks" UX.
+  useEffect(() => {
+    if (typeof onBlocksSelected === 'function') {
+      onBlocksSelected(selectedBlockIds);
+    }
+  }, [selectedBlockIds, onBlocksSelected]);
+
+  // ── Expose triggerVisualScrape to parent via ref ──────────────────────────
+  // ImportModal calls browserAssistRef.current.triggerVisualScrape() when the
+  // user clicks "Analyze Visually" — no prop-drilling of a callback needed.
+  useImperativeHandle(ref, () => ({
+    triggerVisualScrape: () => runVisualScrape(),
+  }), [runVisualScrape]);
+
 
   // ── Helper: update a specific pipeline step ───────────────────────────────
   const stepUpdater = useRef(null);
@@ -664,11 +692,25 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
 
   // ── Visual scrape — Paprika-style DOM walker ──────────────────────────────
   // Walks the iframe's DOM, captures text nodes with computed styles + bounding
-  // rects, then POSTs to /api/import/visual-parse for layout-based extraction.
-  // Falls back silently to the existing extraction flow on any failure.
+  // rects, then POSTs to /api/import/visual-parse for server-side layout-based
+  // extraction. The server returns { recipe, blocks } — blocks already have a
+  // `type` field set by the server's heuristics. The client NEVER re-classifies;
+  // it only renders overlays based on server types. Falls back silently to the
+  // existing extraction flow on any failure.
+  //
+  // Visual scrape contract:
+  //   POST /api/import/visual-parse  ← { url, viewport, scrollY, nodes[] }
+  //   Response                       → { recipe, blocks: [{text, rect, type, style}] }
+  //   block.type: 'title' | 'ingredient' | 'instruction' | 'caption' | 'other'
   const runVisualScrape = useCallback(async () => {
     setVisualScrapeRunning(true);
-    setAimToast('Visual parse active — detecting structure by layout');
+
+    // For social URLs, show visual-mode toast immediately — layout detection is
+    // the primary strategy for IG/TikTok/Reels where CSS selectors fail.
+    const isSocial = isSocialMediaUrl(url);
+    setAimToast(isSocial
+      ? 'Visual parse active — detecting structure by layout'
+      : 'Scanning page layout…');
     setTimeout(() => setAimToast(''), 3000);
 
     try {
@@ -679,7 +721,8 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
       if (!doc) throw new Error('Cannot access iframe document');
 
       // DOM walker — injected as a string and eval'd via iframe.contentWindow
-      // (allowed because sandbox has allow-same-origin + allow-scripts)
+      // (allowed because sandbox has allow-same-origin + allow-scripts).
+      // Captures text nodes with computed styles + bounding rects.
       const walkerScript = `(function() {
         var nodes = [];
         var viewport = { width: window.innerWidth, height: window.innerHeight };
@@ -743,21 +786,24 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
         visualJson = { ...visualJson, nodes: visualJson.nodes.slice(0, 400) };
       }
 
-      // Hybrid engine: visual first (local parseVisualJSON on the scraped DOM),
-      // auto-escalate to deep V2 pipeline (importRecipeFromUrl) if confidence
-      // is below threshold. Zero extra round-trip for the visual path — the
-      // heuristics run client-side against the payload we already captured.
-      const recipe = await parseHybrid(visualJson.url || url, {
-        useVisual: true,
-        visualJson,
-        type,
-        onProgress: (phase, _status, msg) => {
-          if (msg) {
-            setAimToast(msg);
-            setTimeout(() => setAimToast(''), 2500);
-          }
-        },
+      // POST the visual JSON to the server — layout heuristics run there and
+      // return { recipe, blocks } with each block's type already set.
+      // We trust the server's classification; the client only renders overlays.
+      const resp = await fetch(`${API_BASE}/api/import/visual-parse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(visualJson),
       });
+
+      if (!resp.ok) throw new Error(`visual-parse ${resp.status}`);
+      const { recipe, blocks: serverBlocks = [] } = await resp.json();
+
+      // Store server-classified blocks so the iframe overlay layer can render them.
+      // Each block: { text, rect, type: 'title'|'ingredient'|'instruction'|'caption'|'other', style }
+      if (Array.isArray(serverBlocks) && serverBlocks.length > 0) {
+        setVisualBlocks(serverBlocks);
+        setSelectedBlockIds([]); // reset selection on each new scrape
+      }
 
       if (recipe && !isWeakResult(recipe)) {
         setVisualScrapeRunning(false);
@@ -765,11 +811,15 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
         return;
       }
 
-      // Weak result — fall through to existing aim/manual flow
-      setAimToast('Hybrid parse: partial result — tap 🎯 Aim to fill gaps');
-      setTimeout(() => setAimToast(''), 3000);
+      // Weak result — show overlays so user can aim at what the parser missed
+      setAimToast('Partial result — overlays highlight detected blocks; tap 🎯 to fill gaps');
+      setTimeout(() => setAimToast(''), 4000);
     } catch (err) {
       console.warn('[BrowserAssist] Visual scrape failed, falling back:', err.message);
+      // Notify parent so it can show a retry toast
+      if (typeof onError === 'function') {
+        onError({ message: 'Visual parse failed — falling back to text extraction', originalError: err });
+      }
       setAimToast('Visual parse unavailable — using standard mode');
       setTimeout(() => setAimToast(''), 2500);
     }
@@ -777,7 +827,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
     setVisualScrapeRunning(false);
     // Fall through: continue with existing extraction flow
     extractionRef.current?.();
-  }, [url, type, onRecipeExtracted]);
+  }, [url, type, onRecipeExtracted, onError, API_BASE]);
 
   // ── Manual extraction from iframe ──────────────────────────────────────────
   const handleExtraction = useCallback(async () => {
@@ -1082,13 +1132,30 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
             <span className="browser-assist-success-icon">&#10003;</span>
             <span>Recipe found{autoRecipe.extractedVia ? ` via ${autoRecipe.extractedVia}` : ''}</span>
             {(() => {
-              const conf = scoreExtractionConfidence(autoRecipe);
-              const level = conf >= 70 ? 'high' : conf >= 40 ? 'medium' : 'low';
-              return (
-                <span className={`confidence-badge confidence-${level}`}>
-                  {conf >= 70 ? 'High' : conf >= 40 ? 'Good' : 'Low'} confidence
-                </span>
-              );
+              if (autoRecipe._hybridUsed === true && autoRecipe._hybridConfidence != null) {
+                const pct = Math.round(autoRecipe._hybridConfidence * 100);
+                return (
+                  <span className="confidence-badge confidence-high">
+                    ✦ Enhanced with Gemini &bull; {pct}%
+                  </span>
+                );
+              } else if (autoRecipe._hybridUsed === false && autoRecipe._hybridConfidence != null) {
+                const pct = Math.round(autoRecipe._hybridConfidence * 100);
+                const level = pct >= 75 ? 'high' : pct >= 50 ? 'medium' : 'low';
+                return (
+                  <span className={`confidence-badge confidence-${level}`}>
+                    ⚡ Visual Parse &bull; {pct}%
+                  </span>
+                );
+              } else {
+                const conf = scoreExtractionConfidence(autoRecipe);
+                const level = conf >= 70 ? 'high' : conf >= 40 ? 'medium' : 'low';
+                return (
+                  <span className={`confidence-badge confidence-${level}`}>
+                    {conf >= 70 ? 'High' : conf >= 40 ? 'Good' : 'Low'} confidence
+                  </span>
+                );
+              }
             })()}
           </div>
 
@@ -1444,6 +1511,7 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
               width: `${Math.round(10000 / iframeZoom)}%`,
               transition: 'transform 0.12s ease-out, width 0.12s ease-out',
               willChange: 'transform',
+              position: 'relative',
             }}>
               <iframe
                 ref={iframeRef}
@@ -1458,6 +1526,51 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
                 onLoad={handleIframeLoad}
               />
+              {/* ── Visual-scrape block overlays ─────────────────────────────
+                  Rendered inside the scale wrapper so they use the same unscaled
+                  coordinate space as the DOM walker rects (raw iframe CSS pixels).
+                  Colors: title=yellow, ingredient=green, instruction=purple, caption=orange.
+                  Clicking a block toggles its selection (tracked in selectedBlockIds). */}
+              {visualBlocks.length > 0 && visualBlocks.map((block, idx) => {
+                if (!block.rect || block.type === 'other') return null;
+                const idStr = String(idx);
+                const isSelected = selectedBlockIds.includes(idStr);
+                const COLOR_MAP = {
+                  title:       { bg: 'rgba(255,215,0,0.30)',  border: 'rgba(255,200,0,0.85)'  },
+                  ingredient:  { bg: 'rgba(76,175,80,0.25)',  border: 'rgba(56,142,60,0.85)'  },
+                  instruction: { bg: 'rgba(156,39,176,0.20)', border: 'rgba(123,31,162,0.85)' },
+                  caption:     { bg: 'rgba(255,152,0,0.28)',  border: 'rgba(230,120,0,0.85)'  },
+                };
+                const colors = COLOR_MAP[block.type] || { bg: 'rgba(100,100,100,0.15)', border: 'rgba(100,100,100,0.5)' };
+                return (
+                  <div
+                    key={idx}
+                    title={`${block.type}: ${block.text}`}
+                    onClick={() => {
+                      setSelectedBlockIds(prev =>
+                        prev.includes(idStr)
+                          ? prev.filter(id => id !== idStr)
+                          : [...prev, idStr]
+                      );
+                    }}
+                    style={{
+                      position: 'absolute',
+                      left:   block.rect.x,
+                      top:    block.rect.top,
+                      width:  block.rect.width,
+                      height: block.rect.height,
+                      backgroundColor: isSelected ? colors.border.replace('0.85', '0.45') : colors.bg,
+                      border: `2px solid ${colors.border}`,
+                      boxSizing: 'border-box',
+                      borderRadius: 4,
+                      cursor: 'pointer',
+                      zIndex: 10,
+                      transition: 'background-color 0.15s',
+                      pointerEvents: 'auto',
+                    }}
+                  />
+                );
+              })}
             </div>
           </div>
 
@@ -1488,7 +1601,9 @@ export default function BrowserAssist({ url, onRecipeExtracted, onFallbackToText
       )}
     </div>
   );
-}
+}); // ← closes forwardRef(function BrowserAssist(...) {
+
+export default BrowserAssist;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Helpers

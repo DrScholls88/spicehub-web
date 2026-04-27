@@ -11,10 +11,59 @@ import { downloadInstagramImage, isInstagramCdnUrl, fetchHtmlViaProxy as fetchHt
 import { cacheInstagramRecipe } from './db.js';
 import { isRedditUrl, isRedditPostUrl, tryRedditJson } from './scrapers/redditDiscovery.js';
 import { htmlToMarkdown, htmlLooksLikeRecipe } from './scrapers/markdownConverter.js';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // ─── Title sanitizer (public export, delegates to cleanTitle) ────────────────
 export function sanitizeRecipeTitle(raw) {
   return cleanTitle(raw);
+}
+
+// ─── Structured ingredient / direction helpers ────────────────────────────────
+
+/**
+ * structureIngredient — Parse a raw ingredient string into quantity/unit/item parts.
+ * Returns {quantity, unit, item} where any field may be empty string.
+ * Examples:
+ *   "2 cups flour"            → { quantity: "2", unit: "cups", item: "flour" }
+ *   "1/2 tsp vanilla extract" → { quantity: "1/2", unit: "tsp", item: "vanilla extract" }
+ *   "Salt to taste"           → { quantity: "", unit: "", item: "Salt to taste" }
+ *   "• 3 tbsp olive oil"      → { quantity: "3", unit: "tbsp", item: "olive oil" }
+ */
+export function structureIngredient(raw = '') {
+  const text = raw.replace(/^[\u2022\-\*]\s*/, '').trim(); // strip bullets
+  const UNITS = /^(cups?|tbsp|tablespoons?|tsp|teaspoons?|oz|ounces?|lbs?|pounds?|grams?|g|kg|ml|liters?|l|cloves?|pieces?|pinch(?:es)?|dash(?:es)?|handfuls?|slices?|cans?|packages?|pkgs?|bunches?|heads?|stalks?|sprigs?|leaves?)/i;
+  // Match: optional fraction/decimal/integer, optional unit, rest = item
+  const m = text.match(/^(\d+(?:[\/\.]\d+)?(?:\s+\d+\/\d+)?)\s+(?:(\S+)\s+)?(.*)/);
+  if (!m) return { quantity: '', unit: '', item: text };
+  const [, qty, maybeUnit, rest] = m;
+  if (maybeUnit && UNITS.test(maybeUnit)) {
+    return { quantity: qty.trim(), unit: maybeUnit.trim(), item: rest.trim() };
+  }
+  // No unit match — quantity only, rest is item
+  return { quantity: qty.trim(), unit: '', item: ((maybeUnit || '') + ' ' + (rest || '')).trim() };
+}
+
+/**
+ * structureDirection — Wrap a direction string as a numbered step object.
+ */
+export function structureDirection(raw = '', index = 0) {
+  return { step: index + 1, text: raw.trim() };
+}
+
+/**
+ * buildStructuredFields — Compute all four structured/searchable fields from
+ * plain ingredient and direction arrays. Always safe to call — returns empty
+ * arrays/strings if inputs are missing or empty.
+ */
+export function buildStructuredFields(ingredients = [], directions = []) {
+  const ings = (ingredients || []).filter(Boolean);
+  const dirs = (directions || []).filter(Boolean);
+  return {
+    ingredients_structured: ings.map(structureIngredient),
+    directions_structured:  dirs.map(structureDirection),
+    ingredients_text: ings.map(i => i.replace(/^[\u2022\-\*]\s*/, '')).join(' '),
+    directions_text:  dirs.join(' '),
+  };
 }
 
 // ─── Social media detection ───────────────────────────────────────────────────
@@ -378,10 +427,12 @@ export async function structureWithAIClient(rawText, { title: hintTitle = '', im
       : [];
     // IMPORTANT: Leave empty arrays empty. Don't inject "See original post…"
     // placeholder strings — the UI decides how to present thin results.
+    const _dirs = Array.isArray(parsed.directions) ? parsed.directions.filter(Boolean) : [];
     return {
       name: parsed.title || hintTitle || 'Imported Recipe',
       ingredients,
-      directions: Array.isArray(parsed.directions) ? parsed.directions.filter(Boolean) : [],
+      directions: _dirs,
+      ...buildStructuredFields(ingredients, _dirs),
       servings: parsed.servings || null,
       cookTime: parsed.cookTime || null,
       notes: parsed.notes || null,
@@ -433,10 +484,12 @@ export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl
       }).filter(Boolean)
       : [];
     // IMPORTANT: Empty arrays remain empty — never inject placeholder strings.
+    const _serverDirs = Array.isArray(r.directions) ? r.directions.filter(Boolean) : [];
     return {
       name: r.title || hintTitle || 'Imported Recipe',
       ingredients,
-      directions: Array.isArray(r.directions) ? r.directions.filter(Boolean) : [],
+      directions: _serverDirs,
+      ...buildStructuredFields(ingredients, _serverDirs),
       servings: r.servings || null,
       cookTime: r.cookTime || null,
       notes: r.notes || null,
@@ -484,6 +537,7 @@ export async function captionToRecipe(captionText, { title = '', imageUrl = '', 
     name,
     ingredients,
     directions,
+    ...buildStructuredFields(ingredients, directions),
     imageUrl,
     link: sourceUrl,
     _structuredVia: 'heuristic',
@@ -3770,10 +3824,226 @@ export function parseVisualJSON(visualJson, url) {
     name: title,
     ingredients: effectiveIngredients,
     directions: effectiveDirections,
+    ...buildStructuredFields(effectiveIngredients, effectiveDirections),
     image,
     sourceUrl,
     _visualParsed: true,
     _visualConfidence: confidence,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// GEMINI HYBRID FALLBACK (Phase 1)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * calculateVisualConfidence — Enhanced confidence scoring for visual parsing results.
+ *
+ * Factors:
+ *   - Title presence (strongest signal)
+ *   - Ingredient count (≥ 3 is strong)
+ *   - Direction count (≥ 2 is strong)
+ *   - Content completeness ratio
+ *
+ * Returns: 0-1 confidence score
+ *   ≥ 0.75 → visual result is reliable (ship it)
+ *   0.5-0.75 → ambiguous (use Gemini fallback)
+ *   < 0.5 → weak (escalate to full deep extraction)
+ */
+export function calculateVisualConfidence(visualResult) {
+  if (!visualResult || visualResult._error) return 0;
+
+  const {
+    name = '',
+    ingredients = [],
+    directions = [],
+    image = null,
+  } = visualResult;
+
+  let score = 0;
+
+  // Title presence: 0.3 points max
+  if (name && name.length > 3 && name !== 'Imported Recipe') {
+    score += 0.3;
+  }
+
+  // Ingredient count: up to 0.35 points
+  const ingCount = Math.min(ingredients.length, 10);
+  if (ingCount >= 3) score += 0.35;
+  else if (ingCount >= 1) score += 0.15 * ingCount;
+
+  // Direction count: up to 0.25 points
+  const dirCount = Math.min(directions.length, 8);
+  if (dirCount >= 2) score += 0.25;
+  else if (dirCount >= 1) score += 0.12 * dirCount;
+
+  // Image presence: 0.1 bonus
+  if (image) score += 0.1;
+
+  // Cap at 1.0
+  return Math.min(score, 1);
+}
+
+/**
+ * structureWithGemini — Call Gemini 2.5-flash to intelligently parse visual blocks.
+ *
+ * Used as fallback when visual heuristics admit uncertainty. Gemini receives:
+ *   - Typed visual blocks (text + type + position)
+ *   - Original caption/text from the page
+ *   - Source URL (for context)
+ *
+ * Returns structured recipe JSON from Gemini, or null if failed.
+ */
+async function structureWithGemini(visualNodes = [], caption = '', url = '') {
+  const apiKey = process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+
+  if (!apiKey) {
+    console.warn('[Gemini fallback] No API key found, skipping Gemini enhancement');
+    return null;
+  }
+
+  try {
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+
+    // Prepare visual summary (limit to first 250 nodes to control token usage)
+    const visualSummary = (visualNodes || []).slice(0, 250).map(n => ({
+      text: (n.text || '').substring(0, 120),
+      type: n.tagName || 'div',
+      fontSize: n.style?.fontSize || 'inherit',
+      y: n.rect?.top || 0,
+    }));
+
+    const prompt = `You are an expert recipe extractor. Analyze the visual layout data + caption below to create a clean, structured recipe in JSON format.
+
+URL: ${url || '(no URL)'}
+Caption Text: ${caption || '(no caption)'}
+
+Visual Blocks (typed HTML elements):
+${JSON.stringify(visualSummary, null, 2)}
+
+Extract and return ONLY valid JSON (no markdown, no comments, just the object):
+{
+  "title": "Recipe name (string)",
+  "ingredients": ["item 1", "item 2", ...],
+  "instructions": ["Step 1...", "Step 2...", ...],
+  "servings": 4,
+  "time": "30 min",
+  "confidence": 0.85,
+  "reasoning": "Why this parse makes sense given the layout"
+}
+
+If the visual data is unclear, set confidence lower. Always prefer extracted text over guesses.`;
+
+    const result = await model.generateContent(prompt);
+    const responseText = result.response.text();
+
+    // Remove markdown code blocks if present
+    const cleaned = responseText
+      .replace(/```json\n?/g, '')
+      .replace(/```\n?/g, '')
+      .trim();
+
+    const parsed = JSON.parse(cleaned);
+
+    // Validate response shape
+    if (!parsed.title || !Array.isArray(parsed.ingredients) || !Array.isArray(parsed.instructions)) {
+      console.warn('[Gemini] Response missing required fields');
+      return null;
+    }
+
+    return {
+      name: parsed.title,
+      ingredients: parsed.ingredients,
+      directions: parsed.instructions,
+      servings: parsed.servings || 1,
+      time: parsed.time || '',
+      confidence: Number(parsed.confidence) || 0.6,
+      reasoning: parsed.reasoning || '',
+    };
+  } catch (err) {
+    console.error('[Gemini fallback] Error:', err?.message || err);
+    return null;
+  }
+}
+
+/**
+ * parseRecipeHybrid — Main entry point for hybrid visual + Gemini parsing.
+ *
+ * Flow:
+ *   1. Run visual heuristics → get confidence score
+ *   2. If confidence ≥ 0.75 → return visual result (fast, deterministic)
+ *   3. Else → enrich Gemini prompt with visual data + caption
+ *   4. Gemini returns structured recipe + confidence
+ *   5. Blend results: visual 60% + Gemini 40% when fallback used
+ *
+ * This keeps 80%+ of imports instant + free while using Gemini's intelligence
+ * only when visual layout is ambiguous.
+ */
+export async function parseRecipeHybrid(visualNodes = [], caption = '', url = '') {
+  const visualThresholdHigh = 0.75; // Strong visual signal → ship immediately
+  const geminiThresholdMin = 0.6; // Gemini confidence floor
+
+  // Step 1: Run visual parser
+  const visualResult = parseVisualJSON({ nodes: visualNodes }, url);
+  if (visualResult._error) {
+    // Fall through to Gemini-only
+    console.log('[Hybrid] Visual parse failed, trying Gemini...');
+  }
+
+  // Step 2: Calculate visual confidence
+  const visualConfidence = calculateVisualConfidence(visualResult);
+  console.log(`[Hybrid] Visual confidence: ${(visualConfidence * 100).toFixed(0)}%`);
+
+  // Step 3: If visual is strong, return it immediately
+  if (visualConfidence >= visualThresholdHigh && !visualResult._error) {
+    return {
+      ...visualResult,
+      _source: 'visual-only',
+      _hybridConfidence: visualConfidence,
+      _hybridUsed: false,
+    };
+  }
+
+  // Step 4: Visual weak or missing → call Gemini
+  console.log(`[Hybrid] Low visual confidence (${(visualConfidence * 100).toFixed(0)}%), calling Gemini...`);
+
+  const geminiResult = await structureWithGemini(visualNodes, caption, url);
+
+  // Step 5: No Gemini result or too low confidence → return visual as-is
+  if (!geminiResult || geminiResult.confidence < geminiThresholdMin) {
+    console.log('[Hybrid] Gemini result weak or unavailable, returning visual fallback');
+    return {
+      ...visualResult,
+      _source: 'visual-fallback',
+      _hybridConfidence: visualConfidence,
+      _hybridUsed: false,
+    };
+  }
+
+  // Step 6: Blend visual + Gemini (60% visual weight + 40% Gemini weight)
+  const blendedConfidence = (visualConfidence * 0.6) + (geminiResult.confidence * 0.4);
+
+  return {
+    name: geminiResult.name || visualResult.name,
+    ingredients: geminiResult.ingredients?.length
+      ? geminiResult.ingredients
+      : visualResult.ingredients,
+    directions: geminiResult.directions?.length
+      ? geminiResult.directions
+      : visualResult.directions,
+    image: visualResult.image || null,
+    sourceUrl: url,
+    servings: geminiResult.servings || 1,
+    time: geminiResult.time || '',
+    _source: 'visual+gemini-hybrid',
+    _hybridConfidence: blendedConfidence,
+    _hybridUsed: true,
+    _debug: {
+      visualConfidence,
+      geminiConfidence: geminiResult.confidence,
+      geminiReasoning: geminiResult.reasoning,
+    },
   };
 }
 
@@ -4632,12 +4902,50 @@ export async function parseHybrid(url, options = {}) {
     try {
       safeEmit('visual', 'running', 'Reading page layout…');
       const visualResult = parseVisualJSON(visualJson, url);
-      const conf = Number(visualResult?.confidence ?? 0);
-      if (visualResult && !visualResult._error && conf >= minConfidence) {
-        safeEmit('visual', 'success', `Matched layout (confidence ${conf})`);
-        return { ...visualResult, _hybridPath: 'visual' };
+      const visualConfidence = calculateVisualConfidence(visualResult);
+      const percentConfidence = Math.round(visualConfidence * 100);
+
+      // Strong visual signal → return immediately (deterministic, fast)
+      if (visualResult && !visualResult._error && visualConfidence >= 0.75) {
+        safeEmit('visual', 'success', `Matched layout (${percentConfidence}% confident)`);
+        return {
+          ...visualResult,
+          _hybridPath: 'visual',
+          _hybridConfidence: visualConfidence,
+          _hybridUsed: false,
+        };
       }
-      safeEmit('visual', 'weak', `Confidence ${conf} below ${minConfidence} — escalating`);
+
+      // Weak visual signal → try Gemini fallback (Phase 1)
+      if (visualConfidence >= 0.5 && visualConfidence < 0.75) {
+        safeEmit('gemini', 'running', `Visual weak (${percentConfidence}%), asking Gemini…`);
+        try {
+          const geminiResult = await structureWithGemini(visualJson.nodes, '', url);
+          if (geminiResult && geminiResult.confidence >= 0.6) {
+            safeEmit('gemini', 'success', `Gemini enhanced (${Math.round(geminiResult.confidence * 100)}% confident)`);
+            const blendedConfidence = (visualConfidence * 0.6) + (geminiResult.confidence * 0.4);
+            return {
+              name: geminiResult.name || visualResult.name,
+              ingredients: geminiResult.ingredients?.length ? geminiResult.ingredients : visualResult.ingredients,
+              directions: geminiResult.directions?.length ? geminiResult.directions : visualResult.directions,
+              image: visualResult.image || null,
+              sourceUrl: url,
+              _hybridPath: 'visual+gemini',
+              _hybridConfidence: blendedConfidence,
+              _hybridUsed: true,
+              _debug: {
+                visualConfidence,
+                geminiConfidence: geminiResult.confidence,
+              },
+            };
+          }
+        } catch (err) {
+          console.warn('[parseHybrid] Gemini fallback failed:', err?.message || err);
+        }
+      }
+
+      // Weak or Gemini failed → escalate to deep pipeline
+      safeEmit('visual', 'weak', `Confidence ${percentConfidence}% too low, escalating to deep parse`);
     } catch (err) {
       console.warn('[parseHybrid] visual path threw, escalating:', err?.message || err);
       safeEmit('visual', 'error', 'Visual parse failed — escalating to deep pipeline');

@@ -65,6 +65,10 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   const paprikaRef = useRef(null);
   const imageRef = useRef(null);
   const cameraRef = useRef(null);
+  // Ref to BrowserAssist — exposes triggerVisualScrape() for parent-driven visual parse
+  const browserAssistRef = useRef(null);
+  // Visual block IDs the user has selected inside BrowserAssist overlays (future UX: refine)
+  const [selectedVisualBlocks, setSelectedVisualBlocks] = useState([]);
 
   // ── Drag and drop state for reorganizing ingredients/directions ────────────
   const [dragSource, setDragSource] = useState(null); // { field, index, recipeIdx }
@@ -513,22 +517,11 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       return;
     }
 
-    // V2 optimistic path — only when flag is explicitly enabled
-    if (USE_V2_OPTIMISTIC) {
-      try {
-        await handleUrlImportV2(trimmedUrl);
-        return;
-      } catch (err) {
-        console.warn('[ImportModal] V2 optimistic failed, falling back to sync:', err?.message);
-        // fall through to sync path
-      }
-    }
-
-    // BrowserAssist is the default UI for all single-URL imports.
-    // It runs the server-side Python scraper (non-social) or the social
-    // pipeline (Instagram/TikTok/etc.) and shows live progress + preview.
-    // The hidden sync waterfall only ran behind the scenes and gave users
-    // no visibility; routing here first fixes the "3 pipelines" problem.
+    // BrowserAssist is the default UI for ALL single-URL imports.
+    // This must come before any feature-flag checks — even VITE_USE_V2_IMPORT=true
+    // should not silently swallow imports into ghost rows that never resolve.
+    // BrowserAssist shows live progress, uses the server Python scraper for blogs,
+    // and uses the social pipeline for Instagram/TikTok/etc.
     setBrowserAssistUrl(trimmedUrl);
     setBrowserAssistMode('showing');
   };
@@ -671,6 +664,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     setBrowserAssistUrl(null);
     setBrowserAssistMode('off');
     setBrowserAssistSeed(null);
+    setSelectedVisualBlocks([]);
     setSyncPhase('idle');
     setSyncStageIdx(0);
     setError('');
@@ -1073,12 +1067,24 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
               <span className="ba-fallback-reason">Trying deeper extraction…</span>
             </div>
             <BrowserAssist
+              ref={browserAssistRef}
               url={browserAssistUrl}
               onRecipeExtracted={handleBrowserAssistRecipe}
               onFallbackToText={handleBrowserAssistFallback}
               initialCapturedText={capturedTextRef.current}
               seedRecipe={browserAssistSeed}
               type={itemType}
+              onError={(err) => {
+                // Visual scrape failed — show a warning toast so user knows
+                // we're falling back to text extraction automatically.
+                console.warn('[ImportModal] BrowserAssist visual error:', err.message);
+                // If the modal has a toast mechanism, surface it; otherwise log only.
+                // (setError would block the UI; a non-blocking warning is better here.)
+              }}
+              onBlocksSelected={(ids) => {
+                // Store selected block IDs for future "refine selected blocks" UX.
+                setSelectedVisualBlocks(ids);
+              }}
               defaultVisualMode={isSocialMediaUrl(browserAssistUrl || '')}
             />
           </>
@@ -1106,13 +1112,31 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                     {autoSorting ? '✓ Sorted!' : '⚡ Auto-Sort'}
                   </button>
                   {(() => {
-                    const conf = scoreExtractionConfidence(preview[0]);
-                    const level = conf >= 70 ? 'high' : conf >= 40 ? 'medium' : 'low';
-                    return (
-                      <span className={`confidence-badge confidence-${level}`} title={`Extraction confidence: ${conf}%`}>
-                        {conf >= 70 ? '✓ High' : conf >= 40 ? '✓ Good' : '⚠ Low'} match
-                      </span>
-                    );
+                    const recipe = preview[0];
+                    if (recipe._hybridUsed === true && recipe._hybridConfidence != null) {
+                      const pct = Math.round(recipe._hybridConfidence * 100);
+                      return (
+                        <span className="confidence-badge confidence-high" title={`Enhanced with Gemini: ${pct}%`}>
+                          ✦ Enhanced with Gemini &bull; {pct}%
+                        </span>
+                      );
+                    } else if (recipe._hybridUsed === false && recipe._hybridConfidence != null) {
+                      const pct = Math.round(recipe._hybridConfidence * 100);
+                      const level = pct >= 75 ? 'high' : pct >= 50 ? 'medium' : 'low';
+                      return (
+                        <span className={`confidence-badge confidence-${level}`} title={`Visual Parse confidence: ${pct}%`}>
+                          ⚡ Visual Parse &bull; {pct}%
+                        </span>
+                      );
+                    } else {
+                      const conf = scoreExtractionConfidence(recipe);
+                      const level = conf >= 70 ? 'high' : conf >= 40 ? 'medium' : 'low';
+                      return (
+                        <span className={`confidence-badge confidence-${level}`} title={`Extraction confidence: ${conf}%`}>
+                          {conf >= 70 ? '✓ High' : conf >= 40 ? '✓ Good' : '⚠ Low'} match
+                        </span>
+                      );
+                    }
                   })()}
                 </>
               )}

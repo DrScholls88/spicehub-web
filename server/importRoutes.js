@@ -1,6 +1,7 @@
 // server/importRoutes.js
 import * as jobStore from './jobStore.js';
 import { runWaterfall as defaultRunWaterfall, runWaterfallSync as defaultRunWaterfallSync, ExtractError } from './coordinator.js';
+import { structureWithGemini } from './structurer.js';
 
 export function registerImportRoutes(app, {
   runWaterfall = defaultRunWaterfall,
@@ -47,13 +48,56 @@ export function registerImportRoutes(app, {
     }
 
     try {
-      const recipe = parseVisualPayload(visualJson);
-      return res.json({ recipe });
+      const { recipe, blocks } = parseVisualPayload(visualJson);
+
+      // Gemini enhancement: if visual confidence is low and GEMINI_API_KEY is set
+      const visualConfidence = scoreVisualConfidence(recipe);
+      let hybridUsed = false;
+      let finalRecipe = recipe;
+
+      if (visualConfidence < 0.75 && process.env.GEMINI_API_KEY) {
+        try {
+          // Build rawSources from visual blocks text for Gemini
+          const capturedText = (visualJson.nodes || [])
+            .filter(n => n.text && n.text.trim().length > 3 && n.tagName !== 'IMG')
+            .map(n => n.text.trim())
+            .join('\n');
+
+          const geminiResult = await structureWithGemini(
+            [{ kind: 'visibleText', text: capturedText }],
+            { sourceUrl: visualJson.url || '' }
+          );
+
+          if (geminiResult && geminiResult.ok && geminiResult.recipe &&
+              geminiResult.recipe.name && (geminiResult.recipe.ingredients?.length > 0)) {
+            // Blend: prefer Gemini content, fall back to visual for missing fields
+            finalRecipe = {
+              ...recipe,
+              name: geminiResult.recipe.name || recipe.name,
+              ingredients: geminiResult.recipe.ingredients?.length ? geminiResult.recipe.ingredients : recipe.ingredients,
+              directions: geminiResult.recipe.directions?.length ? geminiResult.recipe.directions : recipe.directions,
+              image: recipe.image || geminiResult.recipe.image || null,
+              sourceUrl: recipe.sourceUrl,
+              _visualParsed: true,
+            };
+            hybridUsed = true;
+          }
+        } catch (geminiErr) {
+          console.warn('[visual-parse] Gemini enhancement failed, using visual result:', geminiErr.message);
+        }
+      }
+
+      return res.json({
+        recipe: finalRecipe,
+        blocks,
+        hybridUsed,
+        confidence: visualConfidence,
+      });
     } catch (err) {
       console.error('[visual-parse error]', err.message);
       // Never 500 the client — return an error-flagged recipe so the
       // client can detect it with isWeakResult() and fall back gracefully.
-      return res.json({ recipe: { _error: true, name: 'Imported Recipe', ingredients: [], directions: [] } });
+      return res.json({ recipe: { _error: true, name: 'Imported Recipe', ingredients: [], directions: [] }, blocks: [], hybridUsed: false, confidence: 0 });
     }
   });
 
@@ -105,12 +149,13 @@ export function registerImportRoutes(app, {
         return res.status(400).json({ error: 'visual mode requires nodes[] payload' });
       }
       try {
-        const recipe = parseVisualPayload(visualJson);
-        return res.json({ recipe, path: 'visual' });
+        const { recipe, blocks } = parseVisualPayload(visualJson);
+        return res.json({ recipe, blocks, path: 'visual' });
       } catch (err) {
         console.error('[hybrid /api/import visual error]', err.message);
         return res.json({
           recipe: { _error: true, name: 'Imported Recipe', ingredients: [], directions: [] },
+          blocks: [],
           path: 'visual',
         });
       }
@@ -162,6 +207,16 @@ export function registerImportRoutes(app, {
 //   Ingredients: bullet/fraction/quantity pattern + medium weight + clustered
 //   Instructions: numbered/paragraph blocks below ingredients
 //   Captions: high z-index or non-white/non-transparent background (IG/TikTok)
+/**
+ * parseVisualPayload — Paprika-style layout heuristics over DOM-walker visual JSON.
+ *
+ * @param {object} visualJson - { url, viewport, scrollY, nodes[] }
+ * @returns {{ recipe: object, blocks: Array<{text,rect,type,style}> }}
+ *   recipe  — standard SpiceHub schema (name, ingredients, directions, image, sourceUrl)
+ *   blocks  — every classified non-noisy node with its server-assigned type so the
+ *             client can render color-coded overlays without re-running heuristics.
+ *             type: 'title' | 'ingredient' | 'instruction' | 'caption' | 'other'
+ */
 function parseVisualPayload(visualJson) {
   const { nodes = [], viewport = { width: 390, height: 844 }, url: sourceUrl = '' } = visualJson;
   const vpH = viewport.height || 844;
@@ -197,6 +252,7 @@ function parseVisualPayload(visualJson) {
        !n.style.backgroundColor.startsWith('rgb(248') &&
        !n.style.backgroundColor.startsWith('rgb(250')))
   );
+  const captionSet = new Set(captionNodes);
 
   const clean = nodes.filter(n => !isNoisy(n));
 
@@ -217,6 +273,7 @@ function parseVisualPayload(visualJson) {
            parseFontWeight(n.style?.fontWeight) >= 500;
   }).sort((a, b) => score(b) - score(a));
   const titleNode = titleCandidates[0] || null;
+  const titleSet = titleNode ? new Set([titleNode]) : new Set();
   const name = titleNode ? titleNode.text.trim() : 'Imported Recipe';
   const titleTop = titleNode ? (titleNode.rect.top || 0) : -1;
 
@@ -241,20 +298,22 @@ function parseVisualPayload(visualJson) {
     ingredientNodes = [...directIng, ...proxNodes];
   }
   ingredientNodes.sort((a, b) => (a.rect.top || 0) - (b.rect.top || 0));
+  const ingredientSet = new Set(ingredientNodes);
   const ingredients = ingredientNodes.map(n => n.text.trim()).filter(Boolean);
 
   // 3. Instructions
-  const ingMaxTop = ingredientNodes.length > 0
+  const ingMaxTopVal = ingredientNodes.length > 0
     ? Math.max(...ingredientNodes.map(n => n.rect.top || 0))
     : titleTop + 100;
   const directionNodes = belowTitle.filter(n => {
-    if ((n.rect.top || 0) < ingMaxTop - 50) return false;
+    if ((n.rect.top || 0) < ingMaxTopVal - 50) return false;
     const t = n.text.trim();
     if (t.length < 15) return false;
     if (INSTRUCTION_RE.test(t)) return true;
     if (t.length > 40 && parseFontWeight(n.style?.fontWeight) <= 500) return true;
     return false;
   }).sort((a, b) => (a.rect.top || 0) - (b.rect.top || 0));
+  const directionSet = new Set(directionNodes);
   const directions = directionNodes.map(n => n.text.trim()).filter(Boolean);
 
   // 4. Caption fallback for social
@@ -267,7 +326,18 @@ function parseVisualPayload(visualJson) {
   const imgNode = nodes.find(n => n.tagName === 'IMG' && n.src && n.rect?.width > 80);
   const image = imgNode ? imgNode.src : null;
 
-  return {
+  // 6. Build classified blocks array — client renders overlays from this; no re-classification needed.
+  //    Only include non-noisy text nodes (skip IMG nodes — no overlay needed for images).
+  const blocks = clean.map(n => {
+    let type = 'other';
+    if (titleSet.has(n)) type = 'title';
+    else if (ingredientSet.has(n)) type = 'ingredient';
+    else if (directionSet.has(n)) type = 'instruction';
+    else if (captionSet.has(n)) type = 'caption';
+    return { text: n.text.trim(), rect: n.rect, type, style: n.style || {} };
+  });
+
+  const recipe = {
     name,
     ingredients: effectiveIng,
     directions: effectiveDir,
@@ -275,4 +345,25 @@ function parseVisualPayload(visualJson) {
     sourceUrl,
     _visualParsed: true,
   };
+
+  return { recipe, blocks };
+}
+
+// ── scoreVisualConfidence ─────────────────────────────────────────────────────
+// Fast heuristic confidence for server-side visual parse.
+// Mirrors calculateVisualConfidence() from client-side recipeParser.js.
+// Returns 0-1 score.
+function scoreVisualConfidence(recipe) {
+  if (!recipe || recipe._error) return 0;
+  let score = 0;
+  const { name = '', ingredients = [], directions = [] } = recipe;
+  if (name && name.length > 3 && name !== 'Imported Recipe') score += 0.30;
+  const ingCount = Math.min((ingredients || []).length, 10);
+  if (ingCount >= 3) score += 0.35;
+  else if (ingCount >= 1) score += 0.15 * ingCount;
+  const dirCount = Math.min((directions || []).length, 8);
+  if (dirCount >= 2) score += 0.25;
+  else if (dirCount >= 1) score += 0.12 * dirCount;
+  if (recipe.image) score += 0.10;
+  return Math.min(score, 1);
 }

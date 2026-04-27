@@ -118,20 +118,11 @@ export default function App() {
   // ── Data loaders ─────────────────────────────────────────────────────────────
   const loadMeals = useCallback(async () => {
     const all = await db.meals.toArray();
-    // Ghost rows from the V2 optimistic import path have status:'processing' or
-    // 'failed' and no real recipe content. Exclude them from the library so they
-    // don't appear as broken placeholder cards. useImportWorker hydrates them in
-    // the background (setting status to 'done' with full recipe data), at which
-    // point loadMeals() is called again and they appear normally.
-    const realMeals = all.filter(m => {
-      if (!m.status || m.status === 'done') return true;  // normal meal or hydrated ghost
-      if (m.status === 'processing' || m.status === 'failed') {
-        // Only show if already hydrated with real recipe data
-        return !!(m.ingredients?.length && m.name && !m.name.startsWith('Importing from'));
-      }
-      return true;
-    });
-    setMeals(realMeals);
+    // Show all meals. Ghost rows (status:'processing'/'failed') render as loading/error
+    // cards in MealLibrary so the user always sees what's happening — never a silent void.
+    // BrowserAssist is now the default import path so new ghost rows shouldn't be created,
+    // but any existing ones in the DB should remain visible and deletable.
+    setMeals(all);
     setLoading(false);
   }, []);
 

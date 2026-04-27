@@ -1,4 +1,5 @@
 import Dexie from 'dexie';
+import { buildStructuredFields } from './recipeParser';
 
 const db = new Dexie('SpiceHubDB');
 
@@ -46,6 +47,19 @@ db.version(8).stores({
 // v9: Unified Import Engine — Ghost Recipe status + sourceHash + jobId on meals
 db.version(9).stores({
   meals: '++id, name, status, sourceHash, jobId',
+});
+
+// v10: Paprika-style structured fields — ingredients_text indexed for full-text search
+db.version(10).stores({
+  meals: '++id, name, status, sourceHash, jobId, ingredients_text',
+}).upgrade(tx => {
+  // Backfill existing meals that don't yet have structured fields
+  return tx.table('meals').toCollection().modify(meal => {
+    if (!meal.ingredients_text && Array.isArray(meal.ingredients)) {
+      const built = buildStructuredFields(meal.ingredients, meal.directions || []);
+      Object.assign(meal, built);
+    }
+  });
 });
 
 export default db;
@@ -197,7 +211,7 @@ function validateRecipe(data) {
   return { valid: errors.length === 0, errors };
 }
 
-export async function queueRecipeImport(url, recipeData) {
+export async function queueRecipeImport(url, recipeData, opts = {}) {
   try {
     // Validate recipe data
     const validation = validateRecipe(recipeData);
@@ -228,6 +242,8 @@ export async function queueRecipeImport(url, recipeData) {
       error: null,
       createdAt: new Date().toISOString(),
       attemptCount: 0,
+      visualConfidence: opts.visualConfidence ?? null,
+      needsGemini: opts.needsGemini ?? false,
     });
 
     return { queueId: id, isDuplicate: false };
@@ -265,29 +281,55 @@ export async function processImportQueue() {
 
     for (const item of queued) {
       try {
+        // Attempt Gemini re-processing if the offline visual parse had low confidence
+        let recipeToSave = item.recipeData;
+
+        if (item.needsGemini && item.url) {
+          try {
+            // Re-submit URL to the server's deep waterfall (Python scraper + Gemini)
+            const API_BASE = typeof window !== 'undefined' ? '' : '';
+            const resp = await fetch(`${API_BASE}/api/v2/import/sync`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ url: item.url }),
+              signal: AbortSignal.timeout(30000),
+            });
+            if (resp.ok) {
+              const { recipe } = await resp.json();
+              if (recipe && recipe.name && !recipe._error) {
+                recipeToSave = recipe;
+                console.log(`[SpiceHub DB] Gemini re-processing improved recipe: ${recipe.name}`);
+              }
+            }
+          } catch (geminiErr) {
+            console.warn('[SpiceHub DB] Gemini re-processing failed, using cached recipe:', geminiErr.message);
+            // Falls through to use item.recipeData
+          }
+        }
+
         // Validate recipe before processing
-        const validation = validateRecipe(item.recipeData);
+        const validation = validateRecipe(recipeToSave);
         if (!validation.valid) {
           throw new Error(`Invalid recipe: ${validation.errors.join(', ')}`);
         }
 
         // Check if recipe still doesn't exist
-        const existing = await db.meals.where('name').equalsIgnoreCase(item.recipeData.name).first();
+        const existing = await db.meals.where('name').equalsIgnoreCase(recipeToSave.name).first();
         if (existing) {
           // Check if it's a true duplicate or just same name
-          const isSameSource = existing.link && item.recipeData.link &&
-            existing.link === item.recipeData.link;
+          const isSameSource = existing.link && recipeToSave.link &&
+            existing.link === recipeToSave.link;
 
           if (isSameSource) {
             // Same recipe from same URL — merge (keep richer data)
-            const merged = mergeRecipeData(existing, item.recipeData);
+            const merged = mergeRecipeData(existing, recipeToSave);
             await db.meals.update(existing.id, merged);
             await db.importQueue.update(item.id, { status: 'done', error: null });
             succeeded++;
           } else {
             // Different recipe, same name — rename and add
-            const uniqueName = `${item.recipeData.name} (imported ${new Date().toLocaleDateString()})`;
-            await db.meals.add({ ...item.recipeData, name: uniqueName });
+            const uniqueName = `${recipeToSave.name} (imported ${new Date().toLocaleDateString()})`;
+            await db.meals.add({ ...recipeToSave, name: uniqueName });
             await db.importQueue.update(item.id, { status: 'done', error: null });
             succeeded++;
           }
@@ -295,7 +337,7 @@ export async function processImportQueue() {
         }
 
         // Add to meals
-        await db.meals.add(item.recipeData);
+        await db.meals.add(recipeToSave);
         await db.importQueue.update(item.id, { status: 'done', error: null });
         succeeded++;
       } catch (err) {
