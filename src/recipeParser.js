@@ -11,7 +11,6 @@ import { downloadInstagramImage, isInstagramCdnUrl, fetchHtmlViaProxy as fetchHt
 import { cacheInstagramRecipe } from './db.js';
 import { isRedditUrl, isRedditPostUrl, tryRedditJson } from './scrapers/redditDiscovery.js';
 import { htmlToMarkdown, htmlLooksLikeRecipe } from './scrapers/markdownConverter.js';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // ─── Title sanitizer (public export, delegates to cleanTitle) ────────────────
 export function sanitizeRecipeTitle(raw) {
@@ -3885,96 +3884,13 @@ export function calculateVisualConfidence(visualResult) {
 }
 
 /**
- * structureWithGemini — Call Gemini 2.5-flash to intelligently parse visual blocks.
- *
- * Used as fallback when visual heuristics admit uncertainty. Gemini receives:
- *   - Typed visual blocks (text + type + position)
- *   - Original caption/text from the page
- *   - Source URL (for context)
- *
- * Returns structured recipe JSON from Gemini, or null if failed.
- */
-async function structureWithGemini(visualNodes = [], caption = '', url = '') {
-  const apiKey = process.env.VITE_GEMINI_API_KEY || process.env.GEMINI_API_KEY;
-
-  if (!apiKey) {
-    console.warn('[Gemini fallback] No API key found, skipping Gemini enhancement');
-    return null;
-  }
-
-  try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-
-    // Prepare visual summary (limit to first 250 nodes to control token usage)
-    const visualSummary = (visualNodes || []).slice(0, 250).map(n => ({
-      text: (n.text || '').substring(0, 120),
-      type: n.tagName || 'div',
-      fontSize: n.style?.fontSize || 'inherit',
-      y: n.rect?.top || 0,
-    }));
-
-    const prompt = `You are an expert recipe extractor. Analyze the visual layout data + caption below to create a clean, structured recipe in JSON format.
-
-URL: ${url || '(no URL)'}
-Caption Text: ${caption || '(no caption)'}
-
-Visual Blocks (typed HTML elements):
-${JSON.stringify(visualSummary, null, 2)}
-
-Extract and return ONLY valid JSON (no markdown, no comments, just the object):
-{
-  "title": "Recipe name (string)",
-  "ingredients": ["item 1", "item 2", ...],
-  "instructions": ["Step 1...", "Step 2...", ...],
-  "servings": 4,
-  "time": "30 min",
-  "confidence": 0.85,
-  "reasoning": "Why this parse makes sense given the layout"
-}
-
-If the visual data is unclear, set confidence lower. Always prefer extracted text over guesses.`;
-
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
-
-    // Remove markdown code blocks if present
-    const cleaned = responseText
-      .replace(/```json\n?/g, '')
-      .replace(/```\n?/g, '')
-      .trim();
-
-    const parsed = JSON.parse(cleaned);
-
-    // Validate response shape
-    if (!parsed.title || !Array.isArray(parsed.ingredients) || !Array.isArray(parsed.instructions)) {
-      console.warn('[Gemini] Response missing required fields');
-      return null;
-    }
-
-    return {
-      name: parsed.title,
-      ingredients: parsed.ingredients,
-      directions: parsed.instructions,
-      servings: parsed.servings || 1,
-      time: parsed.time || '',
-      confidence: Number(parsed.confidence) || 0.6,
-      reasoning: parsed.reasoning || '',
-    };
-  } catch (err) {
-    console.error('[Gemini fallback] Error:', err?.message || err);
-    return null;
-  }
-}
-
-/**
- * parseRecipeHybrid — Main entry point for hybrid visual + Gemini parsing.
+ * parseRecipeHybrid — Browser-side wrapper for hybrid visual + Gemini parsing.
  *
  * Flow:
  *   1. Run visual heuristics → get confidence score
  *   2. If confidence ≥ 0.75 → return visual result (fast, deterministic)
- *   3. Else → enrich Gemini prompt with visual data + caption
- *   4. Gemini returns structured recipe + confidence
+ *   3. Else → call server /api/gemini-fallback endpoint
+ *   4. Server calls Gemini, returns structured recipe + confidence
  *   5. Blend results: visual 60% + Gemini 40% when fallback used
  *
  * This keeps 80%+ of imports instant + free while using Gemini's intelligence
@@ -3987,7 +3903,6 @@ export async function parseRecipeHybrid(visualNodes = [], caption = '', url = ''
   // Step 1: Run visual parser
   const visualResult = parseVisualJSON({ nodes: visualNodes }, url);
   if (visualResult._error) {
-    // Fall through to Gemini-only
     console.log('[Hybrid] Visual parse failed, trying Gemini...');
   }
 
@@ -4005,10 +3920,33 @@ export async function parseRecipeHybrid(visualNodes = [], caption = '', url = ''
     };
   }
 
-  // Step 4: Visual weak or missing → call Gemini
-  console.log(`[Hybrid] Low visual confidence (${(visualConfidence * 100).toFixed(0)}%), calling Gemini...`);
+  // Step 4: Visual weak or missing → call server Gemini endpoint
+  console.log(`[Hybrid] Low visual confidence (${(visualConfidence * 100).toFixed(0)}%), calling Gemini via server...`);
 
-  const geminiResult = await structureWithGemini(visualNodes, caption, url);
+  let geminiResult = null;
+  try {
+    const resp = await fetch('/api/gemini-fallback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        visualNodes: visualNodes.slice(0, 250),  // Limit to first 250 nodes
+        caption: caption || '',
+        url: url || '',
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.ok && data.result) {
+        geminiResult = data.result;
+      }
+    } else {
+      console.warn('[Gemini] Server returned status', resp.status);
+    }
+  } catch (err) {
+    console.error('[Gemini fallback] API call failed:', err?.message || err);
+  }
 
   // Step 5: No Gemini result or too low confidence → return visual as-is
   if (!geminiResult || geminiResult.confidence < geminiThresholdMin) {
@@ -4920,24 +4858,39 @@ export async function parseHybrid(url, options = {}) {
       if (visualConfidence >= 0.5 && visualConfidence < 0.75) {
         safeEmit('gemini', 'running', `Visual weak (${percentConfidence}%), asking Gemini…`);
         try {
-          const geminiResult = await structureWithGemini(visualJson.nodes, '', url);
-          if (geminiResult && geminiResult.confidence >= 0.6) {
-            safeEmit('gemini', 'success', `Gemini enhanced (${Math.round(geminiResult.confidence * 100)}% confident)`);
-            const blendedConfidence = (visualConfidence * 0.6) + (geminiResult.confidence * 0.4);
-            return {
-              name: geminiResult.name || visualResult.name,
-              ingredients: geminiResult.ingredients?.length ? geminiResult.ingredients : visualResult.ingredients,
-              directions: geminiResult.directions?.length ? geminiResult.directions : visualResult.directions,
-              image: visualResult.image || null,
-              sourceUrl: url,
-              _hybridPath: 'visual+gemini',
-              _hybridConfidence: blendedConfidence,
-              _hybridUsed: true,
-              _debug: {
-                visualConfidence,
-                geminiConfidence: geminiResult.confidence,
-              },
-            };
+          // Call server-side Gemini endpoint
+          const geminiResp = await fetch('/api/gemini-fallback', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              visualNodes: visualJson.nodes.slice(0, 250),
+              caption: '',
+              url: url || '',
+            }),
+            signal: AbortSignal.timeout(10000),
+          });
+
+          if (geminiResp.ok) {
+            const geminiData = await geminiResp.json();
+            if (geminiData.ok && geminiData.result && geminiData.result.confidence >= 0.6) {
+              const geminiResult = geminiData.result;
+              safeEmit('gemini', 'success', `Gemini enhanced (${Math.round(geminiResult.confidence * 100)}% confident)`);
+              const blendedConfidence = (visualConfidence * 0.6) + (geminiResult.confidence * 0.4);
+              return {
+                name: geminiResult.name || visualResult.name,
+                ingredients: geminiResult.ingredients?.length ? geminiResult.ingredients : visualResult.ingredients,
+                directions: geminiResult.directions?.length ? geminiResult.directions : visualResult.directions,
+                image: visualResult.image || null,
+                sourceUrl: url,
+                _hybridPath: 'visual+gemini',
+                _hybridConfidence: blendedConfidence,
+                _hybridUsed: true,
+                _debug: {
+                  visualConfidence,
+                  geminiConfidence: geminiResult.confidence,
+                },
+              };
+            }
           }
         } catch (err) {
           console.warn('[parseHybrid] Gemini fallback failed:', err?.message || err);

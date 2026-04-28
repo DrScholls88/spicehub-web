@@ -195,6 +195,73 @@ export function registerImportRoutes(app, {
       return res.status(500).json({ error: 'internal_error', message: err.message, path: 'deep' });
     }
   });
+
+  // ── Gemini Fallback (Phase 1 integration) ────────────────────────────────────
+  // Called from browser when visual confidence is low (0.5-0.75).
+  // Receives visual nodes + caption, returns Gemini-enhanced recipe.
+  app.post('/api/gemini-fallback', async (req, res) => {
+    const { visualNodes = [], caption = '', url = '' } = req.body || {};
+
+    if (!Array.isArray(visualNodes) || visualNodes.length === 0) {
+      return res.status(400).json({ ok: false, error: 'visualNodes array required' });
+    }
+
+    try {
+      // Convert visual nodes to Gemini-friendly format
+      const visualSummary = visualNodes.slice(0, 250).map(n => ({
+        text: (n.text || '').substring(0, 120),
+        type: n.tagName || 'div',
+        fontSize: n.style?.fontSize || 'inherit',
+        y: n.rect?.top || 0,
+      }));
+
+      // Call Gemini via structureWithGemini (expects structured sources)
+      const sources = [
+        {
+          kind: 'visual',
+          text: `Visual blocks from ${url || 'page'}:\n${JSON.stringify(visualSummary, null, 2)}`,
+        },
+      ];
+
+      if (caption && caption.trim()) {
+        sources.push({
+          kind: 'caption',
+          text: caption,
+        });
+      }
+
+      const geminiResult = await structureWithGemini(sources, { sourceUrl: url });
+
+      if (!geminiResult.ok) {
+        return res.status(422).json({ ok: false, error: geminiResult.error || 'gemini_failed' });
+      }
+
+      // Enhance response with confidence score (simple heuristic)
+      const recipe = geminiResult.recipe;
+      const confidence = Math.min(
+        0.3 * (recipe.name ? 1 : 0) +
+        0.4 * Math.min((recipe.ingredients || []).length / 3, 1) +
+        0.3 * Math.min((recipe.directions || []).length / 2, 1),
+        1
+      );
+
+      return res.json({
+        ok: true,
+        result: {
+          name: recipe.name || 'Imported Recipe',
+          ingredients: recipe.ingredients || [],
+          directions: recipe.directions || [],
+          servings: recipe.yield ? parseInt(recipe.yield) : 1,
+          time: recipe.cookTime || recipe.prepTime || '',
+          confidence,
+          reasoning: 'Gemini visual + caption analysis',
+        },
+      });
+    } catch (err) {
+      console.error('[gemini-fallback error]', err?.message || err);
+      return res.status(500).json({ ok: false, error: err.message || 'internal_error' });
+    }
+  });
 }
 
 // ── parseVisualPayload ────────────────────────────────────────────────────────
