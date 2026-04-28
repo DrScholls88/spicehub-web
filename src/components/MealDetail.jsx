@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
+import db from '../db';
 
-export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, onRate, onStartCook, onStartMix, onToggleRotation, isDrink = false }) {
+export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, onRate, onStartCook, onStartMix, onToggleRotation, isDrink = false, onPhotoUpdated }) {
   // ── Swipe-down-to-dismiss ──
   const sheetRef = useRef(null);
   const dragStartY = useRef(null);
@@ -58,6 +59,36 @@ export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, o
     { value: 2.0, label: '2×' },
   ];
   const [scaleFactor, setScaleFactor] = useState(1.0);
+
+  // ── Re-import photo ───────────────────────────────────────────────────────────
+  // Local imageUrl override so the new photo shows immediately without parent re-render.
+  const [localImageUrl, setLocalImageUrl] = useState(meal.imageUrl || null);
+  const [photoState, setPhotoState] = useState(null); // null | 'loading' | 'done' | 'none'
+  const sourceUrl = meal.link || meal.sourceUrl || null;
+
+  const handleReimportPhoto = useCallback(async () => {
+    if (!sourceUrl) { setPhotoState('none'); return; }
+    setPhotoState('loading');
+    try {
+      const res = await fetch('/api/import/photo-only', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: sourceUrl }),
+        signal: AbortSignal.timeout(30000),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.ok && data.imageUrl) {
+        await db.meals.update(meal.id, { imageUrl: data.imageUrl });
+        setLocalImageUrl(data.imageUrl);
+        setPhotoState('done');
+        onPhotoUpdated?.(meal.id, data.imageUrl);
+      } else {
+        setPhotoState('none');
+      }
+    } catch {
+      setPhotoState('none');
+    }
+  }, [sourceUrl, meal.id, onPhotoUpdated]);
 
   const scaleIngredient = (ingredient, factor) => {
     // Simple regex to detect numbers/fractions at the start of the ingredient string
@@ -118,9 +149,31 @@ export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, o
           </div>
         </div>
 
-        {meal.imageUrl && (
-          <img src={meal.imageUrl} alt={meal.name} className="detail-image" onError={e => { e.target.style.display = 'none'; }} />
-        )}
+        {/* ── Recipe image with re-import photo button ── */}
+        <div className="detail-image-wrap">
+          {localImageUrl ? (
+            <img
+              src={localImageUrl}
+              alt={meal.name}
+              className="detail-image"
+              onError={e => { e.target.style.display = 'none'; }}
+            />
+          ) : (
+            <div className="detail-image-placeholder">🍽️</div>
+          )}
+          {/* Re-import photo button — shown when there's a source URL to scrape */}
+          {sourceUrl && (
+            <button
+              className={`detail-reimport-photo-btn${photoState === 'done' ? ' photo-found' : photoState === 'none' ? ' photo-none' : ''}`}
+              onClick={handleReimportPhoto}
+              disabled={photoState === 'loading'}
+              title={localImageUrl ? 'Find a better photo' : 'Find a photo for this recipe'}
+              aria-label="Re-import photo"
+            >
+              {photoState === 'loading' ? '⏳' : photoState === 'done' ? '✓ Photo updated' : photoState === 'none' ? '✗ No photo found' : localImageUrl ? '📸' : '📸 Find Photo'}
+            </button>
+          )}
+        </div>
 
         {/* Favorites, Rating, Category, Cook Count */}
         <div className="detail-header-bar">

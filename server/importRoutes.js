@@ -262,6 +262,29 @@ export function registerImportRoutes(app, {
       return res.status(500).json({ ok: false, error: err.message || 'internal_error' });
     }
   });
+
+  // ── Photo-only re-import ─────────────────────────────────────────────────────
+  // Lightweight endpoint: re-run the deep pipeline on a URL that already has a
+  // recipe in the library but is missing (or has a bad) image.
+  // Returns { ok, imageUrl } quickly — no full recipe re-parse exposed to client.
+  app.post('/api/import/photo-only', async (req, res) => {
+    const { url } = req.body || {};
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ ok: false, error: 'url is required' });
+    }
+    try {
+      const recipe = await runWaterfallSync({ url });
+      const imageUrl = recipe.image || recipe.imageUrl || null;
+      if (imageUrl) {
+        return res.json({ ok: true, imageUrl });
+      }
+      return res.json({ ok: false, imageUrl: null, error: 'no_image_found' });
+    } catch (err) {
+      console.warn('[photo-only] extraction failed:', err.message);
+      // Never 5xx the client — just report no image found
+      return res.json({ ok: false, imageUrl: null, error: 'extraction_failed' });
+    }
+  });
 }
 
 // ── parseVisualPayload ────────────────────────────────────────────────────────
@@ -389,8 +412,23 @@ function parseVisualPayload(visualJson) {
   const effectiveDir = directions.length > 0 ? directions
     : captionNodes.filter(n => n.text.trim().length > 20).map(n => n.text.trim()).slice(0, 20);
 
-  // 5. Image
-  const imgNode = nodes.find(n => n.tagName === 'IMG' && n.src && n.rect?.width > 80);
+  // 5. Image — pick the largest visible image node (Paprika hero-image approach)
+  const IMG_NOISE_PATTERNS = ['profile_pic','s150x150','s320x320','favicon','logo',
+                               'avatar','placeholder','banner','sprite','tracking','pixel','/icon','/badge'];
+  const imgNodes = nodes.filter(n =>
+    n.tagName === 'IMG' &&
+    n.src &&
+    n.rect?.width > 80 &&
+    n.rect?.height > 60 &&
+    !IMG_NOISE_PATTERNS.some(p => (n.src || '').toLowerCase().includes(p)) &&
+    (n.rect?.top || 0) < (vpH * 4)
+  );
+  // Score by pixel area — biggest food photo wins
+  const imgNode = imgNodes.reduce((best, n) => {
+    const area = (n.rect?.width || 0) * (n.rect?.height || 0);
+    const bestArea = (best?.rect?.width || 0) * (best?.rect?.height || 0);
+    return area > bestArea ? n : best;
+  }, null);
   const image = imgNode ? imgNode.src : null;
 
   // 6. Build classified blocks array — client renders overlays from this; no re-classification needed.

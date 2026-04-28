@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { downloadMealsFile, importMealsFromJson, shareMealsFile } from '../sync';
 import { toggleRotation, bulkSetRotation } from '../db';
+import db from '../db';
 import useBackHandler from '../hooks/useBackHandler';
 import SafeMediaImage from './SafeMediaImage';
 
@@ -207,6 +208,38 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
     onToast?.(newVal ? `Added "${meal.name}" to The Rotation` : `Removed "${meal.name}" from The Rotation`);
   }, [onReload, onToast]);
 
+  // ── Re-import photo ────────────────────────────────────────────────────────────
+  // Re-runs the photo pipeline for a single meal and updates its imageUrl in Dexie.
+  // Works in-place — no full re-import needed.
+  const [reimportingPhotoId, setReimportingPhotoId] = useState(null);
+
+  const handleReimportPhoto = useCallback(async (meal) => {
+    const sourceUrl = meal.link || meal.sourceUrl;
+    if (!sourceUrl) { onToast?.('No source URL to search for a photo'); return; }
+    setReimportingPhotoId(meal.id);
+    onToast?.('🔍 Searching for a better photo…');
+    try {
+      const res = await fetch('/api/import/photo-only', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: sourceUrl }),
+        signal: AbortSignal.timeout(30000),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.ok && data.imageUrl) {
+        await db.meals.update(meal.id, { imageUrl: data.imageUrl });
+        onReload?.();
+        onToast?.('📸 Found a better photo!');
+      } else {
+        onToast?.('No better photo found for this recipe');
+      }
+    } catch {
+      onToast?.('Photo search failed — check your connection and try again');
+    } finally {
+      setReimportingPhotoId(null);
+    }
+  }, [onToast, onReload]);
+
   const handleBatchAddToRotation = useCallback(async () => {
     if (selectedIds.size === 0) return;
     await bulkSetRotation([...selectedIds], true);
@@ -397,6 +430,14 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
               {onToggleFavorite && (
                 <button onClick={() => { onToggleFavorite(quickPreview); setQuickPreview(null); }}>
                   {quickPreview.isFavorite ? 'Unfavorite' : 'Favorite'}
+                </button>
+              )}
+              {(quickPreview.link || quickPreview.sourceUrl) && (
+                <button
+                  onClick={() => { handleReimportPhoto(quickPreview); setQuickPreview(null); }}
+                  disabled={reimportingPhotoId === quickPreview.id}
+                >
+                  {reimportingPhotoId === quickPreview.id ? '⏳ Searching…' : quickPreview.imageUrl ? '📸 Find Better Photo' : '📸 Find Photo'}
                 </button>
               )}
               <button className="ml-qp-danger" onClick={() => { setQuickPreview(null); setConfirmDeleteId(quickPreview.id); }}>

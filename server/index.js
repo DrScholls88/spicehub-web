@@ -1472,39 +1472,63 @@ async function extractWithHeadlessBrowser(url, res) {
         const ogDesc = document.querySelector('meta[property="og:description"]')?.content?.trim() || '';
         const ogImage = document.querySelector('meta[property="og:image"]')?.content?.trim() || '';
 
-        // 5. Grab post image from rendered DOM (try multiple strategies)
-        let imageUrl = ogImage;
+        // ── Image extraction helpers ──────────────────────────────────────────────
+        // Pick the highest-resolution candidate from a srcset string.
+        // Prefers width descriptors (e.g. "800w"); falls back to last entry.
+        function bestSrcset(srcset) {
+          if (!srcset) return '';
+          const entries = srcset.split(',').map(s => s.trim()).filter(Boolean);
+          let bestSrc = '';
+          let bestW = -1;
+          for (const entry of entries) {
+            const [src, desc = ''] = entry.split(/\s+/);
+            const w = parseFloat(desc) || 0;
+            if (w > bestW) { bestW = w; bestSrc = src; }
+          }
+          // If no width descriptors, take the last entry (highest quality assumed)
+          return bestSrc || entries[entries.length - 1]?.split(/\s+/)[0] || '';
+        }
+
+        // Return true if the URL / element look like a real content image
+        // (not an icon, avatar, thumbnail, ad pixel, etc.)
+        const IMG_NOISE = ['profile_pic','s150x150','s320x320','favicon','logo',
+                           'avatar','placeholder','banner','sprite','tracking','pixel',
+                           '/icon','/badge','1x1','blank.gif'];
+        function isContentImg(src, rect) {
+          if (!src || !src.startsWith('http')) return false;
+          const low = src.toLowerCase();
+          if (IMG_NOISE.some(p => low.includes(p))) return false;
+          if (rect && (rect.width < 100 || rect.height < 80)) return false;
+          return true;
+        }
+
+        // 5. Grab post image from rendered DOM — multi-strategy with quality ranking
+        let imageUrl = ogImage; // OG tag is our first preference (already fetched above)
+
+        // Strategy A: Social-specific selectors (Instagram / TikTok / scontent CDN)
         if (!imageUrl) {
-          const imgSelectors = [
+          const socialSelectors = [
             'article img[srcset]',
             'article img[src*="instagram"]',
             'article img[src*="scontent"]',
             'article video[poster]',
             'img._aagt',
-            'img[style*="object-fit"]',
+            'img[style*="object-fit: cover"]',
             'article img',
             '[data-e2e="video-desc"] ~ img',
             'video[poster]',
             'img[src*="cdninstagram"]',
           ];
-          for (const sel of imgSelectors) {
+          for (const sel of socialSelectors) {
             const el = document.querySelector(sel);
-            if (el) {
-              let src = '';
-              if (el.srcset) {
-                const parts = el.srcset.split(',').map(s => s.trim());
-                const last = parts[parts.length - 1];
-                src = last.split(/\s+/)[0];
-              }
-              if (!src) src = el.getAttribute('poster') || el.currentSrc || el.src;
-              if (src && src.startsWith('http') && !src.includes('profile_pic') && !src.includes('s150x150') && !src.includes('s320x320')) {
-                imageUrl = src;
-                break;
-              }
-            }
+            if (!el) continue;
+            const src = bestSrcset(el.srcset) || el.getAttribute('poster') || el.currentSrc || el.src || '';
+            const rect = el.getBoundingClientRect();
+            if (isContentImg(src, rect)) { imageUrl = src; break; }
           }
         }
-        // Also check for images via JSON-LD or script data
+
+        // Strategy B: JSON-LD Schema.org image (recipe blogs, rich snippets)
         if (!imageUrl) {
           for (const s of document.querySelectorAll('script[type="application/ld+json"]')) {
             try {
@@ -1519,7 +1543,48 @@ async function extractWithHeadlessBrowser(url, res) {
               };
               const img = findImg(d);
               if (img && img.startsWith('http')) { imageUrl = img; break; }
-            } catch { }
+            } catch { /* malformed JSON-LD, skip */ }
+          }
+        }
+
+        // Strategy C: Hero image — largest visible <img> in the upper portion of the page.
+        // This is the Paprika approach: find the biggest food photo, not a tiny thumbnail.
+        if (!imageUrl) {
+          let bestArea = 0;
+          for (const img of document.querySelectorAll('img')) {
+            const rect = img.getBoundingClientRect();
+            // Skip images deep in the page (likely related content, ads, etc.)
+            if (rect.top > window.innerHeight * 3) continue;
+            const src = bestSrcset(img.srcset) || img.currentSrc || img.src || '';
+            if (!isContentImg(src, rect)) continue;
+            const area = rect.width * rect.height;
+            if (area > bestArea) { bestArea = area; imageUrl = src; }
+          }
+        }
+
+        // Strategy D: CSS background-image on large recipe-card containers
+        // (some modern recipe themes use background-image on div wrappers)
+        if (!imageUrl) {
+          const recipeBgSelectors = [
+            '.wprm-recipe-image', '.tasty-recipes-image', '.recipe-card-image',
+            '[class*="recipe-hero"]', '[class*="recipe-image"]', '[class*="featured-image"]',
+            'figure.wp-block-image', '.entry-image', '.post-thumbnail',
+          ];
+          for (const sel of recipeBgSelectors) {
+            const el = document.querySelector(sel);
+            if (!el) continue;
+            const bg = window.getComputedStyle(el).backgroundImage;
+            if (bg && bg !== 'none') {
+              const m = bg.match(/url\(["']?([^"')]+)["']?\)/);
+              if (m && m[1] && m[1].startsWith('http')) { imageUrl = m[1]; break; }
+            }
+            // Also check child img
+            const childImg = el.querySelector('img');
+            if (childImg) {
+              const src = bestSrcset(childImg.srcset) || childImg.currentSrc || childImg.src || '';
+              const rect = childImg.getBoundingClientRect();
+              if (isContentImg(src, rect)) { imageUrl = src; break; }
+            }
           }
         }
 

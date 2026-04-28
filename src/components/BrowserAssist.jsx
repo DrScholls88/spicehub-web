@@ -201,14 +201,6 @@ const BrowserAssist = forwardRef(function BrowserAssist({ url, onRecipeExtracted
     }
   }, [selectedBlockIds, onBlocksSelected]);
 
-  // ── Expose triggerVisualScrape to parent via ref ──────────────────────────
-  // ImportModal calls browserAssistRef.current.triggerVisualScrape() when the
-  // user clicks "Analyze Visually" — no prop-drilling of a callback needed.
-  useImperativeHandle(ref, () => ({
-    triggerVisualScrape: () => runVisualScrape(),
-  }), [runVisualScrape]);
-
-
   // ── Helper: update a specific pipeline step ───────────────────────────────
   const stepUpdater = useRef(null);
   useEffect(() => {
@@ -704,6 +696,14 @@ const BrowserAssist = forwardRef(function BrowserAssist({ url, onRecipeExtracted
   //   block.type: 'title' | 'ingredient' | 'instruction' | 'caption' | 'other'
   const runVisualScrape = useCallback(async () => {
     setVisualScrapeRunning(true);
+
+      // ── Expose triggerVisualScrape to parent via ref ──────────────────────────
+  // ImportModal calls browserAssistRef.current.triggerVisualScrape() when the
+  // user clicks "Analyze Visually" — no prop-drilling of a callback needed.
+  useImperativeHandle(ref, () => ({
+    triggerVisualScrape: () => runVisualScrape(),
+  }), [runVisualScrape]);
+
 
     // For social URLs, show visual-mode toast immediately — layout detection is
     // the primary strategy for IG/TikTok/Reels where CSS selectors fail.

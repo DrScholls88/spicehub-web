@@ -1479,13 +1479,62 @@ body {
 }
 
 /* ── Detail Modal ── */
+.detail-image-wrap {
+  position: relative;
+  margin: 0 -20px 20px;
+}
+
 .detail-image {
   width: calc(100% + 40px);
   max-height: 300px;
   object-fit: cover;
-  margin: 0 -20px 20px;
+  margin: 0;
   border-radius: 0;
   background: var(--surface);
+  display: block;
+}
+
+.detail-image-placeholder {
+  width: 100%;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+/* Re-import photo button — floats over the bottom-right of the image */
+.detail-reimport-photo-btn {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  border: none;
+  border-radius: 20px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  transition: background 0.15s, opacity 0.15s;
+  white-space: nowrap;
+}
+.detail-reimport-photo-btn:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.80);
+}
+.detail-reimport-photo-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.detail-reimport-photo-btn.photo-found {
+  background: rgba(46, 125, 50, 0.85);
+}
+.detail-reimport-photo-btn.photo-none {
+  background: rgba(100, 100, 100, 0.70);
 }
 
 .detail-section {
