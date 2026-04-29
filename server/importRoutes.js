@@ -140,12 +140,13 @@ export function registerImportRoutes(app, {
   // run the deep pipeline. This keeps the client side dead simple.
 // ── Hybrid router alias /api/import ───────────────────────────────────────
 router.post('/import', async (req, res) => {
+    // 1. Extract everything from the request body at the start
     const { url, mode = 'visual', html, jobId, sourceHash } = req.body;
 
     if (!url) return res.status(400).json({ error: "url required" });
 
     try {
-        // 1. Background async mode OR jobId present
+        // 2. Handle Async Mode / Background Jobs
         if (mode === 'async' || jobId) {
             if (!jobId) return res.status(400).json({ error: 'async mode requires jobId' });
 
@@ -154,7 +155,6 @@ router.post('/import', async (req, res) => {
 
             jobStore.put(jobId, { status: 'queued', url, sourceHash });
             
-            // Kick off process without awaiting
             Promise.resolve()
                 .then(() => runWaterfall({ jobId, url, sourceHash }))
                 .catch((err) => jobStore.put(jobId, { status: 'failed', error: err.message || String(err) }));
@@ -162,17 +162,19 @@ router.post('/import', async (req, res) => {
             return res.status(202).json({ jobId, status: 'queued', path: 'async' });
         }
 
-        // 2. Paprika / Visual fast path
+        // 3. Handle Visual Mode (Paprika path)
         if (mode === 'visual' || html) {
             return visualParseHandler(req, res);
         }
 
-        // 3. Default: Unified v2 synchronous waterfall (Deep Mode)
+        // 4. Handle Deep Mode (Synchronous waterfall)
+        // This 'await' is now safely inside the 'async' function above
         const recipe = await runWaterfallSync({ url });
         return res.json({ recipe, path: 'deep' });
 
     } catch (err) {
-        if (err.name === 'ExtractError') {
+        // Unified error handling
+        if (err.name === 'ExtractError' || err.message?.includes('extraction')) {
             return res.status(422).json({ 
                 error: 'extraction_failed', 
                 message: err.message, 
@@ -184,46 +186,10 @@ router.post('/import', async (req, res) => {
         console.error('[hybrid /api/import error]', err);
         return res.status(500).json({ 
             error: "internal_error", 
-            message: err.message,
-            suggestion: "Try enabling deep mode or check server logs" 
+            message: err.message 
         });
     }
 });
-
-    // Explicit async mode OR jobId present → background job
-    if (mode === 'async' || body.jobId) {
-      const { jobId, url, sourceHash } = body;
-      if (!jobId || !url) return res.status(400).json({ error: 'async mode requires jobId and url' });
-      const existing = jobStore.get(jobId);
-      if (existing) return res.status(202).json({ jobId, status: existing.status, path: 'async' });
-      jobStore.put(jobId, { status: 'queued', url, sourceHash });
-      Promise.resolve()
-        .then(() => runWaterfall({ jobId, url, sourceHash }))
-        .catch((err) => jobStore.put(jobId, { status: 'failed', error: err.message || String(err) }));
-      return res.status(202).json({ jobId, status: 'queued', path: 'async' });
-    }
-
-    // Default: deep synchronous waterfall (Unified v2)
-    const { url } = body;
-    if (!url || typeof url !== 'string') {
-      return res.status(400).json({ error: 'url is required' });
-    }
-    try {
-      const recipe = await runWaterfallSync({ url });
-      return res.json({ recipe, path: 'deep' });
-    } catch (err) {
-      if (err instanceof ExtractError || err?.name === 'ExtractError') {
-        return res.status(422).json({
-          error: 'extraction_failed',
-          message: err.message,
-          partial: { capturedText: err.capturedText || '' },
-          path: 'deep',
-        });
-      }
-      console.error('[hybrid /api/import deep error]', err);
-      return res.status(500).json({ error: 'internal_error', message: err.message, path: 'deep' });
-    }
-  };
 
   // ── Gemini Fallback (Phase 1 integration) ────────────────────────────────────
   // Called from browser when visual confidence is low (0.5-0.75).
@@ -499,4 +465,4 @@ function scoreVisualConfidence(recipe) {
   else if (dirCount >= 1) score += 0.12 * dirCount;
   if (recipe.image) score += 0.10;
   return Math.min(score, 1);
-}
+}}

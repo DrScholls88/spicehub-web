@@ -16,6 +16,7 @@
     "test:e2e": "playwright test tests/e2e"
   },
   "dependencies": {
+    "@capgo/capacitor-share-target": "^8.0.29",
     "@google/genai": "^1.48.0",
     "@google/generative-ai": "^0.21.0",
     "@playwright/test": "^1.59.1",
@@ -24,10 +25,14 @@
     "dexie-observable": "^4.0.1-beta.13",
     "express": "^4.21.2",
     "framer-motion": "^12.38.0",
+    "idb": "^8.0.3",
     "jszip": "^3.10.1",
+    "lucide-react": "^1.14.0",
+    "parse-ingredient": "^2.2.0",
     "puppeteer": "^24.15.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-social-media-embed": "^2.5.18",
     "tesseract.js": "^5.1.1",
     "turndown": "^7.2.0",
     "xlsx": "^0.18.5",

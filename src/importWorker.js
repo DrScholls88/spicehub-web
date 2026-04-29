@@ -6,6 +6,50 @@ import { compressImageUrl as defaultCompress } from './imageCompressor.js';
 
 const API_BASE = import.meta.env?.VITE_API_BASE || '';
 
+// Any ghost row older than this is considered abandoned and gets evicted
+// on the next worker tick — kills the "holds onto failed imports" complaint.
+const STALE_GHOST_MS = 90_000;
+
+/**
+ * purgeStaleGhostRows — sweeps Dexie for rows stuck in status='processing'
+ * older than STALE_GHOST_MS and marks them failed with a clear error message.
+ * Returns the number of rows purged so callers can refresh UI.
+ *
+ * Exported standalone so App.jsx can run it once at startup, in addition
+ * to the per-tick sweep done inside useImportWorker.
+ */
+export async function purgeStaleGhostRows(table = db.meals, now = Date.now(), maxAgeMs = STALE_GHOST_MS) {
+  let purged = 0;
+  try {
+    const stuck = await table.where('status').equals('processing').toArray();
+    for (const row of stuck) {
+      // createdAt may be ISO string, Date, or number — normalize defensively.
+      let createdAtMs = 0;
+      if (typeof row.createdAt === 'number') createdAtMs = row.createdAt;
+      else if (row.createdAt instanceof Date) createdAtMs = row.createdAt.getTime();
+      else if (typeof row.createdAt === 'string') {
+        const t = Date.parse(row.createdAt);
+        if (!Number.isNaN(t)) createdAtMs = t;
+      }
+      // If we can't parse createdAt at all, treat the row as already stale —
+      // legacy rows from before we tracked timestamps shouldn't pin the queue.
+      const age = createdAtMs > 0 ? now - createdAtMs : Infinity;
+      if (age > maxAgeMs) {
+        await table.update(row.id, {
+          status: 'failed',
+          importError: 'Import timed out — please try again.',
+          importProgress: '',
+        });
+        purged += 1;
+      }
+    }
+  } catch (err) {
+    // Never let a Dexie hiccup crash the poll loop.
+    console.warn('[importWorker] purgeStaleGhostRows failed:', err?.message || err);
+  }
+  return purged;
+}
+
 /**
  * useImportWorker — mounts at App root; polls Dexie for any meals whose
  * status === 'processing' (ghost rows created by the V2 optimistic path)
@@ -28,6 +72,12 @@ export function useImportWorker(onUpdate) {
     async function tick() {
       if (cancelled) return;
       try {
+        // Sweep stale ghosts first. Any row purged here won't be polled below,
+        // and we trigger a UI refresh so failed imports drop out of the active
+        // list immediately.
+        const purged = await purgeStaleGhostRows(db.meals);
+        if (purged > 0) stableOnUpdate();
+
         const processing = await db.meals.where('status').equals('processing').toArray();
         if (processing.length > 0) {
           const results = await Promise.allSettled(processing.map((m) => pollOne(db.meals, m, {
@@ -44,6 +94,12 @@ export function useImportWorker(onUpdate) {
         timer = setTimeout(tick, 5000);
       }
     }
+    // One immediate sweep on mount kills any ghost rows left behind by a
+    // previous session (closed mid-import, browser crash, etc.) before we
+    // even start the regular poll cycle.
+    purgeStaleGhostRows(db.meals).then((purged) => {
+      if (purged > 0) stableOnUpdate();
+    }).catch(() => {});
     tick();
     return () => { cancelled = true; if (timer) clearTimeout(timer); };
   }, [stableOnUpdate]);

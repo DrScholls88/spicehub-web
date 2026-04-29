@@ -13,10 +13,69 @@ import BrowserAssist from './BrowserAssist';
 import { normalizeInstagramUrl } from '../api.js';
 import db from '../db.js';
 import { shaHex } from '../shaHex.js';
+import {
+  InstagramEmbed,
+  TikTokEmbed,
+  YouTubeEmbed,
+  FacebookEmbed,
+  XEmbed,
+  PinterestEmbed,
+} from 'react-social-media-embed';
 
 // Module-level flag — persists for the browser tab session so we only pay the
 // Render spin-up cost once per session, not on every import.
 let _serverWarm = false;
+
+/**
+ * SocialPreview — renders the official platform embed (Instagram/TikTok/etc.)
+ * inline in the URL pane. Iframe loads instantly while the scraper runs in
+ * the background, so the user always sees the post within ~500ms.
+ *
+ * Returns null for non-social or unsupported URLs.
+ */
+function SocialPreview({ url }) {
+  if (!url) return null;
+  let host;
+  try { host = new URL(url).hostname.replace(/^www\./, ''); } catch { return null; }
+
+  // Each embed handles its own loading state + skeleton; we just pick.
+  const wrap = (child) => (
+    <div
+      className="social-embed-wrap"
+      style={{
+        margin: '12px 0 4px',
+        borderRadius: 12,
+        overflow: 'hidden',
+        background: 'rgba(0,0,0,0.04)',
+        display: 'flex',
+        justifyContent: 'center',
+        minHeight: 180,
+      }}
+    >
+      {child}
+    </div>
+  );
+
+  if (host.includes('instagram.com')) {
+    return wrap(<InstagramEmbed url={url} width="100%" captioned />);
+  }
+  if (host.includes('tiktok.com')) {
+    return wrap(<TikTokEmbed url={url} width="100%" />);
+  }
+  if (host.includes('youtube.com') || host === 'youtu.be') {
+    return wrap(<YouTubeEmbed url={url} width="100%" />);
+  }
+  if (host.includes('facebook.com') || host === 'fb.watch') {
+    return wrap(<FacebookEmbed url={url} width="100%" />);
+  }
+  if (host.includes('twitter.com') || host === 'x.com') {
+    return wrap(<XEmbed url={url} width="100%" />);
+  }
+  if (host.includes('pinterest.com')) {
+    return wrap(<PinterestEmbed url={url} width="100%" />);
+  }
+  return null;
+}
 
 /**
  * ImportModal — four import paths:
@@ -1615,6 +1674,11 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                     </span>
                   </div>
                 )}
+
+                {/* Live embed preview — renders the official IG/TikTok/YT/FB/X/Pinterest
+                    iframe instantly so the user sees the post within ~500ms while the
+                    scraper does its work in the background. */}
+                <SocialPreview url={url} />
 
                 {!socialDetected && (
                   <p className="help-text">

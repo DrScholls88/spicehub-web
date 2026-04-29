@@ -1,0 +1,26 @@
+{
+  "appId": "com.spicehub.app",
+  "appName": "SpiceHub",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "ShareTarget": {
+      "iosShareExtensionTargets": ["public.url", "public.text", "public.image"],
+      "androidIntentFilters": [
+        {
+          "action": "android.intent.action.SEND",
+          "categories": ["android.intent.category.DEFAULT"],
+          "mimeType": ["text/plain", "text/*"]
+        },
+        {
+          "action": "android.intent.action.SEND",
+          "categories": ["android.intent.category.DEFAULT"],
+          "mimeType": ["image/*"]
+        }
+      ]
+    }
+  }
+}

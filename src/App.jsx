@@ -282,6 +282,27 @@ useEffect(() => {
   }
 }, []);
 
+// Handle native share-target intents from Capacitor (@capgo/capacitor-share-target).
+// main.jsx wires the native plugin and dispatches `spicehub:share-import` whenever
+// the OS routes a share to us. Here we mirror the PWA behavior — open the import
+// modal and pre-populate it with the shared URL or text.
+useEffect(() => {
+  const handler = (e) => {
+    const detail = e?.detail;
+    if (!detail || (!detail.url && !detail.text)) return;
+    setImportModalKey(k => k + 1);
+    setShowImportFor('meals');
+    setSharedContent({
+      mode: detail.mode || (detail.url ? 'url' : 'text'),
+      url: detail.url || '',
+      text: detail.text || '',
+      title: detail.title || '',
+    });
+  };
+  window.addEventListener('spicehub:share-import', handler);
+  return () => window.removeEventListener('spicehub:share-import', handler);
+}, []);
+
   // ── Week plan ─────────────────────────────────────────────────────────────────
   const generateWeek = useCallback(() => {
     if (meals.length < 5) {

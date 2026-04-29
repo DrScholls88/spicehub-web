@@ -11,6 +11,34 @@ import { downloadInstagramImage, isInstagramCdnUrl, fetchHtmlViaProxy as fetchHt
 import { cacheInstagramRecipe } from './db.js';
 import { isRedditUrl, isRedditPostUrl, tryRedditJson } from './scrapers/redditDiscovery.js';
 import { htmlToMarkdown, htmlLooksLikeRecipe } from './scrapers/markdownConverter.js';
+import { parseIngredient } from 'parse-ingredient';
+
+/**
+ * looksLikeIngredientLine — uses parse-ingredient (battle-tested NLP for
+ * "1 ½ cups flour" / fractions / metric / parenthetical notes) as the
+ * primary signal that a line is an ingredient. Falls back gracefully on
+ * malformed input. Returns true when at least one parsed entry has a
+ * recognised quantity, unit, or non-empty description.
+ */
+function looksLikeIngredientLine(line) {
+  if (!line || typeof line !== 'string') return false;
+  const trimmed = line.trim();
+  if (trimmed.length < 2 || trimmed.length > 240) return false;
+  try {
+    const parsed = parseIngredient(trimmed);
+    if (!parsed || parsed.length === 0) return false;
+    const entry = parsed[0];
+    // Require either a quantity OR a unit OR an "ingredient" identified beyond
+    // the raw text — protects against parse-ingredient labelling whole sentences
+    // (e.g. "Mix the flour with eggs") as ingredients with quantity 1.
+    const hasQty = entry.quantity != null || entry.quantity2 != null;
+    const hasUnit = entry.unitOfMeasure || entry.unitOfMeasureID;
+    const hasShortDesc = entry.description && entry.description.length > 0 && entry.description.length < 80;
+    return Boolean((hasQty && hasShortDesc) || (hasUnit && hasShortDesc));
+  } catch {
+    return false;
+  }
+}
 
 // ─── Title sanitizer (public export, delegates to cleanTitle) ────────────────
 export function sanitizeRecipeTitle(raw) {
@@ -3287,8 +3315,15 @@ export function smartClassifyLines(lines, sourceElement = null) {
     const hasBulletPoint = BULLET_POINT.test(trimmed);
     const length = trimmed.length;
 
+    // parse-ingredient provides the strongest signal for ingredient lines:
+    // it knows fractions, metric, parens, and odd unit forms regex misses.
+    // Run it first, but defer to the direction-keyword check so verbs win.
+    const ingredientParserMatched = looksLikeIngredientLine(trimmed);
+
     // Strong signals
-    if (hasStrongIngredientPattern && !hasDirectionKeyword) {
+    if (ingredientParserMatched && !hasDirectionKeyword && !hasNumberedStep) {
+      ingredients.push(trimmed);
+    } else if (hasStrongIngredientPattern && !hasDirectionKeyword) {
       ingredients.push(trimmed);
     } else if ((hasNumberedStep || hasDirectionKeyword) && length > 20) {
       directions.push(trimmed);
