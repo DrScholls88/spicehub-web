@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import db, { importPaprikaMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getCookingLog, processImportQueue, getWeekHistory, saveWeekToHistory, toggleRotation } from './db';
+import db, { importPaprikaMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getCookingLog, getWeekHistory, saveWeekToHistory, toggleRotation } from './db';
 import { PAPRIKA_MEALS } from './paprika_import_data';
 import { checkStorageQuota, checkAndRecommendCleanup } from './storageManager';
 import { initializeBackgroundSync } from './backgroundSync';
@@ -26,7 +26,6 @@ import { isMobileDevice } from './isMobile';
 import useOnlineStatus, { onOnlineStatusChange } from './hooks/useOnlineStatus';
 import useBackHandler from './hooks/useBackHandler';
 import useSwipeDismiss from './hooks/useSwipeDismiss';
-import { useImportWorker } from './importWorker';
 import './App.css';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -131,11 +130,7 @@ export default function App() {
     setDrinks(all);
   }, []);
 
-  // Hybrid Engine: polls Dexie for any 'processing' ghost rows and hydrates them
-  // when the backend job finishes. Safe no-op when no ghost rows exist.
-  // Wired to loadMeals so the library auto-refreshes when a background import completes.
-  useImportWorker(loadMeals);
-
+  // Background worker has been deprecated in favor of synchronous local JSON-LD parsing.
   useEffect(() => {
     loadMeals();
     loadDrinks();
@@ -397,7 +392,7 @@ useEffect(() => {
   // ── Meal CRUD ─────────────────────────────────────────────────────────────────
   const saveMeal = useCallback(async (mealData) => {
     if (mealData.id) { await db.meals.update(mealData.id, mealData); }
-    else { await db.meals.add(mealData); }
+    else { await db.meals.add({ ...mealData, createdAt: new Date().toISOString() }); }
     await loadMeals();
     setEditMeal(null);
   }, [loadMeals]);

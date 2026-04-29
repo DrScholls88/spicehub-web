@@ -329,7 +329,7 @@ export async function processImportQueue() {
           } else {
             // Different recipe, same name — rename and add
             const uniqueName = `${recipeToSave.name} (imported ${new Date().toLocaleDateString()})`;
-            await db.meals.add({ ...recipeToSave, name: uniqueName });
+            await db.meals.add({ ...recipeToSave, name: uniqueName, createdAt: recipeToSave.createdAt || recipeToSave.created || new Date().toISOString() });
             await db.importQueue.update(item.id, { status: 'done', error: null });
             succeeded++;
           }
@@ -337,7 +337,7 @@ export async function processImportQueue() {
         }
 
         // Add to meals
-        await db.meals.add(recipeToSave);
+        await db.meals.add({ ...recipeToSave, createdAt: recipeToSave.createdAt || recipeToSave.created || new Date().toISOString() });
         await db.importQueue.update(item.id, { status: 'done', error: null });
         succeeded++;
       } catch (err) {

@@ -8,9 +8,10 @@ import {
   scoreExtractionConfidence, tryVideoExtraction,
   isWeakResult,
   detectImportType,
+  parseHtml
 } from '../recipeParser.js';
 import BrowserAssist from './BrowserAssist';
-import { normalizeInstagramUrl } from '../api.js';
+import { normalizeInstagramUrl, fetchHtmlViaProxy } from '../api.js';
 import db from '../db.js';
 import { shaHex } from '../shaHex.js';
 import {
@@ -337,7 +338,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       setImporting(true);
       setImportProgress('Extracting recipe...');
       const timer = setTimeout(() => {
-        performUrlExtraction(sharedUrl);
+        handleUrlImport(sharedUrl);
       }, 100);
       return () => clearTimeout(timer);
     }
@@ -362,205 +363,11 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     }
   };
 
-  // ── Synchronous import handler ────────────────────────────────────────────
-  // Stage advancement is event-driven, not wall-clock:
-  //   Stage 0 — immediately on start ("Reading the recipe…")
-  //   Stage 1 — after 700ms if still in flight ("Extracting content…")
-  //   Stage 2 — after 3500ms if still in flight ("Structuring with AI…")
-  //   Stage 3 — the moment response arrives ("Almost done…"), then brief pause → close
-  async function handleUrlImportSync(trimmedUrl) {
-    stageTimersRef.current.forEach(clearTimeout);
-    stageTimersRef.current = [];
-
-    // Clear stale captured text from any previous failed attempt so it never
-    // bleeds into BrowserAssist when a different URL is tried in the same session.
-    capturedTextRef.current = '';
-
-    setSyncPhase('running');
-    setSyncStageIdx(0);
-
-    // Patience timers — fire only if the request is slow; cancelled on response.
-    const t1 = setTimeout(() => setSyncStageIdx(1), 700);
-    const t2 = setTimeout(() => setSyncStageIdx(2), 3500);
-    stageTimersRef.current = [t1, t2];
-
-    const controller = abortRef.current || new AbortController();
-    abortRef.current = controller;
-
-    const cancelTimers = () => {
-      stageTimersRef.current.forEach(clearTimeout);
-      stageTimersRef.current = [];
-    };
-
-    // One transparent retry on transient failures (5xx / network drop).
-    // 422 = intentional extraction failure → skip retry, go straight to BrowserAssist.
-    const attemptFetch = () => fetch(`${API_BASE}/api/v2/import/sync`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: trimmedUrl }),
-      signal: controller.signal,
-    });
-
-    // Called when the server responds — cancels patience timers, flashes stage 3.
-    const onResponseArrived = async () => {
-      cancelTimers();
-      setSyncStageIdx(3); // "Almost done…" — real event, not fake
-      // Brief visual pause so the user sees the final stage before modal closes
-      await new Promise(r => setTimeout(r, 220));
-    };
-
-    try {
-      let resp = await attemptFetch();
-
-      // Transient server error — show "Retrying…" in current stage, retry once
-      if (resp.status >= 500) {
-        // Don't cancel timers yet — retry is still in flight
-        if (controller.signal.aborted) { cancelTimers(); setSyncPhase('idle'); return; }
-        resp = await attemptFetch();
-      }
-
-      await onResponseArrived();
-
-      if (!resp.ok) {
-        const errBody = await resp.json().catch(() => ({}));
-        capturedTextRef.current = errBody?.partial?.capturedText ?? '';
-        setSyncPhase('failed');
-        setBrowserAssistUrl(trimmedUrl);
-        setBrowserAssistMode('showing');
-        return;
-      }
-
-      const { recipe } = await resp.json();
-
-      // If the backend returned a partial/weak recipe (missing ingredients or
-      // directions), route to BrowserAssist so the user can aim the parser
-      // instead of silently saving an incomplete record.
-      if (isWeakResult(recipe)) {
-        setSyncPhase('idle');
-        setBrowserAssistUrl(trimmedUrl);
-        setBrowserAssistSeed(recipe && !recipe._error ? recipe : null);
-        setBrowserAssistMode('showing');
-        return;
-      }
-
-      // Show success flash, then hand off to App.jsx
-      setSyncSuccessName(recipe?.name || 'Recipe');
-      setSyncPhase('success');
-      await new Promise(r => setTimeout(r, 700));
-      setSyncPhase('idle');
-      onImport([recipe]);
-      handleClose();
-
-    } catch (err) {
-      cancelTimers();
-      if (err.name === 'AbortError') {
-        setSyncPhase('idle');
-        return;
-      }
-      // Network error — retry once silently
-      try {
-        if (controller.signal.aborted) { setSyncPhase('idle'); return; }
-        await new Promise(r => setTimeout(r, 1200));
-        const resp2 = await attemptFetch();
-        await onResponseArrived();
-        if (resp2.ok) {
-          const { recipe } = await resp2.json();
-          // Same weak-result check as the primary path
-          if (isWeakResult(recipe)) {
-            setSyncPhase('idle');
-            setBrowserAssistUrl(trimmedUrl);
-            setBrowserAssistSeed(recipe && !recipe._error ? recipe : null);
-            setBrowserAssistMode('showing');
-            return;
-          }
-          setSyncSuccessName(recipe?.name || 'Recipe');
-          setSyncPhase('success');
-          await new Promise(r => setTimeout(r, 700));
-          setSyncPhase('idle');
-          onImport([recipe]);
-          handleClose();
-          return;
-        }
-        const errBody2 = await resp2.json().catch(() => ({}));
-        capturedTextRef.current = errBody2?.partial?.capturedText ?? '';
-      } catch {
-        capturedTextRef.current = '';
-      }
-      setSyncPhase('failed');
-      setBrowserAssistUrl(trimmedUrl);
-      setBrowserAssistMode('showing');
-    }
-  }
-
-  function handleCancelImport() {
-    abortRef.current?.abort();
-    stageTimersRef.current.forEach(clearTimeout);
-    // If cancelled during warmup, mark server warm anyway so the next attempt
-    // skips warmup (the ping already woke Render up).
-    if (syncPhase === 'warmup') _serverWarm = true;
-    setSyncPhase('idle');
-    setSyncStageIdx(0);
-  }
-
-  // ── V2 ghost-recipe optimistic handler (feature-flagged) ───────────────────
-  // Flag: VITE_USE_V2_IMPORT=true  → modal closes in <300ms with a "processing"
-  // placeholder; useImportWorker polls /api/v2/import/status and hydrates the
-  // row when the server pipeline finishes.
-  // Flag unset/false → falls through to the synchronous hybrid flow (default).
-  // This is the exact pattern from feat/unified-import-engine, brought over
-  // so it can be toggled on once users validate the sync path is stable.
-  const USE_V2_OPTIMISTIC = import.meta.env.VITE_USE_V2_IMPORT === 'true';
-
-  async function handleUrlImportV2(trimmedUrl) {
-    const clean = normalizeInstagramUrl(trimmedUrl) || trimmedUrl;
-    const sourceHash = await shaHex(clean);
-
-    // Dedupe: if a row already exists (processing/done/failed), just close.
-    // The row is already in the library — no need to add it again.
-    // (handleImport's put() would clobber the existing ghost data if we passed it.)
-    const existing = await db.meals.where('sourceHash').equals(sourceHash).first();
-    if (existing) {
-      handleClose();
-      return;
-    }
-
-    const jobId = (crypto.randomUUID ? crypto.randomUUID()
-      : `job-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    const hostname = (() => { try { return new URL(clean).hostname; } catch { return clean; } })();
-
-    // Build ghost meal in memory — do NOT add to DB here.
-    // handleImport (in App.jsx) will call db.meals.put(ghostMeal) and then
-    // loadMeals(), so the row appears in the library and the UI refreshes atomically.
-    const ghostMeal = {
-      status: 'processing',
-      name: `Importing from ${hostname}…`,
-      sourceHash,
-      jobId,
-      sourceUrl: clean,
-      importProgress: 'Queued',
-      createdAt: new Date().toISOString(),
-      _type: itemType,
-    };
-
-    // Fire-and-forget — importWorker (mounted at App root) handles polling
-    fetch(`${API_BASE}/api/v2/import`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jobId, url: clean, sourceHash }),
-    }).catch(() => { /* worker retries */ });
-
-    // Pass full ghost meal — handleImport adds it and reloads the library
-    onImport([ghostMeal]);
-    handleClose();
-  }
-
   // ── Import from ANY URL ─────────────────────────────────────────────────────
   // Called by the Import button and Enter-key handler.
-  // Routes single URLs through performUrlExtraction (which handles Instagram →
-  // BrowserAssist, short URL resolution, social fallback, etc.) and multi-URL
-  // pastes through handleBatchImport.
-  const handleUrlImport = async () => {
-    const trimmedUrl = url.trim();
+  const handleUrlImport = async (overrideUrl) => {
+    const rawUrl = typeof overrideUrl === 'string' ? overrideUrl : url;
+    const trimmedUrl = rawUrl.trim();
     if (!trimmedUrl) {
       setError('Please enter a URL.');
       return;
@@ -576,139 +383,55 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       return;
     }
 
-    // BrowserAssist is the default UI for ALL single-URL imports.
-    // This must come before any feature-flag checks — even VITE_USE_V2_IMPORT=true
-    // should not silently swallow imports into ghost rows that never resolve.
-    // BrowserAssist shows live progress, uses the server Python scraper for blogs,
-    // and uses the social pipeline for Instagram/TikTok/etc.
-    setBrowserAssistUrl(trimmedUrl);
-    setBrowserAssistMode('showing');
-  };
-
-  // ── Render warmup ─────────────────────────────────────────────────────────
-  // On Render's free tier the instance spins down after inactivity. The first
-  // request gets stuck waiting for spin-up (5-30s) and times out. To mask
-  // this, we send a cheap ping immediately and show a branded gradient
-  // animation for the duration. Once the instance responds (or 5.5s max),
-  // we proceed with the real import — the server is now warm.
-  //
-  // _serverWarm is module-level so repeated imports in the same tab skip
-  // the warmup entirely (server stays warm between imports).
-  //
-  // Min 2s animation prevents a flash when the server is already warm.
-  async function handleUrlImportWithWarmup(trimmedUrl) {
-    const WARMUP_MIN_MS = 2000;
-    const WARMUP_MAX_MS = 5500;
-
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    if (!_serverWarm) {
-      setSyncPhase('warmup');
-
-      const t0 = Date.now();
-      // Fire ping — wakes Render, don't block on error
-      const pingPromise = fetch(`${API_BASE}/api/v2/ping`, { method: 'GET' })
-        .catch(() => {});
-      // Wait for ping OR max timeout, whichever is sooner
-      await Promise.race([pingPromise, new Promise(r => setTimeout(r, WARMUP_MAX_MS))]);
-
-      // Enforce minimum animation time so a fast warm-server doesn't flash
-      const elapsed = Date.now() - t0;
-      if (elapsed < WARMUP_MIN_MS) {
-        await new Promise(r => setTimeout(r, WARMUP_MIN_MS - elapsed));
-      }
-
-      _serverWarm = true;
-
-      // User may have cancelled during warmup — bail if so
-      if (controller.signal.aborted) {
-        setSyncPhase('idle');
-        return;
-      }
-    }
-
-    await handleUrlImportSync(trimmedUrl);
-  }
-
-  // LEGACY: performUrlExtraction is only called by the sharedContent auto-trigger
-  // useEffect below. For button-triggered URL imports, all traffic goes through
-  // handleUrlImport → handleUrlImportWithWarmup → handleUrlImportSync.
-  // Do NOT call this from the URL import button.
-  // ── Extract URL (reusable for auto-extraction on share-target) ──────────────────
-  const performUrlExtraction = async (urlToExtract) => {
-    if (!urlToExtract?.trim()) {
-      setImporting(false);
-      setImportProgress('');
-      return;
-    }
-    let trimmedUrl = urlToExtract.trim();
+    setImporting(true);
+    setImportProgress('Fetching recipe...');
 
     try {
-      // ── URL shortener resolution ──
-      if (isShortUrl(trimmedUrl)) {
-        setImportProgress('Resolving shortened URL...');
-        try {
-          const resolved = await resolveShortUrl(trimmedUrl);
-          if (resolved !== trimmedUrl) {
-            trimmedUrl = resolved;
-            setUrl(resolved);
-            if (isSocialMediaUrl(resolved)) {
-              setSocialDetected({ platform: getSocialPlatform(resolved) });
-            }
-          }
-        } catch { /* continue with original URL */ }
+      // 1. Resolve short URLs
+      let resolvedUrl = trimmedUrl;
+      if (isShortUrl(resolvedUrl)) {
+        try { resolvedUrl = await resolveShortUrl(resolvedUrl); } catch {}
       }
 
-      // ── Instagram: route directly to BrowserAssist (unified 4-phase engine) ──
-      // importRecipeFromUrl() in recipeParser.js now owns the full pipeline:
-      //   Phase 0: yt-dlp video subtitles (Reels narration)
-      //   Phase 1: Fast embed page fetch
-      //   Phase 2: AI browser / Puppeteer agent
-      //   Phase 3: Gemini AI structuring
-      // BrowserAssist shows live step-by-step progress and handles graceful fallback.
-      if (isInstagramUrl(trimmedUrl)) {
+      // 2. Social media → direct to BrowserAssist (requires visual parsing)
+      if (isSocialMediaUrl(resolvedUrl)) {
         setImporting(false);
         setImportProgress('');
-        setBrowserAssistUrl(trimmedUrl);
+        setBrowserAssistUrl(resolvedUrl);
         setBrowserAssistMode('showing');
         return;
       }
 
-      // ── Non-Instagram URLs: unified import engine ──
-      // Single source of truth — importRecipeFromUrl() routes to:
-      //   • Video-first flow for TikTok / YT Shorts / FB Reels (yt-dlp first)
-      //   • Generic blog pipeline for recipe blogs (JSON-LD → Markdown → Gemini)
-      // Always returns either a finalized recipe or {_needsManualCaption: true}.
-      setError('');
-      setBrowserAssistMode('off');
-      setImportProgress('Extracting recipe…');
+      // 3. Synchronous, deterministic local parsing via CORS proxy (Paprika-style)
+      let html = await fetchHtmlViaProxy(resolvedUrl, 15000);
+      if (!html) {
+        throw new Error("Could not fetch page. The site may block proxies.");
+      }
 
-      const result = await importRecipeFromUrl(trimmedUrl, {
-        type: itemType,
-        onProgress: (_phase, _status, msg) => {
-          if (msg) setImportProgress(msg);
-        },
-      });
+      setImportProgress('Parsing JSON-LD data...');
+      const result = parseHtml(html, resolvedUrl);
 
-      // Paprika-style fallback: ANY weak/empty/partial result routes to the
-      // internal browser so the user can aim the parser themselves. No more
-      // dead-end 'paste text' error cards as the primary fallback.
-      if (isWeakResult(result)) {
+      if (!result || isWeakResult(result)) {
+        // Fallback to visual parsing if JSON-LD extraction was weak or failed
         setImporting(false);
         setImportProgress('');
-        setBrowserAssistUrl(trimmedUrl);
-        // Hand anything we DID scrape (title, image, partial ingredients) to the
-        // browser as a seed — the user keeps what worked, adds what didn't.
+        setBrowserAssistUrl(resolvedUrl);
         setBrowserAssistSeed(result && !result._error ? result : null);
         setBrowserAssistMode('showing');
         return;
       }
 
+      // Populate Editor synchronously
       setPreview([result]);
     } catch (e) {
       setError('Import failed: ' + e.message);
+      // Fallback on error
+      setImporting(false);
+      setImportProgress('');
+      setBrowserAssistUrl(trimmedUrl);
+      setBrowserAssistMode('showing');
     }
+    
     setImporting(false);
     setImportProgress('');
   };

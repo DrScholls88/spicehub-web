@@ -340,21 +340,13 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                 {meal.category && meal.category !== 'Dinners' && (
                   <span className="ml-tile-cat">{meal.category}</span>
                 )}
-                {/* Ghost row badges — visible indicator for stuck imports */}
-                {meal.status === 'processing' && (
-                  <span className="ml-tile-cat" style={{background:'rgba(0,0,0,0.55)',fontSize:'10px'}}>⏳ Importing…</span>
-                )}
-                {meal.status === 'failed' && (
-                  <span className="ml-tile-cat" style={{background:'rgba(180,0,0,0.7)',fontSize:'10px'}}>⚠ Failed</span>
-                )}
               </div>
               {/* Info row */}
               <div className="ml-tile-info">
                 <span className="ml-tile-name">{meal.name}</span>
                 <span className="ml-tile-meta">
-                  {meal.status === 'processing' ? 'Import in progress…'
-                    : meal.status === 'failed' ? (meal.importError || 'Import failed — tap to delete')
-                    : `${(meal.ingredients || []).length} ing · ${(meal.directions || []).length} steps`}
+                  {`${(meal.ingredients || []).length} ing · ${(meal.directions || []).length} steps`}
+                  {(meal.created || meal.createdAt) && ` · Added: ${new Date(meal.created || meal.createdAt).toLocaleDateString()}`}
                 </span>
                 {meal.notes && (
                   <span className="ml-tile-notes">
@@ -390,6 +382,11 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
               <h3 className="ml-qp-title">{quickPreview.name}</h3>
               {quickPreview.category && quickPreview.category !== 'Dinners' && (
                 <span className="ml-tile-cat" style={{ position: 'static', marginBottom: 8 }}>{quickPreview.category}</span>
+              )}
+              {(quickPreview.created || quickPreview.createdAt) && (
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', marginBottom: 8 }}>
+                  Added: {new Date(quickPreview.created || quickPreview.createdAt).toLocaleDateString()}
+                </div>
               )}
               <div className="ml-qp-section">
                 <h4>Ingredients ({quickPreview.ingredients.length})</h4>
