@@ -2,6 +2,8 @@
 import * as jobStore from './jobStore.js';
 import { runWaterfall as defaultRunWaterfall, runWaterfallSync as defaultRunWaterfallSync, ExtractError } from './coordinator.js';
 import { structureWithGemini } from './structurer.js';
+import express from 'express';
+const router = express.Router();
 
 export function registerImportRoutes(app, {
   runWaterfall = defaultRunWaterfall,
@@ -139,7 +141,7 @@ export function registerImportRoutes(app, {
   // if they send a visual payload (nodes[]) we parse visually, otherwise we
   // run the deep pipeline. This keeps the client side dead simple.
 // ── Hybrid router alias /api/import ───────────────────────────────────────
-router.post('/import', async (req, res) => {
+app.post('/import', async (req, res) => {
     // 1. Extract everything from the request body at the start
     const { url, mode = 'visual', html, jobId, sourceHash } = req.body;
 
@@ -466,3 +468,5 @@ function scoreVisualConfidence(recipe) {
   if (recipe.image) score += 0.10;
   return Math.min(score, 1);
 }}
+
+export default router;
