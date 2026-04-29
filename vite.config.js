@@ -106,9 +106,10 @@ VitePWA({
           return;
         }
 // Re-target dynamically
-        const url = new URL(fullUrl);
+    const url = new URL(fullUrl);
         proxyReq.setHeader('host', url.host);
-        proxyReq.path = url.pathname + url.search;
+    const safePath = url.pathname || '/';
+        proxyReq.path = safePath + url.search;
         // Anti-block headers (Instagram checks these)
         proxyReq.setHeader('Referer', 'https://www.instagram.com/');
         proxyReq.setHeader('User-Agent', 'SpiceHub-App/1.0 (+https://spicehub-web.vercel.app)');
@@ -120,7 +121,7 @@ VitePWA({
 build: {
     outDir: 'dist',
     sourcemap: true,
-    target: 'es2019',
+    target: 'es2019', 
     chunkSizeWarningLimit: 800,
     rollupOptions: {
       output: {

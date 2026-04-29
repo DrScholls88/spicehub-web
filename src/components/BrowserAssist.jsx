@@ -4,6 +4,7 @@ import { fetchHtmlViaProxy, proxyImageUrl } from '../api';
 import { queueRecipeImport } from '../db';
 import useOnlineStatus from '../hooks/useOnlineStatus';
 
+
 /**
  * BrowserAssist — Smart recipe extraction with full pipeline UI.
  *
@@ -91,6 +92,12 @@ const BrowserAssist = forwardRef(function BrowserAssist({ url, onRecipeExtracted
   const [aimRecipe, setAimRecipe] = useState(null);
   // Toast shown briefly after a successful aim-tap, e.g. "Added 3 ingredients".
   const [aimToast, setAimToast] = useState('');
+  const [deepModeToggle, setDeepModeToggle] = useState(false); // for Purple V manual override
+// Purple V click handler (already exists from Paprika)
+const toggleDeepMode = () => {
+  setDeepModeToggle(!deepModeToggle);
+  // Optionally trigger import immediately in deep mode
+};
 
   // ── Visual scrape mode ───────────────────────────────────────────────────────
   // defaultVisualMode prop auto-enables visual parse for social URLs (IG/TikTok)
@@ -329,6 +336,64 @@ const BrowserAssist = forwardRef(function BrowserAssist({ url, onRecipeExtracted
           setPhase('error');
           return;
         }
+
+const handleImport = async (url) => {
+  setIsProcessing(true);
+  setError(null);
+
+  try {
+    console.log("🚀 Starting Hybrid Import for:", url);
+
+    // === PHASE 1: Paprika Visual Scraper (First Man to Bat) ===
+    let html = await fetchHtmlViaProxy(url);
+    let result = null;
+
+    if (html) {
+      console.log(`📄 Got HTML (${html.length} chars) → trying Paprika visual parse`);
+      result = await parseVisualJSON(url, html);   // Pass clean HTML directly
+
+      if (result?.confidence > 65) {
+        console.log("✅ Paprika succeeded with high confidence");
+        return handleGhostRecipe(result);   // Unified's optimistic UI
+      }
+
+      console.warn(`⚠️ Paprika confidence low (${result?.confidence || 0}) → falling back to deep parse`);
+    } else {
+      console.warn("⚠️ All client proxies failed → going straight to server deep parse");
+    }
+
+    // === PHASE 2: Unified v2 Deep Parse (Stealth + AI fallback) ===
+    console.log("🔄 Falling back to Unified v2 deep import");
+    
+    result = await parseHybrid(url, { 
+      useVisual: false,     // Force deep mode
+      html: html || undefined   // Pass any partial HTML we got
+    });
+
+    if (result?.success || result?.id) {
+      console.log("✅ Unified deep parse succeeded");
+      return handleGhostRecipe(result);
+    } else {
+      throw new Error(result?.error || "Deep parse returned no recipe");
+    }
+
+  } catch (err) {
+    console.error("❌ Hybrid Import Failed:", err);
+
+    const errorMsg = err.message.includes("proxy") || err.message.includes("fetch")
+      ? "Site blocked by anti-bot protection. Try Deep AI Mode (hold Ctrl/Cmd while clicking Purple V)"
+      : "Import failed. Check console or try a different URL.";
+
+    setError(errorMsg);
+
+    // Optional: Auto-suggest deep mode after 2 failures
+    if (window.deepModeRetries && window.deepModeRetries > 1) {
+      // You could auto-trigger deep mode here if desired
+    }
+  } finally {
+    setIsProcessing(false);
+  }
+};
 
         setRawHtml(html);
         const sanitized = sanitizeHtmlForEmbed(html, url);

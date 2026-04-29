@@ -138,28 +138,28 @@ export function registerImportRoutes(app, {
   // Callers that don't know which path they want can just hit /api/import —
   // if they send a visual payload (nodes[]) we parse visually, otherwise we
   // run the deep pipeline. This keeps the client side dead simple.
-  app.post('/api/import', async (req, res) => {
-    const body = req.body || {};
-    const mode = body.mode;
+// Add / improve this handler
+router.post('/import', async (req, res) => {
+  const { url, mode = 'visual', html } = req.body;   // accept pre-fetched html
 
-    // Explicit visual mode OR visual payload detected → Paprika fast path
-    if (mode === 'visual' || (Array.isArray(body.nodes) && body.nodes.length > 0)) {
-      const visualJson = Array.isArray(body.nodes) ? body : body.visualJson;
-      if (!visualJson || !Array.isArray(visualJson.nodes) || visualJson.nodes.length === 0) {
-        return res.status(400).json({ error: 'visual mode requires nodes[] payload' });
-      }
-      try {
-        const { recipe, blocks } = parseVisualPayload(visualJson);
-        return res.json({ recipe, blocks, path: 'visual' });
-      } catch (err) {
-        console.error('[hybrid /api/import visual error]', err.message);
-        return res.json({
-          recipe: { _error: true, name: 'Imported Recipe', ingredients: [], directions: [] },
-          blocks: [],
-          path: 'visual',
-        });
-      }
+  if (!url) return res.status(400).json({ error: "url required" });
+
+  try {
+    if (mode === 'visual' || !html) {
+      // Paprika fast path
+      return visualParseHandler(req, res);
     }
+    // Unified deep path
+    return v2ImportHandler(req, res);
+  } catch (err) {
+    console.error(err);
+    return res.status(422).json({
+      error: "Unprocessable Content",
+      message: err.message,
+      suggestion: "Try enabling deep mode or check server logs"
+    });
+  }
+});
 
     // Explicit async mode OR jobId present → background job
     if (mode === 'async' || body.jobId) {
@@ -194,7 +194,7 @@ export function registerImportRoutes(app, {
       console.error('[hybrid /api/import deep error]', err);
       return res.status(500).json({ error: 'internal_error', message: err.message, path: 'deep' });
     }
-  });
+  };
 
   // ── Gemini Fallback (Phase 1 integration) ────────────────────────────────────
   // Called from browser when visual confidence is low (0.5-0.75).
@@ -285,7 +285,6 @@ export function registerImportRoutes(app, {
       return res.json({ ok: false, imageUrl: null, error: 'extraction_failed' });
     }
   });
-}
 
 // ── parseVisualPayload ────────────────────────────────────────────────────────
 // Server-side visual layout heuristics — mirrors parseVisualJSON in recipeParser.js.

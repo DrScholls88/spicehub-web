@@ -18,7 +18,7 @@ const PROXIES = [
   url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
   url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
   url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-  url => `https://thingproxy.freeboard.io/fetch/${url}`,
+  url => `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(url)}`,
   url => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, // returns JSON {contents} — handled below
 ];
 
@@ -43,53 +43,93 @@ export function normalizeInstagramUrl(url) {
 let _lastGoodProxyIdx = 0;
 
 /**
- * Fetch HTML from any URL via CORS proxy cascade.
- * Rotates from last successful proxy; retries full cycle 2x on total failure.
- * Returns HTML string or null.
+ * Fetch HTML via robust proxy cascade + server fallback.
+ * Paprika-first friendly: returns clean HTML fast for visual parser.
+ * Updated April 2026 for better reliability.
  */
-export async function fetchHtmlViaProxy(url, timeoutMs = 15000) {
-  const ordered = [
-    ...PROXIES.slice(_lastGoodProxyIdx),
-    ...PROXIES.slice(0, _lastGoodProxyIdx),
+export async function fetchHtmlViaProxy(url, timeoutMs = 12000) {
+  // === ROBUST URL CLEANING ===
+  let cleanUrl = url.trim();
+
+  // Remove any duplicated URL suffix (common bug source)
+  const firstHttp = cleanUrl.indexOf('http');
+  if (firstHttp !== -1) {
+    const secondHttp = cleanUrl.indexOf('http', firstHttp + 4);
+    if (secondHttp !== -1) {
+      cleanUrl = cleanUrl.substring(0, secondHttp);
+    }
+  }
+
+  // Remove trailing garbage or double slashes
+  cleanUrl = cleanUrl.replace(/\/https?:\/\/.+$/, '');
+  cleanUrl = cleanUrl.replace(/\/$/, '');
+
+  console.log('Cleaned URL for proxy:', cleanUrl);
+
+  const PROXIES = [
+    (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+    (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+    (u) => `https://proxy.cors.sh/${u}`,                    // needs key (add VITE_CORS_SH_KEY)
+    (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+    (u) => `https://cors.bridged.cc/${u}`,
+    (u) => `https://proxy.killcors.com/?url=${encodeURIComponent(u)}`, // good new one
   ];
 
+  let lastGoodIdx = 0; // you can keep _lastGoodProxyIdx as module var if you want rotation
+
   for (let attempt = 0; attempt < 2; attempt++) {
-    for (let i = 0; i < ordered.length; i++) {
-      const makeProxy = ordered[i];
-      const proxyUrl = makeProxy(url);
+    for (let i = 0; i < PROXIES.length; i++) {
+      const makeProxy = PROXIES[i];
+      const proxyUrl = makeProxy(cleanUrl);
+
       try {
         const ctrl = new AbortController();
         const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-        const resp = await fetch(proxyUrl, { signal: ctrl.signal });
+
+        const resp = await fetch(proxyUrl, {
+          signal: ctrl.signal,
+          headers: {
+            // Some proxies need this
+            'x-cors-api-key': import.meta.env.VITE_CORS_SH_KEY || '',
+          }
+        });
+
         clearTimeout(timer);
+
         if (!resp.ok) continue;
+
         let text = await resp.text();
-        // allorigins /get returns JSON wrapper — unwrap it
-        if (proxyUrl.includes('allorigins.win/get?')) {
-          try { const j = JSON.parse(text); if (j.contents) text = j.contents; } catch { /* not JSON */ }
+
+        // Unwrap allorigins JSON if needed
+        if (proxyUrl.includes('allorigins.win')) {
+          try {
+            const j = JSON.parse(text);
+            if (j.contents) text = j.contents;
+          } catch {}
         }
-        // CB-08: Hardened login wall detection — Instagram rotates their login HTML
-        // selectors; added 2025/2026 patterns (data-testid, is_viewer_logged_in).
-        const isLoginWall = (
-          text.includes('id="loginForm"') ||
-          (text.includes('name="username"') && text.includes('name="password"') && text.length < 30000) ||
-          (text.includes('"loginEndpoint"') && text.length < 10000) ||
-          text.includes('data-testid="login_password_input"') ||
-          text.includes('instagram://login') ||
-          (text.includes('"is_viewer_logged_in":false') && text.length < 15000)
-        );
+
+        // Login wall / empty page detection (keep your hardened patterns)
+        const isLoginWall = text.includes('loginForm') ||
+          (text.includes('username') && text.includes('password') && text.length < 35000) ||
+          text.includes('is_viewer_logged_in":false') ||
+          text.length < 8000; // too small for real recipe page
+
         if (isLoginWall) continue;
-        if (text.length < 300) continue; // Likely an error or empty response
-        // Remember which proxy worked
-        _lastGoodProxyIdx = PROXIES.indexOf(makeProxy);
-        if (_lastGoodProxyIdx < 0) _lastGoodProxyIdx = 0;
-        return text;
-      } catch { /* try next */ }
+
+        if (text.length > 15000) {  // reasonable recipe page size
+          // Update last good index if you track it
+          return text;
+        }
+      } catch (e) {
+        console.warn(`Proxy failed: ${proxyUrl.slice(0, 60)}...`);
+      }
     }
-    // Brief pause between full cycle retries
-    if (attempt === 0) await new Promise(r => setTimeout(r, 800));
+
+    if (attempt === 0) await new Promise(r => setTimeout(r, 600));
   }
-  return null;
+
+  console.warn("All client proxies failed for:", cleanUrl);
+  return null; // Let caller fall back to server-side
 }
 
 /**
