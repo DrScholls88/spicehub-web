@@ -138,27 +138,56 @@ export function registerImportRoutes(app, {
   // Callers that don't know which path they want can just hit /api/import —
   // if they send a visual payload (nodes[]) we parse visually, otherwise we
   // run the deep pipeline. This keeps the client side dead simple.
-// Add / improve this handler
+// ── Hybrid router alias /api/import ───────────────────────────────────────
 router.post('/import', async (req, res) => {
-  const { url, mode = 'visual', html } = req.body;   // accept pre-fetched html
+    const { url, mode = 'visual', html, jobId, sourceHash } = req.body;
 
-  if (!url) return res.status(400).json({ error: "url required" });
+    if (!url) return res.status(400).json({ error: "url required" });
 
-  try {
-    if (mode === 'visual' || !html) {
-      // Paprika fast path
-      return visualParseHandler(req, res);
+    try {
+        // 1. Background async mode OR jobId present
+        if (mode === 'async' || jobId) {
+            if (!jobId) return res.status(400).json({ error: 'async mode requires jobId' });
+
+            const existing = jobStore.get(jobId);
+            if (existing) return res.status(202).json({ jobId, status: existing.status, path: 'async' });
+
+            jobStore.put(jobId, { status: 'queued', url, sourceHash });
+            
+            // Kick off process without awaiting
+            Promise.resolve()
+                .then(() => runWaterfall({ jobId, url, sourceHash }))
+                .catch((err) => jobStore.put(jobId, { status: 'failed', error: err.message || String(err) }));
+
+            return res.status(202).json({ jobId, status: 'queued', path: 'async' });
+        }
+
+        // 2. Paprika / Visual fast path
+        if (mode === 'visual' || html) {
+            return visualParseHandler(req, res);
+        }
+
+        // 3. Default: Unified v2 synchronous waterfall (Deep Mode)
+        const recipe = await runWaterfallSync({ url });
+        return res.json({ recipe, path: 'deep' });
+
+    } catch (err) {
+        if (err.name === 'ExtractError') {
+            return res.status(422).json({ 
+                error: 'extraction_failed', 
+                message: err.message, 
+                partial: { capturedText: err.capturedText || '' },
+                path: 'deep'
+            });
+        }
+        
+        console.error('[hybrid /api/import error]', err);
+        return res.status(500).json({ 
+            error: "internal_error", 
+            message: err.message,
+            suggestion: "Try enabling deep mode or check server logs" 
+        });
     }
-    // Unified deep path
-    return v2ImportHandler(req, res);
-  } catch (err) {
-    console.error(err);
-    return res.status(422).json({
-      error: "Unprocessable Content",
-      message: err.message,
-      suggestion: "Try enabling deep mode or check server logs"
-    });
-  }
 });
 
     // Explicit async mode OR jobId present → background job
