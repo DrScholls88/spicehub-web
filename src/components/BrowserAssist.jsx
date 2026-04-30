@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins, isSocialMediaUrl, getSocialPlatform, tryVideoExtraction, extractInstagramAgent, scoreExtractionConfidence, structureWithAI, captionToRecipe, cleanSocialCaption, isCaptionWeak, importRecipeFromUrl, smartClassifyLines, isWeakResult, parseHybrid } from '../recipeParser';
+import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins, isSocialMediaUrl, getSocialPlatform, tryVideoExtraction, extractInstagramAgent, scoreExtractionConfidence, structureWithAI, captionToRecipe, cleanSocialCaption, isCaptionWeak, smartClassifyLines, isWeakResult, parseRecipeHybrid, parseVisualJSON } from '../recipeParser';
 import { fetchHtmlViaProxy, proxyImageUrl } from '../api';
 import { queueRecipeImport } from '../db';
 import useOnlineStatus from '../hooks/useOnlineStatus';
@@ -704,28 +704,29 @@ const toggleDeepMode = () => {
         visualJson = { ...visualJson, nodes: visualJson.nodes.slice(0, 400) };
       }
 
-      // POST the visual JSON to the server — layout heuristics run there and
-      // return { recipe, blocks } with each block's type already set.
-      // We trust the server's classification; the client only renders overlays.
-      const resp = await fetch(`${API_BASE}/api/import/visual-parse`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(visualJson),
-      });
+      // Step 2: Run the client-side visual parser (replaces server/visual-parse)
+      const { recipe, blocks: serverBlocks, confidence } = parseVisualJSON(visualJson, url);
 
-      if (!resp.ok) throw new Error(`visual-parse ${resp.status}`);
-      const { recipe, blocks: serverBlocks = [] } = await resp.json();
-
-      // Store server-classified blocks so the iframe overlay layer can render them.
-      // Each block: { text, rect, type: 'title'|'ingredient'|'instruction'|'caption'|'other', style }
+      // Store classified blocks so the iframe overlay layer can render them.
       if (Array.isArray(serverBlocks) && serverBlocks.length > 0) {
         setVisualBlocks(serverBlocks);
-        setSelectedBlockIds([]); // reset selection on each new scrape
+        setSelectedBlockIds([]); 
       }
 
-      if (recipe && !isWeakResult(recipe)) {
+      // Step 3: If confident, return immediately
+      if (recipe && confidence >= 0.75) {
         setVisualScrapeRunning(false);
         onRecipeExtracted(recipe);
+        return;
+      }
+
+      // Step 4: Low confidence -> try Hybrid (Gemini) directly from client
+      setAimToast('Low layout confidence — calling Gemini AI to assist…');
+      const hybridResult = await parseRecipeHybrid(visualJson.nodes, '', url);
+
+      if (hybridResult && !isWeakResult(hybridResult)) {
+        setVisualScrapeRunning(false);
+        onRecipeExtracted(hybridResult);
         return;
       }
 

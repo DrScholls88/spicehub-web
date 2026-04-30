@@ -22,9 +22,6 @@ import {
   PinterestEmbed,
 } from 'react-social-media-embed';
 
-// Module-level flag — persists for the browser tab session so we only pay the
-// Render spin-up cost once per session, not on every import.
-let _serverWarm = false;
 
 /**
  * SocialPreview — renders the official platform embed (Instagram/TikTok/etc.)
@@ -289,11 +286,6 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     };
   }, []);
 
-  // Warmup Render on modal open so it's ready when user clicks Import.
-  // Always fires — empty API_BASE uses relative URL proxied by Vite in dev.
-  useEffect(() => {
-    fetch(`${API_BASE}/api/v2/ping`, { method: 'GET' }).catch(() => {});
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Handle shared content from share-target (Android/iOS share sheet) ────────
   useEffect(() => {
@@ -438,8 +430,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   // ── Close handler — always wipes transient import state before closing ──────
   // This prevents state from a previous import attempt bleeding through when the
   // modal is closed and reopened (e.g., lingering BrowserAssist URL, error messages,
-  // sync phase state). _serverWarm is intentionally NOT reset — the Render server
-  // stays warm between modal opens and we don't want to pay spin-up cost twice.
+  // sync phase state).
   const handleClose = useCallback(() => {
     capturedTextRef.current = '';
     setBrowserAssistUrl(null);

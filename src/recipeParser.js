@@ -3956,33 +3956,27 @@ export async function parseRecipeHybrid(visualNodes = [], caption = '', url = ''
   }
 
   // Step 4: Visual weak or missing → call server Gemini endpoint
-  console.log(`[Hybrid] Low visual confidence (${(visualConfidence * 100).toFixed(0)}%), calling Gemini via server...`);
+  console.log(`[Hybrid] Low visual confidence (${(visualConfidence * 100).toFixed(0)}%), using Client-Side AI...`);
 
   let geminiResult = null;
   try {
-    const resp = await fetch('/api/gemini-fallback', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        visualNodes: visualNodes.slice(0, 250),  // Limit to first 250 nodes
-        caption: caption || '',
-        url: url || '',
-      }),
-      signal: AbortSignal.timeout(10000),
+    // Convert visual nodes to a readable summary for Gemini (limit to ~4000 chars)
+    const textSummary = visualNodes.slice(0, 300).map(n => n.text).join('\n').slice(0, 4000);
+    const combinedInput = [caption, textSummary].filter(Boolean).join('\n\n');
+    
+    // Call our client-side Gemini structurer directly
+    const result = await structureWithAIClient(combinedInput, { 
+      title: visualResult.name, 
+      sourceUrl: url,
+      imageUrl: visualResult.image
     });
 
-    if (resp.ok) {
-      const data = await resp.json();
-      if (data.ok && data.result) {
-        geminiResult = data.result;
-      }
-    } else {
-      console.warn('[Gemini] Server returned status', resp.status);
+    if (result && !isWeakResult(result)) {
+       geminiResult = { ...result, confidence: 0.85 }; // Assume high confidence if structured
     }
   } catch (err) {
-    console.error('[Gemini fallback] API call failed:', err?.message || err);
+    console.error('[Gemini fallback] Client call failed:', err?.message || err);
   }
-
   // Step 5: No Gemini result or too low confidence → return visual as-is
   if (!geminiResult || geminiResult.confidence < geminiThresholdMin) {
     console.log('[Hybrid] Gemini result weak or unavailable, returning visual fallback');
@@ -4251,7 +4245,8 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   // ── Manual fallback — all phases exhausted ───────────────────────────────────
   return { _needsManualCaption: true, sourceUrl: url };
 }
-export function detectImportType(url = '', initialText = '') {
+
+export function detectImportType(url = '', initialText = '') {
   const u = String(url || '').toLowerCase();
   const t = String(initialText || '').toLowerCase();
 

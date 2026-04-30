@@ -9,8 +9,6 @@
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.21.2",
-    "puppeteer": "^23.11.1",
-    "yt-dlp-exec": "^1.0.2",
     "@google/generative-ai": "^0.21.0"
   },
   "engines": {
