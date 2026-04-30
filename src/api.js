@@ -61,13 +61,15 @@ export async function fetchHtmlViaProxy(url, timeoutMs = 12000) {
   }
 
   // Remove trailing garbage or double slashes
-  cleanUrl = cleanUrl.replace(/\/https?:\/\/.+$/, '');
-  cleanUrl = cleanUrl.replace(/\/$/, '');
+  cleanUrl = cleanUrl.replace(/\/https?:\/\/.+$/, '').replace(/\/$/, '');
 
-  console.log('Cleaned URL for proxy:', cleanUrl);
+  // Add cache-buster to bypass some server-side proxy blocks
+  const cacheBuster = `sh_cb=${Date.now()}`;
+  const urlWithBuster = cleanUrl.includes('?') ? `${cleanUrl}&${cacheBuster}` : `${cleanUrl}?${cacheBuster}`;
 
   const PROXIES = [
     (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+    (u) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`, // JSON fallback
     (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
     (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
     (u) => `https://proxy.cors.sh/${u}`,
@@ -75,12 +77,12 @@ export async function fetchHtmlViaProxy(url, timeoutMs = 12000) {
     (u) => `https://cors.bridged.cc/${u}`,
   ];
 
-  let lastGoodIdx = 0; // you can keep _lastGoodProxyIdx as module var if you want rotation
-
   for (let attempt = 0; attempt < 2; attempt++) {
+    const targetUrl = attempt === 0 ? cleanUrl : urlWithBuster;
+    
     for (let i = 0; i < PROXIES.length; i++) {
       const makeProxy = PROXIES[i];
-      const proxyUrl = makeProxy(cleanUrl);
+      const proxyUrl = makeProxy(targetUrl);
 
       try {
         const ctrl = new AbortController();
@@ -93,40 +95,52 @@ export async function fetchHtmlViaProxy(url, timeoutMs = 12000) {
 
         clearTimeout(timer);
 
+        if (resp.status === 403 || resp.status === 429) {
+          console.warn(`Proxy ${proxyUrl.split('/')[2]} blocked/rate-limited. Skipping.`);
+          continue;
+        }
+        
         if (!resp.ok) continue;
 
         let text = await resp.text();
 
-        // Unwrap allorigins JSON if needed
-        if (proxyUrl.includes('allorigins.win')) {
+        // Unwrap allorigins JSON if it's the /get endpoint
+        if (proxyUrl.includes('allorigins.win/get')) {
           try {
             const j = JSON.parse(text);
             if (j.contents) text = j.contents;
           } catch {}
         }
 
-        // Login wall / empty page detection (keep your hardened patterns)
+        if (!text || text.length < 500) continue;
+
+        // Hardened patterns for bot detection / login walls
+        const isBotBlocked = text.includes('captcha') || 
+                             text.includes('distil') || // Distil Networks
+                             text.includes('cloudflare') && text.includes('checking your browser');
+        
         const isLoginWall = text.includes('loginForm') ||
           (text.includes('username') && text.includes('password') && text.length < 35000) ||
-          text.includes('is_viewer_logged_in":false') ||
-          text.length < 8000; // too small for real recipe page
+          text.includes('is_viewer_logged_in":false');
 
-        if (isLoginWall) continue;
+        if (isBotBlocked || isLoginWall) {
+           console.warn(`Bot/Login wall detected on ${proxyUrl.split('/')[2]}.`);
+           continue;
+        }
 
-        if (text.length > 15000) {  // reasonable recipe page size
-          // Update last good index if you track it
+        if (text.length > 5000) {
           return text;
         }
       } catch (e) {
-        console.warn(`Proxy failed: ${proxyUrl.slice(0, 60)}...`);
+        // Silently continue to next proxy
       }
     }
 
-    if (attempt === 0) await new Promise(r => setTimeout(r, 600));
+    if (attempt === 0) await new Promise(r => setTimeout(r, 800));
   }
 
   console.warn("All client proxies failed for:", cleanUrl);
-  return null; // Let caller fall back to server-side
+  return null;
 }
 
 /**

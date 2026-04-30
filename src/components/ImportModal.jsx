@@ -394,7 +394,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       }
 
       // 3. Synchronous, deterministic local parsing via CORS proxy (Paprika-style)
-      let html = await fetchHtmlViaProxy(resolvedUrl, 15000);
+      let html = await fetchHtmlViaProxy(resolvedUrl, 30000);
       if (!html) {
         throw new Error("Could not fetch page. The site may block proxies.");
       }
