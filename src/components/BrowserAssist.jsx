@@ -228,107 +228,25 @@ const toggleDeepMode = () => {
 
     let cancelled = false;
 
-    // ── SOCIAL MEDIA PIPELINE — Unified Import Engine (Build 79) ────────────
-    // All logic lives in importRecipeFromUrl() / importFromInstagram() in recipeParser.js.
-    // Phase order for Instagram: yt-dlp FIRST → embed → AI browser → Gemini → manual.
-    if (isSocial) {
-      const isInstagram = /instagram\.com/i.test(url);
-
-      // Step labels reflect new phase order (yt-dlp first for Instagram)
-      const steps = isInstagram
-        ? [
-            { label: 'Video subtitle scan…', status: 'pending' },
-            { label: 'Reading Instagram caption…', status: 'pending' },
-            { label: 'AI browser extraction…', status: 'pending' },
-            { label: '✨ Google AI recipe parsing…', status: 'pending' },
-          ]
-        : [
-            { label: `Reading ${platform} post…`, status: 'pending' },
-            { label: 'AI browser extraction…', status: 'pending' },
-            { label: 'Video subtitle scan…', status: 'pending' },
-            { label: '✨ Google AI recipe parsing…', status: 'pending' },
-          ];
-
-      setPipelineSteps(steps);
-      setPipelineMessage('Starting import pipeline…');
-      setPhase('loading');
-
-      (async () => {
-        const update = (idx, status, msg) => {
-          if (cancelled) return;
-          if (stepUpdater.current) stepUpdater.current(idx, status, msg);
-        };
-
-        try {
-          const result = await importRecipeFromUrl(url, {
-            type,
-            onProgress: (phase, status, msg) => {
-              if (!cancelled) update(phase, status, msg);
-            },
-          });
-
-          if (cancelled) return;
-
-          if (!result || result._needsManualCaption) {
-            setPipelineMessage('Automatic extraction failed — paste the caption text below');
-            setPhase('manual');
-            return;
-          }
-
-          setAutoRecipe(cleanRecipe(result));
-          setPhase('preview');
-        } catch (err) {
-          if (!cancelled) {
-            setErrorMsg(`Import failed: ${err?.message || 'Unknown error'}`);
-            setPhase('error');
-          }
-        }
-      })();
-
-      return () => { cancelled = true; };
-    }
-
-    // ── NON-SOCIAL: recipe blog / regular URL ────────────────────────────────
-    const timeout = setTimeout(() => {
-      if (!cancelled && phase === 'loading') {
-        setErrorMsg('Page took too long to load.');
-        setPhase('error');
-      }
-    }, 50000);
-
     (async () => {
       try {
-        // ── FAST PATH: Server-side Python scraper (primary for recipe blogs) ─────
-        // Calls /api/v2/import/sync → coordinator.runWaterfallSync() which runs:
-        //   1. metadata_pass.py  — recipe-scrapers library (500+ site-specific parsers)
-        //   2. Gemini AI structuring
-        // This is the same pipeline ImportModal used as its hidden sync path; by
-        // running it here we get Python doing the heavy lifting for recipe blogs
-        // while BrowserAssist provides the progress UI.
-        // If the server is down or times out we fall through to the local path.
-        setExtractionProgress({ step: 1, total: 4, message: 'Reading the recipe…' });
-        try {
-          const resp = await fetch(`${API_BASE}/api/v2/import/sync`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url }),
-          });
-          if (!cancelled && resp.ok) {
-            const { recipe } = await resp.json();
-            if (!isWeakResult(recipe) && hasRealContent(recipe)) {
-              setAutoRecipe(cleanRecipe(recipe));
-              setPhase('preview');
-              return;
-            }
+        setPhase('loading');
+
+        // 1. Determine URL to fetch
+        let fetchUrl = url;
+        const isInsta = /instagram\.com/i.test(url);
+        if (isInsta) {
+          // For Instagram, we must fetch the embed page to get the caption and bypass React hydration
+          const match = url.match(/(?:p|reel)\/([A-Za-z0-9_-]+)/i);
+          if (match && match[1]) {
+            fetchUrl = `https://www.instagram.com/p/${match[1]}/embed/captioned/`;
           }
-          // 422 = intentional extraction failure (no structured data found) — fall through
-          // 5xx = server error — fall through to local extraction
-        } catch { /* server unreachable — fall through to iframe-based extraction */ }
+        }
 
-        if (cancelled) return;
-
-        setExtractionProgress({ step: 2, total: 4, message: 'Fetching page for manual extraction…' });
-        const html = await fetchHtmlViaProxy(url, 35000);
+        setExtractionProgress({ step: 1, total: 3, message: isInsta ? 'Fetching Instagram post…' : 'Fetching page content…' });
+        
+        // 2. Fetch HTML via CORS proxy
+        const html = await fetchHtmlViaProxy(fetchUrl, 35000);
         if (cancelled) return;
 
         if (!html || html.length < 500) {
@@ -337,103 +255,38 @@ const toggleDeepMode = () => {
           return;
         }
 
-const handleImport = async (url) => {
-  setIsProcessing(true);
-  setError(null);
-
-  try {
-    console.log("🚀 Starting Hybrid Import for:", url);
-
-    // === PHASE 1: Paprika Visual Scraper (First Man to Bat) ===
-    let html = await fetchHtmlViaProxy(url);
-    let result = null;
-
-    if (html) {
-      console.log(`📄 Got HTML (${html.length} chars) → trying Paprika visual parse`);
-      result = await parseVisualJSON(url, html);   // Pass clean HTML directly
-
-      if (result?.confidence > 65) {
-        console.log("✅ Paprika succeeded with high confidence");
-        return handleGhostRecipe(result);   // Unified's optimistic UI
-      }
-
-      console.warn(`⚠️ Paprika confidence low (${result?.confidence || 0}) → falling back to deep parse`);
-    } else {
-      console.warn("⚠️ All client proxies failed → going straight to server deep parse");
-    }
-
-    // === PHASE 2: Unified v2 Deep Parse (Stealth + AI fallback) ===
-    console.log("🔄 Falling back to Unified v2 deep import");
-    
-    result = await parseHybrid(url, { 
-      useVisual: false,     // Force deep mode
-      html: html || undefined   // Pass any partial HTML we got
-    });
-
-    if (result?.success || result?.id) {
-      console.log("✅ Unified deep parse succeeded");
-      return handleGhostRecipe(result);
-    } else {
-      throw new Error(result?.error || "Deep parse returned no recipe");
-    }
-
-  } catch (err) {
-    console.error("❌ Hybrid Import Failed:", err);
-
-    const errorMsg = err.message.includes("proxy") || err.message.includes("fetch")
-      ? "Site blocked by anti-bot protection. Try Deep AI Mode (hold Ctrl/Cmd while clicking Purple V)"
-      : "Import failed. Check console or try a different URL.";
-
-    setError(errorMsg);
-
-    // Optional: Auto-suggest deep mode after 2 failures
-    if (window.deepModeRetries && window.deepModeRetries > 1) {
-      // You could auto-trigger deep mode here if desired
-    }
-  } finally {
-    setIsProcessing(false);
-  }
-};
-
         setRawHtml(html);
-        const sanitized = sanitizeHtmlForEmbed(html, url);
+        const sanitized = sanitizeHtmlForEmbed(html, fetchUrl);
         setHtmlContent(sanitized);
 
         const visibleText = stripHtmlToText(html);
         const imageUrls = extractImageUrlsFromHtml(html);
 
-        setExtractionProgress({ step: 2, total: 4, message: 'Analyzing recipe structure…' });
-        const browserApiResult = extractWithBrowserAPI({ html, visibleText, imageUrls, sourceUrl: url });
-        const regexRecipe = extractFromRawHtml(html, url);
-        const merged = pickBestRecipe(browserApiResult, regexRecipe);
-
-        if (merged && hasRealContent(merged)) {
-          if (!cancelled) {
-            setAutoRecipe(cleanRecipe(merged));
-            setPhase('preview');
-            return;
-          }
+        // 3. Fast path: If seedRecipe was provided (from ImportModal's synchronous parse), we don't re-parse JSON-LD.
+        // We just fall through to iframe so the user can visually scrape.
+        // If not, we try AI on the visible text.
+        if (!seedRecipe) {
+          setExtractionProgress({ step: 2, total: 3, message: '✨ AI analyzing full page…' });
+          try {
+            const aiRecipe = await structureWithAI(visibleText, { imageUrl: imageUrls[0] || '', sourceUrl: url });
+            if (!cancelled && aiRecipe && hasRealContent(aiRecipe)) {
+              setAutoRecipe(cleanRecipe(aiRecipe));
+              setPhase('preview');
+              return;
+            }
+          } catch { /* fall through */ }
         }
 
-        setExtractionProgress({ step: 3, total: 4, message: '✨ AI analyzing full page…' });
-        try {
-          const aiRecipe = await structureWithAI(visibleText, { imageUrl: imageUrls[0] || '', sourceUrl: url });
-          if (!cancelled && aiRecipe && hasRealContent(aiRecipe)) {
-            setAutoRecipe(cleanRecipe(aiRecipe));
-            setPhase('preview');
-            return;
-          }
-        } catch { /* fall through to iframe */ }
-
         if (!cancelled) {
-          if (visibleText.length < 300) {
+          if (visibleText.length < 50 && !isInsta) {
             setErrorMsg('The website blocked access or requires JavaScript to load. Please use the "Paste Text" tab.');
             setPhase('error');
           } else {
-            setExtractionProgress({ step: 4, total: 4, message: 'Showing page for manual extraction' });
+            setExtractionProgress({ step: 3, total: 3, message: 'Showing page for manual extraction' });
             setPhase('iframe');
           }
         }
+
       } catch (err) {
         if (!cancelled) {
           setErrorMsg('Failed to load page: ' + err.message);
@@ -442,7 +295,7 @@ const handleImport = async (url) => {
       }
     })();
 
-    return () => { cancelled = true; clearTimeout(timeout); };
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, isOnline, retryCount]);
 

@@ -1,11 +1,10 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  importRecipeFromUrl,
   isSocialMediaUrl, getSocialPlatform,
   isInstagramUrl, isShortUrl, resolveShortUrl,
   parseFromUrl, parseCaption,
   classifyWithConfidence, smartClassifyLines, normalizeAndDedupe,
-  scoreExtractionConfidence, tryVideoExtraction,
+  scoreExtractionConfidence,
   isWeakResult,
   detectImportType,
   parseHtml
