@@ -69,10 +69,10 @@ export async function fetchHtmlViaProxy(url, timeoutMs = 12000) {
   const PROXIES = [
     (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
     (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-    (u) => `https://proxy.cors.sh/${u}`,                    // needs key (add VITE_CORS_SH_KEY)
     (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+    (u) => `https://proxy.cors.sh/${u}`,
+    (u) => `https://thingproxy.freeboard.io/fetch/${u}`,
     (u) => `https://cors.bridged.cc/${u}`,
-    (u) => `https://proxy.killcors.com/?url=${encodeURIComponent(u)}`, // good new one
   ];
 
   let lastGoodIdx = 0; // you can keep _lastGoodProxyIdx as module var if you want rotation
@@ -88,10 +88,7 @@ export async function fetchHtmlViaProxy(url, timeoutMs = 12000) {
 
         const resp = await fetch(proxyUrl, {
           signal: ctrl.signal,
-          headers: {
-            // Some proxies need this
-            'x-cors-api-key': import.meta.env.VITE_CORS_SH_KEY || '',
-          }
+          headers: proxyUrl.includes('proxy.cors.sh') ? { 'x-cors-api-key': import.meta.env.VITE_CORS_SH_KEY || '' } : {},
         });
 
         clearTimeout(timer);

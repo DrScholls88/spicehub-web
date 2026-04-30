@@ -236,7 +236,6 @@ const toggleDeepMode = () => {
         let fetchUrl = url;
         const isInsta = /instagram\.com/i.test(url);
         if (isInsta) {
-          // For Instagram, we must fetch the embed page to get the caption and bypass React hydration
           const match = url.match(/(?:p|reel)\/([A-Za-z0-9_-]+)/i);
           if (match && match[1]) {
             fetchUrl = `https://www.instagram.com/p/${match[1]}/embed/captioned/`;
@@ -246,12 +245,21 @@ const toggleDeepMode = () => {
         setExtractionProgress({ step: 1, total: 3, message: isInsta ? 'Fetching Instagram post…' : 'Fetching page content…' });
         
         // 2. Fetch HTML via CORS proxy
-        const html = await fetchHtmlViaProxy(fetchUrl, 35000);
+        let html = '';
+        try {
+          html = await fetchHtmlViaProxy(fetchUrl, 35000);
+        } catch (err) {
+          console.warn('[BrowserAssist] Proxy fetch failed:', err);
+        }
+
         if (cancelled) return;
 
+        // If proxy failed or returned garbage, try to fallback to showing the live site 
+        // directly in the iframe (might be blocked by X-Frame-Options, but better than nothing)
         if (!html || html.length < 500) {
-          setErrorMsg('Could not load the page. Try "Paste Text" to add recipe content manually.');
-          setPhase('error');
+          console.log('[BrowserAssist] Proxy failed, falling back to direct iframe source');
+          setHtmlContent(''); // This will trigger the direct URL fallback in the render
+          setPhase('showing');
           return;
         }
 
@@ -1436,7 +1444,8 @@ const toggleDeepMode = () => {
                 ref={iframeRef}
                 title="Recipe Page"
                 className="browser-assist-iframe"
-                srcDoc={htmlContent}
+                src={!htmlContent ? url : undefined}
+                srcDoc={htmlContent || undefined}
                 /* allow-scripts is intentional: sanitizeHtmlForEmbed strips ALL
                     <script> tags before content reaches here, so no recipe-site JS
                     runs. allow-scripts is required so Chrome 111+ loads external CSS
