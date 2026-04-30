@@ -43,11 +43,14 @@ export function normalizeInstagramUrl(url) {
 let _lastGoodProxyIdx = 0;
 
 /**
- * Fetch HTML via robust proxy cascade + server fallback.
- * Paprika-first friendly: returns clean HTML fast for visual parser.
- * Updated April 2026 for better reliability.
+ * Fetch HTML via robust proxy cascade.
+ * 
+ * STRATEGY (in order):
+ *  1. Internal /api/proxy Vercel serverless function — runs server-side, full browser headers,
+ *     no CORS issues, not IP-blocked like public proxies. This is the PRIMARY path.
+ *  2. Public CORS proxy waterfall — fallback for local dev or if Vercel fn fails.
  */
-export async function fetchHtmlViaProxy(url, timeoutMs = 12000) {
+export async function fetchHtmlViaProxy(url, timeoutMs = 30000) {
   // === ROBUST URL CLEANING ===
   let cleanUrl = url.trim();
 
@@ -59,87 +62,84 @@ export async function fetchHtmlViaProxy(url, timeoutMs = 12000) {
       cleanUrl = cleanUrl.substring(0, secondHttp);
     }
   }
-
-  // Remove trailing garbage or double slashes
   cleanUrl = cleanUrl.replace(/\/https?:\/\/.+$/, '').replace(/\/$/, '');
 
-  // Add cache-buster to bypass some server-side proxy blocks
-  const cacheBuster = `sh_cb=${Date.now()}`;
-  const urlWithBuster = cleanUrl.includes('?') ? `${cleanUrl}&${cacheBuster}` : `${cleanUrl}?${cacheBuster}`;
+  console.log('[fetchHtmlViaProxy] Target:', cleanUrl);
 
-  const PROXIES = [
+  // ── 1. Internal Vercel /api/proxy (primary) ──────────────────────────────────
+  // In production on Vercel, this is a same-origin call with zero CORS overhead.
+  // In local dev (vite), this will 404 which is fine — we fall through to public proxies.
+  try {
+    const internalUrl = `/api/proxy?url=${encodeURIComponent(cleanUrl)}`;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    const resp = await fetch(internalUrl, { signal: ctrl.signal });
+    clearTimeout(timer);
+
+    if (resp.ok) {
+      const text = await resp.text();
+      if (text && text.length > 1000 && !text.includes('"error"')) {
+        console.log('[fetchHtmlViaProxy] ✅ Internal proxy succeeded');
+        return text;
+      }
+    }
+    console.log('[fetchHtmlViaProxy] Internal proxy returned empty/error, trying public proxies...');
+  } catch (e) {
+    console.log('[fetchHtmlViaProxy] Internal proxy unavailable (local dev?), using public proxies');
+  }
+
+  // ── 2. Public CORS proxy waterfall (secondary / local dev fallback) ────────────
+  const PUBLIC_PROXIES = [
     (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-    (u) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`, // JSON fallback
+    (u) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
     (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
     (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
     (u) => `https://proxy.cors.sh/${u}`,
-    (u) => `https://thingproxy.freeboard.io/fetch/${u}`,
     (u) => `https://cors.bridged.cc/${u}`,
   ];
 
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const targetUrl = attempt === 0 ? cleanUrl : urlWithBuster;
-    
-    for (let i = 0; i < PROXIES.length; i++) {
-      const makeProxy = PROXIES[i];
-      const proxyUrl = makeProxy(targetUrl);
+  // Per-proxy timeout is shorter since we try multiple
+  const perProxyTimeout = Math.min(timeoutMs / 2, 15000);
 
-      try {
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  for (const makeProxy of PUBLIC_PROXIES) {
+    const proxyUrl = makeProxy(cleanUrl);
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), perProxyTimeout);
+      const resp = await fetch(proxyUrl, {
+        signal: ctrl.signal,
+        headers: proxyUrl.includes('proxy.cors.sh')
+          ? { 'x-cors-api-key': import.meta.env.VITE_CORS_SH_KEY || '' }
+          : {},
+      });
+      clearTimeout(timer);
 
-        const resp = await fetch(proxyUrl, {
-          signal: ctrl.signal,
-          headers: proxyUrl.includes('proxy.cors.sh') ? { 'x-cors-api-key': import.meta.env.VITE_CORS_SH_KEY || '' } : {},
-        });
+      if (resp.status === 403 || resp.status === 429 || !resp.ok) continue;
 
-        clearTimeout(timer);
+      let text = await resp.text();
 
-        if (resp.status === 403 || resp.status === 429) {
-          console.warn(`Proxy ${proxyUrl.split('/')[2]} blocked/rate-limited. Skipping.`);
-          continue;
-        }
-        
-        if (!resp.ok) continue;
-
-        let text = await resp.text();
-
-        // Unwrap allorigins JSON if it's the /get endpoint
-        if (proxyUrl.includes('allorigins.win/get')) {
-          try {
-            const j = JSON.parse(text);
-            if (j.contents) text = j.contents;
-          } catch {}
-        }
-
-        if (!text || text.length < 500) continue;
-
-        // Hardened patterns for bot detection / login walls
-        const isBotBlocked = text.includes('captcha') || 
-                             text.includes('distil') || // Distil Networks
-                             text.includes('cloudflare') && text.includes('checking your browser');
-        
-        const isLoginWall = text.includes('loginForm') ||
-          (text.includes('username') && text.includes('password') && text.length < 35000) ||
-          text.includes('is_viewer_logged_in":false');
-
-        if (isBotBlocked || isLoginWall) {
-           console.warn(`Bot/Login wall detected on ${proxyUrl.split('/')[2]}.`);
-           continue;
-        }
-
-        if (text.length > 5000) {
-          return text;
-        }
-      } catch (e) {
-        // Silently continue to next proxy
+      // Unwrap allorigins /get JSON envelope
+      if (proxyUrl.includes('allorigins.win/get')) {
+        try { const j = JSON.parse(text); if (j.contents) text = j.contents; } catch {}
       }
-    }
 
-    if (attempt === 0) await new Promise(r => setTimeout(r, 800));
+      if (!text || text.length < 1000) continue;
+
+      // Detect bot/login walls
+      const blocked =
+        (text.includes('cloudflare') && text.includes('checking your browser')) ||
+        text.includes('is_viewer_logged_in":false') ||
+        (text.includes('loginForm') && text.length < 35000);
+      if (blocked) continue;
+
+      console.log(`[fetchHtmlViaProxy] ✅ Public proxy succeeded: ${proxyUrl.split('/')[2]}`);
+      return text;
+    } catch {
+      // Try next
+    }
   }
 
-  console.warn("All client proxies failed for:", cleanUrl);
+  console.warn('[fetchHtmlViaProxy] ❌ All proxies failed for:', cleanUrl);
   return null;
 }
 

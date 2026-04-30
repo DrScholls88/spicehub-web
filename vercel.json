@@ -7,5 +7,9 @@
   "framework": "vite",
   "env": {
     "VITE_SERVER_URL": "https://spicehub-backend.onrender.com"
-  }
-}
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

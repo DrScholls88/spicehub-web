@@ -1,12 +1,28 @@
-import { useState, useEffect, useRef, useCallback, forwardRef, useImperativeHandle } from 'react';
-import { extractRecipeFromDOM, parseCaption, extractWithBrowserAPI, detectRecipePlugins, isSocialMediaUrl, getSocialPlatform, tryVideoExtraction, extractInstagramAgent, scoreExtractionConfidence, structureWithAI, captionToRecipe, cleanSocialCaption, isCaptionWeak, smartClassifyLines, isWeakResult, parseRecipeHybrid, parseVisualJSON } from '../recipeParser';
+import { 
+  extractRecipeFromDOM, 
+  parseCaption, 
+  extractWithBrowserAPI, 
+  detectRecipePlugins, 
+  isSocialMediaUrl, 
+  getSocialPlatform, 
+  scoreExtractionConfidence, 
+  structureWithAI, 
+  captionToRecipe, 
+  cleanSocialCaption, 
+  isCaptionWeak, 
+  smartClassifyLines, 
+  isWeakResult, 
+  parseRecipeHybrid, 
+  parseVisualJSON,
+  importRecipeFromUrl
+} from '../recipeParser';
 import { fetchHtmlViaProxy, proxyImageUrl } from '../api';
 import { queueRecipeImport } from '../db';
 import useOnlineStatus from '../hooks/useOnlineStatus';
 
 
 /**
- * BrowserAssist — Smart recipe extraction with full pipeline UI.
+ * BrowserAssist â€” Smart recipe extraction with full pipeline UI.
  *
  * Strategy:
  *   SOCIAL MEDIA (Instagram, TikTok, YouTube, etc.):
@@ -14,14 +30,14 @@ import useOnlineStatus from '../hooks/useOnlineStatus';
  *     2. AI Browser (Puppeteer headless Chrome)
  *     3. Video subtitles (yt-dlp)
  *     4. Gemini AI structuring on any captured text
- *     → Success: preview
- *     → All fail: manual paste card (NO broken iframe)
+ *     â†’ Success: preview
+ *     â†’ All fail: manual paste card (NO broken iframe)
  *
  *   RECIPE BLOGS / OTHER URLS:
  *     1. extractWithBrowserAPI (JSON-LD, microdata, heuristics)
  *     2. Gemini AI on full page text
- *     → Success: preview
- *     → Fail: iframe fallback (works for real HTML pages)
+ *     â†’ Success: preview
+ *     â†’ Fail: iframe fallback (works for real HTML pages)
  *
  * Props:
  *   url                - Page URL
@@ -31,41 +47,41 @@ import useOnlineStatus from '../hooks/useOnlineStatus';
  *   onBlocksSelected   - callback(selectedIds: string[]) when user changes block selection
  *
  * Ref (via forwardRef):
- *   triggerVisualScrape() — kick off visual scrape from parent without requiring a button click
+ *   triggerVisualScrape() â€” kick off visual scrape from parent without requiring a button click
  */
 const BrowserAssist = forwardRef(function BrowserAssist({ url, onRecipeExtracted, onFallbackToText, initialCapturedText = '', seedRecipe = null, type = 'meal', defaultVisualMode = false, onError, onBlocksSelected }, ref) {
   const API_BASE = import.meta.env.VITE_API_BASE || '';
   const { isOnline } = useOnlineStatus();
 
   // phases:
-  //   'loading'    — fetching / running pipeline (shown during work)
-  //   'preview'    — auto-extracted recipe ready for review
-  //   'iframe'     — showing page in iframe (non-social fallback only)
-  //   'manual'     — all social methods failed, show manual paste card
-  //   'offline'    — device offline
-  //   'queued'     — recipe queued for offline import
-  //   'error'      — unrecoverable error
-  //   'extracting' — manual extraction from iframe in progress
+  //   'loading'    â€” fetching / running pipeline (shown during work)
+  //   'preview'    â€” auto-extracted recipe ready for review
+  //   'iframe'     â€” showing page in iframe (non-social fallback only)
+  //   'manual'     â€” all social methods failed, show manual paste card
+  //   'offline'    â€” device offline
+  //   'queued'     â€” recipe queued for offline import
+  //   'error'      â€” unrecoverable error
+  //   'extracting' â€” manual extraction from iframe in progress
   const [phase, setPhase] = useState('loading');
   const [errorMsg, setErrorMsg] = useState('');
   // Incrementing this re-triggers the extraction effect without a page reload
   const [retryCount, setRetryCount] = useState(0);
 
-  // ── Recipe extraction state ─────────────────────────────────────────────────
+  // â”€â”€ Recipe extraction state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [autoRecipe, setAutoRecipe] = useState(null);
   const [queuedRecipe, setQueuedRecipe] = useState(null);
 
-  // ── Pipeline progress (social media flow) ───────────────────────────────────
+  // â”€â”€ Pipeline progress (social media flow) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Each step: { label, status: 'pending' | 'running' | 'done' | 'failed' | 'skipped' }
   const [pipelineSteps, setPipelineSteps] = useState([]);
   const [pipelineMessage, setPipelineMessage] = useState('');
 
-  // ── Manual paste card state (fallback when pipeline fails) ─────────────────
+  // â”€â”€ Manual paste card state (fallback when pipeline fails) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [manualText, setManualText] = useState(initialCapturedText);
   const [isParsingManual, setIsParsingManual] = useState(false);
   const [manualError, setManualError] = useState('');
 
-  // ── iframe state (non-social recipe blogs only) ─────────────────────────────
+  // â”€â”€ iframe state (non-social recipe blogs only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const [htmlContent, setHtmlContent] = useState('');
   const [rawHtml, setRawHtml] = useState('');
   const [bannerRecipe, setBannerRecipe] = useState(null);
@@ -77,7 +93,7 @@ const BrowserAssist = forwardRef(function BrowserAssist({ url, onRecipeExtracted
   const iframeRef = useRef(null);
   const extractionRef = useRef(null);
 
-  // ── Paprika-style aim-the-parser state ──────────────────────────────────────
+  // â”€â”€ Paprika-style aim-the-parser state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // aimMode: when true, a tap inside the iframe routes that element's text
   // straight to the parser instead of navigating the page.
   const [aimMode, setAimMode] = useState(false);
@@ -99,12 +115,12 @@ const toggleDeepMode = () => {
   // Optionally trigger import immediately in deep mode
 };
 
-  // ── Visual scrape mode ───────────────────────────────────────────────────────
+  // â”€â”€ Visual scrape mode â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // defaultVisualMode prop auto-enables visual parse for social URLs (IG/TikTok)
   // since those sites need layout-based detection most.
   const [visualScrapeMode, setVisualScrapeMode] = useState(defaultVisualMode);
   const [visualScrapeRunning, setVisualScrapeRunning] = useState(false);
-  // Classified blocks returned by the server's parseVisualPayload — used to
+  // Classified blocks returned by the server's parseVisualPayload â€” used to
   // render color-coded overlays inside the iframe scale wrapper. Client trusts
   // the server's type field and never re-classifies.
   // type: 'title' (yellow) | 'ingredient' (green) | 'instruction' (purple) | 'caption' (orange) | 'other'
@@ -115,7 +131,7 @@ const toggleDeepMode = () => {
   const isSocial = isSocialMediaUrl(url);
   const platform = isSocial ? getSocialPlatform(url) : '';
 
-  // ── Pulsing loading text animation (non-social loading phase) ────────────────
+  // â”€â”€ Pulsing loading text animation (non-social loading phase) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     if (phase !== 'loading' || isSocial) return;
     let dots = 0;
@@ -130,7 +146,7 @@ const toggleDeepMode = () => {
   // Keep zoom ref in sync (prevents stale closure in touch handlers)
   useEffect(() => { iframeZoomRef.current = iframeZoom; }, [iframeZoom]);
 
-  // ── Pinch-to-zoom support for mobile ─────────────────────────────────────
+  // â”€â”€ Pinch-to-zoom support for mobile â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   useEffect(() => {
     const container = document.querySelector('.browser-assist-iframe-container');
     if (!container) return;
@@ -155,9 +171,9 @@ const toggleDeepMode = () => {
       container.removeEventListener('touchmove', handleTouchMove);
       container.removeEventListener('touchend', handleTouchEnd);
     };
-  }, []); // intentionally empty — uses ref for current zoom
+  }, []); // intentionally empty â€” uses ref for current zoom
 
-  // ── Aim-parser: parent ↔ iframe message bridge ─────────────────────────────
+  // â”€â”€ Aim-parser: parent â†” iframe message bridge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Receives spicehub:aim-pick messages (the user tapped a region in the iframe)
   // and routes that text through the heuristic parser to build up aimRecipe.
   useEffect(() => {
@@ -182,7 +198,7 @@ const toggleDeepMode = () => {
     return () => window.removeEventListener('message', handleMessage);
   }, [url]);
 
-  // ── Sync React aim-mode state INTO the iframe ──────────────────────────────
+  // â”€â”€ Sync React aim-mode state INTO the iframe â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // When the user toggles aim mode from the OUTER React toolbar, we need to
   // tell the injected handler so its capture-phase listener starts firing.
   useEffect(() => {
@@ -195,12 +211,12 @@ const toggleDeepMode = () => {
     // Also update the inner toolbar's aim button label
     const aimBtn = doc.querySelector('[data-spicehub-btn="aim"]');
     if (aimBtn) {
-      aimBtn.textContent = aimMode ? '✖ Stop aim' : '🎯 Aim parser';
+      aimBtn.textContent = aimMode ? 'âœ– Stop aim' : 'ðŸŽ¯ Aim parser';
       aimBtn.style.background = aimMode ? '#E53935' : '#2196F3';
     }
   }, [aimMode, htmlContent]);
 
-  // ── Notify parent when block selection changes ────────────────────────────
+  // â”€â”€ Notify parent when block selection changes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Parent can store selected block IDs for future "refine selected blocks" UX.
   useEffect(() => {
     if (typeof onBlocksSelected === 'function') {
@@ -208,7 +224,7 @@ const toggleDeepMode = () => {
     }
   }, [selectedBlockIds, onBlocksSelected]);
 
-  // ── Helper: update a specific pipeline step ───────────────────────────────
+  // â”€â”€ Helper: update a specific pipeline step â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const stepUpdater = useRef(null);
   useEffect(() => {
     stepUpdater.current = (idx, status, msg) => {
@@ -220,9 +236,9 @@ const toggleDeepMode = () => {
     };
   });
 
-  // ═══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   // Main extraction effect
-  // ═══════════════════════════════════════════════════════════════════════════
+  // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
   useEffect(() => {
     if (!isOnline) { setPhase('offline'); return; }
 
@@ -242,7 +258,7 @@ const toggleDeepMode = () => {
           }
         }
 
-        setExtractionProgress({ step: 1, total: 3, message: isInsta ? 'Fetching Instagram post…' : 'Fetching page content…' });
+        setExtractionProgress({ step: 1, total: 3, message: isInsta ? 'Fetching Instagram post...' : 'Fetching page content...' });
         
         // 2. Fetch HTML via CORS proxy
         let html = '';
@@ -259,7 +275,7 @@ const toggleDeepMode = () => {
         if (!html || html.length < 500) {
           console.log('[BrowserAssist] Proxy failed, falling back to direct iframe source');
           setHtmlContent(''); // This will trigger the direct URL fallback in the render
-          setPhase('showing');
+          setPhase('iframe'); // Use 'iframe' instead of 'showing' for consistency
           return;
         }
 
@@ -274,7 +290,7 @@ const toggleDeepMode = () => {
         // We just fall through to iframe so the user can visually scrape.
         // If not, we try AI on the visible text.
         if (!seedRecipe) {
-          setExtractionProgress({ step: 2, total: 3, message: '✨ AI analyzing full page…' });
+          setExtractionProgress({ step: 2, total: 3, message: '✨ AI analyzing full page...' });
           try {
             const aiRecipe = await structureWithAI(visibleText, { imageUrl: imageUrls[0] || '', sourceUrl: url });
             if (!cancelled && aiRecipe && hasRealContent(aiRecipe)) {
@@ -307,7 +323,7 @@ const toggleDeepMode = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, isOnline, retryCount]);
 
-  // ── Manual paste → AI parse ────────────────────────────────────────────────
+  // â”€â”€ Manual paste â†’ AI parse â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleParseManual = useCallback(async () => {
     const text = manualText.trim();
     if (text.length < 20) {
@@ -331,8 +347,8 @@ const toggleDeepMode = () => {
     }
   }, [manualText, url]);
 
-  // ── Retry pipeline ─────────────────────────────────────────────────────────
-  // Increments retryCount to re-trigger the extraction useEffect cleanly —
+  // â”€â”€ Retry pipeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Increments retryCount to re-trigger the extraction useEffect cleanly â€”
   // no page reload, full waterfall restarts from step 1 (subtitle scan first).
   const handleRetry = useCallback(() => {
     setManualText('');
@@ -349,7 +365,7 @@ const toggleDeepMode = () => {
     setRetryCount(c => c + 1); // triggers extraction useEffect
   }, []);
 
-  // ── Clear Clutter (iframe only) ────────────────────────────────────────────
+  // â”€â”€ Clear Clutter (iframe only) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const handleClearClutter = useCallback(() => {
     if (clearingClutter) return;
     setClearingClutter(true);
@@ -405,7 +421,7 @@ const toggleDeepMode = () => {
     setTimeout(() => setClearingClutter(false), 900);
   }, [clearingClutter]);
 
-  // ── Expand captions from outer React toolbar ──────────────────────────────
+  // ——— Expand captions from outer React toolbar —————————————————————————————————
   // Runs the caption-expander on the iframe document. We also kick it on a
   // short timer in case the site lazy-renders the "more" button after a beat.
   const [expandedCount, setExpandedCount] = useState(null);
@@ -425,12 +441,12 @@ const toggleDeepMode = () => {
     }, 400);
   }, []);
 
-  // ── Aim-mode toggle from outer React toolbar ──────────────────────────────
+  // ——— Aim-mode toggle from outer React toolbar ————————————————————————————————
   const handleToggleAim = useCallback(() => {
     setAimMode(prev => !prev);
   }, []);
 
-  // ── Clear the running aim-recipe draft ────────────────────────────────────
+  // ——— Clear the running aim-recipe draft ——————————————————————————————————————
   const handleResetAim = useCallback(() => {
     setAimRecipe(null);
     setAimToast('Cleared');
@@ -444,7 +460,7 @@ const toggleDeepMode = () => {
     } catch { /* ignore */ }
   }, []);
 
-  // ── iframe onLoad: inject floating toolbar + aim-capture bridge ────────────
+  // ——— iframe onLoad: inject floating toolbar + aim-capture bridge —————————————
   // The srcDoc iframe is same-origin from the parent's perspective, so we can
   // inject scripts and DOM freely. We add THREE interactive overlays:
   //
@@ -467,7 +483,7 @@ const toggleDeepMode = () => {
       ['spicehub-toolbar', 'spicehub-helper', 'spicehub-aim-style', 'spicehub-extract-btn']
         .forEach(id => doc.getElementById(id)?.remove());
 
-      // ── 1. Inject floating toolbar ────────────────────────────────────────
+      // ——— 1. Inject floating toolbar ——————————————————————————————————————————
       const tb = doc.createElement('div');
       tb.id = 'spicehub-toolbar';
       tb.style.cssText = [
@@ -497,12 +513,12 @@ const toggleDeepMode = () => {
         });
         return b;
       };
-      const extractBtn = makeBtn('📥 Extract', '#4CAF50', () => {
+      const extractBtn = makeBtn('📥 Download Recipe', '#4CAF50', () => {
         if (extractionRef.current) extractionRef.current();
       }, 'extract');
       const expandBtn = makeBtn('⬇ Expand captions', '#FF9800', (btn) => {
         // Visual feedback while we hunt for "more" buttons
-        btn.textContent = '⏳ Expanding…';
+        btn.textContent = '⏳ Expanding...';
         const results = runCaptionExpander(doc);
         btn.textContent = results > 0 ? `✓ Expanded ${results}` : '⚠ None found';
         setTimeout(() => { btn.textContent = '⬇ Expand captions'; }, 2200);
@@ -524,7 +540,7 @@ const toggleDeepMode = () => {
       tb.appendChild(aimBtn);
       doc.body.appendChild(tb);
 
-      // ── 2. Ephemeral hint banner ──────────────────────────────────────────
+      // ——— 2. Ephemeral hint banner ——————————————————————————————————————————
       const helper = doc.createElement('div');
       helper.id = 'spicehub-helper';
       helper.style.cssText = [
@@ -544,7 +560,7 @@ const toggleDeepMode = () => {
         }
       }, 5500);
 
-      // ── 3. Aim-parser style (highlights hoverable blocks in aim mode) ────
+      // ——— 3. Aim-parser style (highlights hoverable blocks in aim mode) ————————
       const style = doc.createElement('style');
       style.id = 'spicehub-aim-style';
       style.textContent = `
@@ -560,7 +576,7 @@ const toggleDeepMode = () => {
       `;
       doc.head?.appendChild(style);
 
-      // ── 4. Capture-phase click interceptor for aim mode ───────────────────
+      // ——— 4. Capture-phase click interceptor for aim mode —————————————————————
       // Installed ONCE per iframe load. Reads window.__spicehubAimOn flag
       // so toggling aim mode doesn't require re-injecting.
       const aimHandler = (e) => {
@@ -600,7 +616,7 @@ const toggleDeepMode = () => {
         }
       });
 
-      // ── 5. Auto-run caption expander on first load for social media ──────
+      // ——— 5. Auto-run caption expander on first load for social media ————————
       // (One pass only — user can hit the Expand button to run again)
       if (isSocial) setTimeout(() => runCaptionExpander(doc), 900);
     } catch (err) {
@@ -608,7 +624,7 @@ const toggleDeepMode = () => {
     }
   }, [isSocial]);
 
-  // ── Visual scrape — Paprika-style DOM walker ──────────────────────────────
+  // ——— Visual scrape — Paprika-style DOM walker ————————————————————————————————
   // Walks the iframe's DOM, captures text nodes with computed styles + bounding
   // rects, then POSTs to /api/import/visual-parse for server-side layout-based
   // extraction. The server returns { recipe, blocks } — blocks already have a
@@ -617,13 +633,13 @@ const toggleDeepMode = () => {
   // existing extraction flow on any failure.
   //
   // Visual scrape contract:
-  //   POST /api/import/visual-parse  ← { url, viewport, scrollY, nodes[] }
+  //   POST /api/import/visual-parse  ←  { url, viewport, scrollY, nodes[] }
   //   Response                       → { recipe, blocks: [{text, rect, type, style}] }
   //   block.type: 'title' | 'ingredient' | 'instruction' | 'caption' | 'other'
   const runVisualScrape = useCallback(async () => {
     setVisualScrapeRunning(true);
 
-      // ── Expose triggerVisualScrape to parent via ref ──────────────────────────
+      // ——— Expose triggerVisualScrape to parent via ref ———————————————————————
   // ImportModal calls browserAssistRef.current.triggerVisualScrape() when the
   // user clicks "Analyze Visually" — no prop-drilling of a callback needed.
   useImperativeHandle(ref, () => ({
@@ -636,7 +652,7 @@ const toggleDeepMode = () => {
     const isSocial = isSocialMediaUrl(url);
     setAimToast(isSocial
       ? 'Visual parse active — detecting structure by layout'
-      : 'Scanning page layout…');
+      : 'Scanning page layout...');
     setTimeout(() => setAimToast(''), 3000);
 
     try {
@@ -729,7 +745,7 @@ const toggleDeepMode = () => {
       }
 
       // Step 4: Low confidence -> try Hybrid (Gemini) directly from client
-      setAimToast('Low layout confidence — calling Gemini AI to assist…');
+      setAimToast('Low layout confidence — calling Gemini AI to assist...');
       const hybridResult = await parseRecipeHybrid(visualJson.nodes, '', url);
 
       if (hybridResult && !isWeakResult(hybridResult)) {
@@ -756,7 +772,7 @@ const toggleDeepMode = () => {
     extractionRef.current?.();
   }, [url, type, onRecipeExtracted, onError, API_BASE]);
 
-  // ── Manual extraction from iframe ──────────────────────────────────────────
+  // ——— Manual extraction from iframe ——————————————————————————————————————————
   const handleExtraction = useCallback(async () => {
     setPhase('extracting');
     setBannerRecipe(null);
@@ -766,17 +782,17 @@ const toggleDeepMode = () => {
       const visibleText = extractVisibleTextFromDoc(doc);
       const imageUrls = extractImageUrlsFromDoc(doc);
       const fullHtml = doc.documentElement?.outerHTML || '';
-      setExtractionProgress({ step: 1, total: 3, message: 'Reading page content…' });
+      setExtractionProgress({ step: 1, total: 3, message: 'Reading page content...' });
       const browserApiResult = extractWithBrowserAPI({ html: fullHtml, visibleText, imageUrls, sourceUrl: url });
       const regexRecipe = rawHtml ? extractFromRawHtml(rawHtml, url) : null;
       const domRecipe = extractRecipeFromDOM(visibleText, imageUrls, url);
       const heuristicResult = pickBestRecipe(pickBestRecipe(browserApiResult, regexRecipe), domRecipe);
-      setExtractionProgress({ step: 2, total: 3, message: '✨ Google AI parsing text…' });
+      setExtractionProgress({ step: 2, total: 3, message: '✨ Google AI parsing text...' });
       let aiRecipe = null;
       try {
         aiRecipe = await captionToRecipe(visibleText.slice(0, 8000), { imageUrl: imageUrls[0] || '', sourceUrl: url, type });
       } catch { /* fall through */ }
-      setExtractionProgress({ step: 3, total: 3, message: 'Sorting results…' });
+      setExtractionProgress({ step: 3, total: 3, message: 'Sorting results...' });
       const best = (aiRecipe && hasRealContent(aiRecipe)) ? aiRecipe : heuristicResult;
 
       // Merge order (highest trust last):
@@ -806,7 +822,7 @@ const toggleDeepMode = () => {
           extractBtnEl.style.background = '#f44336';
           setTimeout(() => {
             if (extractBtnEl.parentNode) {
-              extractBtnEl.textContent = '📥 Extract';
+              extractBtnEl.textContent = '📥 Download Recipe';
               extractBtnEl.style.background = '#4CAF50';
             }
           }, 3500);
@@ -820,7 +836,7 @@ const toggleDeepMode = () => {
 
   useEffect(() => { extractionRef.current = handleExtraction; }, [handleExtraction]);
 
-  // ── Preview actions ───────────────────────────────────────────────────────
+  // ——— Preview actions ——————————————————————————————————————————————————————————
   const handleAcceptPreview = useCallback(() => {
     if (autoRecipe) onRecipeExtracted(autoRecipe);
   }, [autoRecipe, onRecipeExtracted]);
@@ -859,7 +875,7 @@ const toggleDeepMode = () => {
     setAutoRecipe(prev => prev ? { ...prev, [field]: [...(prev[field] || []), ''] } : prev);
   }, []);
 
-  // ── Offline queue ──────────────────────────────────────────────────────────
+  // ——— Offline queue ————————————————————————————————————————————————————————————
   const handleQueueOfflineRecipe = useCallback(async (recipe) => {
     try {
       const result = await queueRecipeImport(url, recipe);
@@ -877,13 +893,13 @@ const toggleDeepMode = () => {
     }
   }, [url, onRecipeExtracted]);
 
-  // ══════════════════════════════════════════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════════════════════
   // RENDER
-  // ══════════════════════════════════════════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════════════════════
   return (
     <div className="browser-assist-container">
 
-      {/* ── Offline ── */}
+      {/* ——— Offline ——— */}
       {phase === 'offline' && (
         <div className="browser-assist-offline">
           <div className="offline-icon">🔌</div>
@@ -896,21 +912,21 @@ const toggleDeepMode = () => {
         </div>
       )}
 
-      {/* ── Queued ── */}
+      {/* ——— Queued ——— */}
       {phase === 'queued' && queuedRecipe && (
         <div className="browser-assist-queued">
-          <div className="queued-icon">⏱️</div>
+          <div className="queued-icon">⏳</div>
           <h3>Recipe Queued</h3>
           <p><strong>{queuedRecipe.name}</strong> will be imported when you're back online.</p>
           <button className="btn-primary" onClick={() => onRecipeExtracted && onRecipeExtracted(queuedRecipe)}>Close</button>
         </div>
       )}
 
-      {/* ── Loading (Pipeline in progress) ── */}
+      {/* ——— Loading (Pipeline in progress) ——— */}
       {phase === 'loading' && (
         <div className="browser-assist-loading">
           {isSocial ? (
-            /* ── Social: beautiful pipeline steps UI ── */
+            /* ——— Social: beautiful pipeline steps UI ——— */
             <div className="pipeline-container">
               <div className="pipeline-header">
                 <span className="pipeline-platform-icon">
@@ -918,7 +934,7 @@ const toggleDeepMode = () => {
                 </span>
                 <div>
                   <h3 className="pipeline-title">Importing from {platform}</h3>
-                  <p className="pipeline-url">{url.length > 50 ? url.slice(0, 47) + '…' : url}</p>
+                  <p className="pipeline-url">{url.length > 50 ? url.slice(0, 47) + '...' : url}</p>
                 </div>
               </div>
 
@@ -928,7 +944,7 @@ const toggleDeepMode = () => {
                     <div className="pipeline-step-indicator">
                       {step.status === 'running' && <span className="pipeline-spinner" />}
                       {step.status === 'done' && <span className="pipeline-check">✓</span>}
-                      {step.status === 'failed' && <span className="pipeline-x">✗</span>}
+                      {step.status === 'failed' && <span className="pipeline-x">✖</span>}
                       {step.status === 'skipped' && <span className="pipeline-skip">—</span>}
                       {step.status === 'pending' && <span className="pipeline-dot" />}
                     </div>
@@ -949,7 +965,7 @@ const toggleDeepMode = () => {
               </button>
             </div>
           ) : (
-            /* ── Non-social: simple loading indicator ── */
+            /* ——— Non-social: simple loading indicator ——— */
             <>
               <div className="browser-assist-loading-icon">🔍</div>
               <p className="browser-assist-pulse-text" aria-live="polite">
@@ -969,12 +985,12 @@ const toggleDeepMode = () => {
                     <div className="extraction-progress-fill" style={{ width: `${Math.round((extractionProgress.step / extractionProgress.total) * 100)}%` }} />
                   </div>
                   <p className="extraction-step-message">
-                    {extractionProgress.step} / {extractionProgress.total} — {extractionProgress.message || '…'}
+                    {extractionProgress.step} / {extractionProgress.total} — {extractionProgress.message || '...'}
                   </p>
                 </div>
               )}
               {!extractionProgress.total && (
-                <p className="browser-assist-pulse-sub">This usually takes a few seconds…</p>
+                <p className="browser-assist-pulse-sub">This usually takes a few seconds...</p>
               )}
               <button className="btn-secondary" onClick={onFallbackToText} style={{ marginTop: 12 }}>
                 Skip — Enter Manually
@@ -984,7 +1000,7 @@ const toggleDeepMode = () => {
         </div>
       )}
 
-      {/* ── Manual paste card (social fallback when all methods fail) ── */}
+      {/* ——— Manual paste card (social fallback when all methods fail) ——— */}
       {phase === 'manual' && (
         <div className="browser-assist-manual">
           <div className="manual-header">
@@ -1011,7 +1027,7 @@ const toggleDeepMode = () => {
               <div className="manual-pipeline-summary">
                 {pipelineSteps.map((step, i) => (
                   <div key={i} className={`manual-step-badge manual-step-badge--${step.status}`}>
-                    {step.status === 'done' ? '✓' : step.status === 'failed' ? '✗' : '—'} {step.label}
+                    {step.status === 'done' ? '✓' : step.status === 'failed' ? '✖' : '—'} {step.label}
                   </div>
                 ))}
               </div>
@@ -1052,18 +1068,18 @@ const toggleDeepMode = () => {
         </div>
       )}
 
-      {/* ── Auto-extracted preview (editable) ── */}
+      {/* ——— Auto-extracted preview (editable) ——— */}
       {phase === 'preview' && autoRecipe && (
         <div className="browser-assist-preview">
           <div className="browser-assist-preview-header">
-            <span className="browser-assist-success-icon">&#10003;</span>
+            <span className="browser-assist-success-icon">✓</span>
             <span>Recipe found{autoRecipe.extractedVia ? ` via ${autoRecipe.extractedVia}` : ''}</span>
             {(() => {
               if (autoRecipe._hybridUsed === true && autoRecipe._hybridConfidence != null) {
                 const pct = Math.round(autoRecipe._hybridConfidence * 100);
                 return (
                   <span className="confidence-badge confidence-high">
-                    ✦ Enhanced with Gemini &bull; {pct}%
+                    ✦ Enhanced with Gemini • {pct}%
                   </span>
                 );
               } else if (autoRecipe._hybridUsed === false && autoRecipe._hybridConfidence != null) {
@@ -1071,7 +1087,7 @@ const toggleDeepMode = () => {
                 const level = pct >= 75 ? 'high' : pct >= 50 ? 'medium' : 'low';
                 return (
                   <span className={`confidence-badge confidence-${level}`}>
-                    ⚡ Visual Parse &bull; {pct}%
+                    ⚡ Visual Parse • {pct}%
                   </span>
                 );
               } else {
@@ -1135,7 +1151,7 @@ const toggleDeepMode = () => {
                       placeholder="e.g. 2 cups flour"
                       onChange={e => updatePreviewListItem('ingredients', i, e.target.value)}
                     />
-                    <button className="preview-remove-btn" onClick={() => removePreviewListItem('ingredients', i)} title="Remove">&#10005;</button>
+                    <button className="preview-remove-btn" onClick={() => removePreviewListItem('ingredients', i)} title="Remove">✖</button>
                   </div>
                 ))}
               </div>
@@ -1156,7 +1172,7 @@ const toggleDeepMode = () => {
                       rows={2}
                       onChange={e => updatePreviewListItem('directions', i, e.target.value)}
                     />
-                    <button className="preview-remove-btn" onClick={() => removePreviewListItem('directions', i)} title="Remove">&#10005;</button>
+                    <button className="preview-remove-btn" onClick={() => removePreviewListItem('directions', i)} title="Remove">✖</button>
                   </div>
                 ))}
               </div>
@@ -1174,7 +1190,7 @@ const toggleDeepMode = () => {
         </div>
       )}
 
-      {/* ── Browser view (non-social recipe blogs only) ── */}
+      {/* ——— Browser view (non-social recipe blogs only) ——— */}
       {(phase === 'iframe' || phase === 'extracting') && (
         <div className="browser-assist-ready">
           {bannerRecipe && phase !== 'extracting' && (
@@ -1188,7 +1204,7 @@ const toggleDeepMode = () => {
                 <button className="btn-primary auto-banner-accept" onClick={() => { setAutoRecipe(bannerRecipe); setBannerRecipe(null); setPhase('preview'); }}>
                   Review →
                 </button>
-                <button className="btn-icon auto-banner-dismiss" onClick={() => setBannerRecipe(null)} title="Dismiss">✕</button>
+                <button className="btn-icon auto-banner-dismiss" onClick={() => setBannerRecipe(null)} title="Dismiss">✖</button>
               </div>
             </div>
           )}
@@ -1196,14 +1212,14 @@ const toggleDeepMode = () => {
           <div className="browser-assist-toolbar">
             <div className="browser-assist-toolbar-hint">
               {phase === 'extracting'
-                ? <span>⏳ {extractionProgress.message || 'Analyzing…'}</span>
+                ? <span>⏳ {extractionProgress.message || 'Analyzing...'}</span>
                 : aimMode
                   ? <span>🎯 <strong>Aim mode on</strong> — tap the {aimTarget === 'auto' ? 'ingredients or directions' : aimTarget} on the page</span>
-                  : <span>📜 Scroll · pinch to zoom · tap <strong>Extract ↓</strong> or 🎯 Aim</span>
+                  : <span>📜 Scroll · pinch to zoom · tap <strong>Download Recipe ↓</strong> or 🎯 Aim</span>
               }
             </div>
             <div className="browser-assist-zoom-controls browser-assist-zoom-inline">
-              <button className="browser-assist-zoom-btn" onClick={() => setIframeZoom(Math.max(40, iframeZoom - 15))} disabled={iframeZoom <= 40} aria-label="Zoom out">−</button>
+              <button className="browser-assist-zoom-btn" onClick={() => setIframeZoom(Math.max(40, iframeZoom - 15))} disabled={iframeZoom <= 40} aria-label="Zoom out">－</button>
               <button className="browser-assist-zoom-btn browser-assist-zoom-fit" onClick={() => setIframeZoom(85)}>Fit</button>
               <span className="browser-assist-zoom-display" aria-live="polite">{iframeZoom}%</span>
               <button className="browser-assist-zoom-btn browser-assist-zoom-full" onClick={() => setIframeZoom(100)}>1:1</button>
@@ -1218,7 +1234,7 @@ const toggleDeepMode = () => {
             </button>
           </div>
 
-          {/* ── Paprika-style power row: Expand captions + Aim parser ─────────
+          {/* ——— Paprika-style power row: Expand captions + Aim parser ———————
               These are the controls the user specifically asked for. They mirror
               the floating buttons injected inside the iframe, but are bigger
               and always-visible in the parent UI so they can't be covered by
@@ -1399,7 +1415,7 @@ const toggleDeepMode = () => {
                     fontWeight: 700,
                   }}
                 >
-                  ✕
+                  ✖
                 </button>
               </div>
             )}
@@ -1454,7 +1470,7 @@ const toggleDeepMode = () => {
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
                 onLoad={handleIframeLoad}
               />
-              {/* ── Visual-scrape block overlays ─────────────────────────────
+              {/* ——— Visual-scrape block overlays ——————————————————————————————
                   Rendered inside the scale wrapper so they use the same unscaled
                   coordinate space as the DOM walker rects (raw iframe CSS pixels).
                   Colors: title=yellow, ingredient=green, instruction=purple, caption=orange.
@@ -1508,43 +1524,43 @@ const toggleDeepMode = () => {
               onClick={visualScrapeMode ? runVisualScrape : handleExtraction}
               disabled={phase === 'extracting' || visualScrapeRunning}
             >
-              {phase === 'extracting' ? '⏳ AI Reading…' : '📥 Extract Recipe'}
+              {phase === 'extracting' ? '⏳ AI Reading...' : '📥 Download Recipe'}
             </button>
             {bannerRecipe && (
               <button className="btn-accent" onClick={() => { setAutoRecipe(bannerRecipe); setBannerRecipe(null); setPhase('preview'); }}>
                 ✅ Use Auto-Result
               </button>
             )}
-            <button className="btn-secondary" onClick={onFallbackToText} disabled={phase === 'extracting'}>← Back</button>
+            <button className="btn-secondary" onClick={onFallbackToText} disabled={phase === 'extracting'}>â† Back</button>
           </div>
         </div>
       )}
 
-      {/* ── Error ── */}
+      {/* â”€â”€ Error â”€â”€ */}
       {phase === 'error' && (
         <div className="browser-assist-error">
           <p className="error-text">{errorMsg}</p>
-          <button className="btn-primary" onClick={onFallbackToText}>← Back to Import</button>
+          <button className="btn-primary" onClick={onFallbackToText}>â† Back to Import</button>
         </div>
       )}
     </div>
   );
-}); // ← closes forwardRef(function BrowserAssist(...) {
+}); // â† closes forwardRef(function BrowserAssist(...) {
 
 export default BrowserAssist;
 
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // Helpers
-// ═══════════════════════════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 /**
- * mergeRecipeLayers — combines up to 3 recipe sources into one.
+ * mergeRecipeLayers â€” combines up to 3 recipe sources into one.
  * Lower layers fill gaps in higher layers but never overwrite them.
  * Layer priority (highest first): aim > scraped > seed.
  *
- *   seed    — partial data auto-import scraped (title/image often reliable here)
- *   scraped — what the page heuristic+AI produced inside the internal browser
- *   aim     — text the user tapped to aim at (most explicit intent; wins)
+ *   seed    â€” partial data auto-import scraped (title/image often reliable here)
+ *   scraped â€” what the page heuristic+AI produced inside the internal browser
+ *   aim     â€” text the user tapped to aim at (most explicit intent; wins)
  *
  * Returns a cleaned recipe object or null if nothing usable.
  */
@@ -1596,12 +1612,12 @@ export function mergeRecipeLayers(seed, scraped, aim, sourceUrl, extractedVia) {
 }
 
 /**
- * mergeAimedText — merges newly-tapped text into an aim-recipe draft.
+ * mergeAimedText â€” merges newly-tapped text into an aim-recipe draft.
  * Routes lines by target:
- *   'title'       → recipe.name (first non-trivial line wins)
- *   'ingredients' → forced into ingredients[] (uses smartClassifyLines to split)
- *   'directions'  → forced into directions[]
- *   'auto'        → use smartClassifyLines to decide per-line
+ *   'title'       â†’ recipe.name (first non-trivial line wins)
+ *   'ingredients' â†’ forced into ingredients[] (uses smartClassifyLines to split)
+ *   'directions'  â†’ forced into directions[]
+ *   'auto'        â†’ use smartClassifyLines to decide per-line
  */
 export function mergeAimedText(prev, rawText, target, sourceUrl) {
   const next = {
@@ -1635,7 +1651,7 @@ export function mergeAimedText(prev, rawText, target, sourceUrl) {
     }
     return next;
   }
-  // 'auto' — use the heuristic line classifier imported at module scope
+  // 'auto' â€” use the heuristic line classifier imported at module scope
   try {
     const classified = smartClassifyLines(lines) || {};
     for (const ing of (classified.ingredients || [])) {
@@ -1645,7 +1661,7 @@ export function mergeAimedText(prev, rawText, target, sourceUrl) {
       if (!next.directions.includes(dir)) next.directions.push(dir);
     }
   } catch {
-    // Classifier unavailable — dump to directions (safer default)
+    // Classifier unavailable â€” dump to directions (safer default)
     for (const l of lines) {
       if (!next.directions.includes(l)) next.directions.push(l);
     }
@@ -1654,7 +1670,7 @@ export function mergeAimedText(prev, rawText, target, sourceUrl) {
 }
 
 /**
- * runCaptionExpander — auto-clicks 'more' / '...' / 'read more' buttons that
+ * runCaptionExpander â€” auto-clicks 'more' / '...' / 'read more' buttons that
  * Instagram, TikTok, YouTube, Facebook, and Pinterest use to truncate long
  * captions. Returns the number of elements we clicked so the UI can give
  * feedback like "Expanded 3".
@@ -1666,7 +1682,7 @@ export function mergeAimedText(prev, rawText, target, sourceUrl) {
 export function runCaptionExpander(doc) {
   if (!doc || !doc.body) return 0;
   const clicked = new Set();
-  // Selector-based pass — works on most modern social sites
+  // Selector-based pass â€” works on most modern social sites
   const SELECTORS = [
     // Instagram embed + web: "more" button inside caption
     'button[aria-label="more" i]',
@@ -1694,7 +1710,7 @@ export function runCaptionExpander(doc) {
         const text = (el.textContent || el.getAttribute('aria-label') || '').trim().toLowerCase();
         // If textContent is set, only click things that look like expand controls
         if (text && text.length > 80) return; // big blocks are not expand buttons
-        if (text && !/^(\.\.\.|…|more|read more|see more|show more|see all|expand|view more|continue reading)$/i.test(text)) {
+        if (text && !/^(\.\.\.|â€¦|more|read more|see more|show more|see all|expand|view more|continue reading)$/i.test(text)) {
           // For generic role=button div fallback, require the expand-ish text
           if (sel === 'div[role="button"][tabindex="0"]') return;
         }
@@ -1702,9 +1718,9 @@ export function runCaptionExpander(doc) {
       });
     } catch { /* skip this selector */ }
   }
-  // Text-content pass — find small clickable elements whose text is exactly
+  // Text-content pass â€” find small clickable elements whose text is exactly
   // one of the expand phrases. Catches sites that don't use aria-labels.
-  const EXPAND_TEXT = /^(\.\.\.|…|more|read more|see more|show more|see all|expand|view more|continue reading)$/i;
+  const EXPAND_TEXT = /^(\.\.\.|â€¦|more|read more|see more|show more|see all|expand|view more|continue reading)$/i;
   doc.querySelectorAll('button, span[role="button"], a[role="button"]').forEach(el => {
     if (clicked.has(el)) return;
     if (el.closest('#spicehub-toolbar') || el.closest('#spicehub-helper')) return;
@@ -1733,7 +1749,7 @@ const PLACEHOLDER_PATTERNS = [
   /^content (is )?not available/i,
   /^(sorry|oops),?\s*(this )?(content|page|post|recipe)/i,
   /^instagram\s+\w/i,
-  /verified\s*[·•·]\s*(view\s+profile|follow)/i,
+  /verified\s*[Â·â€¢Â·]\s*(view\s+profile|follow)/i,
   /^view profile$/i,
   /^play$/i,
   /^watch on instagram/i,
@@ -1826,7 +1842,7 @@ function extractImageUrlsFromHtml(html) {
     const clean = u.replace(/&amp;/g, '&').replace(/\\u0026/g, '&').replace(/\\/g, '');
     if (isUsableImageUrl(clean) && !seen.has(clean)) { urls.push(clean); seen.add(clean); }
   }
-  // og:image — try all attribute orderings (property=… content=… or reversed)
+  // og:image â€” try all attribute orderings (property=â€¦ content=â€¦ or reversed)
   const ogM = html.match(/<meta[^>]+property\s*=\s*["']og:image["'][^>]+content\s*=\s*["']([^"']*)["']/i)
     || html.match(/<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+property\s*=\s*["']og:image["']/i)
     || html.match(/<meta[^>]+property=og:image[^>]+content\s*=\s*["']([^"']*)["']/i);
@@ -1850,17 +1866,17 @@ function extractImageUrlsFromHtml(html) {
   const embedImgM = html.match(/<img[^>]+class="[^"]*EmbedImage[^"]*"[^>]+src="([^"]+)"/i)
     || html.match(/<img[^>]+src="([^"]+)"[^>]+class="[^"]*EmbedImage[^"]*"/i);
   if (embedImgM?.[1]) addUrl(embedImgM[1]);
-  // <img src="…"> — only large images (explicit size in URL or image extension)
+  // <img src="â€¦"> â€” only large images (explicit size in URL or image extension)
   for (const m of html.matchAll(/<img[^>]+src="(https:\/\/[^"]{20,})"/gi)) {
     const u = m[1].replace(/&amp;/g, '&');
     if (/\d{3,4}[x_]\d{3,4}|\.(jpg|jpeg|png|webp)(\?|$)/i.test(u)) addUrl(u);
   }
-  // Lazy-loaded images — data-src, data-lazy-src, data-lazy (very common on recipe blogs)
+  // Lazy-loaded images â€” data-src, data-lazy-src, data-lazy (very common on recipe blogs)
   for (const m of html.matchAll(/data-(?:src|lazy-src|lazy|original)="(https:\/\/[^"]{20,})"/gi)) {
     const u = m[1].replace(/&amp;/g, '&');
     if (/\.(jpg|jpeg|png|webp)|\d{3,4}[x_]\d{3,4}/i.test(u)) addUrl(u);
   }
-  // <source srcset="url 1200w, url2 800w"> — pick largest
+  // <source srcset="url 1200w, url2 800w"> â€” pick largest
   for (const m of html.matchAll(/<source[^>]+srcset="([^"]+)"/gi)) {
     const srcset = m[1];
     // Pick the URL with the largest width descriptor
@@ -1969,18 +1985,18 @@ function sanitizeHtmlForEmbed(html, baseUrl) {
   let base = '';
   try { base = new URL(baseUrl).origin; } catch { /* ignore */ }
   return html
-    // ── Script removal ─────────────────────────────────────────────────────────
-    // Remove complete <script>…</script> blocks (inline and src-based).
+    // â”€â”€ Script removal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Remove complete <script>â€¦</script> blocks (inline and src-based).
     .replace(/<script\b[\s\S]*?<\/script>/gi, '')
     // Remove any orphaned opening <script> tags with no closing tag.
     .replace(/<script\b[^>]*>/gi, '')
-    // ── Block javascript: URI schemes ──────────────────────────────────────────
+    // â”€â”€ Block javascript: URI schemes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // Rewrite href/src/action values that start with "javascript:" so they can't
     // execute code even though we've enabled allow-scripts in the sandbox.
     .replace(/\b(href|src|action)\s*=\s*(["']?)\s*javascript:/gi, '$1=$2data:text/plain,blocked:')
-    // ── Noscript cleanup ───────────────────────────────────────────────────────
+    // â”€â”€ Noscript cleanup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     .replace(/<\/?noscript\b[^>]*>/gi, '')
-    // ── Head injection ─────────────────────────────────────────────────────────
+    // â”€â”€ Head injection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     .replace(
       /<head([^>]*)>/i,
       `<head$1>
