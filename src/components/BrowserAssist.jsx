@@ -17,7 +17,7 @@ import {
   parseVisualJSON,
   importRecipeFromUrl
 } from '../recipeParser';
-import { fetchHtmlViaProxy, proxyImageUrl } from '../api';
+import { fetchHtmlViaProxy, proxyImageUrl, cleanUrl } from '../api';
 import { queueRecipeImport } from '../db';
 import useOnlineStatus from '../hooks/useOnlineStatus';
 
@@ -250,7 +250,7 @@ const toggleDeepMode = () => {
         setPhase('loading');
 
         // 1. Determine URL to fetch
-        let fetchUrl = url;
+        let fetchUrl = cleanUrl(url);
         const isInsta = /instagram\.com/i.test(url);
         if (isInsta) {
           const match = url.match(/(?:p|reel)\/([A-Za-z0-9_-]+)/i);
@@ -1464,7 +1464,7 @@ const toggleDeepMode = () => {
                 ref={iframeRef}
                 title="Recipe Page"
                 className="browser-assist-iframe"
-                src={!htmlContent ? url : undefined}
+                src={!htmlContent ? cleanUrl(url) : undefined}
                 srcDoc={htmlContent || undefined}
                 /* allow-scripts is intentional: sanitizeHtmlForEmbed strips ALL
                     <script> tags before content reaches here, so no recipe-site JS
@@ -1474,6 +1474,48 @@ const toggleDeepMode = () => {
                 sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
                 onLoad={handleIframeLoad}
               />
+              {/* Fallback help overlay for iframe blocks (e.g. SAMEORIGIN) */}
+              {phase === 'iframe' && !htmlContent && (
+                <div style={{
+                  position: 'absolute',
+                  top: 0, left: 0, right: 0, bottom: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'rgba(255,255,255,0.9)',
+                  padding: '40px 20px',
+                  textAlign: 'center',
+                  zIndex: 5,
+                  pointerEvents: 'none', // Allow clicking iframe underneath
+                  animation: 'fadeIn 0.5s ease-out 5s forwards', // Show after 5s
+                  opacity: 0,
+                }}>
+                  <div style={{ pointerEvents: 'auto', maxWidth: 400 }}>
+                    <div style={{ fontSize: 48, marginBottom: 16 }}>🛡️</div>
+                    <h3 style={{ marginBottom: 12 }}>Site blocked direct view</h3>
+                    <p style={{ color: '#666', fontSize: 14, marginBottom: 24 }}>
+                      This recipe site prevents itself from being shown in other apps.
+                      Use <b>Manual Paste</b> or try <b>Download Recipe</b> anyway.
+                    </p>
+                    <button 
+                      onClick={onFallbackToText}
+                      style={{
+                        padding: '12px 24px',
+                        background: '#1976D2',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: 12,
+                        fontWeight: 600,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Use Manual Paste
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* ——— Visual-scrape block overlays ——————————————————————————————
                   Rendered inside the scale wrapper so they use the same unscaled
                   coordinate space as the DOM walker rects (raw iframe CSS pixels).

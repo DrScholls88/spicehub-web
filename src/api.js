@@ -50,27 +50,46 @@ let _lastGoodProxyIdx = 0;
  *     no CORS issues, not IP-blocked like public proxies. This is the PRIMARY path.
  *  2. Public CORS proxy waterfall — fallback for local dev or if Vercel fn fails.
  */
-export async function fetchHtmlViaProxy(url, timeoutMs = 30000) {
-  // === ROBUST URL CLEANING ===
-  let cleanUrl = url.trim();
+/**
+ * Robustly clean a URL string.
+ * - Trims whitespace
+ * - Resolves doubled-concatenated URLs (common mobile paste bug)
+ * - Removes trailing slashes
+ */
+export function cleanUrl(url) {
+  if (!url || typeof url !== 'string') return '';
+  let cleaned = url.trim();
 
-  // Remove any duplicated URL suffix (common bug source)
-  const firstHttp = cleanUrl.indexOf('http');
+  // Remove any duplicated URL suffix (common bug source: "https://site.com/https://site.com")
+  const firstHttp = cleaned.indexOf('http');
   if (firstHttp !== -1) {
-    const secondHttp = cleanUrl.indexOf('http', firstHttp + 4);
+    const secondHttp = cleaned.indexOf('http', firstHttp + 4);
     if (secondHttp !== -1) {
-      cleanUrl = cleanUrl.substring(0, secondHttp);
+      cleaned = cleaned.substring(0, secondHttp);
     }
   }
-  cleanUrl = cleanUrl.replace(/\/https?:\/\/.+$/, '').replace(/\/$/, '');
+  // Remove slash-concatenated duplicates and trailing slash
+  return cleaned.replace(/\/https?:\/\/.+$/, '').replace(/\/$/, '');
+}
 
-  console.log('[fetchHtmlViaProxy] Target:', cleanUrl);
+/**
+ * Fetch HTML via robust proxy cascade.
+ * 
+ * STRATEGY (in order):
+ *  1. Internal /api/proxy Vercel serverless function — runs server-side, full browser headers,
+ *     no CORS issues, not IP-blocked like public proxies. This is the PRIMARY path.
+ *  2. Public CORS proxy waterfall — fallback for local dev or if Vercel fn fails.
+ */
+export async function fetchHtmlViaProxy(url, timeoutMs = 30000) {
+  const targetUrl = cleanUrl(url);
+  console.log('[fetchHtmlViaProxy] Target:', targetUrl);
+
 
   // ── 1. Internal Vercel /api/proxy (primary) ──────────────────────────────────
   // In production on Vercel, this is a same-origin call with zero CORS overhead.
   // In local dev (vite), this will 404 which is fine — we fall through to public proxies.
   try {
-    const internalUrl = `/api/proxy?url=${encodeURIComponent(cleanUrl)}`;
+    const internalUrl = `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     const resp = await fetch(internalUrl, { signal: ctrl.signal });
@@ -102,7 +121,7 @@ export async function fetchHtmlViaProxy(url, timeoutMs = 30000) {
   const perProxyTimeout = Math.min(timeoutMs / 2, 15000);
 
   for (const makeProxy of PUBLIC_PROXIES) {
-    const proxyUrl = makeProxy(cleanUrl);
+    const proxyUrl = makeProxy(targetUrl);
     try {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), perProxyTimeout);
@@ -139,7 +158,7 @@ export async function fetchHtmlViaProxy(url, timeoutMs = 30000) {
     }
   }
 
-  console.warn('[fetchHtmlViaProxy] ❌ All proxies failed for:', cleanUrl);
+  console.warn('[fetchHtmlViaProxy] ❌ All proxies failed for:', targetUrl);
   return null;
 }
 

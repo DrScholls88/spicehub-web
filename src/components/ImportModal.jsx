@@ -10,7 +10,7 @@ import {
   parseHtml
 } from '../recipeParser.js';
 import BrowserAssist from './BrowserAssist';
-import { normalizeInstagramUrl, fetchHtmlViaProxy } from '../api.js';
+import { normalizeInstagramUrl, fetchHtmlViaProxy, cleanUrl } from '../api.js';
 import db from '../db.js';
 import { shaHex } from '../shaHex.js';
 import {
@@ -358,7 +358,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   // Called by the Import button and Enter-key handler.
   const handleUrlImport = async (overrideUrl) => {
     const rawUrl = typeof overrideUrl === 'string' ? overrideUrl : url;
-    const trimmedUrl = rawUrl.trim();
+    const trimmedUrl = cleanUrl(rawUrl);
     if (!trimmedUrl) {
       setError('Please enter a URL.');
       return;
