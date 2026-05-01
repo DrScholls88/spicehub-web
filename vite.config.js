@@ -94,7 +94,7 @@ VitePWA({
       },
     },
     '/media-proxy': {   // New proxy for images
-    ttarget: 'https://dummy.invalid',  // dummy - we override in configure
+    target: 'https://dummy.invalid',  // dummy - we override in configure
     changeOrigin: true,
     secure: true,
     configure: (proxy, _options) => {

@@ -1,3 +1,4 @@
+import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef, useCallback, useMemo } from 'react';
 import { 
   extractRecipeFromDOM, 
   parseCaption, 
@@ -639,12 +640,7 @@ const toggleDeepMode = () => {
   const runVisualScrape = useCallback(async () => {
     setVisualScrapeRunning(true);
 
-      // ——— Expose triggerVisualScrape to parent via ref ———————————————————————
-  // ImportModal calls browserAssistRef.current.triggerVisualScrape() when the
-  // user clicks "Analyze Visually" — no prop-drilling of a callback needed.
-  useImperativeHandle(ref, () => ({
-    triggerVisualScrape: () => runVisualScrape(),
-  }), [runVisualScrape]);
+
 
 
     // For social URLs, show visual-mode toast immediately — layout detection is
@@ -771,6 +767,14 @@ const toggleDeepMode = () => {
     // Fall through: continue with existing extraction flow
     extractionRef.current?.();
   }, [url, type, onRecipeExtracted, onError, API_BASE]);
+
+  // ——— Expose triggerVisualScrape to parent via ref ———————————————————————
+  // ImportModal calls browserAssistRef.current.triggerVisualScrape() when the
+  // user clicks "Analyze Visually" — no prop-drilling of a callback needed.
+  useImperativeHandle(ref, () => ({
+    triggerVisualScrape: () => runVisualScrape(),
+  }), [runVisualScrape, ref]);
+
 
   // ——— Manual extraction from iframe ——————————————————————————————————————————
   const handleExtraction = useCallback(async () => {
