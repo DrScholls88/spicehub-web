@@ -5296,6 +5296,15 @@ body {
   color: var(--text-light);
 }
 
+.ml-tile-added {
+  font-size: 10px;
+  color: var(--text-muted, #aaa);
+  opacity: 0.8;
+  letter-spacing: 0.2px;
+  display: block;
+  margin-top: 1px;
+}
+
 .ml-tile-notes {
   font-size: 11px;
   color: var(--text-light);

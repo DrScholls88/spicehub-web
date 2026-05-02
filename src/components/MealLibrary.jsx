@@ -5,6 +5,24 @@ import db from '../db';
 import useBackHandler from '../hooks/useBackHandler';
 import SafeMediaImage from './SafeMediaImage';
 
+// ── Date formatter: relative for recent, absolute for older ──────────────────
+function formatAddedDate(isoString) {
+  if (!isoString) return null;
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return null;
+    const diffMs = Date.now() - d.getTime();
+    const diffDays = Math.floor(diffMs / 86400000);
+    if (diffDays < 1)  return 'today';
+    if (diffDays === 1) return 'yesterday';
+    if (diffDays < 7)  return `${diffDays}d ago`;
+    const month = d.toLocaleString('default', { month: 'short' });
+    const day   = d.getDate();
+    const year  = d.getFullYear();
+    return year === new Date().getFullYear() ? `${month} ${day}` : `${month} ${day}, ${year}`;
+  } catch { return null; }
+}
+
 // Thin wrapper: maps SafeMediaImage into tile-image card usage
 function CardImage({ src, alt, className, phClass }) {
   if (!src) return <div className={phClass}>🍽️</div>;
@@ -345,9 +363,15 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
               <div className="ml-tile-info">
                 <span className="ml-tile-name">{meal.name}</span>
                 <span className="ml-tile-meta">
-                  {`${(meal.ingredients || []).length} ing · ${(meal.directions || []).length} steps`}
-                  {(meal.created || meal.createdAt) && ` · Added: ${new Date(meal.created || meal.createdAt).toLocaleDateString()}`}
+                  {meal.status === 'processing' ? 'Import in progress…'
+                    : meal.status === 'failed' ? (meal.importError || 'Import failed — tap to delete')
+                    : `${(meal.ingredients || []).length} ing · ${(meal.directions || []).length} steps`}
                 </span>
+                {formatAddedDate(meal.importedAt || meal.createdAt || meal.created) && (
+                  <span className="ml-tile-added" title={meal.importedAt || meal.createdAt || meal.created}>
+                    {formatAddedDate(meal.importedAt || meal.createdAt || meal.created)}
+                  </span>
+                )}
                 {meal.notes && (
                   <span className="ml-tile-notes">
                     {meal.notes.slice(0, 60)}{meal.notes.length > 60 ? '…' : ''}
