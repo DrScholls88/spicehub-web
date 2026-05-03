@@ -2029,20 +2029,8 @@ export async function importRecipeFromUrl(url, onProgress, { type = 'meal' } = {
       }
     }
 
-    // Try dedicated Agent extraction (agent-browser + vision)
-    if (onProgress) onProgress('Trying Agent Browser extraction...');
-    const agentResult = await extractInstagramAgent(url, onProgress, { type });
-    if (agentResult && !agentResult._error && agentResult.ingredients?.[0] !== 'See original post for ingredients') {
-      return agentResult;
-    }
-
-    // If agent fails or only returns partial, we can try video endpoint (yt-dlp)
-    if (onProgress) onProgress('Trying video extraction (yt-dlp)...');
-    const videoResult = await tryVideoExtraction(url, onProgress);
-    if (videoResult && !videoResult._error) return videoResult;
-
-    // Use partial agent result if available
-    if (agentResult && !agentResult._error) return agentResult;
+    // extractInstagramAgent and tryVideoExtraction removed (server decommissioned).
+    // importFromInstagram in recipeParser.js handles the unified client-side pipeline.
 
     // Instagram all paths failed Ã¢â‚¬â€ route to BrowserAssist
     console.log('[SpiceHub] Instagram extraction failed Ã¢â‚¬â€ routing to BrowserAssist');
@@ -2053,20 +2041,8 @@ export async function importRecipeFromUrl(url, onProgress, { type = 'meal' } = {
   if (isSocialMediaUrl(url)) {
     console.log('[SpiceHub] Social/video URL Ã¢â‚¬â€ trying extraction pipeline...');
 
-    // Step A: Agent Browser (Full DOM parsing, carousels, subtitles)
-    if (onProgress) onProgress('Trying Agent Browser extraction...');
-    const agentResult = await extractInstagramAgent(url, onProgress, { type });
-    if (agentResult && !agentResult._error && agentResult.ingredients?.[0] !== 'See original post for ingredients') {
-      return agentResult;
-    }
-
-    // Step B: Try dedicated /api/extract-video endpoint (yt-dlp metadata + subtitles)
-    if (onProgress) onProgress('Extracting video metadata and subtitles...');
-    const videoResult = await tryVideoExtraction(url, onProgress);
-    if (videoResult && !videoResult._error) return videoResult;
-
-    // Step C: Fallback to partial agent result
-    if (agentResult && !agentResult._error) return agentResult;
+    // extractInstagramAgent and tryVideoExtraction removed (server decommissioned).
+    // Fallback: CORS proxy (sometimes works for public pages)
 
     // Fallback: CORS proxy (sometimes works for public pages)
     if (onProgress) onProgress('Trying direct extraction...');
@@ -3881,35 +3857,10 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   let capturedImageUrl = '';
   let videoRecipe = null; // yt-dlp structured result (skip phases 1+2 if rich enough)
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Phase 0: yt-dlp video subtitles (narration Ã¢â‚¬â€ richest source for Reels) Ã¢â€â‚¬Ã¢â€â‚¬
-  progress(0, 'running', 'Scanning for video subtitlesÃ¢â‚¬Â¦');
-  try {
-    const videoResult = await tryVideoExtraction(url, (msg) => progress(0, 'running', msg));
-    if (videoResult && !videoResult._error) {
-      // Accept yt-dlp result only if BOTH ingredients AND directions are non-placeholder
-      const hasIng = !isPlaceholder(videoResult.ingredients);
-      const hasDir = !isPlaceholder(videoResult.directions);
-      if (hasIng && hasDir) {
-        videoRecipe = videoResult;
-        capturedImageUrl = videoResult.imageUrl || '';
-        // Reconstruct text so Gemini can re-polish structure in Phase 3
-        capturedCaption = recipeToText(videoResult);
-        progress(0, 'done', 'Rich video content found Ã¢â‚¬â€ structuring with GeminiÃ¢â‚¬Â¦');
-        progress(1, 'skipped', 'Video subtitles sufficient');
-        progress(2, 'skipped', 'Video subtitles sufficient');
-        // Fall through to Phase 3 (Gemini always runs per unified plan)
-      } else if (hasIng || hasDir) {
-        // Partial yt-dlp Ã¢â‚¬â€ collect what we can and continue to embed/agent
-        capturedCaption = recipeToText(videoResult);
-        capturedImageUrl = videoResult.imageUrl || '';
-        progress(0, 'done', 'Partial video data Ã¢â‚¬â€ trying embed for moreÃ¢â‚¬Â¦');
-      } else {
-        progress(0, 'failed', 'No usable video subtitles');
-      }
-    } else {
-      progress(0, 'failed', 'No video subtitles available');
-    }
-  } catch { progress(0, 'failed', 'Video extraction unavailable'); }
+  // -- Phase 0: yt-dlp video subtitles (server decommissioned -- always skip) --
+  // tryVideoExtraction was removed when server-side automation was decommissioned.
+  // Phase 1 (embed) + Phase 3 (Gemini) handle all extraction client-side.
+  progress(0, 'skipped', 'Server unavailable -- using embed + AI');
 
   // Track raw page text from embed as last-resort Gemini input
   let capturedRawPageText = '';
@@ -3950,31 +3901,9 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
       }
     } catch { progress(1, 'failed', 'Embed fetch failed'); }
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ Phase 2: AI Browser (Puppeteer) Ã¢â‚¬â€ only when embed gave no/weak caption Ã¢â€â‚¬Ã¢â€â‚¬
-    const skipAgent = capturedCaption && !isCaptionWeak(capturedCaption);
-    if (!skipAgent) {
-      progress(2, 'running', 'Launching AI browserÃ¢â‚¬Â¦');
-      try {
-        const agentResult = await extractInstagramAgent(url, (msg) => progress(2, 'running', msg), { type });
-        if (agentResult) {
-          const rawCaption = agentResult.caption || '';
-          const agentCaption = rawCaption ? cleanSocialCaption(rawCaption) : '';
-          // Keep whichever caption is longer (more content)
-          if (agentCaption.length > capturedCaption.length) capturedCaption = agentCaption;
-          if (agentResult.imageUrl && !capturedImageUrl) capturedImageUrl = agentResult.imageUrl;
-
-          if (agentCaption.length > 20 || !isPlaceholder(agentResult.ingredients)) {
-            progress(2, 'done', 'AI browser succeeded');
-          } else {
-            progress(2, 'failed', 'AI browser returned no recipe content');
-          }
-        } else {
-          progress(2, 'failed', 'AI browser unavailable (server may be cold-starting)');
-        }
-      } catch (err) {
-        progress(2, 'failed', `AI browser error: ${(err?.message || '').slice(0, 50)}`);
-      }
-    }
+    // -- Phase 2: AI Browser (server decommissioned -- always skip) --
+    // extractInstagramAgent was removed when server-side automation was decommissioned.
+    progress(2, 'skipped', 'AI browser unavailable (server decommissioned)');
   } // end phases 1+2
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Phase 3: Gemini AI structuring Ã¢â‚¬â€ ALWAYS runs on any captured text Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
@@ -4057,11 +3986,12 @@ export function detectImportType(url = '', initialText = '') {
   const u = String(url || '').toLowerCase();
   const t = String(initialText || '').toLowerCase();
 
-  // -- Strong URL hints â€” host and path --------------------------------------
+  // -- Strong URL hints — host and path --------------------------------------
   // Cocktail / liquor / bar publications
   const DRINK_HOSTS = /(?:^|\/\/)(?:www\.)?(?:liquor\.com|diffordsguide\.com|imbibemagazine\.com|punchdrink\.com|cocktailsdistilled\.com|tuxedono2\.com|drinkswithmommy\.com|garnishcocktails\.com|kindredcocktails\.com|thespruceeats\.com|cocktailparty\.com|tasteofhome\.com\/recipes\/cocktails)/i;
   if (DRINK_HOSTS.test(u)) return 'drink';
-  // URL path hints â€” "cocktail", "drink", "bar", "cocktails" slug anywhere
+
+  // URL path hints — "cocktail", "drink", "bar", "cocktails" slug anywhere
   if (/\/(cocktails?|drinks?|bar|mixology|bartender|spirits?|mocktails?|liqueurs?)(?:\/|-|_|$)/i.test(u)) {
     return 'drink';
   }
@@ -4070,40 +4000,17 @@ export function detectImportType(url = '', initialText = '') {
   if (MEAL_HOSTS.test(u)) return 'meal';
 
   // -- Keyword scan on URL path + accompanying text -------------------------
-  const haystack = ` `;
+  const haystack = `${u} ${t}`;
   const DRINK_WORDS = [
-    // Mixology verbs
     'shake', 'stir', 'muddle', 'strain', 'rim', 'garnish', 'build in glass',
-    // Units distinctive to cocktails
-    ' oz ', ' ml ', 'dash of', 'splash of', 'barspoon', 'jigger', 'float of',
-    // Spirits
-    'vodka', 'gin', 'rum', 'tequila', 'mezcal', 'whiskey', 'whisky', 'bourbon',
-    'scotch', 'rye', 'cognac', 'brandy', 'aperol', 'campari', 'vermouth',
-    'amaro', 'absinthe', 'liqueur', 'chartreuse', 'curaÃ§ao', 'triple sec',
-    'sherry', 'port wine', 'prosecco', 'champagne',
-    // Cocktail-specific nouns
-    'cocktail', 'mocktail', 'highball', 'old fashioned', 'martini', 'manhattan',
-    'daiquiri', 'margarita', 'negroni', 'mojito', 'spritz', 'sour', 'collins',
-    'bitters', 'simple syrup', 'coupe glass', 'rocks glass', 'nick and nora',
-  ];
-  const MEAL_WORDS = [
-    'bake', 'roast', 'sautÃ©', 'saute', 'simmer', 'boil', 'broil', 'grill',
-    'fry', 'deep-fry', 'preheat oven', 'knead', 'proof', 'marinate',
-    'casserole', 'lasagna', 'pasta', 'risotto', 'soup', 'stew', 'curry',
-    'sandwich', 'salad', 'dessert', 'cookie', 'cake', 'pie', 'bread',
-    'meatballs', 'stir-fry', 'stir fry', 'tacos', 'enchilada',
+    'oz', 'jigger', 'dash', 'bitters', 'vermouth', 'liqueur', 'whiskey', 'gin', 'rum', 'tequila', 'vodka'
   ];
 
-  let drinkScore = 0, mealScore = 0;
-  for (const w of DRINK_WORDS) if (haystack.includes(w)) drinkScore += 1;
-  for (const w of MEAL_WORDS) if (haystack.includes(w)) mealScore += 1;
+  // If any drink keywords appear in the URL or text, classify as drink
+  if (DRINK_WORDS.some(word => haystack.includes(word))) {
+    return 'drink';
+  }
 
-  // Weight: strong oz/dash/splash signal tips it drink-ward even with 1 hit
-  if (/\b\d+(?:\.\d+)?\s*oz\b/.test(haystack)) drinkScore += 2;
-  if (/\bdash(?:es)?\s+of\b/.test(haystack)) drinkScore += 1;
-
-  if (drinkScore > mealScore && drinkScore >= 2) return 'drink';
+  // Default fallback
   return 'meal';
 }
-
-

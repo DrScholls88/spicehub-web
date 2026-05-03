@@ -15,7 +15,9 @@ import {
   isWeakResult, 
   parseRecipeHybrid, 
   parseVisualJSON,
-  importRecipeFromUrl
+  importRecipeFromUrl,
+  importFromInstagram,
+  parseHtml
 } from '../recipeParser';
 import { fetchHtmlViaProxy, proxyImageUrl, cleanUrl } from '../api';
 import { queueRecipeImport } from '../db';
@@ -249,19 +251,54 @@ const toggleDeepMode = () => {
       try {
         setPhase('loading');
 
-        // 1. Determine URL to fetch
-        let fetchUrl = cleanUrl(url);
         const isInsta = /instagram\.com/i.test(url);
+
+        // ── Instagram: use the unified importFromInstagram engine ──────────────────
+        // This engine tries both /p/ and /reel/ embed URL patterns, extracts rawPageText
+        // as Gemini fallback, and runs Phase 3 (Gemini AI) on any captured text.
+        // Pipeline steps map to: Phase 0 = video subs (skipped), Phase 1 = embed,
+        // Phase 2 = AI browser (skipped), Phase 3 = Gemini structuring.
         if (isInsta) {
-          const match = url.match(/(?:p|reel)\/([A-Za-z0-9_-]+)/i);
-          if (match && match[1]) {
-            fetchUrl = `https://www.instagram.com/p/${match[1]}/embed/captioned/`;
+          // Initialise pipeline steps for display (Phase 0 and 2 are known-skipped)
+          setPipelineSteps([
+            { label: 'Video subtitles', status: 'skipped', message: 'Server unavailable' },
+            { label: 'Caption fetch',   status: 'pending',  message: '' },
+            { label: 'AI browser',      status: 'pending',  message: '' },
+            { label: 'AI structuring',  status: 'pending',  message: '' },
+          ]);
+          setPipelineMessage('Scanning Instagram post...');
+
+          const result = await importFromInstagram(url,
+            (phase, status, msg) => {
+              if (cancelled) return;
+              setPipelineSteps(prev => {
+                const next = [...prev];
+                if (next[phase]) next[phase] = { ...next[phase], status, message: msg || '' };
+                return next;
+              });
+              if (msg) setPipelineMessage(msg);
+            },
+            { type }
+          );
+
+          if (cancelled) return;
+
+          if (result && !result._needsManualCaption && !result._error) {
+            setAutoRecipe(cleanRecipe(result));
+            setPhase('preview');
+            return;
           }
+
+          // All phases exhausted — show manual paste fallback
+          setPipelineMessage('Could not extract recipe — please paste the caption manually.');
+          setPhase('manual');
+          return;
         }
 
-        setExtractionProgress({ step: 1, total: 3, message: isInsta ? 'Fetching Instagram post...' : 'Fetching page content...' });
-        
-        // 2. Fetch HTML via CORS proxy
+        // ── Non-Instagram: fetch HTML via CORS proxy, run AI, show iframe ──────────
+        let fetchUrl = cleanUrl(url);
+        setExtractionProgress({ step: 1, total: 3, message: 'Fetching page content...' });
+
         let html = '';
         try {
           html = await fetchHtmlViaProxy(fetchUrl, 35000);
@@ -271,12 +308,12 @@ const toggleDeepMode = () => {
 
         if (cancelled) return;
 
-        // If proxy failed or returned garbage, try to fallback to showing the live site 
-        // directly in the iframe (might be blocked by X-Frame-Options, but better than nothing)
+        // If proxy failed or returned garbage, fall back to direct iframe source
+        // (might be blocked by X-Frame-Options, but better than nothing)
         if (!html || html.length < 500) {
           console.log('[BrowserAssist] Proxy failed, falling back to direct iframe source');
-          setHtmlContent(''); // This will trigger the direct URL fallback in the render
-          setPhase('iframe'); // Use 'iframe' instead of 'showing' for consistency
+          setHtmlContent('');
+          setPhase('iframe');
           return;
         }
 
@@ -287,10 +324,20 @@ const toggleDeepMode = () => {
         const visibleText = stripHtmlToText(html);
         const imageUrls = extractImageUrlsFromHtml(html);
 
-        // 3. Fast path: If seedRecipe was provided (from ImportModal's synchronous parse), we don't re-parse JSON-LD.
-        // We just fall through to iframe so the user can visually scrape.
-        // If not, we try AI on the visible text.
+        // If seedRecipe was provided (from ImportModal's synchronous JSON-LD parse),
+        // skip re-parsing and go straight to the iframe for visual review.
         if (!seedRecipe) {
+          // JSON-LD short-circuit: try structured data first (fast, no AI cost).
+          // If we get a strong result with ≥3 ingredients, use it directly.
+          try {
+            const jsonLdRecipe = parseHtml(html, url);
+            if (!cancelled && jsonLdRecipe && !isWeakResult(jsonLdRecipe)) {
+              setAutoRecipe(cleanRecipe(jsonLdRecipe));
+              setPhase('preview');
+              return;
+            }
+          } catch { /* fall through to AI */ }
+
           setExtractionProgress({ step: 2, total: 3, message: '✨ AI analyzing full page...' });
           try {
             const aiRecipe = await structureWithAI(visibleText, { imageUrl: imageUrls[0] || '', sourceUrl: url });
@@ -299,11 +346,11 @@ const toggleDeepMode = () => {
               setPhase('preview');
               return;
             }
-          } catch { /* fall through */ }
+          } catch { /* fall through to iframe */ }
         }
 
         if (!cancelled) {
-          if (visibleText.length < 50 && !isInsta) {
+          if (visibleText.length < 50) {
             setErrorMsg('The website blocked access or requires JavaScript to load. Please use the "Paste Text" tab.');
             setPhase('error');
           } else {
@@ -2018,86 +2065,37 @@ function extractBestImageFromHtml(html) {
 }
 
 function stripHtml(html) {
+  if (!html) return '';
   return html
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<[^>]+>/g, ' ')
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'") // Fixed single quote entity
+    .replace(/&nbsp;/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
 
 function sanitizeHtmlForEmbed(html, baseUrl) {
-  let base = '';
-  try { base = new URL(baseUrl).origin; } catch { /* ignore */ }
+  if (!html) return '';
+  
+  let origin = '';
+  try {
+    origin = new URL(baseUrl).origin;
+  } catch (e) {
+    /* ignore invalid base URLs */
+  }
+
   return html
-    // â”€â”€ Script removal â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    // Remove complete <script>â€¦</script> blocks (inline and src-based).
-    .replace(/<script\b[\s\S]*?<\/script>/gi, '')
-    // Remove any orphaned opening <script> tags with no closing tag.
-    .replace(/<script\b[^>]*>/gi, '')
-    // â”€â”€ Block javascript: URI schemes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    // Rewrite href/src/action values that start with "javascript:" so they can't
-    // execute code even though we've enabled allow-scripts in the sandbox.
-    .replace(/\b(href|src|action)\s*=\s*(["']?)\s*javascript:/gi, '$1=$2data:text/plain,blocked:')
-    // â”€â”€ Noscript cleanup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    .replace(/<\/?noscript\b[^>]*>/gi, '')
-    // â”€â”€ Head injection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    .replace(
-      /<head([^>]*)>/i,
-      `<head$1>
-        <base href="${base}/" target="_blank">
-        <meta name="viewport" content="width=device-width,initial-scale=1">
-        <style>
-          body { font-family: system-ui, sans-serif !important; overflow-y: auto !important; }
-          * { max-width: 100% !important; }
-          .Caption, .EmbedCaption, [class*="Caption"] {
-            max-height: none !important;
-            overflow: visible !important;
-            -webkit-line-clamp: unset !important;
-          }
-        </style>`
-    );
-}
-
-function extractVisibleTextFromDoc(doc) {
-  const texts = [];
-  const iframeWindow = doc.defaultView;
-  const walk = (node) => {
-    if (node.nodeType === 3) {
-      const text = node.textContent?.trim();
-      if (text && text.length > 1) texts.push(text);
-    } else if (node.nodeType === 1) {
-      const tag = node.tagName.toLowerCase();
-      if (tag === 'script' || tag === 'style' || tag === 'noscript') return;
-      try {
-        const style = iframeWindow?.getComputedStyle?.(node);
-        if (style?.display === 'none' || style?.visibility === 'hidden') return;
-      } catch { /* include text anyway */ }
-      for (const child of node.childNodes) walk(child);
-    }
-  };
-  if (doc.body) walk(doc.body);
-  return texts.join('\n');
-}
-
-function extractImageUrlsFromDoc(doc) {
-  const candidates = [];
-  const seen = new Set();
-  const ogImg = doc.querySelector('meta[property="og:image"]');
-  if (ogImg?.content?.startsWith('http')) {
-    candidates.push({ url: ogImg.content, priority: 3 });
-    seen.add(ogImg.content);
-  }
-  for (const img of doc.querySelectorAll('img')) {
-    const src = img.src || img.getAttribute('data-src') || '';
-    if (!src || !src.startsWith('http') || seen.has(src)) continue;
-    seen.add(src);
-    if (/profile_pic|avatar|logo|icon|s\d{2,3}x\d{2,3}/i.test(src)) continue;
-    const w = img.naturalWidth || img.width || 0;
-    const h = img.naturalHeight || img.height || 0;
-    const priority = (w > 200 && h > 200) ? 2 : (w > 50 || h > 50) ? 1 : 0;
-    candidates.push({ url: src, priority });
-  }
-  return candidates.sort((a, b) => b.priority - a.priority).map(c => c.url).slice(0, 5);
+    // 1. Remove dangerous tags
+    .replace(/<(script|iframe|object|embed|style)[^>]*>([\s\S]*?)<\/\1>/gi, '')
+    // 2. Remove inline event handlers (onclick, etc)
+    .replace(/\son\w+="[^"]*"/g, '')
+    // 3. Fix relative URLs for images and links if origin exists
+    .replace(/(src|href)="\/([^"]+)"/g, (match, attr, path) => {
+      return origin ? `${attr}="${origin}/${path}"` : match;
+    });
 }
