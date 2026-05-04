@@ -529,62 +529,116 @@ async function _blobToValidatedDataUrl(resp, { maxBytes = 2 * 1024 * 1024, minBy
  * @returns {Promise<string|null>} data URL or null
  */
 export async function downloadImageAsDataUrl(imageUrl, opts = {}) {
-  if (!imageUrl || typeof imageUrl !== 'string' || !imageUrl.startsWith('http')) return null;
+  if (!imageUrl || typeof imageUrl !== 'string') return null;
   const { timeoutMs = 9000, maxBytes = 2 * 1024 * 1024 } = opts;
 
-  // ── Attempt 1: direct fetch (many CDNs now allow CORS for img-src) ──
+  // Try direct fetch first (may succeed for CORS-friendly hosts)
   try {
-    const resp = await fetchWithRetry(imageUrl, { mode: 'cors' }, { retries: 0, timeoutMs });
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs / 2);
+    const resp = await fetch(imageUrl, {
+      signal: ctrl.signal,
+      headers: { 'Accept': 'image/*' },
+    });
+    clearTimeout(timer);
     const dataUrl = await _blobToValidatedDataUrl(resp, { maxBytes });
     if (dataUrl) return dataUrl;
-  } catch { /* fall through */ }
+  } catch { /* fall through to proxy */ }
 
-  // ── Attempt 2: proxy cascade with retry ──
-  const tryProxies = [
-    `https://api.allorigins.win/raw?url=${encodeURIComponent(imageUrl)}`,
-    `https://corsproxy.io/?${encodeURIComponent(imageUrl)}`,
-    `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(imageUrl)}`,
-    `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(imageUrl)}`,
-  ];
-  for (const proxyUrl of tryProxies) {
-    const resp = await fetchWithRetry(proxyUrl, {}, { retries: 1, timeoutMs, backoffMs: 400 });
-    const dataUrl = await _blobToValidatedDataUrl(resp, { maxBytes });
-    if (dataUrl) return dataUrl;
+  // Fallback through proxy cascade
+  const html = await fetchHtmlViaProxy(imageUrl, timeoutMs);
+  if (html && html.startsWith('data:')) return html; // already a data URL
+
+  // Last resort: try via allorigins which might return image data
+  try {
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(imageUrl)}`;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs / 2);
+    const resp = await fetch(proxyUrl, { signal: ctrl.signal });
+    clearTimeout(timer);
+    return await _blobToValidatedDataUrl(resp, { maxBytes });
+  } catch { return null; }
+}
+
+// ── Import reliability: oEmbed + TikTok fetchers ──────────────────────────────
+
+/**
+ * Fetch Instagram oEmbed data via the Vercel proxy (uses FB_APP_TOKEN server-side).
+ * Returns { html, thumbnail_url, author_name } or null on failure/not-configured.
+ */
+export async function fetchInstagramOEmbed(url) {
+  try {
+    const proxyUrl = `/api/proxy?mode=instagram-oembed&url=${encodeURIComponent(url)}`;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10000);
+    const resp = await fetch(proxyUrl, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    if (data.error) {
+      console.log('[fetchInstagramOEmbed] Not configured or error:', data.error);
+      return null;
+    }
+    return data; // { html, thumbnail_url, author_name }
+  } catch (e) {
+    console.log('[fetchInstagramOEmbed] Failed:', e.message);
+    return null;
   }
-  return null;
 }
 
 /**
- * Download an Instagram CDN image through a CORS proxy and return a base64 data URL.
- * Returns the original URL if download fails (graceful degradation).
- * Caps at ~2 MB to avoid storing giant images.
- *
- * Uses the generic downloader under the hood but preserves the "return original
- * URL on failure" contract so existing callers don't break.
+ * Fetch Instagram post JSON via the ?__a=1 endpoint (server-side via proxy).
+ * Returns caption string or null. Works ~60% of the time.
+ * @param {string} shortcode - Instagram post shortcode (e.g. 'ABC123xyz')
  */
-export async function downloadInstagramImage(imageUrl) {
-  if (!imageUrl || !isInstagramCdnUrl(imageUrl)) return imageUrl;
-
-  const dataUrl = await downloadImageAsDataUrl(imageUrl, { timeoutMs: 8000, maxBytes: 2 * 1024 * 1024 });
-  if (dataUrl) {
-    const kb = Math.round((dataUrl.length * 3 / 4) / 1024);
-    console.log(`[SpiceHub] Downloaded Instagram image: ~${kb}KB → data URL`);
-    return dataUrl;
+export async function fetchInstagramJson(shortcode) {
+  try {
+    const proxyUrl = `/api/proxy?mode=instagram-json&shortcode=${encodeURIComponent(shortcode)}`;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10000);
+    const resp = await fetch(proxyUrl, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!resp.ok) return null;
+    const text = await resp.text();
+    let data;
+    try { data = JSON.parse(text); } catch { return null; }
+    // Extract caption from known JSON paths (Instagram changes these occasionally)
+    const caption =
+      data?.graphql?.shortcode_media?.edge_media_to_caption?.edges?.[0]?.node?.text ||
+      data?.items?.[0]?.caption?.text ||
+      data?.data?.shortcode_media?.edge_media_to_caption?.edges?.[0]?.node?.text ||
+      null;
+    return caption && caption.length > 15 ? caption : null;
+  } catch (e) {
+    console.log('[fetchInstagramJson] Failed:', e.message);
+    return null;
   }
-
-  console.log(`[SpiceHub] Could not download Instagram image — will use original URL`);
-  return imageUrl; // Graceful fallback: original URL (may 403 later, but better than nothing)
 }
 
-// ── Legacy exports (kept for backward compat, now no-ops or thin wrappers) ──
+/**
+ * Fetch TikTok oEmbed data (public endpoint, no auth required).
+ * Returns { title, author_name, thumbnail_url } or null on failure.
+ */
+export async function fetchTikTokOEmbed(url) {
+  try {
+    const proxyUrl = `/api/proxy?mode=tiktok-oembed&url=${encodeURIComponent(url)}`;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 10000);
+    const resp = await fetch(proxyUrl, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    if (data.error) return null;
+    return data; // { title, author_name, thumbnail_url, ... }
+  } catch (e) {
+    console.log('[fetchTikTokOEmbed] Failed:', e.message);
+    return null;
+  }
+}
 
-/** @deprecated Server no longer required. Returns false always. */
-export async function isServerAvailable() { return false; }
-
-/** @deprecated No-op. */
-export function resetServerAvailabilityCache() {}
-
-/** @deprecated Server extraction replaced by client-side. Returns unavailable. */
-export async function extractUrl(/* url */) {
-  return { ok: false, reason: 'server-unavailable' };
+/**
+ * Returns true if the URL is a TikTok video URL.
+ */
+export function isTikTokUrl(url) {
+  return /tiktok\.com/i.test(url);
 }

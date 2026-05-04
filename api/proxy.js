@@ -15,15 +15,24 @@ export const config = {
 // Sites known to require special handling
 const INSTAGRAM_HOST = /instagram\.com/i;
 
+const USER_AGENTS = [
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0',
+  'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
+];
+
 /**
  * Build realistic browser-like headers for a given URL.
  * This is critical — Allrecipes, NYTimes, etc. reject requests with bot-like headers.
  */
 function buildHeaders(targetUrl) {
   const isInsta = INSTAGRAM_HOST.test(targetUrl);
+  // Rotate UA every ~15 minutes to break bot-wall fingerprinting
+  const ua = USER_AGENTS[Math.floor(Date.now() / 900000) % USER_AGENTS.length];
 
   const base = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+    'User-Agent': ua,
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
     'Accept-Language': 'en-US,en;q=0.9',
     'Accept-Encoding': 'gzip, deflate, br',
@@ -38,7 +47,6 @@ function buildHeaders(targetUrl) {
   };
 
   if (isInsta) {
-    // Instagram needs these to not show login wall
     base['Referer'] = 'https://www.instagram.com/';
     base['sec-ch-ua'] = '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"';
     base['sec-ch-ua-mobile'] = '?0';
@@ -53,18 +61,110 @@ export default async function handler(req) {
   if (req.method !== 'GET') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
       status: 405,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
     });
   }
 
   const { searchParams } = new URL(req.url);
+
+  // ── Mode routing: special server-side API calls ──────────────────────────
+  const mode = searchParams.get('mode');
+
+  if (mode === 'instagram-oembed') {
+    const igUrl = searchParams.get('url');
+    if (!igUrl || (!igUrl.startsWith('https://www.instagram.com/') && !igUrl.startsWith('https://instagram.com/'))) {
+      return new Response(JSON.stringify({ error: 'Invalid Instagram URL' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+    const token = process.env.FB_APP_TOKEN || null;
+    if (!token) {
+      return new Response(JSON.stringify({ error: 'oEmbed not configured' }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+    try {
+      const oEmbedUrl = `https://graph.facebook.com/v18.0/instagram_oembed?url=${encodeURIComponent(igUrl)}&fields=html,thumbnail_url,author_name&access_token=${token}`;
+      const resp = await fetch(oEmbedUrl);
+      const json = await resp.text();
+      return new Response(json, {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    } catch (e) {
+      return new Response(JSON.stringify({ error: 'oEmbed fetch failed' }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+  }
+
+  if (mode === 'instagram-json') {
+    const shortcode = searchParams.get('shortcode');
+    if (!shortcode || !/^[A-Za-z0-9_-]+$/.test(shortcode)) {
+      return new Response(JSON.stringify({ error: 'Invalid shortcode' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+    try {
+      const jsonUrl = `https://www.instagram.com/p/${shortcode}/?__a=1&__d=dis`;
+      const resp = await fetch(jsonUrl, { headers: buildHeaders(jsonUrl) });
+      const text = await resp.text();
+      return new Response(text, {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    } catch (e) {
+      return new Response(JSON.stringify({ error: e.message }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+  }
+
+  if (mode === 'tiktok-oembed') {
+    const ttUrl = searchParams.get('url');
+    if (!ttUrl) {
+      return new Response(JSON.stringify({ error: 'Missing url parameter' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+    if (!ttUrl.startsWith('https://www.tiktok.com/')) {
+      return new Response(JSON.stringify({ error: 'Invalid TikTok URL' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+    try {
+      const oEmbedUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(ttUrl)}`;
+      const resp = await fetch(oEmbedUrl, {
+        headers: { 'User-Agent': USER_AGENTS[Math.floor(Date.now() / 900000) % USER_AGENTS.length], 'Accept': 'application/json' },
+      });
+      const json = await resp.text();
+      return new Response(json, {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    } catch (e) {
+      return new Response(JSON.stringify({ error: e.message }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+  }
+  // ── End mode routing ──────────────────────────────────────────────────────
+
   const targetUrl = searchParams.get('url');
 
   // Validate URL
   if (!targetUrl) {
     return new Response(JSON.stringify({ error: 'Missing url parameter' }), {
       status: 400,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
     });
   }
 
@@ -91,8 +191,14 @@ export default async function handler(req) {
   if (
     hostname === 'localhost' ||
     hostname === '127.0.0.1' ||
+    hostname === '0.0.0.0' ||
     hostname.startsWith('192.168.') ||
     hostname.startsWith('10.') ||
+    hostname.startsWith('172.16.') || hostname.startsWith('172.17.') ||
+    hostname.startsWith('172.18.') || hostname.startsWith('172.19.') ||
+    hostname.startsWith('172.2') || hostname.startsWith('172.30.') ||
+    hostname.startsWith('172.31.') ||
+    hostname.startsWith('169.254.') ||
     hostname.endsWith('.local')
   ) {
     return new Response(JSON.stringify({ error: 'Private addresses not allowed' }), {
