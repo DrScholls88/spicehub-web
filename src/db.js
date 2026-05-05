@@ -455,6 +455,11 @@ export async function clearInstagramCache() {
   }
 }
 
+// ── Generic import cache helpers (aliases over instagramCache for unified use) ──
+// Used by importFromInstagram and importFromTikTok in recipeParser.js.
+export const getCachedImport   = getCachedInstagramRecipe;
+export const setCachedImport   = cacheInstagramRecipe;
+
 export async function importPaprikaMeals(paprikaMeals) {
   try {
     const existing = await db.meals.toArray();

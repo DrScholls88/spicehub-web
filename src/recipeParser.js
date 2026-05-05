@@ -7,8 +7,8 @@
  *   2. CORS PROXY    Ã¢â€ â€™ fallback if server unreachable (limited for social media)
  *   3. CAPTION TEXT  Ã¢â€ â€™ 4-pass heuristic parser (used internally on extracted captions)
  */
-import { isInstagramCdnUrl, fetchHtmlViaProxy as fetchHtmlViaProxyFromApi, downloadImageAsDataUrl } from './api.js';
-import { cacheInstagramRecipe } from './db.js';
+import { isInstagramCdnUrl, fetchHtmlViaProxy as fetchHtmlViaProxyFromApi, downloadImageAsDataUrl, fetchInstagramOEmbed, fetchInstagramJson } from './api.js';
+import { getCachedImport, setCachedImport } from './db.js';
 import { isRedditUrl, isRedditPostUrl, tryRedditJson } from './scrapers/redditDiscovery.js';
 import { htmlToMarkdown, htmlLooksLikeRecipe } from './scrapers/markdownConverter.js';
 import { parseIngredient } from 'parse-ingredient';
@@ -3838,6 +3838,18 @@ export async function resolveShortUrl(url) {
 export async function importFromInstagram(url, onProgress = () => {}, { type = 'meal' } = {}) {
   const progress = (phase, status, msg) => onProgress(phase, status, msg);
 
+  // ── Cache check: return early if we already have a fresh result ──────────────
+  try {
+    const cached = await getCachedImport(url);
+    if (cached) {
+      progress(0, 'done',    'Loaded from cache');
+      progress(1, 'skipped', 'Cached');
+      progress(2, 'skipped', 'Cached');
+      progress(3, 'done',    'Recipe from cache!');
+      return cached;
+    }
+  } catch { /* cache miss or DB error — continue */ }
+
   // Placeholders to explicitly reject from any phase result
   const PLACEHOLDERS = [
     'See original post for ingredients', 'See original post for directions',
@@ -3850,28 +3862,57 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   const recipeToText = (r) => [
     r.name || '',
     ...(r.ingredients || []).filter(i => !PLACEHOLDERS.includes(i)),
-    ...(r.directions || []).filter(d => !PLACEHOLDERS.includes(d)),
+    ...(r.directions  || []).filter(d => !PLACEHOLDERS.includes(d)),
   ].filter(Boolean).join('\n');
 
-  let capturedCaption = '';
-  let capturedImageUrl = '';
-  let videoRecipe = null; // yt-dlp structured result (skip phases 1+2 if rich enough)
+  let capturedCaption   = '';
+  let capturedImageUrl  = '';
+  let videoRecipe       = null; // yt-dlp structured result (always null — server decommissioned)
 
   // -- Phase 0: yt-dlp video subtitles (server decommissioned -- always skip) --
-  // tryVideoExtraction was removed when server-side automation was decommissioned.
-  // Phase 1 (embed) + Phase 3 (Gemini) handle all extraction client-side.
-  progress(0, 'skipped', 'Server unavailable -- using embed + AI');
+  progress(0, 'skipped', 'Server unavailable — using embed + AI');
 
   // Track raw page text from embed as last-resort Gemini input
   let capturedRawPageText = '';
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Phase 1: Instagram embed page (skip if yt-dlp gave full content) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Phase 0.5: Instagram oEmbed API — fastest when FB_APP_TOKEN is configured ──
+  // Calls /api/proxy?mode=instagram-oembed on the Vercel edge function.
+  // Falls through silently if token not set (503) or oEmbed fails.
+  if (!capturedCaption) {
+    try {
+      const oembed = await fetchInstagramOEmbed(url);
+      if (oembed?.thumbnail_url && !capturedImageUrl) capturedImageUrl = oembed.thumbnail_url;
+      if (oembed?.html) {
+        // oEmbed HTML contains the post caption inside a <p> tag
+        const capMatch = oembed.html.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
+        if (capMatch) {
+          const raw = capMatch[1].replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').trim();
+          if (raw.length > 30) capturedCaption = cleanSocialCaption(raw);
+        }
+      }
+    } catch { /* oEmbed not configured or failed */ }
+  }
+
+  // ── Phase 0.75: Instagram JSON endpoint (?__a=1&__d=dis) — often blocked but worth trying ──
+  if (!capturedCaption) {
+    try {
+      const scMatch = url.match(/\/(p|reel|tv)\/([A-Za-z0-9_-]+)/);
+      if (scMatch) {
+        const jsonCaption = await fetchInstagramJson(scMatch[2]);
+        if (jsonCaption && jsonCaption.length > 30) {
+          capturedCaption = cleanSocialCaption(jsonCaption);
+        }
+      }
+    } catch { /* JSON endpoint blocked */ }
+  }
+
+  // ── Phase 1: Instagram embed page (CORS proxy path — main workhorse) ────────
   if (!videoRecipe) {
-    progress(1, 'running', 'Fetching Instagram captionÃ¢â‚¬Â¦');
+    progress(1, 'running', 'Fetching Instagram caption…');
     try {
       const embedData = await extractInstagramEmbed(url);
       if (embedData?.rawPageText && !embedData?.caption) {
-        // No clean caption but we have raw page text Ã¢â‚¬â€ save for Phase 3 Gemini fallback
+        // No clean caption but we have raw page text — save for Phase 3 Gemini fallback
         capturedRawPageText = embedData.rawPageText;
       }
       // Always capture image from embed data, regardless of caption
@@ -3884,35 +3925,56 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
         const isWeak = isCaptionWeak(capturedCaption);
         progress(1, 'done',
           capturedCaption
-            ? `Caption found${isWeak ? ' (thin Ã¢â‚¬â€ will try AI browser)' : ' Ã¢Å“â€œ'}`
+            ? `Caption found${isWeak ? ' (thin — will try AI browser)' : ' ✔'}`
             : 'Embed returned no text');
 
-        // Strong caption: skip AI browser, go straight to Phase 3
         if (capturedCaption && !isWeak) {
-          progress(2, 'skipped', 'Strong caption Ã¢â‚¬â€ skipping AI browser');
-          // Fall through to Phase 3
+          progress(2, 'skipped', 'Strong caption — skipping AI browser');
         }
-        // Weak caption: continue to Phase 2 (AI browser) to try to get more text
       } else if (embedData?.rawPageText) {
-        // No clean caption but embed returned raw page text Ã¢â‚¬â€ Phase 3 will try Gemini on it
-        progress(1, 'done', 'No caption Ã¢â‚¬â€ sending page content to Google AIÃ¢â‚¬Â¦');
+        progress(1, 'done', 'No caption — sending page content to Google AI…');
       } else {
-        progress(1, 'failed', 'Caption not found Ã¢â‚¬â€ will try AI browser');
+        // Embed returned nothing — try third-party viewers as fallback
+        const scMatch = url.match(/\/(p|reel|tv)\/([A-Za-z0-9_-]+)/);
+        if (scMatch && !capturedCaption) {
+          const shortcode = scMatch[2];
+          const viewers = [
+            `https://imginn.com/p/${shortcode}/`,
+            `https://picuki.com/media/${shortcode}`,
+          ];
+          for (const viewerUrl of viewers) {
+            try {
+              const vHtml = await fetchHtmlViaProxyFromApi(viewerUrl, 10000);
+              if (vHtml && vHtml.length > 200) {
+                const capMatch = vHtml.match(/<div[^>]*class="[^"]*caption[^"]*"[^>]*>([\s\S]*?)<\/div>/i)
+                  || vHtml.match(/<p[^>]*class="[^"]*caption[^"]*"[^>]*>([\s\S]*?)<\/p>/i);
+                if (capMatch) {
+                  const raw = capMatch[1].replace(/<[^>]+>/g, ' ').trim();
+                  if (raw.length > 50) {
+                    capturedCaption = cleanSocialCaption(raw);
+                    const imgMatch = vHtml.match(/<img[^>]*src="(https:\/\/[^"]*instagram[^"]*)"[^>]*>/i);
+                    if (imgMatch && !capturedImageUrl) capturedImageUrl = imgMatch[1];
+                    break;
+                  }
+                }
+              }
+            } catch { /* try next viewer */ }
+          }
+        }
+        if (!capturedCaption) {
+          progress(1, 'failed', 'Caption not found — will try AI browser');
+        }
       }
     } catch { progress(1, 'failed', 'Embed fetch failed'); }
 
     // -- Phase 2: AI Browser (server decommissioned -- always skip) --
-    // extractInstagramAgent was removed when server-side automation was decommissioned.
     progress(2, 'skipped', 'AI browser unavailable (server decommissioned)');
-  } // end phases 1+2
+  } // end phases 0.5–1+2
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Phase 3: Gemini AI structuring Ã¢â‚¬â€ ALWAYS runs on any captured text Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-  // Per unified plan: "Phase 3 is the always-run intelligence layer."
-  // Runs on: caption text, yt-dlp text, OR raw embed page text as last resort.
-
+  // ── Phase 3: Gemini AI structuring — ALWAYS runs on any captured text ────────
   // Last-resort: if we have zero text from all phases, try a raw proxy fetch of the URL
   if (!capturedCaption?.trim() && !capturedRawPageText?.trim()) {
-    progress(3, 'running', 'Ã¢Å“Â¨ Last resort Ã¢â‚¬â€ fetching page for AIÃ¢â‚¬Â¦');
+    progress(3, 'running', '✨ Last resort — fetching page for AI…');
     try {
       const rawHtml = await fetchHtmlViaProxyFromApi(url, 15000);
       if (rawHtml && rawHtml.length > 500) {
@@ -3933,52 +3995,61 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
 
   if (textForGemini) {
     if (!capturedCaption?.trim().length) {
-      progress(3, 'running', 'Ã¢Å“Â¨ Trying AI on raw page contentÃ¢â‚¬Â¦');
+      progress(3, 'running', '✨ Trying AI on raw page content…');
     } else {
-      progress(3, 'running', 'Ã¢Å“Â¨ Structuring recipe with GeminiÃ¢â‚¬Â¦');
+      progress(3, 'running', '✨ Structuring recipe with Gemini…');
     }
     try {
       const recipe = await captionToRecipe(textForGemini, { imageUrl: capturedImageUrl, sourceUrl: url, type });
-      if (recipe && !isPlaceholder(recipe.ingredients) && !isPlaceholder(recipe.directions)) {
+      // Use OR: accept if EITHER ingredients OR directions is non-placeholder
+      if (recipe && (!isPlaceholder(recipe.ingredients) || !isPlaceholder(recipe.directions))) {
         progress(3, 'done', 'Recipe structured successfully!');
-        return {
+        const finalRecipe = {
           ...recipe,
           imageUrl: capturedImageUrl || recipe.imageUrl,
           extractedVia: videoRecipe ? 'yt-dlp+ai' : 'caption-ai',
           sourceUrl: url,
           importedAt: new Date().toISOString(),
         };
+        try { await setCachedImport(url, finalRecipe); } catch { /* cache write failure is non-fatal */ }
+        return finalRecipe;
       }
-      // Gemini returned partial Ã¢â‚¬â€ try heuristic + merge with yt-dlp if available
+      // Gemini returned partial — try merge with yt-dlp if available
       if (videoRecipe && hasRecipeContent(videoRecipe)) {
         const merged = {
           ...videoRecipe,
           ...(recipe?.name ? { name: recipe.name } : {}),
           ingredients: !isPlaceholder(recipe?.ingredients) ? recipe.ingredients : videoRecipe.ingredients,
-          directions: !isPlaceholder(recipe?.directions) ? recipe.directions : videoRecipe.directions,
+          directions:  !isPlaceholder(recipe?.directions)  ? recipe.directions  : videoRecipe.directions,
         };
         if (hasRecipeContent(merged)) {
           progress(3, 'done', 'Recipe extracted from video!');
-          return { ...merged, imageUrl: capturedImageUrl || merged.imageUrl, extractedVia: 'yt-dlp', sourceUrl: url, importedAt: new Date().toISOString() };
+          const finalRecipe = { ...merged, imageUrl: capturedImageUrl || merged.imageUrl, extractedVia: 'yt-dlp', sourceUrl: url, importedAt: new Date().toISOString() };
+          try { await setCachedImport(url, finalRecipe); } catch { /* non-fatal */ }
+          return finalRecipe;
         }
       }
     } catch (err) {
-      // Gemini failed Ã¢â‚¬â€ fall back to yt-dlp result if available
+      // Gemini failed — fall back to yt-dlp result if available
       if (videoRecipe && hasRecipeContent(videoRecipe)) {
         progress(3, 'done', 'Using video extraction (AI unavailable)');
-        return { ...videoRecipe, imageUrl: capturedImageUrl || videoRecipe.imageUrl, extractedVia: 'yt-dlp', sourceUrl: url, importedAt: new Date().toISOString() };
+        const finalRecipe = { ...videoRecipe, imageUrl: capturedImageUrl || videoRecipe.imageUrl, extractedVia: 'yt-dlp', sourceUrl: url, importedAt: new Date().toISOString() };
+        try { await setCachedImport(url, finalRecipe); } catch { /* non-fatal */ }
+        return finalRecipe;
       }
     }
     progress(3, 'failed', 'AI could not structure a recipe from this post');
   } else if (videoRecipe && hasRecipeContent(videoRecipe)) {
-    // No caption text but yt-dlp gave us a full recipe Ã¢â‚¬â€ use it directly
+    // No caption text but yt-dlp gave us a full recipe — use it directly
     progress(3, 'done', 'Recipe from video subtitles!');
-    return { ...videoRecipe, imageUrl: capturedImageUrl || videoRecipe.imageUrl, extractedVia: 'yt-dlp', sourceUrl: url, importedAt: new Date().toISOString() };
+    const finalRecipe = { ...videoRecipe, imageUrl: capturedImageUrl || videoRecipe.imageUrl, extractedVia: 'yt-dlp', sourceUrl: url, importedAt: new Date().toISOString() };
+    try { await setCachedImport(url, finalRecipe); } catch { /* non-fatal */ }
+    return finalRecipe;
   } else {
     progress(3, 'failed', 'No text captured from any source');
   }
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Manual fallback Ã¢â‚¬â€ all phases exhausted Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Manual fallback — all phases exhausted ───────────────────────────────────
   return { _needsManualCaption: true, sourceUrl: url };
 }
 

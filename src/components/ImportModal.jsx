@@ -448,7 +448,8 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   // ── Browser Assist callbacks ───────────────────────────────────────────────────
   const handleBrowserAssistRecipe = (recipe) => {
     if (recipe) {
-      // Recipe successfully extracted from visible page
+      // Recipe successfully extracted from visible page — clear any stale error toast
+      setError('');
       setPreview([recipe]);
       setBrowserAssistMode('off');
       setSyncPhase('idle');
