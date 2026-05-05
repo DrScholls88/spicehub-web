@@ -67,7 +67,7 @@ export default async function handler(req) {
 
   const { searchParams } = new URL(req.url);
 
-  // ── Mode routing: special server-side API calls ──────────────────────────
+  // -- Mode routing: special server-side API calls --------------------------
   const mode = searchParams.get('mode');
 
   if (mode === 'instagram-oembed') {
@@ -156,7 +156,7 @@ export default async function handler(req) {
       });
     }
   }
-  // ── End mode routing ──────────────────────────────────────────────────────
+  // -- End mode routing -----------------------------------------------------
 
   const targetUrl = searchParams.get('url');
 
@@ -186,7 +186,7 @@ export default async function handler(req) {
     });
   }
 
-  // Block SSRF — prevent fetching internal/private addresses
+  // Block SSRF
   const hostname = parsedUrl.hostname;
   if (
     hostname === 'localhost' ||
@@ -217,16 +217,21 @@ export default async function handler(req) {
     const contentType = response.headers.get('content-type') || 'text/html';
     const html = await response.text();
 
+    // Pass through the target's actual HTTP status so the client can distinguish
+    // a successful fetch (2xx) from a bot-wall/auth block (403, 429, etc.).
+    // CORS headers are always included so the browser can read non-2xx bodies.
+    const targetStatus = response.status;
     return new Response(html, {
-      status: 200,
+      status: targetStatus,
       headers: {
         'Content-Type': contentType,
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET',
-        'X-Proxy-Status': String(response.status),
+        'X-Proxy-Status': String(targetStatus),
         'X-Proxy-Url': targetUrl,
-        // Cache successful fetches for 5 minutes on the edge to reduce origin hammering
-        'Cache-Control': 'public, max-age=300, s-maxage=300',
+        'Cache-Control': targetStatus === 200
+          ? 'public, max-age=300, s-maxage=300'
+          : 'no-store',
       },
     });
   } catch (err) {
