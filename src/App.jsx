@@ -134,7 +134,6 @@ export default function App() {
   useEffect(() => {
     loadMeals();
     loadDrinks();
-    pruneStaleCacheEntries();
     // Restore persisted week plan and grocery list
     loadWeekPlan().then(plan => { if (plan) setWeekPlan(plan); });
     loadGroceryList().then(items => { if (items) setGroceryItems(items); });
