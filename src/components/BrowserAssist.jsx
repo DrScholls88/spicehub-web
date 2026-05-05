@@ -289,8 +289,30 @@ const toggleDeepMode = () => {
             return;
           }
 
-          // All phases exhausted — show manual paste fallback
-          setPipelineMessage('Could not extract recipe — please paste the caption manually.');
+          // All phases exhausted — show manual paste fallback.
+          // If we DID capture a caption (embed worked but AI structuring failed),
+          // pre-fill the textarea so the user can parse with one click instead of
+          // re-pasting the whole post caption manually.
+          if (result?.capturedCaption && result.capturedCaption.trim().length > 20) {
+            setManualText(result.capturedCaption);
+            setPipelineMessage('Caption captured! AI structuring failed — tap "Parse Recipe" to retry.');
+            // Auto-trigger the heuristic parse immediately so user doesn't have
+            // to do anything — they'll see the preview or a helpful error.
+            try {
+              const autoParseRecipe = await captionToRecipe(result.capturedCaption, {
+                imageUrl: result.capturedImageUrl || '',
+                sourceUrl: url,
+                type,
+              });
+              if (!cancelled && autoParseRecipe && (autoParseRecipe.ingredients?.length || autoParseRecipe.directions?.length)) {
+                setAutoRecipe(cleanRecipe({ ...autoParseRecipe, imageUrl: result.capturedImageUrl || autoParseRecipe.imageUrl }));
+                setPhase('preview');
+                return;
+              }
+            } catch { /* heuristic parse failed — fall through to manual */ }
+          } else {
+            setPipelineMessage('Could not extract recipe — please paste the caption manually.');
+          }
           setPhase('manual');
           return;
         }

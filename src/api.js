@@ -96,10 +96,17 @@ export async function fetchHtmlViaProxy(url, timeoutMs = 30000) {
     clearTimeout(timer);
 
     if (resp.ok) {
-      const text = await resp.text();
-      if (text && text.length > 1000 && !text.includes('"error"')) {
-        console.log('[fetchHtmlViaProxy] ✅ Internal proxy succeeded');
-        return text;
+      // Check what the TARGET site actually returned (proxy always returns 200,
+      // but forwards the real status in X-Proxy-Status header).
+      const proxyStatus = parseInt(resp.headers.get('X-Proxy-Status') || '200', 10);
+      if (proxyStatus >= 400) {
+        console.log(`[fetchHtmlViaProxy] Internal proxy: target returned ${proxyStatus}, falling to public proxies`);
+      } else {
+        const text = await resp.text();
+        if (text && text.length > 1000 && !text.includes('"error"')) {
+          console.log('[fetchHtmlViaProxy] ✅ Internal proxy succeeded');
+          return text;
+        }
       }
     }
     console.log('[fetchHtmlViaProxy] Internal proxy returned empty/error, trying public proxies...');
@@ -108,11 +115,15 @@ export async function fetchHtmlViaProxy(url, timeoutMs = 30000) {
   }
 
   // ── 2. Public CORS proxy waterfall (secondary / local dev fallback) ────────────
+  // Ordered by observed reliability (codetabs and allorigins succeed most often).
+  // corsproxy.io often returns 403 for major recipe/social sites — kept but de-prioritized.
+  // proxy.cors.sh and cors.bridged.cc hit 429 rate limits quickly — kept as last resorts.
   const PUBLIC_PROXIES = [
+    (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
     (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
     (u) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
+    (u) => `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(u)}`,
     (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-    (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
     (u) => `https://proxy.cors.sh/${u}`,
     (u) => `https://cors.bridged.cc/${u}`,
   ];
@@ -133,30 +144,45 @@ export async function fetchHtmlViaProxy(url, timeoutMs = 30000) {
       });
       clearTimeout(timer);
 
-      if (resp.status === 403 || resp.status === 429 || !resp.ok) continue;
+         // If we get a 403 or 429, don't crash—just skip to the next proxy
+    if (resp.status === 403 || resp.status === 429 || !resp.ok) {
+      console.warn(`[Proxy skip] ${proxyUrl.split('/')[2]} returned ${resp.status}`);
+      continue; 
+    }
 
       let text = await resp.text();
 
-      // Unwrap allorigins /get JSON envelope
+      // Unwrap JSON-envelope proxies (allorigins /get returns {contents, status})
       if (proxyUrl.includes('allorigins.win/get')) {
-        try { const j = JSON.parse(text); if (j.contents) text = j.contents; } catch {}
+        try {
+          const j = JSON.parse(text);
+          // allorigins also exposes the original HTTP status — skip if target was blocked
+          if (j.status?.http_code && j.status.http_code >= 400) {
+            console.warn(`[Proxy skip] allorigins/get: target returned ${j.status.http_code}`);
+            continue;
+          }
+          if (j.contents) text = j.contents;
+        } catch (e) { /* ignore parse error */ }
       }
 
       if (!text || text.length < 1000) continue;
 
-      // Detect bot/login walls
+      // Detect bot/login walls — common patterns from Cloudflare, Instagram, Allrecipes
       const blocked =
         (text.includes('cloudflare') && text.includes('checking your browser')) ||
         text.includes('is_viewer_logged_in":false') ||
-        (text.includes('loginForm') && text.length < 35000);
+        (text.includes('loginForm') && text.length < 35000) ||
+        (text.includes('access denied') && text.length < 5000) ||
+        (text.includes('403 Forbidden') && text.length < 5000);
       if (blocked) continue;
 
       console.log(`[fetchHtmlViaProxy] ✅ Public proxy succeeded: ${proxyUrl.split('/')[2]}`);
       return text;
-    } catch {
-      // Try next
-    }
+  } catch (err) {
+    console.error("Proxy request failed:", err);
+    // Continue to next proxy in list
   }
+}
 
   console.warn('[fetchHtmlViaProxy] ❌ All proxies failed for:', targetUrl);
   return null;
@@ -600,45 +626,27 @@ export async function fetchInstagramJson(shortcode) {
     clearTimeout(timer);
     if (!resp.ok) return null;
     const text = await resp.text();
-    let data;
-    try { data = JSON.parse(text); } catch { return null; }
-    // Extract caption from known JSON paths (Instagram changes these occasionally)
-    const caption =
-      data?.graphql?.shortcode_media?.edge_media_to_caption?.edges?.[0]?.node?.text ||
-      data?.items?.[0]?.caption?.text ||
-      data?.data?.shortcode_media?.edge_media_to_caption?.edges?.[0]?.node?.text ||
-      null;
-    return caption && caption.length > 15 ? caption : null;
+    if (!text || text.length < 10) return null;
+
+    try {
+      const data = JSON.parse(text);
+      const media =
+        data?.graphql?.shortcode_media ||
+        data?.items?.[0] ||
+        data?.data?.shortcode_media ||
+        null;
+      if (!media) return null;
+      const captionEdges = media?.edge_media_to_caption?.edges;
+      if (Array.isArray(captionEdges) && captionEdges.length > 0) {
+        return captionEdges[0]?.node?.text || null;
+      }
+      const caption = media?.caption?.text || media?.caption || null;
+      return typeof caption === 'string' ? caption : null;
+    } catch {
+      return null;
+    }
   } catch (e) {
     console.log('[fetchInstagramJson] Failed:', e.message);
     return null;
   }
-}
-
-/**
- * Fetch TikTok oEmbed data (public endpoint, no auth required).
- * Returns { title, author_name, thumbnail_url } or null on failure.
- */
-export async function fetchTikTokOEmbed(url) {
-  try {
-    const proxyUrl = `/api/proxy?mode=tiktok-oembed&url=${encodeURIComponent(url)}`;
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 10000);
-    const resp = await fetch(proxyUrl, { signal: ctrl.signal });
-    clearTimeout(timer);
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    if (data.error) return null;
-    return data; // { title, author_name, thumbnail_url, ... }
-  } catch (e) {
-    console.log('[fetchTikTokOEmbed] Failed:', e.message);
-    return null;
-  }
-}
-
-/**
- * Returns true if the URL is a TikTok video URL.
- */
-export function isTikTokUrl(url) {
-  return /tiktok\.com/i.test(url);
 }

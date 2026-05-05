@@ -567,8 +567,13 @@ export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl
   } catch { /* fall through to server */ }
 
   try {
-    // Only try server structuring if we have a non-local server configured
-    const serverBase = typeof window !== 'undefined' && window.__SPICEHUB_SERVER__ ? window.__SPICEHUB_SERVER__ : null;
+    // Only try server structuring if we have a non-local server configured.
+    // Check window.__SPICEHUB_SERVER__ first (runtime override), then fall back to
+    // the VITE_SERVER_URL env var baked into the bundle at build time.
+    const serverBase =
+      (typeof window !== 'undefined' && window.__SPICEHUB_SERVER__)
+      || (typeof import.meta !== 'undefined' ? import.meta.env?.VITE_SERVER_URL : null)
+      || null;
     if (!serverBase) return null; // Skip server call in client-only mode
     const res = await fetch(`${serverBase}/api/structure-recipe`, {
       method: 'POST',
@@ -4050,7 +4055,15 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   }
 
   // ── Manual fallback — all phases exhausted ───────────────────────────────────
-  return { _needsManualCaption: true, sourceUrl: url };
+  // Pass back whatever we captured so BrowserAssist can pre-fill the manual textarea.
+  // capturedCaption may be a full recipe caption that just failed the AI step —
+  // handing it back lets the user hit "Parse" without having to re-paste anything.
+  return {
+    _needsManualCaption: true,
+    capturedCaption: capturedCaption || '',
+    capturedImageUrl: capturedImageUrl || '',
+    sourceUrl: url,
+  };
 }
 
 export function detectImportType(url = '', initialText = '') {
