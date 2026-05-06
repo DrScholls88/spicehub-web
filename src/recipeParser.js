@@ -302,6 +302,10 @@ export function cleanSocialCaption(text) {
   t = t.replace(/^(watch the full (video|reel|recipe)|see (the )?(full |original )?recipe|check (out )?(the )?(full |my )?recipe|full recipe (is |in |at |below|on)|recipe (is |in |at |below|available)|swipe (up|left|right) for|tap (the )?(link|here)|link in bio for).{0,80}$/gim, '');
 
   // 11. Normalize whitespace
+  // Instagram embed captions often encode original newlines as 3+ spaces (because
+  // the embed HTML strips <br> tags to spaces during extraction). Convert them to
+  // real newlines first so parseCaption can split sections correctly.
+  t = t.replace(/[ \t]{3,}/g, '\n');
   t = t.replace(/[ \t]{2,}/g, ' ');
   t = t.replace(/\n{3,}/g, '\n\n');
   t = t.replace(/^[\s,;|Ã‚Â·Ã¢â‚¬Â¢Ã¢â‚¬â€œÃ¢â‚¬â€]+$/gm, '');
@@ -632,8 +636,14 @@ export async function captionToRecipe(captionText, { title = '', imageUrl = '', 
     }
   } catch { /* fall through to heuristic */ }
 
-  // Heuristic fallback: parseCaption on cleaned text
-  const parsed = parseCaption(textForAI);
+  // Heuristic fallback: parseCaption on cleaned text.
+  // Pre-normalize: if the text has no newlines but has runs of 3+ spaces, those
+  // are almost certainly encoded newlines from an Instagram embed extraction. Convert
+  // them so parseCaption can split sections properly.
+  const textForParse = !textForAI.includes('\n') && /   /.test(textForAI)
+    ? textForAI.replace(/   +/g, '\n').replace(/[ \t]+/g, ' ')
+    : textForAI;
+  const parsed = parseCaption(textForParse);
   if (!parsed) return null;
 
   const name = parsed.title || title || '';
@@ -1299,9 +1309,18 @@ async function extractInstagramEmbed(url) {
     for (const re of captionPatterns) {
       const m = re.exec(html);
       if (m && m[1]) {
-        const text = m[1].replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&')
-          .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
-          .replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+        // Preserve line structure: convert block-level end tags and <br> to newlines
+        // BEFORE stripping all tags. Without this, a multi-line Instagram caption
+        // collapses to a single space-separated line and parseCaption can't split it.
+        const text = m[1]
+          .replace(/<br\s*\/?>/gi, '\n')
+          .replace(/<\/(?:p|div|li|tr|h[1-6])>/gi, '\n')
+          .replace(/<[^>]+>/g, '')          // strip remaining tags (no space insertion)
+          .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+          .replace(/[ \t]+/g, ' ')          // collapse horizontal whitespace only
+          .replace(/\n[ \t]+/g, '\n').replace(/[ \t]+\n/g, '\n') // trim line edges
+          .replace(/\n{3,}/g, '\n\n').trim();
         if (text && text.length > 15) { caption = text; break; }
       }
     }
