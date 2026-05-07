@@ -11949,9 +11949,9 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 280px;
+  min-height: 200px;          /* reduced: was 280px, could overflow on SE-size phones */
   gap: 14px;
-  padding: 28px 20px;
+  padding: 20px 16px;
   text-align: center;
 }
 
@@ -14847,22 +14847,48 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 }
 
 /* ── Preview screen: sticky-footer layout fix ─────────────────────────── */
-/* When the preview screen is active, turn the modal into a flex column   */
-/* so the recipe list scrolls inside it and the footer stays visible.     */
+/*                                                                         */
+/* Strategy: give the modal a definite height (dvh) when preview is open  */
+/* so flex children have a concrete parent dimension to fill. Without      */
+/* a definite height, flex: 1 children have nothing to measure against     */
+/* and content overflows the viewport — burying the footer on mobile.      */
+
 .modal-content:has(.ip-preview-screen) {
-  overflow: hidden;
+  /* Definite height = flex children can fill it reliably */
+  height: 92dvh;
+  max-height: 92dvh;
+  /* Flex column: header shrinks, list scrolls, footer anchors */
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   padding-bottom: 0;
+  /* No horizontal overflow from child elements */
+  overflow-x: hidden;
+}
+
+/* Modal header must not shrink when in flex column */
+.modal-content:has(.ip-preview-screen) > .modal-header {
+  flex-shrink: 0;
+}
+
+/* Error bar if visible */
+.modal-content:has(.ip-preview-screen) > .error-bar {
+  flex-shrink: 0;
+}
+
+/* BrowserAssist fallback header if visible */
+.modal-content:has(.ip-preview-screen) > div:not(.import-preview):not(.modal-header):not(.error-bar) {
+  flex-shrink: 0;
 }
 
 .ip-preview-screen {
   display: flex;
   flex-direction: column;
+  /* Fill available height in the modal flex column */
   flex: 1;
-  min-height: 0;
-  gap: 0;
+  min-height: 0;          /* required: allows flex child to shrink below content size */
   overflow: hidden;
+  overflow-x: hidden;
 }
 
 .ip-preview-screen .preview-header-bar {
@@ -14872,40 +14898,39 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 
 .ip-preview-screen .preview-detail-list {
   flex: 1;
+  min-height: 0;          /* required: allows this flex child to scroll */
   overflow-y: auto;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-  padding: 0 2px 12px;
-  /* Progressive fade at bottom hinting more content */
-  -webkit-mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
-  mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
+  padding: 0 2px 16px;
+  /* Subtle scroll hint — no mask (causes iOS paint issues) */
 }
 
 .ip-preview-screen .preview-addendum-bar {
   flex-shrink: 0;
-  padding: 6px 0 0;
+  padding: 4px 0 0;
 }
 
 /* ── Sticky footer for preview ─────────────────────────────────────────── */
+/* No negative margins, no position:sticky — the flex column              */
+/* naturally anchors it at the bottom once flex:1 list fills the space.   */
 .ip-preview-footer {
   flex-shrink: 0;
   display: flex;
   gap: 10px;
   align-items: center;
-  padding: 14px 20px;
-  padding-bottom: calc(14px + env(safe-area-inset-bottom));
-  background: rgba(255, 248, 240, 0.96);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  /* Horizontal padding matches modal (20px) + safe area bottom */
+  padding: 12px 0;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  background: var(--card);
   border-top: 1.5px solid var(--border);
-  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.06);
-  margin: 0 -20px;  /* bleed to modal edges */
-  position: sticky;
-  bottom: 0;
-  z-index: 20;
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.05);
+  /* z-index not needed — normal flow keeps it above list */
 }
 
 .ip-preview-footer .btn-secondary {
   flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .ip-preview-footer .btn-primary {
@@ -14915,6 +14940,8 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   padding: 14px 20px;
   border-radius: 14px;
   letter-spacing: 0.01em;
+  /* Ensure it can never be wider than screen */
+  min-width: 0;
 }
 
 /* ── Pipeline loading container ─────────────────────────────────────────── */
@@ -14924,9 +14951,14 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   gap: 0;
   background: #fff;
   border-radius: 20px;
-  overflow: hidden;
+  overflow: hidden;           /* clips the pulse-ring bleed */
+  overflow-x: hidden;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08), 0 1px 4px rgba(0, 0, 0, 0.04);
   animation: ip-fade-up 0.3s var(--ease-spring) both;
+  /* Full-width on mobile without horizontal scroll */
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 /* ── Platform header ───────────────────────────────────────────────────── */
@@ -14937,6 +14969,9 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   padding: 18px 18px 14px;
   background: linear-gradient(135deg, #fff8f0 0%, #fff3e0 100%);
   border-bottom: 1px solid rgba(230, 81, 0, 0.1);
+  /* Prevent long URLs from overflowing the card horizontally */
+  overflow: hidden;
+  min-width: 0;
 }
 
 .ip-platform-badge {
@@ -14950,15 +14985,19 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   flex-shrink: 0;
   box-shadow: 0 4px 12px rgba(230, 81, 0, 0.3);
   position: relative;
+  /* Contain the pulse-ring animation inside the pipeline header */
+  overflow: visible;
 }
 
 .ip-platform-badge::after {
   content: '';
   position: absolute;
-  inset: -4px;
-  border-radius: 18px;
-  border: 2px solid rgba(230, 81, 0, 0.2);
+  inset: -6px;
+  border-radius: 20px;
+  border: 2px solid rgba(230, 81, 0, 0.18);
   animation: ip-pulse-ring 2.5s ease-in-out infinite;
+  /* Pointer events off so it can't widen the containing block */
+  pointer-events: none;
 }
 
 .ip-platform-badge svg {
@@ -15094,6 +15133,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
 }
 
 /* ── Status variants ───────────────────────────────────────────────────── */
@@ -15219,11 +15259,15 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   background: #fff;
   border-radius: 20px;
   overflow: hidden;
+  overflow-x: hidden;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
   animation: ip-fade-up 0.3s var(--ease-spring) both;
   display: flex;
   flex-direction: column;
   gap: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .ip-manual-hero {
@@ -15284,6 +15328,12 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   text-decoration: none;
   transition: background 0.15s, border-color 0.15s;
   touch-action: manipulation;
+  /* Prevent long URLs from overflowing */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* Minimum touch target height */
+  min-height: 44px;
 }
 
 .ip-manual-open-link:hover {
@@ -15684,5 +15734,187 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   .ip-step-spinner,
   .ip-generic-spinner {
     animation: none !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   IMPORT PIPELINE — MOBILE RESPONSIVE FIXES
+   Targets: small phones (≤480px), mid phones (≤640px), all touch devices
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Global overflow guard for modal on mobile ──────────────────────────── */
+/* Prevents ANY child from causing horizontal scroll within the modal.      */
+.modal-content.import-modal {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+/* ── Preview screen on small phones ─────────────────────────────────────── */
+@media (max-width: 480px) {
+  /* Use full viewport height on very small screens */
+  .modal-content:has(.ip-preview-screen) {
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;   /* full-screen sheet, no rounded top corners */
+  }
+
+  /* Tighten up preview header to save vertical space */
+  .ip-preview-screen .preview-header-bar {
+    padding: 2px 0 8px;
+  }
+
+  /* Larger, easier-to-tap footer buttons */
+  .ip-preview-footer {
+    padding: 10px 0;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+    gap: 8px;
+  }
+
+  .ip-preview-footer .btn-primary {
+    padding: 14px 16px;
+    font-size: 15px;
+  }
+
+  .ip-preview-footer .btn-secondary {
+    padding: 14px 12px;
+    font-size: 13px;
+  }
+
+  /* Tighten pipeline card on narrow screens */
+  .ip-pipeline-head {
+    padding: 14px 14px 12px;
+    gap: 12px;
+  }
+
+  .ip-platform-badge {
+    width: 40px;
+    height: 40px;
+    border-radius: 11px;
+    flex-shrink: 0;
+  }
+
+  .ip-platform-badge svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .ip-pipeline-title {
+    font-size: 14px;
+  }
+
+  .ip-step {
+    padding: 0 14px;
+  }
+
+  .ip-step-body {
+    padding: 10px 0 10px 10px;
+  }
+
+  .ip-step-label {
+    font-size: 13px;
+  }
+
+  /* Manual card on narrow screens */
+  .ip-manual-hero {
+    padding: 14px 14px 12px;
+  }
+
+  .ip-manual-steps {
+    padding: 12px 14px;
+  }
+
+  .ip-manual-textarea-wrap {
+    padding: 10px 14px 0;
+  }
+
+  .ip-manual-actions {
+    padding: 12px 14px 14px;
+  }
+
+  .ip-tried-details {
+    padding: 0 14px 12px;
+  }
+}
+
+/* ── Mid-size phones (481–640px): minor touch-up ────────────────────────── */
+@media (min-width: 481px) and (max-width: 640px) {
+  .modal-content:has(.ip-preview-screen) {
+    height: 96dvh;
+    max-height: 96dvh;
+  }
+}
+
+/* ── Ensure drag handles are always large enough to grab on touch ─────────── */
+@media (hover: none) and (pointer: coarse) {
+  /* Touch device: boost minimum target sizes */
+  .drag-handle {
+    width: 48px;
+    min-width: 48px;
+    height: 56px;
+  }
+
+  .preview-remove-btn {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+  }
+
+  .preview-move-btn {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+  }
+
+  /* Bigger Add/Remove buttons in sections */
+  .preview-add-btn {
+    padding: 4px 12px;
+    font-size: 12px;
+    min-height: 32px;
+  }
+
+  /* Pipeline skip button easier to tap */
+  .ip-skip-btn {
+    min-height: 44px;
+    padding: 10px 16px;
+  }
+
+  /* Manual parse button already full-width, just ensure min height */
+  .ip-parse-btn {
+    min-height: 52px;
+  }
+
+  .ip-manual-skip-btn {
+    min-height: 48px;
+  }
+
+  /* Open-in-browser link */
+  .ip-manual-open-link {
+    min-height: 48px;
+    align-items: center;
+  }
+}
+
+/* ── Safe-area inset: iPhone notch / Dynamic Island ─────────────────────── */
+/* Already handled inline with env(safe-area-inset-bottom) in ip-preview-footer */
+
+/* ── Landscape on phone: tighten vertical rhythm ────────────────────────── */
+@media (max-height: 500px) and (orientation: landscape) {
+  .modal-content:has(.ip-preview-screen) {
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+
+  .ip-preview-screen .preview-header-bar {
+    display: none; /* hide "Preview — N recipes found" to save space */
+  }
+
+  .ip-preview-footer {
+    padding: 8px 0;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom));
+  }
+
+  .ip-pipeline-head {
+    padding: 10px 14px;
   }
 }
