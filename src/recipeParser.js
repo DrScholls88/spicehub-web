@@ -1389,15 +1389,26 @@ async function extractInstagramEmbed(url) {
     // Extract image — prefer post-specific URLs (display_url is the actual food photo)
     // over og:image which Instagram sometimes sets to the profile avatar in embed pages.
     let imageUrl = '';
+    // Patterns in priority order — display_url is the actual food photo.
+    // Profile avatar patterns are explicitly rejected below.
     const postImgPatterns = [
-      /"display_url"\s*:\s*"(https:[^"]+)"/i,         // post image in JSON payload (best)
-      /"thumbnail_src"\s*:\s*"(https:[^"]+)"/i,       // fallback post image
-      /<img[^>]+src="(https:\/\/[^"]*instagram[^"]*\/[^"]*_n\.jpg[^"]*)"/i, // named post image
-      /<img[^>]+src="(https:\/\/scontent[^"]+)"/i,    // scontent CDN image
+      /"display_url"\s*:\s*"(https:[^"]+)"/i,
+      /"thumbnail_src"\s*:\s*"(https:[^"]+)"/i,
+      /display_url":"(https:[^"]+)"/i,
+      /<img[^>]+src="(https:\/\/[^"]*(?:scontent|fbcdn|cdninstagram)[^"]*_n\.jpg[^"]*)"/i,
+      /<img[^>]+src="(https:\/\/scontent[^"]+)"/i,
+      /<img[^>]+src="(https:\/\/[^"]*instagram[^"]*\/[^"]*_n\.jpg[^"]*)"/i,
     ];
     for (const re of postImgPatterns) {
       const m = re.exec(html);
-      if (m) { imageUrl = m[1].replace(/&amp;/g, '&').replace(/\\u0026/g, '&'); break; }
+      if (m) {
+        const candidate = m[1].replace(/&amp;/g, '&').replace(/\\u0026/g, '&');
+        // Skip profile pics / avatars — these are account images, not food photos
+        if (!/profile_pic|avatar|accounts\/avatars|[?&]s=150|150x150|s150x150/.test(candidate)) {
+          imageUrl = candidate;
+          break;
+        }
+      }
     }
     // Only fall back to og:image if no post-specific image found
     if (!imageUrl) imageUrl = extractMeta(html, 'og:image') || '';
@@ -3939,7 +3950,14 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   if (!capturedCaption) {
     try {
       const oembed = await fetchInstagramOEmbed(url);
-      if (oembed?.thumbnail_url && !capturedImageUrl) capturedImageUrl = oembed.thumbnail_url;
+      // NOTE: oembed.thumbnail_url is the profile avatar, NOT the food photo.
+      // Save it only as a low-priority fallback — the embed HTML's display_url (Phase 1)
+      // is the actual post image and must be allowed to override this.
+      if (oembed?.thumbnail_url && !capturedImageUrl) {
+        // Store separately — Phase 1 will overwrite if it finds a post-specific image
+        capturedImageUrl = oembed.thumbnail_url;
+        capturedImageUrl.__isOembedThumb = true; // mark as low-priority
+      }
       if (oembed?.html) {
         // oEmbed HTML contains the post caption inside a <p> tag
         const capMatch = oembed.html.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
@@ -3974,7 +3992,15 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
         capturedRawPageText = embedData.rawPageText;
       }
       // Always capture image and title from embed data, regardless of caption
-      if (embedData?.imageUrl && !capturedImageUrl) capturedImageUrl = embedData.imageUrl;
+      // display_url / scontent images from extractInstagramEmbed are post-specific
+      // food photos — always prefer them over the oEmbed profile avatar.
+      if (embedData?.imageUrl) {
+        const isPostSpecific = /scontent|fbcdn|cdninstagram|display_url/.test(embedData.imageUrl)
+          || embedData.imageUrl.includes('_n.jpg');
+        if (isPostSpecific || !capturedImageUrl) {
+          capturedImageUrl = embedData.imageUrl;
+        }
+      }
       if (embedData?.title && !capturedTitle) capturedTitle = embedData.title;
 
       if (embedData?.caption) {
