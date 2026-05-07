@@ -14854,16 +14854,17 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 /* and content overflows the viewport — burying the footer on mobile.      */
 
 .modal-content:has(.ip-preview-screen) {
-  /* Definite height = flex children can fill it reliably */
-  height: 92dvh;
-  max-height: 92dvh;
-  /* Flex column: header shrinks, list scrolls, footer anchors */
+  /* Explicit height gives flex children a concrete dimension to fill.
+     We use vh (not dvh) because Android Chrome's address bar causes dvh
+     to jump as users scroll — vh is stable: it's the total viewport
+     height and doesn't change as the browser UI shows/hides. */
+  height: 92vh;
+  max-height: 92vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  padding-bottom: 0;
-  /* No horizontal overflow from child elements */
   overflow-x: hidden;
+  padding-bottom: 0;
 }
 
 /* Modal header must not shrink when in flex column */
@@ -15751,11 +15752,11 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 
 /* ── Preview screen on small phones ─────────────────────────────────────── */
 @media (max-width: 480px) {
-  /* Use full viewport height on very small screens */
+  /* Full-screen sheet on very small phones — 100vh is safest cross-browser */
   .modal-content:has(.ip-preview-screen) {
-    height: 100dvh;
-    max-height: 100dvh;
-    border-radius: 0;   /* full-screen sheet, no rounded top corners */
+    height: 100vh;
+    max-height: 100vh;
+    border-radius: 0;
   }
 
   /* Tighten up preview header to save vertical space */
@@ -15839,8 +15840,8 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 /* ── Mid-size phones (481–640px): minor touch-up ────────────────────────── */
 @media (min-width: 481px) and (max-width: 640px) {
   .modal-content:has(.ip-preview-screen) {
-    height: 96dvh;
-    max-height: 96dvh;
+    height: 96vh;
+    max-height: 96vh;
   }
 }
 
@@ -15900,8 +15901,8 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 /* ── Landscape on phone: tighten vertical rhythm ────────────────────────── */
 @media (max-height: 500px) and (orientation: landscape) {
   .modal-content:has(.ip-preview-screen) {
-    height: 100dvh;
-    max-height: 100dvh;
+    height: 100vh;
+    max-height: 100vh;
     border-radius: 0;
   }
 
@@ -15917,4 +15918,420 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   .ip-pipeline-head {
     padding: 10px 14px;
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   IMPORT UX POLISH — v3
+   Addresses: cramped sections, tiny targets, weak hierarchy, clunky layout.
+   Strategy: override specific properties — no full rewrites that could break
+   existing drag-drop logic.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Modal header: more compact when showing preview (save vertical space) ── */
+.modal-content:has(.ip-preview-screen) .modal-header {
+  padding-bottom: 12px;
+}
+
+.modal-content:has(.ip-preview-screen) .modal-header h2 {
+  font-size: 17px;
+}
+
+/* ── Preview card: cleaner, less border noise ────────────────────────────── */
+.preview-detail-card {
+  border-radius: 18px;
+  border: 1px solid rgba(232, 226, 216, 0.8);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.04);
+  overflow: visible;   /* allow drop-active transform to not clip */
+}
+
+/* ── Photo + title header: taller image, full-width strip feel ───────────── */
+.preview-detail-header {
+  padding: 14px 14px 12px;
+  gap: 12px;
+  align-items: center;
+  background: linear-gradient(135deg, #fffdf9 0%, #fff8f0 100%);
+  border-radius: 18px 18px 0 0;
+}
+
+.preview-detail-thumb {
+  width: 88px;
+  height: 88px;
+  border-radius: 14px;
+  object-fit: cover;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.14);
+}
+
+.preview-detail-no-img {
+  width: 88px;
+  height: 88px;
+  border-radius: 14px;
+  background: linear-gradient(145deg, #f5ece0, #e8d9c8);
+  border: 1px dashed rgba(160, 120, 70, 0.25);
+  font-size: 28px;
+}
+
+/* ── Title input: stands out, feels like editing a recipe name ───────────── */
+.preview-title-input {
+  font-size: 17px;
+  font-weight: 700;
+  padding: 10px 13px;
+  border-radius: 11px;
+  line-height: 1.3;
+  /* Warm, food-y background when idle */
+  background: rgba(255, 252, 245, 0.9);
+  border-color: rgba(230, 81, 0, 0.15);
+}
+
+/* ── Section labels: bigger, breathable, with a line accent ─────────────── */
+.preview-label {
+  font-size: 10.5px;
+  letter-spacing: 0.9px;
+  padding: 12px 14px 8px;
+  color: #b05c20;
+  margin-bottom: 2px;
+}
+
+/* ── Sections: visual breathing room and subtle backgrounds ──────────────── */
+.preview-detail-section {
+  padding: 0 0 10px;
+  border-top: 1px solid #f0ece5;
+  border-radius: 0;
+  margin: 0;
+}
+
+/* Ingredients section — warm tint */
+.preview-detail-section:nth-of-type(1) {
+  background: linear-gradient(180deg, rgba(255, 248, 240, 0.6) 0%, transparent 40px);
+}
+
+/* Directions section — slightly cooler tint */
+.preview-detail-section:nth-of-type(2) {
+  background: linear-gradient(180deg, rgba(240, 248, 255, 0.5) 0%, transparent 40px);
+}
+
+/* Last section (source/notes) */
+.preview-detail-section:last-of-type {
+  border-bottom: none;
+  padding-bottom: 14px;
+}
+
+/* ── Editable rows: taller, easier to tap ───────────────────────────────── */
+.preview-editable-list {
+  gap: 6px;
+  padding: 0 10px 4px;
+}
+
+.preview-editable-row {
+  gap: 4px;
+  padding: 3px 2px;
+  min-height: 48px;    /* guaranteed tap target height */
+}
+
+.preview-editable-row input {
+  min-height: 44px;
+  font-size: 14px;
+  padding: 9px 11px;
+  border-radius: 10px;
+}
+
+.preview-editable-row textarea {
+  min-height: 48px;
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 10px 11px;
+  border-radius: 10px;
+}
+
+/* ── Step numbers: cleaner, doesn't crowd the textarea ─────────────────── */
+.preview-step-num {
+  width: 24px;
+  height: 24px;
+  font-size: 11px;
+  font-weight: 800;
+  margin-top: 11px;   /* align with first line of textarea */
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(230, 81, 0, 0.2);
+}
+
+/* ── Remove button: right-side, easier to find ──────────────────────────── */
+.preview-remove-btn {
+  width: 30px;
+  height: 30px;
+  min-width: 30px;
+  border-radius: 8px;
+  font-size: 11px;
+  flex-shrink: 0;
+  background: transparent;
+  color: #c0bab4;
+  transition: background 0.15s, color 0.15s;
+}
+
+.preview-remove-btn:hover {
+  background: #fff0f0;
+  color: #e53935;
+}
+
+/* ── Move button: cleaner icon ──────────────────────────────────────────── */
+.preview-move-btn {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  border-radius: 10px;
+  font-size: 14px;
+  background: transparent;
+  border-color: transparent;
+  color: #bbb;
+}
+
+.preview-move-btn:hover {
+  background: #f0f7ff;
+  color: #1976d2;
+  border-color: #bbdefb;
+}
+
+/* ── Add item button: larger, more visible ──────────────────────────────── */
+.preview-add-btn {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  min-height: 28px;
+  white-space: nowrap;
+}
+
+/* ── Empty drop zones: more inviting ────────────────────────────────────── */
+.preview-empty-drop {
+  margin: 6px 10px 8px;
+  padding: 18px 12px;
+  border-radius: 14px;
+  font-size: 13px;
+  background: #fdf8f2;
+}
+
+/* ── Source URL row: subtle, out of the way ─────────────────────────────── */
+.preview-source-input {
+  width: calc(100% - 28px);
+  margin: 0 14px;
+  font-size: 12px;
+  color: #aaa;
+  border-color: #ede8e0;
+  border-radius: 8px;
+  padding: 7px 10px;
+}
+
+/* ── Notes section: cleaner ─────────────────────────────────────────────── */
+.preview-notes-textarea {
+  width: calc(100% - 28px);
+  margin: 0 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  border-color: #ede8e0;
+  border-radius: 10px;
+  padding: 9px 11px;
+  background: #fdfaf5;
+  resize: none;
+  min-height: 36px;
+  transition: min-height 0.2s ease, border-color 0.15s;
+}
+
+.preview-notes-textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+  min-height: 72px;
+  box-shadow: 0 0 0 3px rgba(230, 81, 0, 0.08);
+}
+
+/* ── Preview footer buttons: bolder, finger-friendly ────────────────────── */
+.ip-preview-footer {
+  gap: 10px;
+  padding: 12px 0;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+}
+
+.ip-preview-footer .btn-secondary {
+  padding: 13px 14px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 12px;
+  min-height: 48px;
+  color: var(--text-light);
+  background: transparent;
+  border: 1.5px solid var(--border);
+}
+
+.ip-preview-footer .btn-primary {
+  padding: 14px 20px;
+  font-size: 16px;
+  font-weight: 700;
+  border-radius: 14px;
+  min-height: 52px;
+  background: linear-gradient(135deg, #e65100 0%, #ff6d00 100%);
+  box-shadow: 0 4px 16px rgba(230, 81, 0, 0.3);
+  border: none;
+  letter-spacing: 0.01em;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.ip-preview-footer .btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(230, 81, 0, 0.4);
+}
+
+.ip-preview-footer .btn-primary:active {
+  transform: scale(0.97);
+  box-shadow: 0 2px 8px rgba(230, 81, 0, 0.25);
+}
+
+/* ── Addendum bar: less space-hungry ────────────────────────────────────── */
+.preview-addendum-bar {
+  padding: 4px 0 0;
+}
+
+.btn-add-addendum {
+  font-size: 13px;
+  padding: 8px 14px;
+  min-height: 36px;
+  width: 100%;
+  text-align: center;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.btn-add-addendum:hover {
+  background: #fff3e0;
+  color: var(--primary);
+  border-color: rgba(230, 81, 0, 0.3);
+}
+
+/* ── Preview count/header bar: cleaner ──────────────────────────────────── */
+.preview-header-bar {
+  padding: 2px 0 8px;
+  gap: 10px;
+}
+
+.preview-header-bar h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-light);
+  letter-spacing: 0;
+}
+
+/* ── Confidence badges: subtle, not alarming ─────────────────────────────── */
+.confidence-badge {
+  font-size: 10.5px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.confidence-badge.confidence-high   { background: #e8f5e9; color: #2e7d32; }
+.confidence-badge.confidence-medium { background: #fff3e0; color: #e65100; }
+.confidence-badge.confidence-low    { background: #fce4ec; color: #c62828; }
+
+/* ── URL import tab: cleaner, less cluttered ─────────────────────────────── */
+.import-section {
+  padding-top: 4px;
+}
+
+/* ── Import tabs: cleaner spacing ───────────────────────────────────────── */
+.import-tabs {
+  margin-bottom: 16px;
+  gap: 4px;
+}
+
+.import-tabs button {
+  padding: 9px 14px;
+  font-size: 13px;
+  border-radius: 10px;
+  min-height: 40px;
+  font-weight: 500;
+}
+
+.import-tabs button.active {
+  font-weight: 700;
+}
+
+/* ── Social detected bar: slimmer ───────────────────────────────────────── */
+.social-detected-bar {
+  margin: 8px 0;
+  padding: 10px 14px;
+}
+
+/* ── BrowserAssist loading card: consistent with ip- palette ────────────── */
+.browser-assist-loading {
+  min-height: 200px;
+  padding: 24px 16px;
+  gap: 12px;
+}
+
+/* ── Drag handles: more prominent dot-grid on touch ─────────────────────── */
+@media (hover: none) and (pointer: coarse) {
+  .drag-handle {
+    width: 48px;
+    min-width: 48px;
+    height: 54px;
+    background: rgba(0, 0, 0, 0.03);
+    border-radius: 8px;
+  }
+
+  .drag-handle::after {
+    background-image: radial-gradient(circle, #bbb 2px, transparent 2px);
+    background-size: 6px 6px;
+    width: 18px;
+    height: 18px;
+  }
+
+  /* Larger inputs on touch */
+  .preview-editable-row input {
+    min-height: 48px;
+    font-size: 15px;
+  }
+
+  .preview-editable-row textarea {
+    min-height: 52px;
+    font-size: 15px;
+  }
+}
+
+/* ── Carousel image picker: cleaner ─────────────────────────────────────── */
+.carousel-picker {
+  border-top: 1px solid #f0ece5;
+  padding: 10px 0;
+}
+
+.carousel-picker-strip {
+  display: flex;
+  gap: 8px;
+  padding: 4px 14px 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.carousel-picker-thumb {
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 2.5px solid transparent;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+
+.carousel-picker-thumb.selected {
+  border-color: var(--primary);
+  transform: scale(1.06);
+  box-shadow: 0 2px 10px rgba(230, 81, 0, 0.3);
+}
+
+/* ── Misplaced hint badges: smaller, less alarming ──────────────────────── */
+.misplaced-hint {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  white-space: nowrap;
 }
