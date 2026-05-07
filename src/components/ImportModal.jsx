@@ -450,7 +450,30 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     if (recipe) {
       // Recipe successfully extracted from visible page — clear any stale error toast
       setError('');
-      setPreview([recipe]);
+
+      // Auto-sort immediately so user sees a clean ingredient / direction split
+      // without having to press the ⚡ Auto-Sort button manually.
+      let finalRecipe = recipe;
+      const allItems = [
+        ...(recipe.ingredients || []),
+        ...(recipe.directions  || []),
+      ].filter(item => item && item.trim());
+      if (allItems.length > 0) {
+        try {
+          const classified = smartClassifyLines(allItems);
+          const cleanIngs  = normalizeAndDedupe(classified.ingredients);
+          const cleanDirs  = normalizeAndDedupe(classified.directions);
+          if (cleanIngs.length > 0 || cleanDirs.length > 0) {
+            finalRecipe = {
+              ...recipe,
+              ingredients: cleanIngs.length > 0 ? cleanIngs : recipe.ingredients,
+              directions:  cleanDirs.length > 0 ? cleanDirs : recipe.directions,
+            };
+          }
+        } catch { /* non-fatal — keep original if classifier throws */ }
+      }
+
+      setPreview([finalRecipe]);
       setBrowserAssistMode('off');
       setSyncPhase('idle');
     }
