@@ -300,12 +300,13 @@ const toggleDeepMode = () => {
             // to do anything — they'll see the preview or a helpful error.
             try {
               const autoParseRecipe = await captionToRecipe(result.capturedCaption, {
+                title: result.capturedTitle || '',
                 imageUrl: result.capturedImageUrl || '',
                 sourceUrl: url,
                 type,
               });
               if (!cancelled && autoParseRecipe && (autoParseRecipe.ingredients?.length || autoParseRecipe.directions?.length)) {
-                setAutoRecipe(cleanRecipe({ ...autoParseRecipe, imageUrl: result.capturedImageUrl || autoParseRecipe.imageUrl }));
+                setAutoRecipe(cleanRecipe({ ...autoParseRecipe, name: autoParseRecipe.name || result.capturedTitle || autoParseRecipe.name, imageUrl: result.capturedImageUrl || autoParseRecipe.imageUrl }));
                 setPhase('preview');
                 return;
               }

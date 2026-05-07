@@ -885,14 +885,40 @@ export function parseCaption(text) {
       }
     }
 
+
+    // ── Contamination guard A: Sub-section headers (e.g. "jalapeño crema:") ──────
+    // Lines ending with ":" that carry no quantity are organisational labels, not
+    // ingredients or directions. Skip them so they don't pollute the ingredient list.
+    const hasQuantity = /\d|½|¼|¾|⅓|⅔|⅛|⅜|⅝|⅞/.test(cleanLine);
+    const isSubHeader = /:\s*$/.test(cleanLine) && !hasQuantity && cleanLine.length < 70
+      && !isIngredientsHeader(cleanLine.toLowerCase()) && !isDirectionsHeader(cleanLine.toLowerCase());
+    if (isSubHeader) {
+      // Sub-section header — preserve current in/out mode, skip adding to any list
+      continue;
+    }
+
     // Clean prefix markers
     // First strip bullet markers (but preserve what follows, including leading numbers)
     let cleaned = cleanLine
-      .replace(/^[-Ã¢â‚¬Â¢*Ã¢â€“ÂªÃ¢â€“Â¸Ã¢â€“ÂºÃ¢â€”Â¦Ã¢â‚¬Â£Ã¢ÂÆ’Ã¢Å“â€œÃ¢Å“â€]\s*/, '');
+      .replace(/^[-\u2022*\u203A\u2023\u2043\u2212\u2022\u00A3\u29B8\u2714\u2713]\s*/, '');
     // Only strip leading numbers when followed by punctuation delimiter (step numbers like "1." or "2)")
     // NOT when followed by a space + unit (ingredient quantities like "2 tbsp")
     cleaned = cleaned.replace(/^\d+[.):-]\s*/, '').trim();
     if (!cleaned) continue;
+
+    // ── Contamination guard B: Narrative sentences in ingredient mode ────────────
+    // Instagram captions include prose like "the star of the show is frozen cauliflower
+    // rice" which has food words but is clearly a note/direction, not an ingredient.
+    // Heuristic: long lines starting with an article/pronoun with no quantity digit
+    // are almost never stand-alone ingredients.
+    const NARRATIVE_START_RE = /^(the |a |an |this |these |it |they |i |you |we |what |one of |my |our )/i;
+    const isLongNarrative = NARRATIVE_START_RE.test(cleaned) && !hasQuantity && cleaned.length > 40
+      && !looksLikeIngredientLine(cleaned); // parse-ingredient handles "the juice of 1 lemon"
+    if (isLongNarrative && inIngredients) {
+      // Override — move to directions so it doesn't contaminate the ingredient list
+      directions.push(cleaned);
+      continue;
+    }
 
     // PASS 4: Route to correct list
     if (inIngredients) {
@@ -908,7 +934,6 @@ export function parseCaption(text) {
       }
     }
   }
-
   return { title, ingredients, directions };
 }
 
@@ -1361,23 +1386,31 @@ async function extractInstagramEmbed(url) {
       if (tc && tc.length > 15) caption = tc;
     }
 
-    // Extract image
-    let imageUrl = extractMeta(html, 'og:image') || '';
-    if (!imageUrl) {
-      const imgPatterns = [
-        /<img[^>]+src="(https:\/\/[^"]*instagram[^"]*\/[^"]*_n\.jpg[^"]*)"/i,
-        /<img[^>]+src="(https:\/\/scontent[^"]+)"/i,
-        /"display_url"\s*:\s*"(https:[^"]+)"/i,
-        /"thumbnail_src"\s*:\s*"(https:[^"]+)"/i,
-      ];
-      for (const re of imgPatterns) {
-        const m = re.exec(html);
-        if (m) { imageUrl = m[1].replace(/&amp;/g, '&').replace(/\\u0026/g, '&'); break; }
-      }
+    // Extract image — prefer post-specific URLs (display_url is the actual food photo)
+    // over og:image which Instagram sometimes sets to the profile avatar in embed pages.
+    let imageUrl = '';
+    const postImgPatterns = [
+      /"display_url"\s*:\s*"(https:[^"]+)"/i,         // post image in JSON payload (best)
+      /"thumbnail_src"\s*:\s*"(https:[^"]+)"/i,       // fallback post image
+      /<img[^>]+src="(https:\/\/[^"]*instagram[^"]*\/[^"]*_n\.jpg[^"]*)"/i, // named post image
+      /<img[^>]+src="(https:\/\/scontent[^"]+)"/i,    // scontent CDN image
+    ];
+    for (const re of postImgPatterns) {
+      const m = re.exec(html);
+      if (m) { imageUrl = m[1].replace(/&amp;/g, '&').replace(/\\u0026/g, '&'); break; }
     }
+    // Only fall back to og:image if no post-specific image found
+    if (!imageUrl) imageUrl = extractMeta(html, 'og:image') || '';
 
-    // Extract title
+    // Extract title — og:title often reads "Username on Instagram: 'first line of caption'"
+    // cleanTitle strips the "Username on Instagram:" prefix, leaving the recipe name.
+    // If that's still empty/generic, try to grab the first meaningful line of the caption.
     let title = cleanTitle(extractMeta(html, 'og:title') || '');
+    if (!title || title === 'Imported Recipe') {
+      // Try first non-empty line of caption as title hint
+      const firstLine = (caption || '').split('\n').map(l => l.trim()).find(l => l.length > 4 && l.length < 100 && !/^[#@]/.test(l));
+      if (firstLine) title = cleanTitle(firstLine);
+    }
 
     // If embed page gave nothing, try Instagram oEmbed (public, no auth needed)
     if (!caption) {
@@ -3891,6 +3924,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
 
   let capturedCaption   = '';
   let capturedImageUrl  = '';
+  let capturedTitle     = '';   // best title found across all phases
   let videoRecipe       = null; // yt-dlp structured result (always null — server decommissioned)
 
   // -- Phase 0: yt-dlp video subtitles (server decommissioned -- always skip) --
@@ -3939,8 +3973,9 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
         // No clean caption but we have raw page text — save for Phase 3 Gemini fallback
         capturedRawPageText = embedData.rawPageText;
       }
-      // Always capture image from embed data, regardless of caption
+      // Always capture image and title from embed data, regardless of caption
       if (embedData?.imageUrl && !capturedImageUrl) capturedImageUrl = embedData.imageUrl;
+      if (embedData?.title && !capturedTitle) capturedTitle = embedData.title;
 
       if (embedData?.caption) {
         const embedCaption = cleanSocialCaption(embedData.caption);
@@ -4024,7 +4059,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
       progress(3, 'running', '✨ Structuring recipe with Gemini…');
     }
     try {
-      const recipe = await captionToRecipe(textForGemini, { imageUrl: capturedImageUrl, sourceUrl: url, type });
+      const recipe = await captionToRecipe(textForGemini, { title: capturedTitle, imageUrl: capturedImageUrl, sourceUrl: url, type });
       // Use OR: accept if EITHER ingredients OR directions is non-placeholder
       if (recipe && (!isPlaceholder(recipe.ingredients) || !isPlaceholder(recipe.directions))) {
         progress(3, 'done', 'Recipe structured successfully!');
@@ -4073,6 +4108,23 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
     progress(3, 'failed', 'No text captured from any source');
   }
 
+  // ── CDN image caching — download Instagram CDN images at import time ─────────
+  // Instagram scontent / fbcdn URLs expire (usually within hours) and block
+  // cross-origin requests. We try to download the image through the proxy and
+  // convert it to a data URL so the recipe image stays available offline and
+  // after the CDN URL expires. Non-fatal — keep the original URL on failure.
+  if (capturedImageUrl
+    && !capturedImageUrl.startsWith('data:')
+    && /scontent|fbcdn|cdninstagram/.test(capturedImageUrl)) {
+    try {
+      const dataUrl = await downloadImageAsDataUrl(capturedImageUrl, { timeoutMs: 10000 });
+      if (dataUrl) {
+        console.log('[importFromInstagram] CDN image cached as data URL');
+        capturedImageUrl = dataUrl;
+      }
+    } catch { /* non-fatal — keep original CDN URL */ }
+  }
+
   // ── Manual fallback — all phases exhausted ───────────────────────────────────
   // Pass back whatever we captured so BrowserAssist can pre-fill the manual textarea.
   // capturedCaption may be a full recipe caption that just failed the AI step —
@@ -4081,6 +4133,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
     _needsManualCaption: true,
     capturedCaption: capturedCaption || '',
     capturedImageUrl: capturedImageUrl || '',
+    capturedTitle: capturedTitle || '',
     sourceUrl: url,
   };
 }
