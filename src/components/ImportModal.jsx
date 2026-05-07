@@ -886,7 +886,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
           </>
         ) : /* ── Preview screen (full detail + editable) ──────────────────────── */
         preview ? (
-          <div className="import-preview">
+          <div className="import-preview ip-preview-screen">
             <div className="preview-header-bar">
               <h3>
                 Preview — {preview.length} recipe{preview.length !== 1 ? 's' : ''} found
@@ -1283,7 +1283,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                 ＋ Add Side / Sauce Recipe
               </button>
             </div>
-            <div className="modal-footer">
+            <div className="ip-preview-footer">
               <button className="btn-secondary" onClick={() => {
                 setPreview(null);
                 setUrl('');

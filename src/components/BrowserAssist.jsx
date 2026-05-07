@@ -1000,180 +1000,230 @@ const toggleDeepMode = () => {
       {phase === 'loading' && (
         <div className="browser-assist-loading">
           {isSocial ? (
-            /* ——— Social: beautiful pipeline steps UI ——— */
-            <div className="pipeline-container">
-              <div className="pipeline-header">
-                <span className="pipeline-platform-icon">
-                  {platform === 'Instagram' ? '📸' : platform === 'TikTok' ? '🎵' : platform === 'YouTube' ? '▶️' : '🌐'}
-                </span>
-                <div>
-                  <h3 className="pipeline-title">Importing from {platform}</h3>
-                  <p className="pipeline-url">{url.length > 50 ? url.slice(0, 47) + '...' : url}</p>
+            /* ——— Social: premium pipeline steps UI ——— */
+            <div className="ip-pipeline">
+              {/* Platform header */}
+              <div className="ip-pipeline-head">
+                <div className={`ip-platform-badge ${platform === 'Instagram' ? 'instagram' : platform === 'TikTok' ? 'tiktok' : platform === 'YouTube' ? 'youtube' : 'web'}`}>
+                  {platform === 'Instagram' && (
+                    <svg viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/>
+                    </svg>
+                  )}
+                  {platform === 'TikTok' && (
+                    <svg viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1V9.01a6.33 6.33 0 00-.79-.05 6.34 6.34 0 00-6.34 6.34 6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.33-6.34V9.11a8.16 8.16 0 004.77 1.52V7.17a4.85 4.85 0 01-1-.48z"/>
+                    </svg>
+                  )}
+                  {platform === 'YouTube' && (
+                    <svg viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M23.495 6.205a3.007 3.007 0 00-2.088-2.088c-1.87-.501-9.396-.501-9.396-.501s-7.507-.01-9.396.501A3.007 3.007 0 00.527 6.205a31.247 31.247 0 00-.522 5.805 31.247 31.247 0 00.522 5.783 3.007 3.007 0 002.088 2.088c1.868.502 9.396.502 9.396.502s7.506 0 9.396-.502a3.007 3.007 0 002.088-2.088 31.247 31.247 0 00.5-5.783 31.247 31.247 0 00-.5-5.805zM9.609 15.601V8.408l6.264 3.602z"/>
+                    </svg>
+                  )}
+                  {!['Instagram','TikTok','YouTube'].includes(platform) && (
+                    <svg viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+                    </svg>
+                  )}
+                </div>
+                <div className="ip-pipeline-meta">
+                  <h3 className="ip-pipeline-title">Importing from {platform || 'Social'}</h3>
+                  <p className="ip-pipeline-url">{url.length > 55 ? url.slice(0, 52) + '…' : url}</p>
                 </div>
               </div>
 
-              <div className="pipeline-steps">
+              {/* Animated progress bar */}
+              <div className="ip-progress-track">
+                <div
+                  className="ip-progress-fill"
+                  style={{
+                    width: pipelineSteps.length === 0 ? '5%'
+                      : `${Math.max(5, Math.round(
+                          (pipelineSteps.filter(s => s.status === 'done' || s.status === 'skipped' || s.status === 'failed').length
+                            / pipelineSteps.length) * 100
+                        ))}%`,
+                  }}
+                />
+              </div>
+
+              {/* Step track */}
+              <div className="ip-steps">
                 {pipelineSteps.map((step, i) => (
-                  <div key={i} className={`pipeline-step pipeline-step--${step.status}`}>
-                    <div className="pipeline-step-indicator">
-                      {step.status === 'running' && <span className="pipeline-spinner" />}
-                      {step.status === 'done' && <span className="pipeline-check">✓</span>}
-                      {step.status === 'failed' && <span className="pipeline-x">✖</span>}
-                      {step.status === 'skipped' && <span className="pipeline-skip">—</span>}
-                      {step.status === 'pending' && <span className="pipeline-dot" />}
+                  <div key={i} className={`ip-step ip-step--${step.status}`}>
+                    <div className="ip-step-track">
+                      <div className="ip-step-node">
+                        {step.status === 'running' && <span className="ip-step-spinner" />}
+                        {step.status === 'done'    && (
+                          <svg className="ip-step-check" viewBox="0 0 12 12" fill="none">
+                            <polyline points="2,6 5,9 10,3" stroke="#43a047" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        )}
+                        {step.status === 'failed'  && (
+                          <svg className="ip-step-x" viewBox="0 0 12 12" fill="none">
+                            <line x1="3" y1="3" x2="9" y2="9" stroke="#ef5350" strokeWidth="2" strokeLinecap="round"/>
+                            <line x1="9" y1="3" x2="3" y2="9" stroke="#ef5350" strokeWidth="2" strokeLinecap="round"/>
+                          </svg>
+                        )}
+                        {step.status === 'skipped' && <span className="ip-step-dash" />}
+                        {step.status === 'pending' && <span className="ip-step-dot" />}
+                      </div>
+                      {i < pipelineSteps.length - 1 && <div className="ip-step-line" />}
                     </div>
-                    <div className="pipeline-step-content">
-                      <div className="pipeline-step-label">{step.label}</div>
-                      {step.message && <div className="pipeline-step-message">{step.message}</div>}
+                    <div className="ip-step-body">
+                      <span className="ip-step-label">{step.label}</span>
+                      {step.message && <span className="ip-step-msg">{step.message}</span>}
                     </div>
                   </div>
                 ))}
               </div>
 
-              {pipelineMessage && (
-                <p className="pipeline-message">{pipelineMessage}</p>
-              )}
-
-              <button className="btn-secondary pipeline-skip-btn" onClick={onFallbackToText}>
-                Skip — Enter Manually
-              </button>
+              {/* Footer */}
+              <div className="ip-pipeline-footer">
+                {pipelineMessage && <p className="ip-pipeline-message">{pipelineMessage}</p>}
+                <button className="ip-skip-btn" onClick={onFallbackToText}>
+                  Enter manually instead
+                </button>
+              </div>
             </div>
           ) : (
-            /* ——— Non-social: simple loading indicator ——— */
-            <>
-              <div className="browser-assist-loading-icon">🔍</div>
-              <p className="browser-assist-pulse-text" aria-live="polite">
-                {extractionProgress.message || 'Fetching page content'}
+            /* ——— Non-social: premium loading indicator ——— */
+            <div className="ip-generic-loading">
+              <div className="ip-generic-spinner" />
+              <p className="ip-generic-title" aria-live="polite">
+                {extractionProgress.message || 'Fetching page content…'}
               </p>
               {extractionProgress.total > 0 && (
-                <div className="extraction-progress-stepper" style={{ width: '100%', maxWidth: 260 }}>
-                  <div className="extraction-progress-dots">
-                    {Array.from({ length: extractionProgress.total }, (_, i) => (
-                      <div key={i} className={`progress-step ${i + 1 < extractionProgress.step ? 'done' : i + 1 === extractionProgress.step ? 'active' : ''}`}>
-                        <div className="step-dot" />
-                        {i < extractionProgress.total - 1 && <div className="step-line" />}
-                      </div>
-                    ))}
-                  </div>
-                  <div className="extraction-progress-bar">
-                    <div className="extraction-progress-fill" style={{ width: `${Math.round((extractionProgress.step / extractionProgress.total) * 100)}%` }} />
-                  </div>
-                  <p className="extraction-step-message">
-                    {extractionProgress.step} / {extractionProgress.total} — {extractionProgress.message || '...'}
-                  </p>
+                <div className="ip-progress-track" style={{ width: '100%', borderRadius: 4 }}>
+                  <div
+                    className="ip-progress-fill"
+                    style={{ width: `${Math.round((extractionProgress.step / extractionProgress.total) * 100)}%` }}
+                  />
                 </div>
               )}
-              {!extractionProgress.total && (
-                <p className="browser-assist-pulse-sub">This usually takes a few seconds...</p>
-              )}
-              <button className="btn-secondary" onClick={onFallbackToText} style={{ marginTop: 12 }}>
-                Skip — Enter Manually
+              <p className="ip-generic-sub">
+                {extractionProgress.total > 0
+                  ? `Step ${extractionProgress.step} of ${extractionProgress.total}`
+                  : 'This usually takes a few seconds…'}
+              </p>
+              <button className="ip-skip-btn" onClick={onFallbackToText}>
+                Skip — enter manually
               </button>
-            </>
+            </div>
           )}
         </div>
       )}
 
       {/* ——— Manual paste card (social fallback when all methods fail) ——— */}
       {phase === 'manual' && (
-        <div className="browser-assist-manual">
-          <div className="manual-header">
-            <span className="manual-icon">📋</span>
-            <h3>Paste Recipe Text</h3>
-            <p className="manual-subtitle">
-              Auto-extraction couldn't read this {platform || 'social'} post — open the post, copy the caption, then paste it below.
-            </p>
-            {url && (
-              <a
-                href={url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="manual-open-link"
-              >
-                🔗 Open {platform || 'post'} in browser →
-              </a>
-            )}
+        <div className="ip-manual">
+          {/* Hero header */}
+          <div className="ip-manual-hero">
+            <div className="ip-manual-icon-wrap">
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect x="9" y="2" width="6" height="4" rx="1" stroke="currentColor" strokeWidth="1.8"/>
+                <path d="M9 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V4a2 2 0 00-2-2h-3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                <line x1="8" y1="11" x2="16" y2="11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                <line x1="8" y1="15" x2="13" y2="15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+              </svg>
+            </div>
+            <div>
+              <h3>Paste the Caption</h3>
+              <p>
+                Auto-extract couldn&apos;t read this {platform || 'social'} post.
+                Copy the caption from the app and paste it below — AI will structure it.
+              </p>
+            </div>
           </div>
 
+          {/* Open in browser link */}
+          {url && (
+            <a href={url} target="_blank" rel="noopener noreferrer" className="ip-manual-open-link">
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                <polyline points="15,3 21,3 21,9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <line x1="10" y1="14" x2="21" y2="3" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+              Open {platform || 'post'} in browser
+            </a>
+          )}
+
+          {/* Step instructions */}
+          <ol className="ip-manual-steps">
+            {url && <li><span className="ip-manual-step-num">1</span>Tap the link above to open the {platform || 'post'}</li>}
+            <li><span className="ip-manual-step-num">{url ? '2' : '1'}</span>Tap <strong>… more</strong> to expand the full caption</li>
+            <li><span className="ip-manual-step-num">{url ? '3' : '2'}</span>Long-press the caption → <strong>Select All</strong> → Copy</li>
+            <li><span className="ip-manual-step-num">{url ? '4' : '3'}</span>Paste below and tap <strong>Parse with AI</strong></li>
+          </ol>
+
+          {/* Paste area */}
+          <div className="ip-manual-textarea-wrap">
+            <textarea
+              className="ip-manual-area"
+              placeholder="Paste recipe caption, ingredients, and steps here…"
+              value={manualText}
+              onChange={e => { setManualText(e.target.value); setManualError(''); }}
+              rows={7}
+            />
+          </div>
+
+          {manualError && <p className="ip-manual-error">{manualError}</p>}
+
+          {/* Actions */}
+          <div className="ip-manual-actions">
+            <button
+              className="ip-parse-btn"
+              onClick={handleParseManual}
+              disabled={isParsingManual || manualText.trim().length < 10}
+            >
+              {isParsingManual
+                ? <><span className="ip-step-spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> Parsing…</>
+                : 'Parse with AI'}
+            </button>
+            <button className="ip-manual-skip-btn" onClick={onFallbackToText}>
+              Enter manually instead
+            </button>
+          </div>
+
+          {/* Collapsible: what was tried */}
           {pipelineSteps.length > 0 && (
-            <details className="manual-pipeline-summary-details">
-              <summary className="manual-pipeline-summary-toggle">What was tried</summary>
-              <div className="manual-pipeline-summary">
+            <details className="ip-tried-details">
+              <summary>What was tried</summary>
+              <div className="ip-tried-badges">
                 {pipelineSteps.map((step, i) => (
-                  <div key={i} className={`manual-step-badge manual-step-badge--${step.status}`}>
-                    {step.status === 'done' ? '✓' : step.status === 'failed' ? '✖' : '—'} {step.label}
-                  </div>
+                  <span key={i} className={`ip-tried-badge ip-tried-badge--${step.status}`}>
+                    {step.status === 'done' ? '✓' : step.status === 'failed' ? '✗' : '—'} {step.label}
+                  </span>
                 ))}
               </div>
             </details>
           )}
-
-          <div className="manual-tips">
-            <ol>
-              <li>Open the link above in your browser</li>
-              <li>Tap <strong>… more</strong> to expand the full caption</li>
-              <li>Long-press → <strong>Select All</strong> → Copy</li>
-              <li>Paste below and tap <strong>Parse with AI →</strong></li>
-            </ol>
-          </div>
-
-          <textarea
-            className="manual-paste-area"
-            placeholder="Paste recipe caption, ingredients, and steps here…"
-            value={manualText}
-            onChange={e => { setManualText(e.target.value); setManualError(''); }}
-            rows={8}
-          />
-
-          {manualError && <p className="manual-error">{manualError}</p>}
-
-          <div className="manual-actions">
-            <button
-              className="btn-primary manual-parse-btn"
-              onClick={handleParseManual}
-              disabled={isParsingManual || manualText.trim().length < 10}
-            >
-              {isParsingManual ? '⏳ Parsing…' : '✨ Parse with AI →'}
-            </button>
-            <button className="btn-secondary" onClick={onFallbackToText}>
-              Enter manually instead
-            </button>
-          </div>
         </div>
       )}
 
       {/* ——— Auto-extracted preview (editable) ——— */}
       {phase === 'preview' && autoRecipe && (
         <div className="browser-assist-preview">
-          <div className="browser-assist-preview-header">
-            <span className="browser-assist-success-icon">✓</span>
-            <span>Recipe found{autoRecipe.extractedVia ? ` via ${autoRecipe.extractedVia}` : ''}</span>
-            {(() => {
-              if (autoRecipe._hybridUsed === true && autoRecipe._hybridConfidence != null) {
-                const pct = Math.round(autoRecipe._hybridConfidence * 100);
-                return (
-                  <span className="confidence-badge confidence-high">
-                    ✦ Enhanced with Gemini • {pct}%
-                  </span>
-                );
-              } else if (autoRecipe._hybridUsed === false && autoRecipe._hybridConfidence != null) {
-                const pct = Math.round(autoRecipe._hybridConfidence * 100);
-                const level = pct >= 75 ? 'high' : pct >= 50 ? 'medium' : 'low';
-                return (
-                  <span className={`confidence-badge confidence-${level}`}>
-                    ⚡ Visual Parse • {pct}%
-                  </span>
-                );
-              } else {
-                const conf = scoreExtractionConfidence(autoRecipe);
-                const level = conf >= 70 ? 'high' : conf >= 40 ? 'medium' : 'low';
-                return (
-                  <span className={`confidence-badge confidence-${level}`}>
-                    {conf >= 70 ? 'High' : conf >= 40 ? 'Good' : 'Low'} confidence
-                  </span>
-                );
-              }
-            })()}
+          <div className="ip-preview-success-bar">
+            <div className="ip-success-icon">
+              <svg viewBox="0 0 14 14" fill="none">
+                <polyline points="2,7 5.5,10.5 12,3" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            </div>
+            <div className="ip-success-text">
+              <strong>Recipe found{autoRecipe.extractedVia ? ` via ${autoRecipe.extractedVia}` : ''}</strong>
+              {(() => {
+                if (autoRecipe._hybridUsed === true && autoRecipe._hybridConfidence != null) {
+                  const pct = Math.round(autoRecipe._hybridConfidence * 100);
+                  return <span>Enhanced with Gemini &bull; {pct}% confidence</span>;
+                } else if (autoRecipe._hybridUsed === false && autoRecipe._hybridConfidence != null) {
+                  const pct = Math.round(autoRecipe._hybridConfidence * 100);
+                  return <span>Visual parse &bull; {pct}% confidence</span>;
+                } else {
+                  const conf = scoreExtractionConfidence(autoRecipe);
+                  return <span>{conf >= 70 ? 'High' : conf >= 40 ? 'Good' : 'Low'} confidence &bull; review before saving</span>;
+                }
+              })()}
+            </div>
           </div>
 
           <div className="browser-assist-preview-card">
@@ -1253,12 +1303,12 @@ const toggleDeepMode = () => {
             </div>
           </div>
 
-          <div className="browser-assist-preview-actions">
-            <button className="btn-primary" onClick={handleAcceptPreview}>
-              Use This Recipe
+          <div className="ip-manual-actions" style={{ marginTop: 4 }}>
+            <button className="ip-parse-btn" onClick={handleAcceptPreview}>
+              Add to My Recipes
             </button>
-            <button className="btn-secondary" onClick={handleTryManual}>
-              {isSocial ? 'Edit text instead' : 'Not right? Try manual extraction'}
+            <button className="ip-manual-skip-btn" onClick={handleTryManual}>
+              {isSocial ? 'Edit caption instead' : 'Not right? Try manual'}
             </button>
           </div>
         </div>
