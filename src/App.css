@@ -14853,7 +14853,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 /* a definite height, flex: 1 children have nothing to measure against     */
 /* and content overflows the viewport — burying the footer on mobile.      */
 
-.modal-content:has(.ip-preview-screen) {
+.modal-content.has-preview-screen {
   /* Explicit height gives flex children a concrete dimension to fill.
      We use vh (not dvh) because Android Chrome's address bar causes dvh
      to jump as users scroll — vh is stable: it's the total viewport
@@ -14868,17 +14868,17 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 }
 
 /* Modal header must not shrink when in flex column */
-.modal-content:has(.ip-preview-screen) > .modal-header {
+.modal-content.has-preview-screen > .modal-header {
   flex-shrink: 0;
 }
 
 /* Error bar if visible */
-.modal-content:has(.ip-preview-screen) > .error-bar {
+.modal-content.has-preview-screen > .error-bar {
   flex-shrink: 0;
 }
 
 /* BrowserAssist fallback header if visible */
-.modal-content:has(.ip-preview-screen) > div:not(.import-preview):not(.modal-header):not(.error-bar) {
+.modal-content.has-preview-screen > div:not(.import-preview):not(.modal-header):not(.error-bar) {
   flex-shrink: 0;
 }
 
@@ -15753,7 +15753,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 /* ── Preview screen on small phones ─────────────────────────────────────── */
 @media (max-width: 480px) {
   /* Full-screen sheet on very small phones — 100vh is safest cross-browser */
-  .modal-content:has(.ip-preview-screen) {
+  .modal-content.has-preview-screen {
     height: 100vh;
     max-height: 100vh;
     border-radius: 0;
@@ -15839,7 +15839,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 
 /* ── Mid-size phones (481–640px): minor touch-up ────────────────────────── */
 @media (min-width: 481px) and (max-width: 640px) {
-  .modal-content:has(.ip-preview-screen) {
+  .modal-content.has-preview-screen {
     height: 96vh;
     max-height: 96vh;
   }
@@ -15900,7 +15900,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 
 /* ── Landscape on phone: tighten vertical rhythm ────────────────────────── */
 @media (max-height: 500px) and (orientation: landscape) {
-  .modal-content:has(.ip-preview-screen) {
+  .modal-content.has-preview-screen {
     height: 100vh;
     max-height: 100vh;
     border-radius: 0;
@@ -15928,11 +15928,11 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* ── Modal header: more compact when showing preview (save vertical space) ── */
-.modal-content:has(.ip-preview-screen) .modal-header {
+.modal-content.has-preview-screen .modal-header {
   padding-bottom: 12px;
 }
 
-.modal-content:has(.ip-preview-screen) .modal-header h2 {
+.modal-content.has-preview-screen .modal-header h2 {
   font-size: 17px;
 }
 
@@ -16334,4 +16334,62 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   padding: 2px 7px;
   border-radius: 6px;
   white-space: nowrap;
+}
+
+/* ── Drink-specific preview fields (glass + garnish) ───────────────────── */
+.preview-drink-meta {
+  background: rgba(245, 158, 11, 0.04);
+  border-radius: 12px;
+  padding: 12px 14px 10px;
+}
+
+.preview-drink-fields {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.preview-drink-field {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.preview-drink-field-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted, #888);
+}
+
+.preview-drink-input {
+  width: 100%;
+  padding: 9px 12px;
+  font-size: 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--text);
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+
+.preview-drink-input:focus {
+  border-color: var(--accent, #f59e0b);
+}
+
+.preview-drink-input::placeholder {
+  color: var(--text-muted, #aaa);
+  font-size: 13px;
+}
+
+@media (max-width: 380px) {
+  .preview-drink-fields {
+    flex-direction: column;
+    gap: 8px;
+  }
 }
