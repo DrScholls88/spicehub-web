@@ -381,6 +381,25 @@ export function parseManualCaption(captionText, sourceUrl) {
  * fully offline-capable for prompt changes.
  */
 function _buildExtractionPrompt(rawText, { hintTitle = '', type = 'meal' } = {}) {
+  // Auto-upgrade to drink schema when text has strong cocktail signals.
+  // Catches Instagram/TikTok cocktail reels where type detection runs before text
+  // is fetched (URL has no cocktail hint, so defaults to 'meal').
+  if (type !== 'drink') {
+    const lower = rawText.toLowerCase();
+    const SPIRITS = ['whiskey','whisky','bourbon','scotch','rye whiskey',' gin ','rum ','tequila',
+      'mezcal','vodka','cognac','brandy','vermouth','campari','aperol','amaretto','kahlua',
+      'baileys','triple sec','cointreau','amaro','bitters','angostura','absinthe','chartreuse'];
+    const COCKTAIL_ACTIONS = [' shake','shaker','stir and strain','muddle','strain into',
+      'double strain','build in glass','top with ','float the ','garnish with','express the',
+      'rimmed glass','jigger','bar spoon','barspoon','cocktail glass'];
+    const UNIT_SIGNALS = [' oz ',' oz,','.5 oz','ml ','1 dash','2 dash','splash of','rinse with'];
+    const spiritHits = SPIRITS.filter(w => lower.includes(w)).length;
+    const verbHits   = COCKTAIL_ACTIONS.filter(w => lower.includes(w)).length;
+    const unitHits   = UNIT_SIGNALS.filter(w => lower.includes(w)).length;
+    if ((spiritHits >= 1 && (verbHits + unitHits) >= 1) || (spiritHits + verbHits + unitHits) >= 3) {
+      type = 'drink';
+    }
+  }
   const isDrink = type === 'drink';
   const subjectNoun = isDrink ? 'cocktail/drink' : 'recipe';
   const schema = isDrink
@@ -4164,16 +4183,16 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   };
 }
 
+
 export function detectImportType(url = '', initialText = '') {
   const u = String(url || '').toLowerCase();
   const t = String(initialText || '').toLowerCase();
 
   // -- Strong URL hints — host and path --------------------------------------
-  // Cocktail / liquor / bar publications
   const DRINK_HOSTS = /(?:^|\/\/)(?:www\.)?(?:liquor\.com|diffordsguide\.com|imbibemagazine\.com|punchdrink\.com|cocktailsdistilled\.com|tuxedono2\.com|drinkswithmommy\.com|garnishcocktails\.com|kindredcocktails\.com|thespruceeats\.com|cocktailparty\.com|tasteofhome\.com\/recipes\/cocktails)/i;
   if (DRINK_HOSTS.test(u)) return 'drink';
 
-  // URL path hints — "cocktail", "drink", "bar", "cocktails" slug anywhere
+  // URL path hints
   if (/\/(cocktails?|drinks?|bar|mixology|bartender|spirits?|mocktails?|liqueurs?)(?:\/|-|_|$)/i.test(u)) {
     return 'drink';
   }
@@ -4182,16 +4201,24 @@ export function detectImportType(url = '', initialText = '') {
   if (MEAL_HOSTS.test(u)) return 'meal';
 
   // -- Keyword scan on URL path + accompanying text -------------------------
-  const haystack = `${u} ${t}`;
-  const DRINK_WORDS = [
-    'shake', 'stir', 'muddle', 'strain', 'rim', 'garnish', 'build in glass',
-    'oz', 'jigger', 'dash', 'bitters', 'vermouth', 'liqueur', 'whiskey', 'gin', 'rum', 'tequila', 'vodka'
-  ];
+  const haystack = u + ' ' + t;
 
-  // If any drink keywords appear in the URL or text, classify as drink
-  if (DRINK_WORDS.some(word => haystack.includes(word))) {
-    return 'drink';
-  }
+  // Strong single-word signals — any one match is enough
+  const DRINK_STRONG = [
+    'whiskey', 'whisky', 'bourbon', 'scotch', 'mezcal', 'tequila', 'vodka',
+    'vermouth', 'campari', 'aperol', 'amaretto', 'kahlua', 'angostura',
+    'absinthe', 'chartreuse', 'bitters', 'liqueur', 'cocktail', 'mocktail',
+    'jigger', 'muddle', 'shaker', 'bartender', 'mixology', 'highball',
+    'old fashioned', 'negroni', 'margarita', 'martini', 'daiquiri', 'mojito',
+    'aperitivo', 'digestif', 'nightcap',
+  ];
+  if (DRINK_STRONG.some(w => haystack.includes(w))) return 'drink';
+
+  // Weaker signals — need 2+ to classify as drink
+  const DRINK_WEAK = ['shake', 'stir', 'strain', 'rim', 'garnish', 'build in glass',
+    ' oz ', 'dash', ' gin ', ' rum '];
+  const weakHits = DRINK_WEAK.filter(w => haystack.includes(w)).length;
+  if (weakHits >= 2) return 'drink';
 
   // Default fallback
   return 'meal';

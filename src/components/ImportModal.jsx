@@ -831,7 +831,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <div className="modal-overlay" onClick={handleClose}>
-      <div className="modal-content import-modal" onClick={e => e.stopPropagation()}>
+      <div className={`modal-content import-modal${preview ? ' has-preview-screen' : ''}`} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <h2>{title}</h2>
           <button className="btn-icon" onClick={handleClose}>✕</button>
@@ -1201,6 +1201,45 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                       <div className="preview-empty-drop">⬇ Drop steps here · or tap <strong>+ Add</strong></div>
                     )}
                   </div>
+
+                  {/* Drink-specific fields: glass + garnish */}
+                  {m._type === 'drink' && (
+                    <div className="preview-detail-section preview-drink-meta">
+                      <label className="preview-label">
+                        <span className="preview-label-icon">🥃</span> Glass &amp; Garnish
+                      </label>
+                      <div className="preview-drink-fields">
+                        <div className="preview-drink-field">
+                          <span className="preview-drink-field-label">Glass</span>
+                          <input
+                            type="text"
+                            className="preview-drink-input"
+                            placeholder="e.g. coupe, rocks, highball…"
+                            value={m.glass || ''}
+                            onChange={e => {
+                              const updated = [...preview];
+                              updated[idx] = { ...updated[idx], glass: e.target.value };
+                              setPreview(updated);
+                            }}
+                          />
+                        </div>
+                        <div className="preview-drink-field">
+                          <span className="preview-drink-field-label">Garnish</span>
+                          <input
+                            type="text"
+                            className="preview-drink-input"
+                            placeholder="e.g. lime wheel, orange peel…"
+                            value={m.garnish || ''}
+                            onChange={e => {
+                              const updated = [...preview];
+                              updated[idx] = { ...updated[idx], garnish: e.target.value };
+                              setPreview(updated);
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Source URL (editable) */}
                   {m.link && (
