@@ -60,10 +60,17 @@ export function cleanUrl(url) {
   if (!url || typeof url !== 'string') return '';
   let cleaned = url.trim();
 
-  // Remove any duplicated URL suffix (common bug source: "https://site.com/https://site.com")
+  // Handle double-concatenated URLs even if the first part lacks 'http://'
+  // (e.g. "instagram.com/reel/XYZhttps://www.instagram.com/reel/XYZ")
   const firstHttp = cleaned.indexOf('http');
-  if (firstHttp !== -1) {
-    const secondHttp = cleaned.indexOf('http', firstHttp + 4);
+  if (firstHttp > 0) {
+    cleaned = cleaned.substring(firstHttp);
+  }
+
+  // Remove any duplicated URL suffix (common bug source: "https://site.com/https://site.com")
+  const firstHttpAfterClean = cleaned.indexOf('http');
+  if (firstHttpAfterClean !== -1) {
+    const secondHttp = cleaned.indexOf('http', firstHttpAfterClean + 4);
     if (secondHttp !== -1) {
       cleaned = cleaned.substring(0, secondHttp);
     }
@@ -337,28 +344,29 @@ export async function extractInstagramEmbed(url) {
 
       // ── Extract image ──
       let imageUrl = '';
-      // OG image
-      const ogImgMatch = html.match(/<meta[^>]+property\s*=\s*["']og:image["'][^>]+content\s*=\s*["']([^"']*)["']/i)
-        || html.match(/<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+property\s*=\s*["']og:image["']/i);
-      if (ogImgMatch) imageUrl = ogImgMatch[1].replace(/&amp;/g, '&');
 
-      // Fallback image patterns
-      if (!imageUrl) {
-        const imgPatterns = [
-          /<img[^>]+class="[^"]*EmbedImage[^"]*"[^>]+src="([^"]+)"/i,
-          /<img[^>]+src="(https:\/\/[^"]*instagram[^"]*\/[^"]*_n\.jpg[^"]*)"/i,
-          /<img[^>]+src="(https:\/\/scontent[^"]+)"/i,
-          /"display_url"\s*:\s*"(https:[^"]+)"/i,
-          /"thumbnail_src"\s*:\s*"(https:[^"]+)"/i,
-          /background-image:\s*url\(['"]?(https:\/\/scontent[^'")\s]+)['"]?\)/i,
-        ];
-        for (const re of imgPatterns) {
-          const m = re.exec(html);
-          if (m) {
-            const candidate = m[1].replace(/&amp;/g, '&').replace(/\\u0026/g, '&');
-            if (candidate.startsWith('http')) { imageUrl = candidate; break; }
-          }
+      // Primary: Post-specific image patterns (prefer over og:image which is often the profile pic)
+      const imgPatterns = [
+        /"display_url"\s*:\s*"(https:[^"]+)"/i,
+        /"thumbnail_src"\s*:\s*"(https:[^"]+)"/i,
+        /<img[^>]+class="[^"]*EmbedImage[^"]*"[^>]+src="([^"]+)"/i,
+        /<img[^>]+src="(https:\/\/[^"]*instagram[^"]*\/[^"]*_n\.jpg[^"]*)"/i,
+        /<img[^>]+src="(https:\/\/scontent[^"]+)"/i,
+        /background-image:\s*url\(['"]?(https:\/\/scontent[^'")\s]+)['"]?\)/i,
+      ];
+      for (const re of imgPatterns) {
+        const m = re.exec(html);
+        if (m) {
+          const candidate = m[1].replace(/&amp;/g, '&').replace(/\\u0026/g, '&');
+          if (candidate.startsWith('http')) { imageUrl = candidate; break; }
         }
+      }
+
+      // Fallback: OG image
+      if (!imageUrl) {
+        const ogImgMatch = html.match(/<meta[^>]+property\s*=\s*["']og:image["'][^>]+content\s*=\s*["']([^"']*)["']/i)
+          || html.match(/<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+property\s*=\s*["']og:image["']/i);
+        if (ogImgMatch) imageUrl = ogImgMatch[1].replace(/&amp;/g, '&');
       }
 
       // ── Extract title ──
