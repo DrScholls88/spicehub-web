@@ -7,7 +7,7 @@
  *   2. CORS PROXY    Ã¢â€ â€™ fallback if server unreachable (limited for social media)
  *   3. CAPTION TEXT  Ã¢â€ â€™ 4-pass heuristic parser (used internally on extracted captions)
  */
-import { cleanUrl, isInstagramCdnUrl, fetchHtmlViaProxy as fetchHtmlViaProxyFromApi, downloadImageAsDataUrl, fetchInstagramOEmbed, fetchInstagramJson } from './api.js';
+import { cleanUrl, isInstagramCdnUrl, fetchHtmlViaProxy as fetchHtmlViaProxyFromApi, downloadImageAsDataUrl, fetchInstagramOEmbed, fetchInstagramJson, fetchInstagramJsonDetails } from './api.js';
 import { getCachedImport, setCachedImport } from './db.js';
 import { isRedditUrl, isRedditPostUrl, tryRedditJson } from './scrapers/redditDiscovery.js';
 import { htmlToMarkdown, htmlLooksLikeRecipe } from './scrapers/markdownConverter.js';
@@ -311,6 +311,32 @@ export function cleanSocialCaption(text) {
   t = t.replace(/^[\s,;|Ã‚Â·Ã¢â‚¬Â¢Ã¢â‚¬â€œÃ¢â‚¬â€]+$/gm, '');
 
   return t.trim();
+}
+
+function isSocialCaptionProse(line) {
+  const value = String(line || '').trim();
+  if (!value) return true;
+  const lower = value.toLowerCase();
+  if (/[?]/.test(value)) return true;
+  if (/^(would you|will you|do you|did you|can you|could you|try this|save this|share this|tag |comment |follow |like |bright,|fresh,|sweet,|bitter,)/i.test(value)) return true;
+  if (/\b(would you try|try this one|save for later|let me know|follow for more|link in bio)\b/i.test(value)) return true;
+  const hasQuantity = /\b\d+\s*(?:g|kg|ml|l|oz|cup|cups|tbsp|tsp|tablespoons?|teaspoons?|small|large|medium|head|clove|cloves|bunch|pinch|dash|handful)\b/i.test(value);
+  const hasAction = COOKING_VERBS_RE.test(value) || SPOKEN_DIRECTION_RE.test(value);
+  const sentenceLike = value.length > 35 && /[,.;!]/.test(value);
+  if (sentenceLike && !hasQuantity && !hasAction) return true;
+  if (lower.split(/\s+/).length > 10 && !hasQuantity && !hasAction) return true;
+  return false;
+}
+
+function cleanStructuredSocialRecipe(recipe) {
+  if (!recipe || typeof recipe !== 'object') return recipe;
+  const ingredients = Array.isArray(recipe.ingredients)
+    ? recipe.ingredients.filter((line) => !isSocialCaptionProse(line))
+    : [];
+  const directions = Array.isArray(recipe.directions)
+    ? recipe.directions.filter((line) => !/^(would you|save this|follow|link in bio)/i.test(String(line || '').trim()))
+    : [];
+  return { ...recipe, ingredients, directions };
 }
 
 /**
@@ -1413,24 +1439,34 @@ async function extractInstagramEmbed(url) {
     const postImgPatterns = [
       /"display_url"\s*:\s*"(https:[^"]+)"/i,
       /"thumbnail_src"\s*:\s*"(https:[^"]+)"/i,
+      /"url"\s*:\s*"(https:[^"]*(?:scontent|fbcdn|cdninstagram)[^"]+)"/i,
+      /"src"\s*:\s*"(https:[^"]*(?:scontent|fbcdn|cdninstagram)[^"]+)"/i,
+      /"poster"\s*:\s*"(https:[^"]+)"/i,
       /display_url":"(https:[^"]+)"/i,
-      /<img[^>]+src="(https:\/\/[^"]*(?:scontent|fbcdn|cdninstagram)[^"]*_n\.jpg[^"]*)"/i,
+      /<meta[^>]+property=["']og:image["'][^>]+content=["'](https:\/\/[^"']+)["']/i,
+      /<img[^>]+src="(https:\/\/[^"]*(?:scontent|fbcdn|cdninstagram)[^"]*_n\.(?:jpg|webp)[^"]*)"/i,
       /<img[^>]+src="(https:\/\/scontent[^"]+)"/i,
-      /<img[^>]+src="(https:\/\/[^"]*instagram[^"]*\/[^"]*_n\.jpg[^"]*)"/i,
+      /<img[^>]+src="(https:\/\/[^"]*instagram[^"]*\/[^"]*_n\.(?:jpg|webp)[^"]*)"/i,
     ];
     for (const re of postImgPatterns) {
       const m = re.exec(html);
       if (m) {
-        const candidate = m[1].replace(/&amp;/g, '&').replace(/\\u0026/g, '&');
+        const candidate = m[1]
+          .replace(/\\\//g, '/')
+          .replace(/&amp;/g, '&')
+          .replace(/\\u0026/g, '&');
         // Skip profile pics / avatars — these are account images, not food photos
-        if (!/profile_pic|avatar|accounts\/avatars|[?&]s=150|150x150|s150x150/.test(candidate)) {
+        if (!/profile_pic|avatar|accounts\/avatars|[?&]s=150|150x150|s150x150|\/profile\//.test(candidate)) {
           imageUrl = candidate;
           break;
         }
       }
     }
     // Only fall back to og:image if no post-specific image found
-    if (!imageUrl) imageUrl = extractMeta(html, 'og:image') || '';
+    if (!imageUrl) {
+      const ogImage = extractMeta(html, 'og:image') || '';
+      if (ogImage && !/profile_pic|avatar|accounts\/avatars|150x150|s150x150|\/profile\//.test(ogImage)) imageUrl = ogImage;
+    }
 
     // Extract title — og:title often reads "Username on Instagram: 'first line of caption'"
     // cleanTitle strips the "Username on Instagram:" prefix, leaving the recipe name.
@@ -4147,14 +4183,17 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   }
 
   // ── Phase 0.75: Instagram JSON endpoint (?__a=1&__d=dis) — often blocked but worth trying ──
-  if (!capturedCaption) {
+  {
     try {
       const scMatch = url.match(/\/(p|reel|tv)\/([A-Za-z0-9_-]+)/);
       if (scMatch) {
-        const jsonCaption = await fetchInstagramJson(scMatch[2]);
-        if (jsonCaption && jsonCaption.length > 30) {
+        const jsonDetails = await fetchInstagramJsonDetails(scMatch[2]);
+        const jsonCaption = jsonDetails?.caption || (!capturedCaption ? await fetchInstagramJson(scMatch[2]) : '');
+        if (!capturedCaption && jsonCaption && jsonCaption.length > 30) {
           capturedCaption = cleanSocialCaption(jsonCaption);
         }
+        if (!capturedImageUrl && jsonDetails?.imageUrl) capturedImageUrl = jsonDetails.imageUrl;
+        if (!capturedTitle && jsonDetails?.title) capturedTitle = jsonDetails.title;
       }
     } catch { /* JSON endpoint blocked */ }
   }
@@ -4230,16 +4269,16 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
     } catch { progress(1, 'failed', 'Embed fetch failed'); }
 
     // -- Phase 2: Server browser extraction for thin or missing captions --
-    if (!capturedCaption || isCaptionWeak(capturedCaption)) {
+    if (!capturedCaption || isCaptionWeak(capturedCaption) || !capturedImageUrl) {
       progress(2, 'running', 'Trying browser-assisted extraction...');
       const agentRecipe = await extractInstagramAgent(url, (msg) => progress(2, 'running', msg), { type });
-      if (agentRecipe && hasRecipeContent(agentRecipe)) {
+      if (agentRecipe && (hasRecipeContent(agentRecipe) || agentRecipe.imageUrl)) {
         const agentText = recipeToText(agentRecipe);
         if (agentText.length > capturedCaption.length) capturedCaption = agentText;
         capturedImageUrl = agentRecipe.imageUrl || capturedImageUrl;
         capturedTitle = agentRecipe.name || capturedTitle;
         if (agentRecipe._hasSubtitles) videoRecipe = agentRecipe;
-        progress(2, 'done', 'Browser-assisted extraction found recipe text');
+        progress(2, 'done', agentRecipe.imageUrl && !agentText ? 'Browser-assisted extraction found image' : 'Browser-assisted extraction found recipe text');
       } else {
         progress(2, 'skipped', 'Browser-assisted extraction unavailable');
       }
@@ -4277,7 +4316,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
       progress(3, 'running', '✨ Structuring recipe with Gemini…');
     }
     try {
-      const recipe = await captionToRecipe(textForGemini, { title: capturedTitle, imageUrl: capturedImageUrl, sourceUrl: url, type });
+      const recipe = cleanStructuredSocialRecipe(await captionToRecipe(textForGemini, { title: capturedTitle, imageUrl: capturedImageUrl, sourceUrl: url, type }));
       // Use OR: accept if EITHER ingredients OR directions is non-placeholder
       if (recipe && (!isPlaceholder(recipe.ingredients) || !isPlaceholder(recipe.directions))) {
         progress(3, 'done', 'Recipe structured successfully!');
@@ -4294,12 +4333,12 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
       }
       // Gemini returned partial — try merge with yt-dlp if available
       if (videoRecipe && hasRecipeContent(videoRecipe)) {
-        const merged = {
+        const merged = cleanStructuredSocialRecipe({
           ...videoRecipe,
           ...(recipe?.name ? { name: recipe.name } : {}),
           ingredients: !isPlaceholder(recipe?.ingredients) ? recipe.ingredients : videoRecipe.ingredients,
           directions:  !isPlaceholder(recipe?.directions)  ? recipe.directions  : videoRecipe.directions,
-        };
+        });
         if (hasRecipeContent(merged)) {
           progress(3, 'done', 'Recipe extracted from video!');
           const persistedImageUrl = await persistCapturedImage(capturedImageUrl || merged.imageUrl || '');

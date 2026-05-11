@@ -671,24 +671,66 @@ export async function fetchInstagramJson(shortcode) {
     if (!text || text.length < 10) return null;
 
     try {
-      const data = JSON.parse(text);
-      const media =
-        data?.graphql?.shortcode_media ||
-        data?.items?.[0] ||
-        data?.data?.shortcode_media ||
-        null;
-      if (!media) return null;
-      const captionEdges = media?.edge_media_to_caption?.edges;
-      if (Array.isArray(captionEdges) && captionEdges.length > 0) {
-        return captionEdges[0]?.node?.text || null;
-      }
-      const caption = media?.caption?.text || media?.caption || null;
-      return typeof caption === 'string' ? caption : null;
+      return parseInstagramMediaJson(text)?.caption || null;
     } catch {
       return null;
     }
   } catch (e) {
     console.log('[fetchInstagramJson] Failed:', e.message);
+    return null;
+  }
+}
+
+function parseInstagramMediaJson(text) {
+  const data = JSON.parse(text);
+  const media =
+    data?.graphql?.shortcode_media ||
+    data?.items?.[0] ||
+    data?.data?.shortcode_media ||
+    null;
+  if (!media) return null;
+
+  const captionEdges = media?.edge_media_to_caption?.edges;
+  const captionFromEdges = Array.isArray(captionEdges) && captionEdges.length > 0
+    ? captionEdges[0]?.node?.text
+    : null;
+  const caption = captionFromEdges || media?.caption?.text || media?.caption || '';
+
+  const candidateUrls = [
+    media.display_url,
+    media.thumbnail_src,
+    media.image_versions2?.candidates?.[0]?.url,
+    media.carousel_media?.[0]?.image_versions2?.candidates?.[0]?.url,
+    media.carousel_media?.[0]?.display_url,
+    media.video_versions?.[0]?.url,
+  ].filter(Boolean);
+
+  const imageUrl = candidateUrls.find((url) =>
+    typeof url === 'string' &&
+    /scontent|fbcdn|cdninstagram|instagram/i.test(url) &&
+    !/profile_pic|avatar|accounts\/avatars|150x150|s150x150/.test(url)
+  ) || '';
+
+  return {
+    caption: typeof caption === 'string' ? caption : '',
+    imageUrl: imageUrl.replace(/\\u0026/g, '&').replace(/&amp;/g, '&'),
+    title: media.title || media.owner?.username || '',
+  };
+}
+
+export async function fetchInstagramJsonDetails(shortcode) {
+  try {
+    const proxyUrl = `/api/proxy?mode=instagram-json&shortcode=${encodeURIComponent(shortcode)}`;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 12000);
+    const resp = await fetch(proxyUrl, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!resp.ok) return null;
+    const text = await resp.text();
+    if (!text || text.length < 10) return null;
+    return parseInstagramMediaJson(text);
+  } catch (e) {
+    console.log('[fetchInstagramJsonDetails] Failed:', e.message);
     return null;
   }
 }
