@@ -60,6 +60,17 @@ export function cleanUrl(url) {
   if (!url || typeof url !== 'string') return '';
   let cleaned = url.trim();
 
+  // Mobile share sheets and manual pastes can concatenate URLs without a
+  // separator. Prefer the first fully-qualified URL if one exists, otherwise
+  // accept a schemeless domain and add https below.
+  const urlMatch = cleaned.match(/https?:\/\/[^\s<>"']+/i);
+  if (urlMatch) {
+    cleaned = urlMatch[0];
+  } else {
+    const schemeless = cleaned.match(/(?:^|[\s<>"'])([a-z0-9.-]+\.[a-z]{2,}(?:\/[^\s<>"']*)?)/i);
+    if (schemeless?.[1]) cleaned = schemeless[1];
+  }
+
   // Handle double-concatenated URLs even if the first part lacks 'http://'
   // (e.g. "instagram.com/reel/XYZhttps://www.instagram.com/reel/XYZ")
   const firstHttp = cleaned.indexOf('http');
@@ -75,8 +86,15 @@ export function cleanUrl(url) {
       cleaned = cleaned.substring(0, secondHttp);
     }
   }
-  // Remove slash-concatenated duplicates and trailing slash
-  return cleaned.replace(/\/https?:\/\/.+$/, '').replace(/\/$/, '');
+  cleaned = cleaned.replace(/\/https?:\/\/.+$/, '').replace(/[)\],.;]+$/, '');
+
+  if (/^(?:www\.)?(?:instagram\.com|tiktok\.com|youtube\.com|youtu\.be)\//i.test(cleaned)) {
+    cleaned = `https://${cleaned}`;
+  } else if (/^[a-z0-9.-]+\.[a-z]{2,}\//i.test(cleaned)) {
+    cleaned = `https://${cleaned}`;
+  }
+
+  return cleaned.replace(/\/$/, '');
 }
 
 /**
@@ -565,12 +583,13 @@ async function _blobToValidatedDataUrl(resp, { maxBytes = 2 * 1024 * 1024, minBy
 export async function downloadImageAsDataUrl(imageUrl, opts = {}) {
   if (!imageUrl || typeof imageUrl !== 'string') return null;
   const { timeoutMs = 9000, maxBytes = 2 * 1024 * 1024 } = opts;
+  const cleanedImageUrl = cleanUrl(imageUrl);
 
   // Try direct fetch first (may succeed for CORS-friendly hosts)
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs / 2);
-    const resp = await fetch(imageUrl, {
+    const resp = await fetch(cleanedImageUrl, {
       signal: ctrl.signal,
       headers: { 'Accept': 'image/*' },
     });
@@ -579,13 +598,27 @@ export async function downloadImageAsDataUrl(imageUrl, opts = {}) {
     if (dataUrl) return dataUrl;
   } catch { /* fall through to proxy */ }
 
+  // Same-origin serverless image fetcher can read CDN bytes without browser CORS.
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    const resp = await fetch(`/api/proxy?mode=image-data-url&url=${encodeURIComponent(cleanedImageUrl)}`, {
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+    if (resp.ok) {
+      const data = await resp.json();
+      if (typeof data?.dataUrl === 'string' && data.dataUrl.startsWith('data:image/')) return data.dataUrl;
+    }
+  } catch { /* fall through to public proxies */ }
+
   // Fallback through proxy cascade
-  const html = await fetchHtmlViaProxy(imageUrl, timeoutMs);
+  const html = await fetchHtmlViaProxy(cleanedImageUrl, timeoutMs);
   if (html && html.startsWith('data:')) return html; // already a data URL
 
   // Last resort: try via allorigins which might return image data
   try {
-    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(imageUrl)}`;
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(cleanedImageUrl)}`;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs / 2);
     const resp = await fetch(proxyUrl, { signal: ctrl.signal });
@@ -602,7 +635,8 @@ export async function downloadImageAsDataUrl(imageUrl, opts = {}) {
  */
 export async function fetchInstagramOEmbed(url) {
   try {
-    const proxyUrl = `/api/proxy?mode=instagram-oembed&url=${encodeURIComponent(url)}`;
+    const cleanedUrl = cleanUrl(url);
+    const proxyUrl = `/api/proxy?mode=instagram-oembed&url=${encodeURIComponent(cleanedUrl)}`;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 10000);
     const resp = await fetch(proxyUrl, { signal: ctrl.signal });

@@ -7,7 +7,7 @@
  *   2. CORS PROXY    Ã¢â€ â€™ fallback if server unreachable (limited for social media)
  *   3. CAPTION TEXT  Ã¢â€ â€™ 4-pass heuristic parser (used internally on extracted captions)
  */
-import { isInstagramCdnUrl, fetchHtmlViaProxy as fetchHtmlViaProxyFromApi, downloadImageAsDataUrl, fetchInstagramOEmbed, fetchInstagramJson } from './api.js';
+import { cleanUrl, isInstagramCdnUrl, fetchHtmlViaProxy as fetchHtmlViaProxyFromApi, downloadImageAsDataUrl, fetchInstagramOEmbed, fetchInstagramJson } from './api.js';
 import { getCachedImport, setCachedImport } from './db.js';
 import { isRedditUrl, isRedditPostUrl, tryRedditJson } from './scrapers/redditDiscovery.js';
 import { htmlToMarkdown, htmlLooksLikeRecipe } from './scrapers/markdownConverter.js';
@@ -1516,7 +1516,39 @@ let _serverChecked = false;
  * generates ERR_CONNECTION_REFUSED spam for every import with no benefit.
  * Returns base URL string or null if server is not available.
  */
-// detectServer removed
+async function detectServer() {
+  if (_serverChecked) return _serverBaseUrl;
+  _serverChecked = true;
+
+  const configured =
+    (typeof window !== 'undefined' && window.__SPICEHUB_SERVER__) ||
+    (typeof import.meta !== 'undefined' && (import.meta.env?.VITE_API_BASE || import.meta.env?.VITE_SERVER_URL)) ||
+    '';
+  const candidates = [];
+
+  if (configured) candidates.push(String(configured).replace(/\/$/, ''));
+  if (typeof window !== 'undefined') {
+    candidates.push(window.location.origin);
+    const isLocal = /^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/i.test(window.location.hostname);
+    if (isLocal && window.location.port !== '3001') candidates.push('http://localhost:3001');
+  }
+
+  for (const base of [...new Set(candidates.filter(Boolean))]) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 3000);
+      const resp = await fetch(`${base}/api/v2/ping`, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (resp.ok) {
+        _serverBaseUrl = base;
+        return _serverBaseUrl;
+      }
+    } catch { /* try next candidate */ }
+  }
+
+  _serverBaseUrl = null;
+  return null;
+}
 
 /** Reset server detection (e.g. after network change) */
 export function resetServerDetection() {
@@ -1644,7 +1676,64 @@ function parseSpokenTranscript(text) {
   return { ingredients, directions };
 }
 
-// tryVideoExtraction removed
+async function tryVideoExtraction(url, onProgress, { type = 'meal' } = {}) {
+  const serverUrl = await detectServer();
+  if (!serverUrl) return null;
+
+  try {
+    if (onProgress) onProgress('Checking video subtitles...');
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 75000);
+    const resp = await fetch(`${serverUrl}/api/extract-video`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: cleanUrl(url), type }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    if (!data?.ok) return null;
+
+    const rawText = [data.title, data.description, data.transcript].filter(Boolean).join('\n\n');
+    if (rawText.trim().length < 20) return null;
+
+    const spoken = data.transcript ? parseSpokenTranscript(data.transcript) : null;
+    const parsed = parseCaption(rawText);
+    const baseRecipe = {
+      name: cleanTitle(data.title || parsed.title || 'Imported Recipe'),
+      ingredients: spoken?.ingredients?.length ? spoken.ingredients : parsed.ingredients,
+      directions: spoken?.directions?.length ? spoken.directions : parsed.directions,
+      imageUrl: data.imageUrl || data.thumbnail || '',
+      link: data.sourceUrl || url,
+      _extractedVia: data.hasSubtitles ? 'yt-dlp-subtitles' : 'yt-dlp-metadata',
+      _hasSubtitles: Boolean(data.hasSubtitles),
+    };
+
+    if (hasRecipeContent(baseRecipe)) return baseRecipe;
+
+    const aiRecipe = await captionToRecipe(rawText, {
+      title: data.title || '',
+      imageUrl: baseRecipe.imageUrl,
+      sourceUrl: url,
+      type,
+    });
+    if (aiRecipe && hasRecipeContent(aiRecipe)) {
+      return {
+        ...aiRecipe,
+        imageUrl: baseRecipe.imageUrl || aiRecipe.imageUrl,
+        link: url,
+        _extractedVia: data.hasSubtitles ? 'yt-dlp-subtitles-ai' : 'yt-dlp-metadata-ai',
+        _hasSubtitles: Boolean(data.hasSubtitles),
+      };
+    }
+  } catch (e) {
+    console.log(`[SpiceHub] Video extraction error: ${e.message}`);
+  }
+
+  return null;
+}
 
 /**
  * Phase 2: Agent-style automatic extraction via the /api/extract-instagram-agent endpoint.
@@ -1656,7 +1745,61 @@ function parseSpokenTranscript(text) {
  *
  * Returns a parsed recipe object with imageUrls[] or null on failure.
  */
-// extractInstagramAgent removed
+async function extractInstagramAgent(url, onProgress, { type = 'meal' } = {}) {
+  const serverUrl = await detectServer();
+  if (!serverUrl) return null;
+
+  try {
+    if (onProgress) onProgress('Trying server browser extraction...');
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 75000);
+    const resp = await fetch(`${serverUrl}/api/extract-instagram-agent`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: cleanUrl(url), type }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(timer);
+
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    if (!data?.ok) return null;
+
+    const rawText = [data.caption, data.rawText, data.transcript].filter(Boolean).join('\n\n');
+    const imageUrl = Array.isArray(data.imageUrls) ? data.imageUrls[0] : data.imageUrl || '';
+    if (rawText.trim().length < 20 && !imageUrl) return null;
+
+    const recipe = rawText.trim().length >= 20
+      ? await captionToRecipe(rawText, { title: data.title || '', imageUrl, sourceUrl: url, type })
+      : null;
+
+    if (recipe && hasRecipeContent(recipe)) {
+      return {
+        ...recipe,
+        imageUrl: imageUrl || recipe.imageUrl,
+        link: url,
+        _extractedVia: data.extractedVia || 'server-browser-ai',
+        _hasSubtitles: Boolean(data.transcript),
+      };
+    }
+
+    if (rawText.trim().length >= 20) {
+      const parsed = parseCaption(rawText);
+      return {
+        name: cleanTitle(data.title || parsed.title || 'Imported Recipe'),
+        ingredients: parsed.ingredients,
+        directions: parsed.directions,
+        imageUrl,
+        link: url,
+        _extractedVia: data.extractedVia || 'server-browser',
+      };
+    }
+  } catch (e) {
+    console.log(`[SpiceHub] Instagram browser extraction error: ${e.message}`);
+  }
+
+  return null;
+}
 
 /**
  * Try server-side extraction (yt-dlp + headless Chrome).
@@ -2107,17 +2250,13 @@ export async function importRecipeFromUrl(url, onProgress, { type = 'meal' } = {
     console.log('[SpiceHub] Instagram URL Ã¢â‚¬â€ trying embed extraction...');
     if (onProgress) onProgress('Trying Instagram embed extraction...');
 
-    // Try client-side embed extraction first (fastest)
-    const embedResult = await extractInstagramEmbed(url);
-    if (embedResult && embedResult.ok && embedResult.caption && embedResult.caption.length > 20) {
-      const recipe = handleEmbedResult(embedResult, url);
-      if (recipe && recipe.ingredients[0] !== 'See original post for ingredients') {
-        return recipe;
-      }
+    const instagramRecipe = await importFromInstagram(url, (phaseOrMsg, status, msg) => {
+      if (!onProgress) return;
+      onProgress(typeof msg === 'string' ? msg : String(phaseOrMsg || 'Importing Instagram post...'));
+    }, { type });
+    if (instagramRecipe && !instagramRecipe._needsManualCaption && !instagramRecipe._error) {
+      return instagramRecipe;
     }
-
-    // extractInstagramAgent and tryVideoExtraction removed (server decommissioned).
-    // importFromInstagram in recipeParser.js handles the unified client-side pipeline.
 
     // Instagram all paths failed Ã¢â‚¬â€ route to BrowserAssist
     console.log('[SpiceHub] Instagram extraction failed Ã¢â‚¬â€ routing to BrowserAssist');
@@ -2128,8 +2267,8 @@ export async function importRecipeFromUrl(url, onProgress, { type = 'meal' } = {
   if (isSocialMediaUrl(url)) {
     console.log('[SpiceHub] Social/video URL Ã¢â‚¬â€ trying extraction pipeline...');
 
-    // extractInstagramAgent and tryVideoExtraction removed (server decommissioned).
-    // Fallback: CORS proxy (sometimes works for public pages)
+    const videoRecipe = await tryVideoExtraction(url, onProgress, { type });
+    if (videoRecipe && !videoRecipe._error && hasRecipeContent(videoRecipe)) return videoRecipe;
 
     // Fallback: CORS proxy (sometimes works for public pages)
     if (onProgress) onProgress('Trying direct extraction...');
@@ -3923,6 +4062,7 @@ export async function resolveShortUrl(url) {
  * @returns {Object} Structured recipe or { _needsManualCaption: true }
  */
 export async function importFromInstagram(url, onProgress = () => {}, { type = 'meal' } = {}) {
+  url = cleanUrl(url);
   const progress = (phase, status, msg) => onProgress(phase, status, msg);
 
   // ── Cache check: return early if we already have a fresh result ──────────────
@@ -3955,13 +4095,37 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   let capturedCaption   = '';
   let capturedImageUrl  = '';
   let capturedTitle     = '';   // best title found across all phases
-  let videoRecipe       = null; // yt-dlp structured result (always null — server decommissioned)
-
-  // -- Phase 0: yt-dlp video subtitles (server decommissioned -- always skip) --
-  progress(0, 'skipped', 'Server unavailable — using embed + AI');
+  let videoRecipe       = null; // yt-dlp/server resource helper result
 
   // Track raw page text from embed as last-resort Gemini input
   let capturedRawPageText = '';
+
+  const persistCapturedImage = async (imageUrl = capturedImageUrl) => {
+    if (!imageUrl || imageUrl.startsWith('data:')) return imageUrl || '';
+    if (!isInstagramCdnUrl(imageUrl) && !/scontent|fbcdn|cdninstagram/i.test(imageUrl)) return imageUrl;
+    try {
+      const dataUrl = await downloadImageAsDataUrl(imageUrl, { timeoutMs: 12000 });
+      return dataUrl || imageUrl;
+    } catch {
+      return imageUrl;
+    }
+  };
+
+  // -- Phase 0: yt-dlp video subtitles (optional always-on server resource helper) --
+  progress(0, 'running', 'Checking video subtitles...');
+  try {
+    videoRecipe = await tryVideoExtraction(url, (msg) => progress(0, 'running', msg), { type });
+    if (videoRecipe && hasRecipeContent(videoRecipe)) {
+      capturedCaption = recipeToText(videoRecipe);
+      capturedImageUrl = videoRecipe.imageUrl || capturedImageUrl;
+      capturedTitle = videoRecipe.name || capturedTitle;
+      progress(0, 'done', videoRecipe._hasSubtitles ? 'Video subtitles found' : 'Video metadata found');
+    } else {
+      progress(0, 'skipped', 'No video subtitles available');
+    }
+  } catch {
+    progress(0, 'skipped', 'Video subtitles unavailable');
+  }
 
   // ── Phase 0.5: Instagram oEmbed API — fastest when FB_APP_TOKEN is configured ──
   // Calls /api/proxy?mode=instagram-oembed on the Vercel edge function.
@@ -3969,14 +4133,8 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   if (!capturedCaption) {
     try {
       const oembed = await fetchInstagramOEmbed(url);
-      // NOTE: oembed.thumbnail_url is the profile avatar, NOT the food photo.
-      // Save it only as a low-priority fallback — the embed HTML's display_url (Phase 1)
-      // is the actual post image and must be allowed to override this.
-      if (oembed?.thumbnail_url && !capturedImageUrl) {
-        // Store separately — Phase 1 will overwrite if it finds a post-specific image
-        capturedImageUrl = oembed.thumbnail_url;
-        capturedImageUrl.__isOembedThumb = true; // mark as low-priority
-      }
+      // oEmbed thumbnail_url is commonly the creator avatar, not the food photo.
+      // The embed/server phases below are responsible for post-specific images.
       if (oembed?.html) {
         // oEmbed HTML contains the post caption inside a <p> tag
         const capMatch = oembed.html.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
@@ -4033,7 +4191,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
             : 'Embed returned no text');
 
         if (capturedCaption && !isWeak) {
-          progress(2, 'skipped', 'Strong caption — skipping AI browser');
+          progress(2, 'pending', 'Strong caption captured; browser assist remains available');
         }
       } else if (embedData?.rawPageText) {
         progress(1, 'done', 'No caption — sending page content to Google AI…');
@@ -4071,8 +4229,23 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
       }
     } catch { progress(1, 'failed', 'Embed fetch failed'); }
 
-    // -- Phase 2: AI Browser (server decommissioned -- always skip) --
-    progress(2, 'skipped', 'AI browser unavailable (server decommissioned)');
+    // -- Phase 2: Server browser extraction for thin or missing captions --
+    if (!capturedCaption || isCaptionWeak(capturedCaption)) {
+      progress(2, 'running', 'Trying browser-assisted extraction...');
+      const agentRecipe = await extractInstagramAgent(url, (msg) => progress(2, 'running', msg), { type });
+      if (agentRecipe && hasRecipeContent(agentRecipe)) {
+        const agentText = recipeToText(agentRecipe);
+        if (agentText.length > capturedCaption.length) capturedCaption = agentText;
+        capturedImageUrl = agentRecipe.imageUrl || capturedImageUrl;
+        capturedTitle = agentRecipe.name || capturedTitle;
+        if (agentRecipe._hasSubtitles) videoRecipe = agentRecipe;
+        progress(2, 'done', 'Browser-assisted extraction found recipe text');
+      } else {
+        progress(2, 'skipped', 'Browser-assisted extraction unavailable');
+      }
+    } else {
+      progress(2, 'skipped', 'Strong caption captured');
+    }
   } // end phases 0.5–1+2
 
   // ── Phase 3: Gemini AI structuring — ALWAYS runs on any captured text ────────
@@ -4108,9 +4281,10 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
       // Use OR: accept if EITHER ingredients OR directions is non-placeholder
       if (recipe && (!isPlaceholder(recipe.ingredients) || !isPlaceholder(recipe.directions))) {
         progress(3, 'done', 'Recipe structured successfully!');
+        const persistedImageUrl = await persistCapturedImage(capturedImageUrl || recipe.imageUrl || '');
         const finalRecipe = {
           ...recipe,
-          imageUrl: capturedImageUrl || recipe.imageUrl,
+          imageUrl: persistedImageUrl,
           extractedVia: videoRecipe ? 'yt-dlp+ai' : 'caption-ai',
           sourceUrl: url,
           importedAt: new Date().toISOString(),
@@ -4128,7 +4302,8 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
         };
         if (hasRecipeContent(merged)) {
           progress(3, 'done', 'Recipe extracted from video!');
-          const finalRecipe = { ...merged, imageUrl: capturedImageUrl || merged.imageUrl, extractedVia: 'yt-dlp', sourceUrl: url, importedAt: new Date().toISOString() };
+          const persistedImageUrl = await persistCapturedImage(capturedImageUrl || merged.imageUrl || '');
+          const finalRecipe = { ...merged, imageUrl: persistedImageUrl, extractedVia: 'yt-dlp', sourceUrl: url, importedAt: new Date().toISOString() };
           try { await setCachedImport(url, finalRecipe); } catch { /* non-fatal */ }
           return finalRecipe;
         }
@@ -4137,7 +4312,8 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
       // Gemini failed — fall back to yt-dlp result if available
       if (videoRecipe && hasRecipeContent(videoRecipe)) {
         progress(3, 'done', 'Using video extraction (AI unavailable)');
-        const finalRecipe = { ...videoRecipe, imageUrl: capturedImageUrl || videoRecipe.imageUrl, extractedVia: 'yt-dlp', sourceUrl: url, importedAt: new Date().toISOString() };
+        const persistedImageUrl = await persistCapturedImage(capturedImageUrl || videoRecipe.imageUrl || '');
+        const finalRecipe = { ...videoRecipe, imageUrl: persistedImageUrl, extractedVia: 'yt-dlp', sourceUrl: url, importedAt: new Date().toISOString() };
         try { await setCachedImport(url, finalRecipe); } catch { /* non-fatal */ }
         return finalRecipe;
       }
@@ -4146,7 +4322,8 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   } else if (videoRecipe && hasRecipeContent(videoRecipe)) {
     // No caption text but yt-dlp gave us a full recipe — use it directly
     progress(3, 'done', 'Recipe from video subtitles!');
-    const finalRecipe = { ...videoRecipe, imageUrl: capturedImageUrl || videoRecipe.imageUrl, extractedVia: 'yt-dlp', sourceUrl: url, importedAt: new Date().toISOString() };
+    const persistedImageUrl = await persistCapturedImage(capturedImageUrl || videoRecipe.imageUrl || '');
+    const finalRecipe = { ...videoRecipe, imageUrl: persistedImageUrl, extractedVia: 'yt-dlp', sourceUrl: url, importedAt: new Date().toISOString() };
     try { await setCachedImport(url, finalRecipe); } catch { /* non-fatal */ }
     return finalRecipe;
   } else {
