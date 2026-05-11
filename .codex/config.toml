@@ -1,0 +1,39 @@
+[mcp_servers.code-review-graph]
+args = ["serve"]
+command = "code-review-graph"
+
+[mcp_servers.code-review-graph.tools.query_graph_tool]
+approval_mode = "approve"
+
+[mcp_servers.code-review-graph.tools.semantic_search_nodes_tool]
+approval_mode = "approve"
+
+[mcp_servers.context7]
+args = [
+    "/c",
+    "npx",
+    "-y",
+    "@upstash/context7-mcp",
+]
+command = "cmd"
+
+[mcp_servers.github]
+args = [
+    "/c",
+    "npx",
+    "-y",
+    "@modelcontextprotocol/server-github",
+]
+command = "cmd"
+
+[mcp_servers.github.env]
+GITHUB_PERSONAL_ACCESS_TOKEN = "YOUR_TOKEN_HERE"
+
+[mcp_servers.playwright]
+args = [
+    "/c",
+    "npx",
+    "-y",
+    "@playwright/mcp@latest",
+]
+command = "cmd"

@@ -22,6 +22,18 @@ const USER_AGENTS = [
   'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
 ];
 
+function cleanUrl(input = '') {
+  if (typeof input !== 'string') return '';
+  let url = input.trim();
+  const qualified = url.match(/https?:\/\/[^\s<>"']+/i);
+  if (qualified) url = qualified[0];
+  else {
+    const schemeless = url.match(/(?:^|[\s<>"'])([a-z0-9.-]+\.[a-z]{2,}(?:\/[^\s<>"']*)?)/i);
+    if (schemeless?.[1]) url = `https://${schemeless[1]}`;
+  }
+  return url.replace(/\/https?:\/\/.+$/i, '').replace(/[)\],.;]+$/, '').replace(/\/$/, '');
+}
+
 /**
  * Build realistic browser-like headers for a given URL.
  * This is critical — Allrecipes, NYTimes, etc. reject requests with bot-like headers.
@@ -71,7 +83,7 @@ export default async function handler(req) {
   const mode = searchParams.get('mode');
 
   if (mode === 'instagram-oembed') {
-    const igUrl = searchParams.get('url');
+    const igUrl = cleanUrl(searchParams.get('url') || '');
     if (!igUrl || (!igUrl.startsWith('https://www.instagram.com/') && !igUrl.startsWith('https://instagram.com/'))) {
       return new Response(JSON.stringify({ error: 'Invalid Instagram URL' }), {
         status: 400,
@@ -95,6 +107,58 @@ export default async function handler(req) {
       });
     } catch (e) {
       return new Response(JSON.stringify({ error: 'oEmbed fetch failed' }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+  }
+
+  if (mode === 'image-data-url') {
+    const imageUrl = cleanUrl(searchParams.get('url') || '');
+    let parsed;
+    try {
+      parsed = new URL(imageUrl);
+    } catch {
+      return new Response(JSON.stringify({ error: 'Invalid image URL' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      return new Response(JSON.stringify({ error: 'Only http/https URLs are allowed' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+    try {
+      const resp = await fetch(parsed.href, {
+        headers: {
+          ...buildHeaders(parsed.href),
+          Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        },
+      });
+      if (!resp.ok) {
+        return new Response(JSON.stringify({ error: 'Image fetch failed', status: resp.status }), {
+          status: resp.status,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        });
+      }
+      const contentType = resp.headers.get('content-type') || 'image/jpeg';
+      const bytes = await resp.arrayBuffer();
+      if (bytes.byteLength < 100 || bytes.byteLength > 3 * 1024 * 1024) {
+        return new Response(JSON.stringify({ error: 'Image size rejected' }), {
+          status: 422,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        });
+      }
+      const binary = Array.from(new Uint8Array(bytes), (b) => String.fromCharCode(b)).join('');
+      const dataUrl = `data:${contentType.split(';')[0]};base64,${btoa(binary)}`;
+      return new Response(JSON.stringify({ dataUrl }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    } catch (e) {
+      return new Response(JSON.stringify({ error: e.message }), {
         status: 502,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
@@ -158,7 +222,7 @@ export default async function handler(req) {
   }
   // -- End mode routing -----------------------------------------------------
 
-  const targetUrl = searchParams.get('url');
+  const targetUrl = cleanUrl(searchParams.get('url') || '');
 
   // Validate URL
   if (!targetUrl) {

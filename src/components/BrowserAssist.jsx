@@ -256,12 +256,12 @@ const toggleDeepMode = () => {
         // ── Instagram: use the unified importFromInstagram engine ──────────────────
         // This engine tries both /p/ and /reel/ embed URL patterns, extracts rawPageText
         // as Gemini fallback, and runs Phase 3 (Gemini AI) on any captured text.
-        // Pipeline steps map to: Phase 0 = video subs (skipped), Phase 1 = embed,
-        // Phase 2 = AI browser (skipped), Phase 3 = Gemini structuring.
+        // Pipeline steps map to: Phase 0 = video subs, Phase 1 = embed,
+        // Phase 2 = server browser assist, Phase 3 = Gemini structuring.
         if (isInsta) {
           // Initialise pipeline steps for display (Phase 0 and 2 are known-skipped)
           setPipelineSteps([
-            { label: 'Video subtitles', status: 'skipped', message: 'Server unavailable' },
+            { label: 'Video subtitles', status: 'pending', message: '' },
             { label: 'Caption fetch',   status: 'pending',  message: '' },
             { label: 'AI browser',      status: 'pending',  message: '' },
             { label: 'AI structuring',  status: 'pending',  message: '' },
