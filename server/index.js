@@ -261,7 +261,7 @@ app.post('/api/extract-video', async (req, res) => {
   if (!parsed) return res.status(400).json({ ok: false, error: 'invalid-url' });
 
   const result = await runYtDlpJson(parsed.href);
-  if (!result.ok) return res.status(502).json({ ok: false, error: result.error });
+  if (!result.ok) return res.json({ ok: false, error: result.error });
 
   const info = result.data;
   let transcript = '';
@@ -315,7 +315,7 @@ app.post('/api/extract-url', async (req, res) => {
       extractedVia: 'server-html',
     });
   } catch (err) {
-    return res.status(502).json({ ok: false, error: err.message });
+    return res.json({ ok: false, error: err.message });
   }
 });
 
@@ -351,7 +351,7 @@ app.post('/api/extract-instagram-agent', async (req, res) => {
     } catch { /* try next candidate */ }
   }
 
-  return res.status(404).json({ ok: false, error: 'no-instagram-data' });
+  return res.json({ ok: false, error: 'no-instagram-data' });
 });
 
 app.post('/api/structure-recipe', async (req, res) => {
