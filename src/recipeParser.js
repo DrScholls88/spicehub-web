@@ -40,6 +40,37 @@ function looksLikeIngredientLine(line) {
   }
 }
 
+// ——— Image URL validation helpers ———————————————————————————————————————————
+// Instagram embed HTML contains many URLs from cdninstagram.com that are NOT
+// images (JS bundles, CSS, fonts, WASM). These must be rejected before we try
+// to proxy/display them as recipe photos.
+
+/** Returns true if `url` looks like an actual image URL (not JS/CSS/font/etc). */
+function isValidImageUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  // data: URIs are fine if they're images
+  if (url.startsWith('data:')) return url.startsWith('data:image/');
+  try {
+    const u = new URL(url);
+    const path = u.pathname.toLowerCase();
+    // Reject known non-image extensions
+    if (/\.(js|css|woff2?|ttf|eot|svg|html?|json|xml|wasm|map|txt)(\?|$)/i.test(path)) return false;
+    // Reject Instagram/Meta resource paths (rsrc.php bundles, static assets)
+    if (/\/rsrc\.php\//i.test(path)) return false;
+    if (/\/static\//.test(path) && !/\.(jpg|jpeg|png|webp|gif|avif|heic)/i.test(path)) return false;
+    return true;
+  } catch {
+    // If URL can't be parsed, check basic patterns
+    return !/\.(js|css|woff2?|ttf)([?#]|$)/i.test(url);
+  }
+}
+
+/** Returns true if `url` is a profile picture / avatar (not a food photo). */
+function isProfilePicUrl(url) {
+  if (!url || typeof url !== 'string') return false;
+  return /profile_pic|avatar|accounts\/avatars|[?&]s=150|150x150|s150x150|dst-jpg_s150x150|\/profile\//i.test(url);
+}
+
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Title sanitizer (public export, delegates to cleanTitle) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 export function sanitizeRecipeTitle(raw) {
   return cleanTitle(raw);
@@ -414,11 +445,15 @@ function _buildExtractionPrompt(rawText, { hintTitle = '', type = 'meal' } = {})
     const lower = rawText.toLowerCase();
     const SPIRITS = ['whiskey','whisky','bourbon','scotch','rye whiskey',' gin ','rum ','tequila',
       'mezcal','vodka','cognac','brandy','vermouth','campari','aperol','amaretto','kahlua',
-      'baileys','triple sec','cointreau','amaro','bitters','angostura','absinthe','chartreuse'];
+      'baileys','triple sec','cointreau','amaro','bitters','angostura','absinthe','chartreuse',
+      'prosecco','champagne','cava','pisco','sake','soju','grappa','limoncello','curaçao',
+      'maraschino','falernum','orgeat','elderflower liqueur','st. germain','fernet'];
     const COCKTAIL_ACTIONS = [' shake','shaker','stir and strain','muddle','strain into',
       'double strain','build in glass','top with ','float the ','garnish with','express the',
-      'rimmed glass','jigger','bar spoon','barspoon','cocktail glass'];
-    const UNIT_SIGNALS = [' oz ',' oz,','.5 oz','ml ','1 dash','2 dash','splash of','rinse with'];
+      'rimmed glass','jigger','bar spoon','barspoon','cocktail glass','coupe','rocks glass',
+      'highball glass','nick and nora','mixing glass','hawthorne strain','fine strain'];
+    const UNIT_SIGNALS = [' oz ',' oz,','.5 oz','ml ','1 dash','2 dash','splash of','rinse with',
+      '0.5 oz','0.75 oz','1.5 oz','2 oz','3 oz',' cl ',' part ','barspoon of'];
     const spiritHits = SPIRITS.filter(w => lower.includes(w)).length;
     const verbHits   = COCKTAIL_ACTIONS.filter(w => lower.includes(w)).length;
     const unitHits   = UNIT_SIGNALS.filter(w => lower.includes(w)).length;
@@ -450,7 +485,9 @@ function _buildExtractionPrompt(rawText, { hintTitle = '', type = 'meal' } = {})
   const rulesCommon = `- TITLE: Extract the ${subjectNoun} name only. Remove phrases like "on Instagram", "@username", hashtags.
 - CLEANING: Aggressively remove social chrome Ã¢â‚¬â€ hashtags, @mentions, "link in bio", "save this recipe", "follow me", sponsor disclosures, timestamps, view counts, and any text that isn't part of the ${subjectNoun}.
 - If the text contains a spoken/narrated ${subjectNoun} (video transcript), extract the ${subjectNoun} the speaker is describing.
-- If no ${subjectNoun} can be found at all, return: { "error": "not a ${subjectNoun}" }`;
+- If no ${subjectNoun} can be found at all, return: { "error": "not a ${subjectNoun}" }
+- STRICT SORTING: A line is an INGREDIENT if it names a food item with an optional quantity/unit (e.g. "2 cups flour", "salt to taste"). A line is a DIRECTION if it contains an action verb telling the cook what to DO (e.g. "Preheat oven", "Mix dry ingredients"). Numbered steps are almost always directions. NEVER put ingredient lines into directions[] or vice versa.
+- TITLE should be a short, recognizable dish/drink name (2-6 words), not a sentence.`;
 
   const rulesDrink = `- INGREDIENTS: Recognize mixology units: oz, ml, cl, dash, splash, barspoon, part, float, drops. Garnishes (e.g. "3 slices jalapeÃƒÂ±o", "1 orange peel") also go in ingredients.
 - DIRECTIONS: Cocktails often have 2-4 terse steps (shake/stir/strain/pour/top/garnish). Do not pad Ã¢â‚¬â€ brevity is correct.
@@ -495,18 +532,29 @@ export async function structureRecipeFromImage(imageDataUrl, { type = 'meal' } =
 
   const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${clientKey}`;
   
-  const prompt = `Extract the recipe from this image. 
-If it's a ${type === 'drink' ? 'cocktail/drink' : 'meal'}, identify the title, ingredients, and directions.
-Return ONLY valid JSON in this format:
+  const isDrink = type === 'drink';
+  const prompt = `You are a recipe extraction expert. Analyze this image carefully and extract the recipe.
+
+If the image shows a ${isDrink ? 'cocktail/drink' : 'dish/meal'}, identify all visible text including the title, ingredients list, and cooking/mixing directions.
+If the image is a photo of food (not a recipe card), describe what you see and infer a likely recipe name and basic ingredients.
+If the image contains handwritten or printed recipe text, transcribe it accurately.
+
+Return ONLY valid JSON matching this exact schema:
 {
-  "title": "Recipe Name",
-  "ingredients": ["string 1", "string 2"],
-  "directions": ["step 1", "step 2"],
-  "servings": "number or null",
-  "cookTime": "string or null",
-  "notes": "any extra info or null"
-  ${type === 'drink' ? ', "glass": "glass type", "garnish": "garnish info"' : ''}
-}`;
+  "title": "string - concise ${isDrink ? 'drink' : 'recipe'} name (2-6 words)",
+  "ingredients": [${isDrink ? '{ "name": "spirit/mixer/garnish", "amount": "e.g. 2 oz, 1 dash" }' : '"string - one ingredient with quantity per item"'}],
+  "directions": ["string - one clear ${isDrink ? 'mixing' : 'cooking'} step per item"],
+  "servings": "string or null",
+  ${isDrink ? '"glass": "string or null - e.g. coupe, rocks, highball",\n  "garnish": "string or null",' : '"cookTime": "string or null",'}
+  "notes": "string or null"
+}
+
+Rules:
+- Extract ALL ingredients and directions visible in the image
+- Each ingredient = one food/liquid item with its measurement
+- Each direction = one action step (verb-first)
+- NEVER put ingredients in directions[] or vice versa
+- If no recipe can be identified, return: { "error": "not a recipe" }`;
 
   try {
     const res = await fetch(GEMINI_ENDPOINT, {
@@ -531,7 +579,10 @@ Return ONLY valid JSON in this format:
     const jsonText = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
     const parsed = JSON.parse(jsonText);
 
-    const ingredients = Array.isArray(parsed.ingredients) ? parsed.ingredients.filter(Boolean) : [];
+    // Normalize ingredients — Gemini may return strings or {name, amount} objects
+    const ingredients = Array.isArray(parsed.ingredients)
+      ? parsed.ingredients.map(ing => typeof ing === 'string' ? ing : [ing.amount, ing.name].filter(Boolean).join(' ').trim()).filter(Boolean)
+      : [];
     const directions = Array.isArray(parsed.directions) ? parsed.directions.filter(Boolean) : [];
 
     return {
@@ -542,7 +593,7 @@ Return ONLY valid JSON in this format:
       servings: parsed.servings || null,
       cookTime: parsed.cookTime || null,
       notes: parsed.notes || null,
-      ...(type === 'drink' ? { glass: parsed.glass || null, garnish: parsed.garnish || null, _type: 'drink' } : { _type: 'meal' }),
+      ...(isDrink ? { glass: parsed.glass || null, garnish: parsed.garnish || null, _type: 'drink' } : { _type: 'meal' }),
       imageUrl: imageDataUrl,
       link: '',
       _aiStructured: true,
@@ -1439,8 +1490,8 @@ async function extractInstagramEmbed(url) {
     const postImgPatterns = [
       /"display_url"\s*:\s*"(https:[^"]+)"/i,
       /"thumbnail_src"\s*:\s*"(https:[^"]+)"/i,
-      /"url"\s*:\s*"(https:[^"]*(?:scontent|fbcdn|cdninstagram)[^"]+)"/i,
-      /"src"\s*:\s*"(https:[^"]*(?:scontent|fbcdn|cdninstagram)[^"]+)"/i,
+      /"url"\s*:\s*"(https:[^"]*(?:scontent|fbcdn)[^"]+)"/i,
+      /"src"\s*:\s*"(https:[^"]*(?:scontent|fbcdn)[^"]+)"/i,
       /"poster"\s*:\s*"(https:[^"]+)"/i,
       /display_url":"(https:[^"]+)"/i,
       /<meta[^>]+property=["']og:image["'][^>]+content=["'](https:\/\/[^"']+)["']/i,
@@ -1455,17 +1506,18 @@ async function extractInstagramEmbed(url) {
           .replace(/\\\//g, '/')
           .replace(/&amp;/g, '&')
           .replace(/\\u0026/g, '&');
+        // Skip non-image URLs (JS/CSS/font resources from cdninstagram)
+        if (!isValidImageUrl(candidate)) continue;
         // Skip profile pics / avatars — these are account images, not food photos
-        if (!/profile_pic|avatar|accounts\/avatars|[?&]s=150|150x150|s150x150|\/profile\//.test(candidate)) {
-          imageUrl = candidate;
-          break;
-        }
+        if (isProfilePicUrl(candidate)) continue;
+        imageUrl = candidate;
+        break;
       }
     }
     // Only fall back to og:image if no post-specific image found
     if (!imageUrl) {
       const ogImage = extractMeta(html, 'og:image') || '';
-      if (ogImage && !/profile_pic|avatar|accounts\/avatars|150x150|s150x150|\/profile\//.test(ogImage)) imageUrl = ogImage;
+      if (ogImage && isValidImageUrl(ogImage) && !isProfilePicUrl(ogImage)) imageUrl = ogImage;
     }
 
     // Extract title — og:title often reads "Username on Instagram: 'first line of caption'"
@@ -1488,7 +1540,7 @@ async function extractInstagramEmbed(url) {
           if (oData?.title && oData.title.length > 10) {
             caption = oData.title;
             if (!title) title = oData.author_name || '';
-            if (!imageUrl && oData.thumbnail_url) imageUrl = oData.thumbnail_url;
+            if (!imageUrl && oData.thumbnail_url && isValidImageUrl(oData.thumbnail_url) && !isProfilePicUrl(oData.thumbnail_url)) imageUrl = oData.thumbnail_url;
             console.log(`[instagram-embed] oEmbed fallback success Ã¢â‚¬â€ ${caption.length} chars`);
           }
         }
@@ -4138,6 +4190,8 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
 
   const persistCapturedImage = async (imageUrl = capturedImageUrl) => {
     if (!imageUrl || imageUrl.startsWith('data:')) return imageUrl || '';
+    // Reject non-image URLs before attempting download
+    if (!isValidImageUrl(imageUrl)) return '';
     if (!isInstagramCdnUrl(imageUrl) && !/scontent|fbcdn|cdninstagram/i.test(imageUrl)) return imageUrl;
     try {
       const dataUrl = await downloadImageAsDataUrl(imageUrl, { timeoutMs: 12000 });
@@ -4210,8 +4264,9 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
       // Always capture image and title from embed data, regardless of caption
       // display_url / scontent images from extractInstagramEmbed are post-specific
       // food photos — always prefer them over the oEmbed profile avatar.
-      if (embedData?.imageUrl) {
-        const isPostSpecific = /scontent|fbcdn|cdninstagram|display_url/.test(embedData.imageUrl)
+      // Guard: only accept URLs that are actual images (not .js/.css resources).
+      if (embedData?.imageUrl && isValidImageUrl(embedData.imageUrl) && !isProfilePicUrl(embedData.imageUrl)) {
+        const isPostSpecific = /scontent|fbcdn/.test(embedData.imageUrl)
           || embedData.imageUrl.includes('_n.jpg');
         if (isPostSpecific || !capturedImageUrl) {
           capturedImageUrl = embedData.imageUrl;
@@ -4376,6 +4431,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   // after the CDN URL expires. Non-fatal — keep the original URL on failure.
   if (capturedImageUrl
     && !capturedImageUrl.startsWith('data:')
+    && isValidImageUrl(capturedImageUrl)
     && /scontent|fbcdn|cdninstagram/.test(capturedImageUrl)) {
     try {
       const dataUrl = await downloadImageAsDataUrl(capturedImageUrl, { timeoutMs: 10000 });
