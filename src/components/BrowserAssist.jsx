@@ -1997,6 +1997,11 @@ function isUsableImageUrl(u) {
   if (/profile_pic|avatar|logo|icon|emoji|tracking|pixel|blank|1x1|spinner/i.test(u)) return false;
   if (/\/s\d{2,3}x\d{2,3}\//.test(u)) return false;
   if (/\.gif$/i.test(u)) return false;
+  // Reject non-image resources (JS/CSS/font/WASM bundles from CDNs like cdninstagram)
+  if (/\.(js|css|woff2?|ttf|eot|html?|json|xml|wasm|map|txt)(\?|$)/i.test(u)) return false;
+  if (/\/rsrc\.php\//i.test(u)) return false;
+  // Reject profile picture sizes (dst-jpg_s150x150)
+  if (/dst-jpg_s150x150|s150x150/i.test(u)) return false;
   return true;
 }
 
