@@ -1,71 +1,62 @@
-# SpiceHub — Unified Recipe Import Engine Implementation Brief
+# SpiceHub — Unified Recipe Import Engine (May 2026)
 
-**You are now acting as the senior backend/frontend engineer** responsible for fixing SpiceHub’s long-troubled social media / recipe import system.
+## Architecture
 
-### 1. Project Context & Why This Matters
-SpiceHub is a **fully offline-first PWA** (Vercel + installable on iOS/Android/Windows).  
-The **#1 killer feature** is frictionless recipe import from Instagram, TikTok, YouTube Shorts, Pinterest, and recipe blogs.  
-The current import code is fragmented across `recipeParser.js`, `BrowserAssist.jsx`, `ImportModal.jsx`, `BrowserImport.jsx`, and `api.js`. It is fragile, has too many paths, and still has server dependency in places where it should be client-only.
+The import pipeline lives in `recipeParser.js` with helpers in `api.js`. Entry points:
+- `importRecipeFromUrl(url)` — universal entry (detects URL type, routes to correct handler)
+- `importFromInstagram(url, onProgress, { type })` — Instagram-specific multi-phase engine
 
-### 2. Goal
-Create **one single, clean, maintainable import engine** with this public API:
+## Instagram Import Pipeline (priority order)
 
-```js
-async function importRecipeFromUrl(url: string): Promise<Recipe | { _needsManualCaption: true, sourceUrl: string } | null>
-This function must return a clean recipe object or a clear signal that the user should paste the caption manually.
-3. Desired Strategy (2026 Best Practice)
-For Instagram URLs (≈70% of imports)
+```
+Phase 0    — yt-dlp video subtitles (Reels with narration)
+Phase 0.25 — Apify Instagram scraper (PRIMARY — managed proxies, full caption + fresh CDN image)
+Phase 0.5  — Instagram oEmbed API (requires FB_APP_TOKEN)
+Phase 0.75 — Instagram JSON endpoint (?__a=1&__d=dis)
+Phase 1    — Instagram embed page (/embed/captioned/ via CORS proxy)
+Phase 2    — AI browser / extractInstagramAgent (Puppeteer fallback)
+Phase 3    — Gemini AI structuring (ALWAYS runs on captured text)
+Fallback   — { _needsManualCaption: true } with pre-filled caption
+```
 
-Phase 0 — Try tryVideoExtraction() (yt-dlp subtitles) first. Many Reels are narrated recipes.
-Phase 1 — Fast embed page fetch (/embed/captioned/) via CORS proxy (fetchHtmlViaProxy).
-Phase 2 — If needed, fall back to AI Browser (extractInstagramAgent).
-Phase 3 — Always run the final cleaned text through structureWithAI() (Gemini client-side preferred).
+### Apify Integration (Phase 0.25)
+- Server-side via Vercel: `/api/proxy?mode=instagram-apify&url=...`
+- Requires `APIFY_TOKEN` env var on Vercel
+- Returns: caption, displayUrl (fresh CDN), videoUrl, ownerUsername, hashtags
+- Image is eagerly downloaded to base64 data URL before CDN token expires
+- Falls through silently if token not configured (503)
 
-Use the existing cleanSocialCaption() and isCaptionWeak() aggressively.
-For non-Instagram URLs
+### Image Persistence Strategy
+Instagram CDN URLs (scontent/fbcdn) expire within hours. Fix:
+1. At import time, `downloadImageAsDataUrl()` converts CDN URL → base64 data URL
+2. Data URL stored in Dexie alongside recipe — works offline forever
+3. `SafeMediaImage.jsx` handles display: data URLs direct, CDN URLs via proxy fallback chain
 
-Use extractWithBrowserAPI() (JSON-LD + heuristics).
-Fall back to Gemini structuring on visible text.
+### Gemini Auto-Sorting
+- Client-side Gemini Flash via `VITE_GOOGLE_AI_KEY` (preferred — no server roundtrip)
+- Server-side via `VITE_SERVER_URL` + `/api/structure-recipe` (fallback)
+- Prompt enforces strict ingredient/direction separation with explicit examples
+- Handles section headers ("Spice Mix:"), numbered steps, mixed content
 
-4. Required Changes
-Primary file to create / update:
+## Environment Variables (Vercel)
+```
+VITE_GOOGLE_AI_KEY  — Gemini API key (client-side, baked into bundle)
+APIFY_TOKEN         — Apify API token (server-side only, never exposed)
+FB_APP_TOKEN        — Facebook Graph API token for oEmbed (server-side)
+IG_COOKIES_JSON_B64 — Optional Instagram session cookies (server-side)
+```
 
-recipeParser.js → Add the new unified function importRecipeFromUrl(url) and importFromInstagram(url).
+## Key Files
+- `src/recipeParser.js` — All parsing logic, import engine, Gemini prompts
+- `src/api.js` — CORS proxy cascade, Instagram helpers, image download
+- `api/proxy.js` — Vercel Edge Function (server-side proxy for all modes)
+- `src/components/SafeMediaImage.jsx` — Image display with proxy fallback chain
+- `server/persistImage.js` — Server-side image → base64 conversion
 
-Files to update:
+## Testing
+Test with these shortcodes from the error log:
+1. `DIt_c6eTF2P` — Cauliflower Fajitas (full recipe caption + video)
+2. `DCaQkFNytrh` — Crispy Mushroom Parm (full recipe caption + video)
+3. `DNtaNx_XpaY` — Sheet Pan Gnocchi (full recipe caption + video)
 
-ImportModal.jsx — Call the new unified function instead of the old scattered logic.
-BrowserAssist.jsx — Become the clean visual wrapper around the new engine. Show clear progress steps.
-api.js — Keep helper functions but deprecate old server-dependent paths.
-Any other file that directly calls the old import functions.
-
-Keep existing:
-
-cleanSocialCaption(), isCaptionWeak(), parseCaption(), structureWithAI(), tryVideoExtraction(), etc.
-
-5. Non-Functional Requirements
-
-Must work completely offline-first (queue URLs if needed).
-Minimize server dependency — prefer client-side Gemini when VITE_GOOGLE_AI_KEY is present.
-Preserve the existing offline queue and background sync behavior.
-Keep graceful degradation: if everything fails, fall back to manual paste with the URL pre-filled.
-Maintain excellent touch/mobile UX and progress feedback.
-
-6. Acceptance Criteria
-
-One single function importRecipeFromUrl(url) is the only public entry point.
-Instagram Reels with narration now work reliably via subtitles-first path.
-Thin/hashtag-only captions correctly fall back to video subtitles or manual paste.
-All existing UI flows (ImportModal, share-target, BrowserAssist) continue to work and now use the unified engine.
-Clear progress feedback is shown to the user during import.
-No regression in recipe quality or parsing accuracy.
-
-7. Deliverables
-Please implement the changes and return:
-
-The full updated recipeParser.js with the new unified engine.
-The minimal diff/changes needed in ImportModal.jsx and BrowserAssist.jsx.
-A short testing plan (key Instagram Reels + recipe blogs to verify).
-
-Start by creating the unified importRecipeFromUrl function in recipeParser.js. Use the exact three-phase Instagram strategy described above.
-You have full context of the current codebase. Begin.
+All three should import with: complete title, ingredients array, directions array, and persisted image.

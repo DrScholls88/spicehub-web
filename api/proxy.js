@@ -189,6 +189,77 @@ export default async function handler(req) {
     }
   }
 
+  if (mode === 'instagram-apify') {
+    const igUrl = cleanUrl(searchParams.get('url') || '');
+    if (!igUrl) {
+      return new Response(JSON.stringify({ error: 'Missing url parameter' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+    const apifyToken = process.env.APIFY_TOKEN || null;
+    if (!apifyToken) {
+      return new Response(JSON.stringify({ error: 'Apify not configured' }), {
+        status: 503,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+    try {
+      // Use Apify's synchronous run endpoint — starts the actor and waits for results
+      const actorId = 'apify~instagram-post-scraper';
+      const apiUrl = `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${apifyToken}&timeout=25`;
+      const resp = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: [igUrl],
+          resultsLimit: 1,
+          dataDetailLevel: 'basicData',
+        }),
+      });
+      if (!resp.ok) {
+        return new Response(JSON.stringify({ error: `Apify returned ${resp.status}` }), {
+          status: 502,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        });
+      }
+      const items = await resp.json();
+      if (!Array.isArray(items) || items.length === 0) {
+        return new Response(JSON.stringify({ error: 'No data returned from Apify' }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        });
+      }
+      const post = items[0];
+      // Return a normalized subset — keep payload small
+      const result = {
+        ok: true,
+        caption: post.caption || '',
+        displayUrl: post.displayUrl || '',
+        videoUrl: post.videoUrl || '',
+        ownerUsername: post.ownerUsername || '',
+        ownerFullName: post.ownerFullName || '',
+        shortCode: post.shortCode || '',
+        hashtags: post.hashtags || [],
+        timestamp: post.timestamp || '',
+        type: post.type || 'Unknown',
+      };
+      return new Response(JSON.stringify(result), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'public, max-age=3600, s-maxage=3600',
+        },
+      });
+    } catch (e) {
+      return new Response(JSON.stringify({ error: e.message || 'Apify request failed' }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+  }
+
   if (mode === 'tiktok-oembed') {
     const ttUrl = searchParams.get('url');
     if (!ttUrl) {

@@ -7,7 +7,7 @@
  *   2. CORS PROXY    Ã¢â€ â€™ fallback if server unreachable (limited for social media)
  *   3. CAPTION TEXT  Ã¢â€ â€™ 4-pass heuristic parser (used internally on extracted captions)
  */
-import { cleanUrl, isInstagramCdnUrl, fetchHtmlViaProxy as fetchHtmlViaProxyFromApi, downloadImageAsDataUrl, fetchInstagramOEmbed, fetchInstagramJson, fetchInstagramJsonDetails } from './api.js';
+import { cleanUrl, isInstagramCdnUrl, fetchHtmlViaProxy as fetchHtmlViaProxyFromApi, downloadImageAsDataUrl, fetchInstagramOEmbed, fetchInstagramJson, fetchInstagramJsonDetails, fetchInstagramViaApify } from './api.js';
 import { getCachedImport, setCachedImport } from './db.js';
 import { isRedditUrl, isRedditPostUrl, tryRedditJson } from './scrapers/redditDiscovery.js';
 import { htmlToMarkdown, htmlLooksLikeRecipe } from './scrapers/markdownConverter.js';
@@ -482,21 +482,31 @@ function _buildExtractionPrompt(rawText, { hintTitle = '', type = 'meal' } = {})
   "notes": "string or null"
 }`;
 
-  const rulesCommon = `- TITLE: Extract the ${subjectNoun} name only. Remove phrases like "on Instagram", "@username", hashtags.
-- CLEANING: Aggressively remove social chrome Ã¢â‚¬â€ hashtags, @mentions, "link in bio", "save this recipe", "follow me", sponsor disclosures, timestamps, view counts, and any text that isn't part of the ${subjectNoun}.
-- If the text contains a spoken/narrated ${subjectNoun} (video transcript), extract the ${subjectNoun} the speaker is describing.
+  const rulesCommon = `- TITLE: Extract the ${subjectNoun} name only (2-6 words). Remove "on Instagram", "@username", hashtags, emojis. If no explicit title, infer from the dish described.
+- CLEANING: Aggressively strip social chrome: hashtags, @mentions, "link in bio", "save this", "follow me", sponsor lines, timestamps, view/like counts, emoji-only lines, "use code X for Y% off", ebook/meal plan promos.
+- If the text is a spoken/narrated ${subjectNoun} (video transcript), extract what the speaker is describing.
 - If no ${subjectNoun} can be found at all, return: { "error": "not a ${subjectNoun}" }
-- STRICT SORTING: A line is an INGREDIENT if it names a food item with an optional quantity/unit (e.g. "2 cups flour", "salt to taste"). A line is a DIRECTION if it contains an action verb telling the cook what to DO (e.g. "Preheat oven", "Mix dry ingredients"). Numbered steps are almost always directions. NEVER put ingredient lines into directions[] or vice versa.
-- TITLE should be a short, recognizable dish/drink name (2-6 words), not a sentence.`;
+- STRICT SORTING (CRITICAL):
+  * INGREDIENT = a food/liquid/spice item, optionally with quantity+unit. Pattern: "[amount] [unit] [food noun]".
+    Examples: "2 cups flour", "1 head cauliflower, chopped", "salt to taste", "olive oil"
+  * DIRECTION = an action step telling the cook what to DO. Pattern: starts with or contains an action verb.
+    Examples: "Preheat oven to 400F", "Toss with oil and spice mix", "Roast for 30 minutes"
+  * Numbered steps (1. 2. 3.) are ALWAYS directions, never ingredients.
+  * Lines with ONLY food nouns + quantities = ingredients[]. Lines with action verbs = directions[].
+  * Mixed lines like "Toss the cauliflower with oil" are DIRECTIONS (action verb present).
+  * Sub-headings like "Spice Mix:" or "For the sauce:" - extract items below them as ingredients, not the heading.
+  * NEVER put an ingredient line into directions[] or a direction into ingredients[].
+- COMPLETENESS: Extract ALL ingredients and ALL steps. Do not summarize or skip items.`;
 
   const rulesDrink = `- INGREDIENTS: Recognize mixology units: oz, ml, cl, dash, splash, barspoon, part, float, drops. Garnishes (e.g. "3 slices jalapeÃƒÂ±o", "1 orange peel") also go in ingredients.
 - DIRECTIONS: Cocktails often have 2-4 terse steps (shake/stir/strain/pour/top/garnish). Do not pad Ã¢â‚¬â€ brevity is correct.
 - SORTING: Lines with oz/ml/dash + a spirit or mixer name Ã¢â€ â€™ ingredients[]. Action verbs (shake, stir, muddle, build, strain, top, float, garnish, rim) Ã¢â€ â€™ directions[].
 - GLASS / GARNISH: If mentioned anywhere, extract separately into the glass and garnish fields even if they already appear in a direction.`;
 
-  const rulesMeal = `- INGREDIENTS: Each item = one ingredient with its measurement. Normalize fractions (Ã‚Â½ Ã¢â€ â€™ 1/2).
-- DIRECTIONS: Each step = one action. Split compound steps at ". Then" / ". Next" / sentence breaks.
-- SORTING: Lines with measurements + food words Ã¢â€ â€™ ingredients[]. Lines with cooking verbs (mix, bake, sautÃƒÂ©, etc.) Ã¢â€ â€™ directions[].`;
+  const rulesMeal = `- INGREDIENTS: Each item = one ingredient with its measurement. Normalize fractions (1/2, 3/4). Include prep notes after comma ("1 onion, diced").
+- DIRECTIONS: Each step = one action sentence. Split compound steps at ". Then" / ". Next" / sentence breaks. Keep steps in chronological order.
+- SORTING: Lines with measurements + food words = ingredients[]. Lines with cooking verbs (mix, bake, saute, chop, stir, roast, etc.) = directions[].
+- SECTIONS: If the caption has section headers ("Spice Mix:", "For the topping:"), list those ingredients under ingredients[] with a note, not as directions.`;
 
   return `You are a ReciME-style ${subjectNoun} extraction assistant. Extract a clean, structured ${subjectNoun} from the following text (from an Instagram caption, TikTok description, YouTube video, or ${isDrink ? 'cocktail/liquor' : 'recipe'} blog).
 
@@ -4215,6 +4225,35 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
     }
   } catch {
     progress(0, 'skipped', 'Video subtitles unavailable');
+  }
+
+  // ── Phase 0.25: Apify Instagram scraper — managed residential proxies ─────────
+  // Most reliable extraction source: returns full caption + fresh CDN image URL.
+  // Runs server-side via Vercel → Apify REST API. Falls through if APIFY_TOKEN not set.
+  if (!capturedCaption) {
+    progress(1, 'running', 'Trying Apify scraper…');
+    try {
+      const apifyData = await fetchInstagramViaApify(url);
+      if (apifyData?.caption && apifyData.caption.length > 30) {
+        capturedCaption = cleanSocialCaption(apifyData.caption);
+        capturedTitle = apifyData.ownerFullName || apifyData.ownerUsername || capturedTitle;
+        // Apify displayUrl is a FRESH CDN URL with valid auth tokens — download immediately
+        if (apifyData.displayUrl) {
+          capturedImageUrl = apifyData.displayUrl;
+          // Eagerly persist the image before CDN token expires
+          try {
+            const persisted = await downloadImageAsDataUrl(apifyData.displayUrl, { timeoutMs: 15000 });
+            if (persisted) capturedImageUrl = persisted;
+          } catch { /* keep raw CDN URL as fallback */ }
+        }
+        progress(1, 'done', `Apify: caption (${capturedCaption.length} chars) + image ✔`);
+        console.log('[importFromInstagram] Apify succeeded — skipping embed/browser phases');
+      } else {
+        progress(1, 'done', 'Apify: no caption — falling through');
+      }
+    } catch {
+      progress(1, 'done', 'Apify unavailable — using embed fallback');
+    }
   }
 
   // ── Phase 0.5: Instagram oEmbed API — fastest when FB_APP_TOKEN is configured ──
