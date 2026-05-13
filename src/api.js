@@ -223,6 +223,36 @@ export function proxyImageUrl(imageUrl) {
   return `https://api.allorigins.win/raw?url=${encodeURIComponent(imageUrl)}`;
 }
 
+// ── Apify Instagram scraper (server-side via Vercel proxy) ────────────────────
+// Uses managed residential proxies for reliable extraction + fresh CDN image URLs.
+// Returns { ok, caption, displayUrl, videoUrl, ownerUsername, ownerFullName, ... } or null.
+
+export async function fetchInstagramViaApify(url) {
+  try {
+    const cleanedUrl = cleanUrl(url);
+    const proxyUrl = `/api/proxy?mode=instagram-apify&url=${encodeURIComponent(cleanedUrl)}`;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 35000); // Apify runs can take 20-30s
+    const resp = await fetch(proxyUrl, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!resp.ok) {
+      const errData = await resp.json().catch(() => ({}));
+      console.log('[fetchInstagramViaApify] Failed:', resp.status, errData.error || '');
+      return null;
+    }
+    const data = await resp.json();
+    if (!data.ok || !data.caption) {
+      console.log('[fetchInstagramViaApify] No caption in response');
+      return null;
+    }
+    console.log(`[fetchInstagramViaApify] ✅ Got caption (${data.caption.length} chars) + image: ${data.displayUrl ? 'yes' : 'no'}`);
+    return data;
+  } catch (e) {
+    console.log('[fetchInstagramViaApify] Error:', e.message);
+    return null;
+  }
+}
+
 // ── Instagram embed extraction (client-side, no server needed) ────────────────
 
 function extractInstagramShortcode(url) {
