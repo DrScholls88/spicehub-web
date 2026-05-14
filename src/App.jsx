@@ -233,15 +233,19 @@ export default function App() {
     return unsubscribe;
   }, [queuedOps, showToast, isSyncing]);
 
-  // Handle PWA install prompt
+  // Handle PWA install prompt — only show when browser actually offers it,
+  // and only if the user hasn't permanently dismissed it.
   useEffect(() => {
+    const dismissed = localStorage.getItem('pwa-install-dismissed');
     const handleBeforeInstallPrompt = (e) => {
       e.preventDefault();
       setDeferredPrompt(e);
-      setShowInstallBanner(true);
+      // Only auto-show banner if user hasn't dismissed it before
+      if (!dismissed) setShowInstallBanner(true);
     };
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
-    if (isMobileDevice()) setShowInstallBanner(true);
+    // NOTE: removed unconditional isMobileDevice() auto-show — was causing the
+    // persistent banner on every tab load. Install is now accessible via ⚙️ Settings.
     return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
   }, []);
 
@@ -249,13 +253,20 @@ export default function App() {
     if (deferredPrompt) {
       deferredPrompt.prompt();
       const { outcome } = await deferredPrompt.userChoice;
-      if (outcome === 'accepted') showToast('SpiceHub installed!', 'success');
+      if (outcome === 'accepted') showToast('SpiceHub installed! 🎉', 'success');
       setShowInstallBanner(false);
       setDeferredPrompt(null);
     } else {
-      showToast('Tap Safari menu → "Add to Home Screen"', 'info', 3000);
+      // iOS Safari fallback instruction
+      showToast('Tap Share → "Add to Home Screen"', 'info', 4000);
       setShowInstallBanner(false);
     }
+  };
+
+  const handleDismissInstallBanner = () => {
+    setShowInstallBanner(false);
+    // Persist dismissal so it doesn't reappear on next session
+    localStorage.setItem('pwa-install-dismissed', '1');
   };
 
 // Handle Share Target (Android + PWA)
@@ -567,7 +578,7 @@ useEffect(() => {
             <span>Add SpiceHub to your home screen</span>
             <div className="install-banner-actions">
               <button className="btn-small" onClick={handleInstallApp}>Install</button>
-              <button className="btn-icon small" onClick={() => setShowInstallBanner(false)}>✕</button>
+              <button className="btn-icon small" onClick={handleDismissInstallBanner} aria-label="Dismiss install banner">✕</button>
             </div>
           </div>
         </div>
@@ -794,6 +805,21 @@ useEffect(() => {
               <div className="st-section">
                 <h3>Theme</h3>
                 <ThemeSettings />
+              </div>
+              {/* PWA Install — only shown when browser supports it or on mobile */}
+              <div className="st-section st-install-section">
+                <h3>App</h3>
+                <button
+                  className="st-install-btn"
+                  onClick={() => {
+                    // Reset dismissal so banner can reappear, then trigger install
+                    localStorage.removeItem('pwa-install-dismissed');
+                    handleInstallApp();
+                  }}
+                >
+                  <span className="st-install-icon">📲</span>
+                  <span>Add to Home Screen</span>
+                </button>
               </div>
             </div>
           </div>

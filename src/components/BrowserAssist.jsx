@@ -1129,7 +1129,7 @@ const toggleDeepMode = () => {
             <div>
               <h3>Paste the Caption</h3>
               <p>
-                Auto-extract couldn&apos;t read this {platform || 'social'} post.
+                Auto-extract couldnt read this {platform || 'social'} post.
                 Copy the caption from the app and paste it below — AI will structure it.
               </p>
             </div>

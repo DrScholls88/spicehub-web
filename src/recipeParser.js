@@ -297,6 +297,14 @@ export function cleanSocialCaption(text) {
     /^(follow (?:me|us|@\w+)?|follow for more|more recipes on|find me on|join me on|new video|new post).{0,80}$/im,
     /^(music:|song:|audio:|outfit:|shop my|wearing:|featuring:|soundtrack:|ft\.|prod\. by).{0,80}$/im,
     /^[Ã°Å¸â€â€”Ã°Å¸â€˜â€¡Ã¢Â¬â€¡Ã¯Â¸ÂÃ°Å¸â€œÂ²Ã°Å¸â€™Å’Ã°Å¸â€œÂ©Ã°Å¸â€â€Ã°Å¸â€œÅ’Ã°Å¸ÂÂ·Ã¯Â¸Â].{0,80}$/m,
+    // Inline discount codes anywhere in line (e.g. "Want more? Use code AUGUST to save 10%")
+    /^.{0,120}(?:use code|enter code|promo code)\s+[A-Z0-9]{2,15}.{0,120}$/im,
+    // Lines pushing ebooks / courses / meal plans / newsletters
+    /^.{0,80}(?:ebook|cookbook|meal plan|meal prep guide|course|masterclass|newsletter|podcast|youtube channel).{0,80}(?:save|off|free|link|grab|get|download|sign up|subscribe).{0,80}$/im,
+    // "Want more X recipes?" standalone promo hooks
+    /^want more.{0,60}\?.*$/im,
+    // Lines with "get X% off" / "save X% off"
+    /^.{0,80}(?:save|get|take)\s+\d+%\s+(?:off|on).{0,80}$/im,
   ];
   for (const re of BAIT_LINES) t = t.replace(new RegExp(re.source, re.flags + 'g'), '');
 
