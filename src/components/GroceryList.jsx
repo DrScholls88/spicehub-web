@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
-import { saveStoreMemory as dbSaveStoreMemory, getStoreMemory as dbGetStoreMemory } from '../db';
+import { saveStoreMemory as dbSaveStoreMemory, getStoreMemory as dbGetStoreMemory, addToBarInventory } from '../db';
 
 const STORES = [
   { id: 'target',     name: 'Target',       color: '#cc0000', logo: 'https://www.google.com/s2/favicons?domain=target.com&sz=32' },
@@ -39,6 +39,7 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
   const [batchMode, setBatchMode] = useState(false);
   const [selectedItems, setSelectedItems] = useState(new Set());
   const [batchStoreOverlayOpen, setBatchStoreOverlayOpen] = useState(false);
+  const [confettiBurst, setConfettiBurst] = useState(0); // incremented to rekey confetti
 
   // View modes
   const [viewMode, setViewMode] = useState('simple'); // 'simple' | 'detailed'
@@ -203,10 +204,28 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
     sendToKeep('Meal Plan - SpiceHub', buildWeekPlanText(), onToast);
   };
 
+  // ── "Alchemist's Supply" quest handling ──────────────────────────────────────
+  const questToShelf = useCallback((indices, names) => {
+    // Mark items as pantry + add to bar inventory
+    names.forEach(n => {
+      rememberStore(n, PANTRY_ID);
+      addToBarInventory(n);
+    });
+    setItems(prev => prev.map((item, i) =>
+      indices.includes(i) ? { ...item, store: PANTRY_ID, checked: true } : item
+    ));
+    if (onToast) onToast(`🍸 Added to your bar shelf!`, 'success');
+    if (navigator.vibrate) navigator.vibrate([30, 20, 30]);
+    // Trigger alchemy confetti burst
+    setConfettiBurst(prev => prev + 1);
+  }, [setItems, onToast]);
+
   // Group views
-  const rawUnsorted = items.map((item, i) => ({ ...item, _idx: i })).filter(i => !i.store);
+  const rawQuest = items.map((item, i) => ({ ...item, _idx: i })).filter(i => i.tag === 'bar-quest' && i.store !== PANTRY_ID && !i.checked);
+  const rawUnsorted = items.map((item, i) => ({ ...item, _idx: i })).filter(i => !i.store && i.tag !== 'bar-quest');
   const rawPantry = items.map((item, i) => ({ ...item, _idx: i })).filter(i => i.store === PANTRY_ID);
 
+  const questList = rawQuest; // quest items are already unique — no consolidation needed
   const unsortedList = consolidateItems(rawUnsorted);
   const pantryList = consolidateItems(rawPantry);
   
@@ -235,6 +254,15 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
 
   return (
     <div className="gl-container">
+      {/* ── Alchemy confetti burst ── */}
+      {confettiBurst > 0 && (
+        <div className="gl-confetti-wrap" key={confettiBurst} aria-hidden="true">
+          {Array.from({ length: 24 }).map((_, i) => (
+            <div key={i} className="gl-confetti-piece" style={{ '--i': i }} />
+          ))}
+        </div>
+      )}
+
       {/* ── Progress bar ── */}
       <div className="gl-progress-section">
         <div className="gl-progress-bar">
@@ -244,6 +272,27 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
           {checkedCount}/{activeItems.length} items
           {pantryList.length > 0 && <span className="gl-pantry-badge"> · {rawPantry.length} in pantry</span>}
         </div>
+        {/* Pixel bartender encouragement at 50% */}
+        {progressPercent >= 50 && progressPercent < 100 && (
+          <div className="gl-mini-bartender">
+            <svg width="28" height="40" viewBox="0 0 28 40" style={{ imageRendering: 'pixelated', flexShrink: 0 }}>
+              <rect x="8" y="0" width="12" height="3" fill="#1a1a1a" />
+              <rect x="6" y="3" width="16" height="2" fill="#1a1a1a" />
+              <rect x="9" y="5" width="10" height="8" fill="#e8b88a" />
+              <rect x="10" y="8" width="2" height="2" fill="#333" />
+              <rect x="16" y="8" width="2" height="2" fill="#333" />
+              <rect x="10" y="11" width="3" height="1" fill="#4a3520" />
+              <rect x="15" y="11" width="3" height="1" fill="#4a3520" />
+              <rect x="8" y="13" width="12" height="10" fill="#333" />
+              <rect x="11" y="13" width="6" height="10" fill="#f5f5f5" />
+              <rect x="3" y="17" width="5" height="3" fill="#333" />
+              <rect x="20" y="17" width="5" height="3" fill="#333" />
+              <rect x="10" y="23" width="4" height="7" fill="#1a1a1a" />
+              <rect x="14" y="23" width="4" height="7" fill="#1a1a1a" />
+            </svg>
+            <div className="gl-mini-bartender-bubble">Halfway there! 🥃</div>
+          </div>
+        )}
       </div>
 
       {/* ── Top toolbar (sticky) ── */}
@@ -322,6 +371,61 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
 
       <div style={{ paddingBottom: '90px' }}>
         <AnimatePresence>
+        {/* ── Alchemist's Supply (bar quest items) ── */}
+        {questList.length > 0 && (
+          <motion.div layout initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="gl-section gl-quest-section">
+            <div className="gl-section-header gl-quest-header">
+              <div className="gl-section-title gl-quest-title">
+                <span className="gl-quest-icon">📜</span>
+                Alchemist's Supply
+              </div>
+              <span className="gl-section-count gl-quest-count">{questList.length}</span>
+            </div>
+            <div className="gl-quest-subtitle">
+              Missing ingredients for your cocktail quests
+            </div>
+            {questList.map(item => (
+              <motion.div
+                layout
+                key={item._idx}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="gl-item gl-quest-item"
+              >
+                <div className="gl-item-content" style={{ flex: 1 }}>
+                  <label className="gl-checkbox-label">
+                    <input
+                      type="checkbox"
+                      className="gl-checkbox-input"
+                      checked={item.checked}
+                      onChange={() => toggleCheck([item._idx])}
+                    />
+                    <span className="gl-item-text gl-quest-item-text">
+                      {item.name}
+                    </span>
+                  </label>
+                  {item.questName && (
+                    <span className="gl-quest-drink-tag">
+                      🍸 {item.questName}
+                    </span>
+                  )}
+                </div>
+                <div className="gl-item-actions" style={{ paddingRight: '8px', gap: '6px', display: 'flex' }}>
+                  <button
+                    className="gl-quest-shelf-btn"
+                    onClick={() => questToShelf([item._idx], [item.name])}
+                    title="Got it! Add to bar shelf"
+                  >
+                    ✓ Shelf
+                  </button>
+                  <button className="gl-btn-remove" onClick={() => removeItem([item._idx])}>✕</button>
+                </div>
+              </motion.div>
+            ))}
+          </motion.div>
+        )}
+
         {/* ── Unsorted section ── */}
         {unsortedList.length > 0 && (
           <motion.div layout initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="gl-section" onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, 'unsorted')}>

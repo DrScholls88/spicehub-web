@@ -62,7 +62,54 @@ db.version(10).stores({
   });
 });
 
+// v11: Bar inventory — persistent "My Bar Inventory" for quest system & fridge mode
+db.version(11).stores({
+  barInventory: 'ingredient',
+});
+
 export default db;
+
+// ── Bar Inventory helpers ─────────────────────────────────────────────────────
+export async function getBarInventory() {
+  try {
+    const items = await db.barInventory.toArray();
+    return items.map(i => i.ingredient);
+  } catch (e) {
+    console.warn('[SpiceHub DB] getBarInventory failed:', e);
+    return [];
+  }
+}
+
+export async function addToBarInventory(ingredient) {
+  const key = ingredient.toLowerCase().trim();
+  if (!key) return;
+  try {
+    await db.barInventory.put({ ingredient: key, addedAt: new Date().toISOString() });
+  } catch (e) {
+    console.warn('[SpiceHub DB] addToBarInventory failed:', e);
+  }
+}
+
+export async function removeFromBarInventory(ingredient) {
+  const key = ingredient.toLowerCase().trim();
+  try {
+    await db.barInventory.delete(key);
+  } catch (e) {
+    console.warn('[SpiceHub DB] removeFromBarInventory failed:', e);
+  }
+}
+
+export async function clearBarInventory() {
+  try { await db.barInventory.clear(); } catch (e) { console.warn('[SpiceHub DB] clearBarInventory failed:', e); }
+}
+
+export async function isInBarInventory(ingredient) {
+  const key = ingredient.toLowerCase().trim();
+  try {
+    const item = await db.barInventory.get(key);
+    return !!item;
+  } catch { return false; }
+}
 
 // ── Week plan persistence ─────────────────────────────────────────────────────
 export async function saveWeekPlan(weekPlan) {

@@ -13,7 +13,7 @@ export const config = {
 };
 
 // Sites known to require special handling
-const INSTAGRAM_HOST = /instagram\.com/i;
+const INSTAGRAM_HOST = /instagram\.com|cdninstagram\.com|fbcdn\.net|scontent/i;
 
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -143,13 +143,29 @@ export default async function handler(req) {
           headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         });
       }
-      const contentType = resp.headers.get('content-type') || 'image/jpeg';
+      let contentType = resp.headers.get('content-type') || 'image/jpeg';
       const bytes = await resp.arrayBuffer();
       if (bytes.byteLength < 100 || bytes.byteLength > 3 * 1024 * 1024) {
         return new Response(JSON.stringify({ error: 'Image size rejected' }), {
           status: 422,
           headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         });
+      }
+      // Magic-byte sniffing — some CDNs strip Content-Type
+      if (!contentType.startsWith('image/')) {
+        const head = new Uint8Array(bytes.slice(0, 4));
+        const isJpeg = head[0] === 0xFF && head[1] === 0xD8;
+        const isPng  = head[0] === 0x89 && head[1] === 0x50;
+        const isWebp = head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46;
+        if (isJpeg) contentType = 'image/jpeg';
+        else if (isPng) contentType = 'image/png';
+        else if (isWebp) contentType = 'image/webp';
+        else {
+          return new Response(JSON.stringify({ error: 'Not a recognized image format' }), {
+            status: 422,
+            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+          });
+        }
       }
       const binary = Array.from(new Uint8Array(bytes), (b) => String.fromCharCode(b)).join('');
       const dataUrl = `data:${contentType.split(';')[0]};base64,${btoa(binary)}`;

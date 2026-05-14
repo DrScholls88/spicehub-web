@@ -6500,6 +6500,91 @@ body {
   color: #4caf50 !important;
 }
 
+/* ── Alchemist's Supply (Bar Quest Section) ── */
+.gl-quest-section {
+  border: 1px solid rgba(255, 215, 0, 0.25);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.06) 0%, rgba(255, 165, 0, 0.04) 100%);
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.gl-quest-header {
+  background: linear-gradient(90deg, rgba(255, 215, 0, 0.12) 0%, transparent 100%);
+}
+
+.gl-quest-title {
+  color: #ffd700 !important;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-left-color: #ffd700 !important;
+}
+
+.gl-quest-icon {
+  font-size: 16px;
+  filter: drop-shadow(0 0 4px rgba(255, 215, 0, 0.4));
+  animation: glQuestFloat 3s ease-in-out infinite;
+}
+
+@keyframes glQuestFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+.gl-quest-count {
+  background: rgba(255, 215, 0, 0.2) !important;
+  color: #ffd700 !important;
+  font-weight: 700;
+}
+
+.gl-quest-subtitle {
+  font-size: 11px;
+  color: rgba(255, 215, 0, 0.5);
+  padding: 0 16px 8px;
+  font-style: italic;
+}
+
+.gl-quest-item {
+  border-left: 3px solid rgba(255, 215, 0, 0.3) !important;
+  background: rgba(255, 215, 0, 0.04);
+}
+
+.gl-quest-item-text {
+  color: rgba(255, 215, 0, 0.9);
+  font-weight: 600;
+}
+
+.gl-quest-drink-tag {
+  display: inline-block;
+  font-size: 10px;
+  color: rgba(255, 165, 0, 0.7);
+  background: rgba(255, 165, 0, 0.1);
+  border-radius: 8px;
+  padding: 1px 8px;
+  margin-left: 8px;
+  white-space: nowrap;
+}
+
+.gl-quest-shelf-btn {
+  background: linear-gradient(135deg, #ffd700, #ff8c00);
+  color: #1a1a1a;
+  border: none;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.gl-quest-shelf-btn:active {
+  transform: scale(0.95);
+  box-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
+}
+
 /* ── Store Picker (Inline) ── */
 .gl-picker-backdrop {
   position: fixed;
@@ -6912,6 +6997,148 @@ body {
 .bl-fab:active {
   transform: scale(0.92);
   box-shadow: 0 2px 6px rgba(123, 31, 162, 0.3);
+}
+
+/* Two FABs stacked — import at bottom, add above */
+.bl-fab-import {
+  bottom: 80px;
+  background: linear-gradient(135deg, #e65100, #ff6d00);
+  box-shadow: 0 4px 14px rgba(230, 81, 0, 0.4);
+  font-size: 24px;
+}
+.bl-fab-add {
+  bottom: 148px;
+  font-size: 32px;
+  font-family: system-ui, sans-serif;
+}
+
+/* ── "Enter the Saloon" hero button ── */
+.bl-saloon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: calc(100% - 24px);
+  margin: 8px 12px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, #1a0a2e 0%, #3a1f5e 50%, #1a0a2e 100%);
+  background-size: 200% 100%;
+  animation: blSaloonShimmer 4s ease-in-out infinite;
+  border: 2px solid #ff4081;
+  color: #ff4081;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  box-shadow: 0 0 16px rgba(255, 64, 129, 0.2), inset 0 0 20px rgba(255, 64, 129, 0.05);
+  transition: box-shadow 0.3s, transform 0.15s;
+  border-radius: 4px;
+}
+.bl-saloon-btn:active {
+  transform: scale(0.97);
+  box-shadow: 0 0 24px rgba(255, 64, 129, 0.4);
+}
+.bl-saloon-icon { font-size: 18px; }
+.bl-saloon-text { flex: 1; text-align: left; }
+.bl-saloon-count {
+  font-size: 7px;
+  color: #aaa;
+  white-space: nowrap;
+}
+@keyframes blSaloonShimmer {
+  0%   { background-position: 200% 0; }
+  50%  { background-position: 0% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* ── Quick filter bar ── */
+.bl-quick-filters {
+  display: flex;
+  gap: 6px;
+  padding: 4px 12px 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.bl-qf-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: var(--surface, rgba(0,0,0,0.1));
+  border: 1px solid var(--border, #ddd);
+  border-radius: 16px;
+  font-size: 12px;
+  color: var(--text-secondary, #888);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+.bl-qf-chip.active {
+  background: var(--primary, #7b1fa2);
+  color: white;
+  border-color: var(--primary, #7b1fa2);
+}
+.bl-qf-ready.active { background: #4caf50; border-color: #4caf50; }
+.bl-qf-almost.active { background: #ff9800; border-color: #ff9800; }
+.bl-qf-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  background: rgba(255,255,255,0.25);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 0 4px;
+}
+
+/* ── Rarity styling on drink cards ── */
+.bl-drink-card {
+  border-left: 3px solid transparent;
+  transition: border-color 0.2s;
+}
+.bl-card-legendary { border-left-color: #ffd700; }
+.bl-card-rare { border-left-color: #42a5f5; }
+
+.bl-rarity-pip {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  font-size: 12px;
+  line-height: 1;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.5);
+}
+.bl-rarity-legendary { color: #ffd700; }
+.bl-rarity-rare { color: #42a5f5; }
+
+.bl-drink-image-container { position: relative; }
+
+/* ── Mini progress bar on cards ── */
+.bl-mini-progress {
+  height: 3px;
+  background: rgba(0,0,0,0.1);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 4px;
+  width: 100%;
+}
+.bl-mini-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+/* ── Progress / pour labels in meta ── */
+.bl-meta-progress {
+  color: #ff9800;
+  font-size: 10px;
+}
+.bl-meta-pour {
+  color: #4caf50;
+  font-weight: 700;
+  font-size: 10px;
 }
 
 /* Bar library bottom sheets */
@@ -10525,6 +10752,163 @@ body {
   letter-spacing: 0.5px;
 }
 
+/* ── Surprise Me button ── */
+.bs-surprise-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: none;
+  border: 2px solid #ffd700;
+  padding: 6px 10px;
+  color: #ffd700;
+  font-size: 14px;
+  cursor: pointer;
+  font-family: 'Press Start 2P', monospace;
+  min-height: 40px;
+  min-width: 52px;
+  border-radius: 0;
+  transition: background 0.15s, box-shadow 0.3s;
+  -webkit-tap-highlight-color: transparent;
+}
+.bs-surprise-btn:active {
+  background: rgba(255, 215, 0, 0.15);
+  transform: scale(0.96);
+}
+.bs-surprise-label {
+  font-size: 5px;
+  color: #ffd700;
+  letter-spacing: 0.5px;
+}
+
+/* ── Surprise Me speech bubble extras ── */
+.bs-bt-speech-surprise {
+  background: linear-gradient(135deg, #1a0a2e, #3a1f5e) !important;
+  border-color: #ffd700 !important;
+  color: #ffd700 !important;
+  min-width: 140px;
+  text-align: center;
+}
+.bs-surprise-view-btn {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 4px 12px;
+  border: 1px solid #ffd700;
+  background: rgba(255, 215, 0, 0.15);
+  color: #ffd700;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.bs-surprise-view-btn:active {
+  background: rgba(255, 215, 0, 0.3);
+}
+
+/* ── Joke easter egg speech bubble ── */
+.bs-bt-speech-joke {
+  background: linear-gradient(135deg, #2e1a0a, #5e3a1f) !important;
+  border-color: #ff8a65 !important;
+  color: #ffe0b2 !important;
+  max-width: 220px;
+  font-size: 7px !important;
+  line-height: 1.4;
+}
+
+/* ── Happy Hour neon mode ── */
+.bs-happy-hour {
+  animation: bsHappyHourPulse 3s ease-in-out infinite;
+}
+.bs-happy-hour .saloon-stage {
+  box-shadow: inset 0 0 40px rgba(255, 215, 0, 0.08), inset 0 0 80px rgba(255, 64, 129, 0.05);
+}
+.bs-happy-hour .bs-neon-text {
+  animation: bsNeonFlickerGold 2s ease-in-out infinite;
+}
+.bs-happy-hour .bs-bar-surface {
+  box-shadow: 0 0 15px rgba(255, 215, 0, 0.15);
+}
+@keyframes bsHappyHourPulse {
+  0%, 100% { box-shadow: inset 0 0 30px rgba(255, 215, 0, 0.03); }
+  50%      { box-shadow: inset 0 0 60px rgba(255, 215, 0, 0.08); }
+}
+@keyframes bsNeonFlickerGold {
+  0%, 19%, 21%, 23%, 25%, 54%, 56%, 100% {
+    text-shadow: 0 0 4px #ffd700, 0 0 8px #ffd700, 0 0 16px #ffd70040;
+  }
+  20%, 24%, 55% {
+    text-shadow: none;
+  }
+}
+
+/* Happy Hour — bar rail glow */
+.bs-happy-hour .bs-bar-rail {
+  box-shadow: 0 0 8px rgba(255, 215, 0, 0.25), 0 -2px 12px rgba(255, 64, 129, 0.15);
+}
+
+/* Happy Hour — stool seat glow */
+.bs-happy-hour .saloon-stool rect:first-child {
+  filter: drop-shadow(0 0 3px rgba(255, 215, 0, 0.3));
+}
+
+/* Happy Hour — bottle label shimmer */
+.bs-happy-hour .bs-bottle-label {
+  animation: bsHHLabelShimmer 4s ease-in-out infinite;
+}
+
+@keyframes bsHHLabelShimmer {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* Happy Hour — coaster glow */
+.bs-happy-hour .bs-bar-coaster {
+  box-shadow: 0 0 6px rgba(255, 215, 0, 0.2);
+}
+
+/* ── Bottle entrance animation on page change ── */
+.bs-page-left .bs-bottle-slot,
+.bs-page-right .bs-bottle-slot {
+  animation: bsBottleEntrance 0.4s cubic-bezier(0.25, 1, 0.5, 1) both;
+}
+
+.bs-page-left .bs-bottle-slot:nth-child(1) { animation-delay: 0.02s; }
+.bs-page-left .bs-bottle-slot:nth-child(2) { animation-delay: 0.06s; }
+.bs-page-left .bs-bottle-slot:nth-child(3) { animation-delay: 0.10s; }
+.bs-page-left .bs-bottle-slot:nth-child(4) { animation-delay: 0.14s; }
+.bs-page-left .bs-bottle-slot:nth-child(5) { animation-delay: 0.18s; }
+
+.bs-page-right .bs-bottle-slot:nth-child(1) { animation-delay: 0.18s; }
+.bs-page-right .bs-bottle-slot:nth-child(2) { animation-delay: 0.14s; }
+.bs-page-right .bs-bottle-slot:nth-child(3) { animation-delay: 0.10s; }
+.bs-page-right .bs-bottle-slot:nth-child(4) { animation-delay: 0.06s; }
+.bs-page-right .bs-bottle-slot:nth-child(5) { animation-delay: 0.02s; }
+
+@keyframes bsBottleEntrance {
+  from { opacity: 0; transform: translateY(8px) scale(0.9); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── Legendary bottle ambient glow pulse ── */
+.bs-bottle-legendary .bs-bottle-idle {
+  animation: bsBottleIdleWobble 4s ease-in-out infinite, bsLegendaryGlow 2.5s ease-in-out infinite;
+}
+
+@keyframes bsLegendaryGlow {
+  0%, 100% { filter: drop-shadow(0 0 3px rgba(255, 215, 0, 0.3)); }
+  50%      { filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.6)); }
+}
+
+/* ── Rare bottle subtle blue shimmer ── */
+.bs-bottle-rare .bs-bottle-idle {
+  animation: bsBottleIdleWobble 4s ease-in-out infinite, bsRareShimmer 3s ease-in-out infinite;
+}
+
+@keyframes bsRareShimmer {
+  0%, 100% { filter: drop-shadow(0 0 2px rgba(66, 165, 245, 0.2)); }
+  50%      { filter: drop-shadow(0 0 5px rgba(66, 165, 245, 0.4)); }
+}
+
 .bs-title {
   font-size: 14px;
   margin: 0;
@@ -10962,7 +11346,25 @@ body {
   filter: drop-shadow(0 0 6px #ff4081) drop-shadow(0 0 12px #ff408166);
 }
 
-.bs-empty-slot { cursor: default; opacity: 0.15; }
+.bs-empty-slot {
+  cursor: pointer;
+  opacity: 0.25;
+  transition: opacity 0.3s, transform 0.2s;
+}
+
+.bs-empty-slot:hover, .bs-empty-slot:active {
+  opacity: 0.5;
+  transform: scale(1.08);
+}
+
+.bs-empty-bottle-svg {
+  animation: bsEmptyPulse 3s ease-in-out infinite;
+}
+
+@keyframes bsEmptyPulse {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
 
 .bs-empty-bottle {
   width: 20px; height: 48px;
@@ -11457,9 +11859,130 @@ body {
   border: 1px solid #444;
   padding: 5px 9px;
   color: #ccc;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 0.2s, border-color 0.2s;
 }
+.bs-ing-owned {
+  background: rgba(76, 175, 80, 0.15);
+  border-color: #4caf50;
+  color: #a5d6a7;
+}
+.bs-ing-missing {
+  background: rgba(255, 152, 0, 0.1);
+  border-color: #ff9800;
+  color: #ffcc80;
+}
+.bs-ing-check { color: #4caf50; font-size: 8px; }
 
 .bs-ing-more { font-size: 7px; color: #888; padding: 4px; }
+
+/* ── Ingredient progress bar ── */
+.bs-progress-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 4px;
+}
+.bs-progress-bar-wrap {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.bs-progress-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+}
+.bs-progress-label {
+  font-size: 6px;
+  color: #aaa;
+  white-space: nowrap;
+  font-family: 'Press Start 2P', monospace;
+}
+
+/* ── Quest scroll button ── */
+.bs-quest-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: rgba(255, 215, 0, 0.08);
+  border: 2px solid #ffd700;
+  color: #ffd700;
+  font-size: 7px;
+  font-family: 'Press Start 2P', monospace;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s;
+}
+.bs-quest-btn:active {
+  background: rgba(255, 215, 0, 0.2);
+  transform: scale(0.97);
+}
+
+/* ── Rarity system ── */
+.bs-rarity-badge {
+  margin-left: 4px;
+  font-size: 10px;
+}
+.bs-rarity-legendary {
+  color: #ffd700;
+  text-shadow: 0 0 6px rgba(255, 215, 0, 0.5);
+  animation: bsRarityPulse 2s ease-in-out infinite;
+}
+.bs-rarity-rare {
+  color: #42a5f5;
+  text-shadow: 0 0 4px rgba(66, 165, 245, 0.4);
+}
+@keyframes bsRarityPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* Rarity glow on bottle slots */
+.bs-bottle-legendary .bs-bottle-svg {
+  filter: drop-shadow(0 0 4px rgba(255, 215, 0, 0.4));
+}
+.bs-bottle-rare .bs-bottle-svg {
+  filter: drop-shadow(0 0 3px rgba(66, 165, 245, 0.3));
+}
+
+/* Detail card rarity borders */
+.bs-rarity-legendary {
+  box-shadow: 0 -4px 24px rgba(255, 215, 0, 0.2);
+}
+.bs-rarity-rare {
+  box-shadow: 0 -4px 24px rgba(66, 165, 245, 0.2);
+}
+
+/* ── "I HAVE THESE" pantry button ── */
+.bs-action-pantry {
+  border-color: #4caf50;
+  color: #4caf50;
+  background: rgba(76, 175, 80, 0.1);
+}
+.bs-action-pantry:active { background: rgba(76, 175, 80, 0.25); }
+
+/* ── Empty state import button ── */
+.bs-empty-import-btn {
+  margin-top: 16px;
+  padding: 12px 20px;
+  border: 2px solid #ff4081;
+  background: rgba(255, 64, 129, 0.1);
+  color: #ff4081;
+  font-size: 8px;
+  font-family: 'Press Start 2P', monospace;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.bs-empty-import-btn:active { background: rgba(255, 64, 129, 0.25); }
 
 .bs-detail-actions {
   margin-top: 12px;

@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useReducer, useRef } from 'react';
 import useBackHandler from '../hooks/useBackHandler';
+import { getBarInventory, addToBarInventory } from '../db';
 
 /**
  * BarShelf — Fully realized 8-bit Speakeasy
@@ -134,10 +135,14 @@ function NeonText({ text, color = '#ff4081' }) {
 // BARBACK DISPLAY — Retro LED / dot-matrix menu board
 // Shows scrolling marquee when idle; shows drink recipe when bartender presents
 // ══════════════════════════════════════════════════════════════════════════════
-function BarbackDisplay({ selectedDrink, isPresenting }) {
+function BarbackDisplay({ selectedDrink, isPresenting, customMarquee, onOpenMarquee }) {
   const showRecipe = selectedDrink && isPresenting;
+  const marqueeText = customMarquee 
+    ? `${customMarquee.toUpperCase()} ★ `
+    : '★ HAPPY HOUR ★  HANDCRAFTED COCKTAILS ★  TOP SHELF SPIRITS ★  NAME YOUR POISON ★  FINE DRINKS SERVED HERE ★  ';
+
   return (
-    <div className="bs-barback-display">
+    <div className="bs-barback-display" onClick={onOpenMarquee} style={{ cursor: 'pointer' }}>
       <div className="bs-display-inner">
         <div className="bs-display-scanline" aria-hidden="true" />
         <div className="bs-display-grid-overlay" />
@@ -160,7 +165,7 @@ function BarbackDisplay({ selectedDrink, isPresenting }) {
           ) : (
             <div className="bs-display-marquee-wrap">
               <span className="bs-display-marquee">
-                ★ HAPPY HOUR ★&nbsp;&nbsp;HANDCRAFTED COCKTAILS ★&nbsp;&nbsp;TOP SHELF SPIRITS ★&nbsp;&nbsp;NAME YOUR POISON ★&nbsp;&nbsp;FINE DRINKS SERVED HERE ★&nbsp;&nbsp;
+                {marqueeText.repeat(4)}
               </span>
             </div>
           )}
@@ -378,18 +383,175 @@ const BOTTLES_PER_SHELF = 6;
 const SHELVES_PER_PAGE  = 3;
 const BOTTLES_PER_PAGE  = BOTTLES_PER_SHELF * SHELVES_PER_PAGE; // 15
 
-const IDLE_QUIPS = [
-  "Pick yer poison!",
-  "What'll it be, partner?",
-  "Top shelf or bottom?",
-  "Name it, I got it!",
-  "Happy hour never ends here...",
-  "Step right up!",
-  "The bar is open.",
-  "Fine spirits. Finer company.",
-  "Every drink tells a story.",
-  "Don't be shy!",
+// ── Time-of-day awareness ────────────────────────────────────────────────────
+function getTimeContext() {
+  const now = new Date();
+  const h = now.getHours();
+  const dow = now.getDay(); // 0=Sun
+  const isFriday = dow === 5;
+  const isSaturday = dow === 6;
+  const isWeekend = isFriday || isSaturday || dow === 0;
+  if (h >= 23 || h < 2)    return { period: 'lastcall',   isHappyHour: false, isWeekend };
+  if (h < 10)              return { period: 'morning',     isHappyHour: false, isWeekend };
+  if (h < 12)              return { period: 'brunch',      isHappyHour: false, isWeekend };
+  if (h < 17)              return { period: 'afternoon',   isHappyHour: false, isWeekend };
+  if (isFriday && h >= 17) return { period: 'happyhour',   isHappyHour: true,  isWeekend };
+  if (h < 21)              return { period: 'evening',     isHappyHour: isWeekend, isWeekend };
+  return                          { period: 'latenight',   isHappyHour: false, isWeekend };
+}
+
+// ── Inventory-aware dialogue engine ──────────────────────────────────────────
+const TIME_GREETINGS = {
+  lastcall:  ["Last call, partner!","Closin' time soon...","One more round?","The night's still young... barely."],
+  morning:   ["Hair of the dog?","Mornin'! Coffee... or bourbon?","Early bird gets the worm... and the whiskey.","Brunch cocktails comin' up!"],
+  brunch:    ["Mimosa o'clock!","Brunch is served!","Bloody Mary weather, eh?","Sunday funday vibes!"],
+  afternoon: ["Afternoon delight!","Sun's over the yardarm.","Siesta fuel comin' right up.","Perfect pour weather."],
+  happyhour: ["HAPPY HOUR!! Drinks on... well, you.","Friday vibes! What's your poison?","The weekend starts NOW.","Happy hour specials!"],
+  evening:   ["Evenin'! What'll it be?","The night is young!","Perfect cocktail weather.","Step right up, friend."],
+  latenight: ["Nightcap?","Still here? Respect.","One for the road?","The best drinks happen after dark."],
+};
+
+const INVENTORY_QUIPS = {
+  empty:  ["The shelves look mighty empty...","Not a drop in sight!","Stock me up, partner!","A bar without bottles is just a counter."],
+  low:    ["The shelves are drier than Prohibition...","We're runnin' low, friend.","Three bottles? We can work with that.","Slim pickings tonight."],
+  medium: ["A respectable selection!","We're gettin' somewhere.","Not bad, not bad at all.","Now we're cookin'... er, mixin'."],
+  high:   ["Top shelf collection!","Now THAT'S a bar!","Look at this selection! Magnificent.","You're making the local store owner rich!"],
+  huge:   ["Sweet mother of mixology!","This is a MUSEUM of spirits!","The legends will speak of this bar.","I could work here forever."],
+};
+
+function getInventoryTier(count) {
+  if (count === 0) return 'empty';
+  if (count <= 3)  return 'low';
+  if (count <= 8)  return 'medium';
+  if (count <= 15) return 'high';
+  return 'huge';
+}
+
+// Detect potential cocktail combos from inventory
+function detectPourMatch(drinks) {
+  const names = drinks.map(d => (d.name + ' ' + (d.ingredients || []).join(' ')).toLowerCase());
+  const allText = names.join(' ');
+  const combos = [
+    { keys: ['bourbon', 'bitters'],              quip: "Bourbon & Bitters? Are we doing this the old-fashioned way?" },
+    { keys: ['gin', 'tonic'],                     quip: "Gin & tonic on deck. A classic!" },
+    { keys: ['vodka', 'kahlua'],                  quip: "I smell a White Russian brewing..." },
+    { keys: ['rum', 'lime'],                      quip: "Rum + lime = Daiquiri dreams!" },
+    { keys: ['tequila', 'triple sec', 'lime'],    quip: "Margarita ingredients spotted! Salt the rim?" },
+    { keys: ['whiskey', 'vermouth'],              quip: "Manhattan material right here." },
+    { keys: ['vodka', 'tomato', 'celery'],        quip: "Bloody Mary supplies in position!" },
+    { keys: ['champagne', 'orange'],              quip: "Mimosa time? I won't judge." },
+  ];
+  for (const c of combos) {
+    if (c.keys.every(k => allText.includes(k))) return c.quip;
+  }
+  return null;
+}
+
+function getSmartQuip(drinks) {
+  const tc = getTimeContext();
+  const tier = getInventoryTier(drinks.length);
+  const pool = [];
+
+  // Time greetings — weighted higher
+  pool.push(...(TIME_GREETINGS[tc.period] || TIME_GREETINGS.evening));
+  pool.push(...(TIME_GREETINGS[tc.period] || TIME_GREETINGS.evening)); // double weight
+
+  // Inventory awareness
+  pool.push(...(INVENTORY_QUIPS[tier] || INVENTORY_QUIPS.medium));
+
+  // Pour match (combo detection)
+  const pourMatch = detectPourMatch(drinks);
+  if (pourMatch) { pool.push(pourMatch); pool.push(pourMatch); pool.push(pourMatch); } // triple weight for specificity
+
+  // General flavour
+  pool.push("Pick yer poison!", "Name it, I got it!", "Fine spirits. Finer company.", "Every drink tells a story.");
+
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+// ── Bad bartender jokes (tap 5x easter egg) ──────────────────────────────────
+const BAD_JOKES = [
+  "Why did the bartender break up with the glass? It was too empty inside.",
+  "I told a chemistry joke at the bar. No reaction.",
+  "A neutron walks into a bar. 'How much for a drink?' 'For you, no charge.'",
+  "What did the bartender say after oxygen, hydrogen, sulfur, sodium, and phosphorus walked in? OH SNaP!",
+  "Why don't scientists drink? They know alcohol is a solution.",
+  "I'm not an alcoholic. Alcoholics go to meetings. I go to bars.",
+  "My bartending motto: I came, I poured, I conquered.",
+  "What does a bartender do when they get cold? Stand in the corner. It's 90 degrees.",
+  "A Roman walks into a bar, holds up 2 fingers, and says, 'Five beers please.'",
+  "What did the grape say after the bartender stepped on it? Nothing, it just let out a little wine.",
 ];
+
+// ── "Surprise Me" cocktail suggestions ──────────────────────────────────────
+const SURPRISE_CLASSICS = [
+  { name: "Old Fashioned", emoji: "🥃" },
+  { name: "Margarita",     emoji: "🍹" },
+  { name: "Mojito",        emoji: "🌿" },
+  { name: "Negroni",       emoji: "🍊" },
+  { name: "Daiquiri",      emoji: "🍋" },
+  { name: "Manhattan",     emoji: "🍸" },
+  { name: "Espresso Martini", emoji: "☕" },
+  { name: "Whiskey Sour",  emoji: "🍋" },
+  { name: "Paloma",        emoji: "🌸" },
+  { name: "Moscow Mule",   emoji: "🫏" },
+  { name: "Tom Collins",   emoji: "🍋" },
+  { name: "Gin Fizz",      emoji: "🫧" },
+];
+
+// ── Rarity system — determines bottle glow/color tier ───────────────────────
+function getDrinkRarity(drink) {
+  const ingCount = drink.ingredients?.length || 0;
+  const name = (drink.name || '').toLowerCase();
+  // Legendary: 6+ ingredients or named "classic" cocktails
+  const legendaryNames = ['negroni','manhattan','old fashioned','mai tai','singapore sling','sazerac','corpse reviver','aviation','last word','paper plane'];
+  if (legendaryNames.some(n => name.includes(n))) return 'legendary';
+  if (ingCount >= 6) return 'legendary';
+  if (ingCount >= 4) return 'rare';
+  return 'common';
+}
+
+function getRarityColor(rarity) {
+  if (rarity === 'legendary') return '#ffd700';
+  if (rarity === 'rare') return '#42a5f5';
+  return '#ccc';
+}
+
+// ── Ingredient matching against bar inventory ────────────────────────────────
+function matchIngredients(drinkIngredients, inventory) {
+  if (!drinkIngredients || !inventory || inventory.length === 0) {
+    return { matched: [], missing: drinkIngredients || [], total: drinkIngredients?.length || 0, score: 0 };
+  }
+  const matched = [];
+  const missing = [];
+  for (const ing of drinkIngredients) {
+    const ingLower = ing.toLowerCase();
+    const isMatch = inventory.some(inv =>
+      ingLower.includes(inv) || inv.includes(ingLower.split(' ').pop())
+    );
+    if (isMatch) matched.push(ing);
+    else missing.push(ing);
+  }
+  return { matched, missing, total: drinkIngredients.length, score: matched.length / (drinkIngredients.length || 1) };
+}
+
+// ── Quest Scroll SVG ────────────────────────────────────────────────────────
+function QuestScroll({ size = 20, color = '#ffd700' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 20 20" style={{ imageRendering: 'pixelated', flexShrink: 0 }}>
+      <rect x="3" y="1" width="14" height="18" fill="#f5e6c8" rx="1" />
+      <rect x="3" y="1" width="14" height="3" fill="#d4a574" rx="1" />
+      <rect x="3" y="16" width="14" height="3" fill="#d4a574" rx="1" />
+      <rect x="1" y="2" width="3" height="2" fill="#8b6914" />
+      <rect x="16" y="2" width="3" height="2" fill="#8b6914" />
+      <rect x="1" y="16" width="3" height="2" fill="#8b6914" />
+      <rect x="16" y="16" width="3" height="2" fill="#8b6914" />
+      <rect x="6" y="6" width="8" height="1" fill={color} />
+      <rect x="6" y="9" width="6" height="1" fill={color} />
+      <rect x="6" y="12" width="7" height="1" fill={color} />
+    </svg>
+  );
+}
 
 const SWIG_QUIPS = [
   "Ahhh... quality control!",
@@ -414,6 +576,43 @@ const IDLE_BEHAVIORS = [
   "tipping",
   "dozing",
 ];
+
+// ── Chiptune engine (Web Audio API 8-bit jazz bar loop) ────────────────────
+// Frequencies: A minor pentatonic
+const CHIP_NOTES = [
+  [220,0.18],[262,0.12],[294,0.18],[330,0.12],[294,0.12],[262,0.18],[220,0.24],
+  [262,0.12],[294,0.12],[330,0.18],[392,0.12],[330,0.18],[294,0.12],[262,0.24],
+  [294,0.12],[330,0.12],[392,0.18],[440,0.12],[392,0.12],[330,0.18],[294,0.36],
+  [220,0.12],[262,0.18],[294,0.12],[262,0.12],[220,0.18],[196,0.12],[220,0.36],
+];
+
+function startChiptune() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    let stopped = false;
+    function loop(startT) {
+      if (stopped) return;
+      let t = startT;
+      for (const [freq, dur] of CHIP_NOTES) {
+        const osc = ctx.createOscillator();
+        const g   = ctx.createGain();
+        osc.connect(g); g.connect(ctx.destination);
+        osc.type = 'square';
+        osc.frequency.value = freq;
+        g.gain.setValueAtTime(0.055, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + dur * 0.85);
+        osc.start(t); osc.stop(t + dur);
+        t += dur;
+      }
+      const loopLen = CHIP_NOTES.reduce((s,[,d]) => s + d, 0);
+      const delay   = Math.max(0, (t - ctx.currentTime) * 1000 - 80);
+      const tid = setTimeout(() => { if (!stopped) loop(ctx.currentTime); }, delay);
+      return tid;
+    }
+    loop(ctx.currentTime + 0.05);
+    return () => { stopped = true; ctx.close(); };
+  } catch { return () => {}; }
+}
 // ── Saloon ambient SVG components ─────────────────────────────────────────────
 
 function HangingLantern({ x = 50, flicker = true }) {
@@ -562,7 +761,7 @@ function saloonReducer(state, action) {
 // ══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ══════════════════════════════════════════════════════════════════════════════
-export default function BarShelf({ drinks, onViewDetail, onClose, onImport }) {
+export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAddToGrocery }) {
   // ── Reducer for discrete mode transitions ──────────────────────────────────
   const [saloon, dispatch] = useReducer(saloonReducer, initialSaloonState);
 
@@ -577,8 +776,37 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport }) {
   const [swigQuip, setSwigQuip] = useState(null);
   const [currentPage, setCurrentPage] = useState(0);
   const [pageDirection, setPageDirection] = useState('none');
-  const [idleQuip, setIdleQuip] = useState(0);
+  const [idleQuipText, setIdleQuipText] = useState(() => getSmartQuip([]));
   const [swipeStartY, setSwipeStartY] = useState(null);
+
+  // ── New personality state ──────────────────────────────────────────────────
+  const [tapCount, setTapCount] = useState(0);
+  const [jokeText, setJokeText] = useState(null);
+  const [surpriseResult, setSurpriseResult] = useState(null);
+  const [isHappyHour, setIsHappyHour] = useState(() => getTimeContext().isHappyHour);
+
+  // ── Bar inventory (persistent, for quest system) ──────────────────────────
+  const [barInventory, setBarInventory] = useState([]);
+  
+  // ── New persistence + UI state ─────────────────────────────────────────────
+  const [chiptuneOn, setChiptuneOn] = useState(false);
+  const [drinksMade, setDrinksMade] = useState(0);
+  const [stoolFilter, setStoolFilter] = useState('all');
+  const [showMarqueeModal, setShowMarqueeModal] = useState(false);
+  const [marqueeInput, setMarqueeInput] = useState('');
+  const [customMarquee, setCustomMarquee] = useState('');
+
+  // Load persistence on mount
+  useEffect(() => {
+    getBarInventory().then(setBarInventory);
+    const savedCount = localStorage.getItem('bs-drinks-made');
+    if (savedCount) setDrinksMade(parseInt(savedCount, 10));
+    const savedMarquee = localStorage.getItem('bs-custom-marquee');
+    if (savedMarquee) {
+      setCustomMarquee(savedMarquee);
+      setMarqueeInput(savedMarquee);
+    }
+  }, []);
 
   // Convenience alias so existing logic doesn't need rewriting
   const bartenderState    = saloon.mode;
@@ -597,6 +825,109 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport }) {
   const dogTimerRef      = useRef(null);
   const pourTimerRef     = useRef(null);
   const walkToRef        = useRef(null);  // stable ref to walkTo so rAF closures don't go stale
+  const tapTimerRef      = useRef(null);
+  const chiptuneStopRef  = useRef(null);
+
+  // ── Happy Hour check (every 60 s) ──────────────────────────────────────────
+  useEffect(() => {
+    const check = () => setIsHappyHour(getTimeContext().isHappyHour);
+    const id = setInterval(check, 60000);
+    return () => clearInterval(id);
+  }, []);
+
+  // ── Tap bartender 5× for joke ─────────────────────────────────────────────
+  const handleBartenderTap = useCallback(() => {
+    setTapCount(prev => {
+      const next = prev + 1;
+      clearTimeout(tapTimerRef.current);
+      tapTimerRef.current = setTimeout(() => setTapCount(0), 2000); // reset after 2s idle
+      if (next >= 5) {
+        const joke = BAD_JOKES[Math.floor(Math.random() * BAD_JOKES.length)];
+        setJokeText(joke);
+        setBartenderState('surprised');
+        setTimeout(() => { setJokeText(null); setBartenderState('idle'); }, 4000);
+        return 0;
+      }
+      return next;
+    });
+    // Haptic tap
+    if (navigator.vibrate) navigator.vibrate(15);
+  }, []);
+
+  // ── "Surprise Me" handler ─────────────────────────────────────────────────
+  const handleSurpriseMe = useCallback(() => {
+    if (bartenderState !== 'idle' && bartenderState !== 'presenting') return;
+
+    // Pick from user's own drinks first, else from classics
+    const pick = drinks.length > 0
+      ? drinks[Math.floor(Math.random() * drinks.length)]
+      : null;
+    const classic = SURPRISE_CLASSICS[Math.floor(Math.random() * SURPRISE_CLASSICS.length)];
+
+    setBartenderState('shaking');
+    if (navigator.vibrate) navigator.vibrate([50, 30, 50, 30, 50]); // cocktail shaker vibration
+
+    setTimeout(() => {
+      if (pick) {
+        setSurpriseResult({ name: pick.name, emoji: '🍹', isDrink: true, drink: pick });
+      } else {
+        setSurpriseResult({ name: classic.name, emoji: classic.emoji, isDrink: false });
+      }
+      setBartenderState('presenting');
+      setTimeout(() => {
+        if (!selectedDrink) setBartenderState('idle');
+        setSurpriseResult(null);
+      }, 4000);
+    }, 1200);
+  }, [bartenderState, drinks, selectedDrink]);
+
+  // ── Chiptune toggle ───────────────────────────────────────────────────
+  const handleChiptuneToggle = useCallback(() => {
+    setChiptuneOn(prev => {
+      if (prev) {
+        chiptuneStopRef.current?.();
+        chiptuneStopRef.current = null;
+      } else {
+        chiptuneStopRef.current = startChiptune();
+      }
+      return !prev;
+    });
+  }, []);
+
+  // Stop chiptune on unmount
+  useEffect(() => () => chiptuneStopRef.current?.(), []);
+
+  // ── Fill the Shelf ──────────────────────────────────────────────────
+  const handleFillShelf = useCallback(() => {
+    const freq = {};
+    for (const drink of drinks) {
+      const { missing } = matchIngredients(drink.ingredients, barInventory);
+      for (const ing of missing) {
+        const k = ing.toLowerCase();
+        freq[k] = (freq[k] || 0) + 1;
+      }
+    }
+    const top3 = Object.entries(freq)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([name]) => ({ name, tag: 'bar-quest', questName: 'Fill the Shelf' }));
+    if (top3.length && onAddToGrocery) {
+      onAddToGrocery(top3);
+      if (navigator.vibrate) navigator.vibrate([30, 20, 30]);
+    }
+  }, [drinks, barInventory, onAddToGrocery]);
+
+  // ── Made It! (Tipsy mode counter) ─────────────────────────────────────
+  const handleMadeIt = useCallback(() => {
+    setDrinksMade(prev => {
+      const next = prev + 1;
+      localStorage.setItem('bs-drinks-made', String(next));
+      return next;
+    });
+    setBartenderState('shaking');
+    if (navigator.vibrate) navigator.vibrate([40, 20, 40]);
+    setTimeout(() => setBartenderState('idle'), 900);
+  }, []);
 
   // Cleanup — all timers cleared on unmount
   useEffect(() => () => {
@@ -694,12 +1025,25 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport }) {
     return () => clearTimeout(pourTimerRef.current);
   }, [bartenderState, selectedDrink]);
 
+  // ── Filtering logic (Stool Navigation) ────────────────────────────────────
+  const filteredDrinks = useMemo(() => {
+    let list = drinks;
+    if (stoolFilter === 'cocktail') {
+      list = list.filter(d => (d.category || '').toLowerCase().includes('cocktail'));
+    } else if (stoolFilter === 'mocktail') {
+      list = list.filter(d => (d.category || '').toLowerCase().includes('mocktail'));
+    } else if (stoolFilter === 'recent') {
+      list = [...drinks].sort((a, b) => (b.id || 0) - (a.id || 0)).slice(0, 12);
+    }
+    return list;
+  }, [drinks, stoolFilter]);
+
   // ── Pagination ──────────────────────────────────────────────────────────────
-  const totalPages        = Math.max(1, Math.ceil(drinks.length / BOTTLES_PER_PAGE));
+  const totalPages        = Math.max(1, Math.ceil(filteredDrinks.length / BOTTLES_PER_PAGE));
   const currentPageDrinks = useMemo(() => {
     const start = currentPage * BOTTLES_PER_PAGE;
-    return drinks.slice(start, start + BOTTLES_PER_PAGE);
-  }, [drinks, currentPage]);
+    return filteredDrinks.slice(start, start + BOTTLES_PER_PAGE);
+  }, [filteredDrinks, currentPage]);
 
   const shelves = useMemo(() => {
     const rows = [];
@@ -777,15 +1121,16 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport }) {
     'bar-shelf-detail'
   );
 
-  // ── Idle quip cycling ──────────────────────────────────────────────────────
+  // ── Idle quip cycling (smart dialogue) ──────────────────────────────────────
   useEffect(() => {
     if (bartenderState !== 'idle') return;
+    setIdleQuipText(getSmartQuip(drinks));
     idleTimerRef.current = setInterval(
-      () => setIdleQuip(q => (q + 1) % IDLE_QUIPS.length),
-      5000
+      () => setIdleQuipText(getSmartQuip(drinks)),
+      6000
     );
     return () => clearInterval(idleTimerRef.current);
-  }, [bartenderState]);
+  }, [bartenderState, drinks]);
 
   // ── Idle swig sequence ──────────────────────────────────────────────────────
   // After 8–15 s of inactivity the bartender sneaks a swig from a random bottle
@@ -975,7 +1320,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport }) {
   // ──────────────────────────────────────────────────────────────────────────
   return (
     <div className="bs-overlay" onClick={onClose}>
-      <div className="bs-container" onClick={e => e.stopPropagation()}>
+      <div className={`bs-container ${isHappyHour ? 'bs-happy-hour' : ''} ${drinksMade >= 3 ? 'bs-tipsy' : ''}`} onClick={e => e.stopPropagation()}>
 
         {/* ── Top bar ── */}
         <div className="bs-topbar">
@@ -983,12 +1328,38 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport }) {
             <span className="bs-pixel-arrow">&larr;</span> BACK
           </button>
           <h1 className="bs-title">
-            <NeonText text="MY BAR" color="#ff4081" />
+            <NeonText text="MY BAR" color={isHappyHour ? '#ffd700' : '#ff4081'} />
           </h1>
           <div className="bs-bottle-count">
             <span className="bs-count-num">{drinks.length}</span>
             <span className="bs-count-label">bottles</span>
           </div>
+          <button
+            className="bs-surprise-btn"
+            onClick={handleSurpriseMe}
+            title="Bartender's Special"
+          >
+            <span>🎲</span>
+            <span className="bs-surprise-label">SURPRISE</span>
+          </button>
+          <button
+            className={`bs-chiptune-btn ${chiptuneOn ? 'bs-chiptune-on' : ''}`}
+            onClick={handleChiptuneToggle}
+            title={chiptuneOn ? 'Mute chiptune' : 'Play 8-bit jazz'}
+          >
+            <span>{chiptuneOn ? '🔊' : '🎵'}</span>
+            <span className="bs-chiptune-label">{chiptuneOn ? 'MUTE' : 'TUNE'}</span>
+          </button>
+          {onAddToGrocery && drinks.length > 0 && (
+            <button
+              className="bs-fillshelf-btn"
+              onClick={handleFillShelf}
+              title="Add top 3 missing ingredients to quest list"
+            >
+              <span>📜</span>
+              <span className="bs-fillshelf-label">FILL</span>
+            </button>
+          )}
           {onImport && (
             <button className="bs-import-btn" onClick={onImport} title="Import a drink">
               <span>+</span>
@@ -1037,6 +1408,8 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport }) {
             <BarbackDisplay
               selectedDrink={selectedDrink}
               isPresenting={bartenderState === 'presenting'}
+              customMarquee={customMarquee}
+              onOpenMarquee={() => { setShowMarqueeModal(true); if (navigator.vibrate) navigator.vibrate(15); }}
             />
 
             {/* Paginated bottle shelves */}
@@ -1049,26 +1422,36 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport }) {
                         {row.map((drink) => {
                           const bottleStyle = getBottleStyle(drink);
                           const isSelected  = selectedDrink?.id === drink.id;
+                          const rarity = getDrinkRarity(drink);
                           return (
                             <button
                               key={drink.id}
                               ref={el => { if (el) bottleSlotsRef.current[drink.id] = el; }}
-                              className={`bs-bottle-slot ${isSelected ? 'bs-selected' : ''}`}
+                              className={`bs-bottle-slot ${isSelected ? 'bs-selected' : ''} bs-bottle-${rarity}`}
                               onClick={() => handleBottleTap(drink)}
                               title={drink.name}
                             >
                               <div className="bs-bottle-idle" style={{ opacity: isSelected && holdingBottle ? 0.2 : 1 }}>
-                                <PixelBottle style={bottleStyle} size={52} glow={isSelected} />
+                                <PixelBottle style={bottleStyle} size={52} glow={isSelected || rarity === 'legendary'} />
                               </div>
-                              <span className="bs-bottle-label">
+                              <span className="bs-bottle-label" style={rarity !== 'common' ? { color: getRarityColor(rarity) } : undefined}>
                                 {drink.name.length > 9 ? drink.name.slice(0, 8) + '…' : drink.name}
                               </span>
                             </button>
                           );
                         })}
                         {row.length < BOTTLES_PER_SHELF && Array.from({ length: BOTTLES_PER_SHELF - row.length }).map((_, i) => (
-                          <div key={`empty-${i}`} className="bs-bottle-slot bs-empty-slot">
-                            <div className="bs-empty-bottle" />
+                          <div key={`empty-${i}`} className="bs-bottle-slot bs-empty-slot"
+                            onClick={() => { if (onImport) onImport(); }}
+                            title="Add a drink"
+                          >
+                            <svg width="20" height="48" viewBox="0 0 20 48" className="bs-empty-bottle-svg">
+                              <rect x="7" y="4" width="6" height="3" fill="none" stroke="#555" strokeWidth="1" strokeDasharray="2,2" />
+                              <rect x="8" y="7" width="4" height="6" fill="none" stroke="#555" strokeWidth="1" strokeDasharray="2,2" />
+                              <rect x="4" y="13" width="12" height="24" rx="1" fill="none" stroke="#555" strokeWidth="1" strokeDasharray="2,2" />
+                              <line x1="7" y1="25" x2="13" y2="25" stroke="#666" strokeWidth="1.5" />
+                              <line x1="10" y1="22" x2="10" y2="28" stroke="#666" strokeWidth="1.5" />
+                            </svg>
                           </div>
                         ))}
                       </div>
@@ -1079,13 +1462,17 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport }) {
               </div>
             </div>
 
-            {/* Bartender behind the bar */}
+            {/* Bartender behind the bar — tappable for easter eggs */}
             <div
               className="bs-bartender-wrap"
               style={{
                 transform: `translateX(${bartenderX}px)`,
                 transition: bartenderState === 'idle' ? 'transform 0.3s ease' : 'none',
               }}
+              onClick={handleBartenderTap}
+              role="button"
+              tabIndex={0}
+              aria-label="Tap the bartender"
             >
               <PixelBartender
                 state={bartenderState}
@@ -1093,7 +1480,6 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport }) {
                 facingRight={facingRight}
                 swigBottle={swigBottle}
                 swigQuip={swigQuip}
-                idleQuip={IDLE_QUIPS[idleQuip]}
               />
             </div>
 
@@ -1105,7 +1491,27 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport }) {
                 transition: 'left 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
               }}
             >
-              {bartenderState === 'presenting' && selectedDrink && (
+              {/* Joke easter egg (tap 5x) */}
+              {jokeText && (
+                <div className="bs-bt-speech bs-bt-speech-joke bs-bt-speech--left">
+                  <span>{jokeText}</span>
+                </div>
+              )}
+              {/* Surprise Me result */}
+              {surpriseResult && !selectedDrink && (
+                <div className="bs-bt-speech bs-bt-speech-surprise bs-bt-speech--left">
+                  <span>{surpriseResult.emoji} {surpriseResult.name}!</span>
+                  {surpriseResult.isDrink && (
+                    <button
+                      className="bs-surprise-view-btn"
+                      onClick={(e) => { e.stopPropagation(); onViewDetail(surpriseResult.drink); }}
+                    >
+                      VIEW
+                    </button>
+                  )}
+                </div>
+              )}
+              {bartenderState === 'presenting' && selectedDrink && !jokeText && !surpriseResult && (
                 <div className={`bs-bt-speech ${facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'}`}>
                   <span>Here ya go!</span>
                 </div>
@@ -1120,9 +1526,9 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport }) {
                   <span>Much obliged!</span>
                 </div>
               )}
-              {bartenderState === 'idle' && !selectedDrink && (
+              {bartenderState === 'idle' && !selectedDrink && !jokeText && !surpriseResult && (
                 <div className={`bs-bt-speech bs-bt-speech-idle ${facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'}`}>
-                  <span>{IDLE_QUIPS[idleQuip]}</span>
+                  <span>{idleQuipText}</span>
                 </div>
               )}
             </div>
@@ -1130,12 +1536,20 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport }) {
 
           {/* ── LAYER 3: Foreground — bar counter, stools, dog, door ── */}
           <div className="saloon-fg">
-            {/* Pixel-art bar stools */}
-            <div className="saloon-stools" aria-hidden="true">
-              <BarStool x={18} />
-              <BarStool x={80} />
-              <BarStool x={148} />
-              <BarStool x={210} />
+            {/* Pixel-art bar stools — now interactive filter nav */}
+            <div className="saloon-stools">
+              {[{filter:'all',label:'ALL',x:18},{filter:'cocktail',label:'CKTL',x:80},{filter:'mocktail',label:'MOCK',x:148},{filter:'recent',label:'NEW',x:210}].map(({filter,label,x}) => (
+                <button
+                  key={filter}
+                  className={`saloon-stool-btn ${stoolFilter === filter ? 'saloon-stool-active' : ''}`}
+                  style={{ left: `${x}px` }}
+                  onClick={() => { setStoolFilter(filter); setCurrentPage(0); }}
+                  title={`Filter: ${label}`}
+                >
+                  <BarStool x={0} />
+                  <span className="saloon-stool-label">{label}</span>
+                </button>
+              ))}
             </div>
 
             {/* Saloon door — occasionally swings open */}
@@ -1176,56 +1590,172 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport }) {
         )}
 
         {/* ── Selected bottle detail card ── */}
-        {selectedDrink && bartenderState === 'presenting' && (
-          <div
-            className="bs-detail-card"
-            onTouchStart={handleDetailTouchStart}
-            onTouchEnd={handleDetailTouchEnd}
-          >
-            <div className="bs-detail-swipe-hint">
-              <div className="bs-detail-swipe-bar" />
-              <span className="bs-detail-swipe-text">swipe down to dismiss</span>
-            </div>
-            <div className="bs-detail-header">
-              <div className="bs-detail-bottle-preview">
-                <PixelBottle style={getBottleStyle(selectedDrink)} size={72} glow />
+        {selectedDrink && bartenderState === 'presenting' && (() => {
+          const rarity = getDrinkRarity(selectedDrink);
+          const rarityColor = getRarityColor(rarity);
+          const ingMatch = matchIngredients(selectedDrink.ingredients, barInventory);
+          const progressPct = Math.round(ingMatch.score * 100);
+          return (
+            <div
+              className={`bs-detail-card bs-rarity-${rarity}`}
+              onTouchStart={handleDetailTouchStart}
+              onTouchEnd={handleDetailTouchEnd}
+              style={{ borderColor: rarityColor }}
+            >
+              <div className="bs-detail-swipe-hint">
+                <div className="bs-detail-swipe-bar" />
+                <span className="bs-detail-swipe-text">swipe down to dismiss</span>
               </div>
-              <div className="bs-detail-info">
-                <h3 className="bs-detail-name">{selectedDrink.name}</h3>
-                <p className="bs-detail-meta">
-                  {selectedDrink.category && <span className="bs-detail-cat">{selectedDrink.category}</span>}
-                  {selectedDrink.ingredients && (
-                    <span className="bs-detail-ing-count">{selectedDrink.ingredients.length} ingredients</span>
-                  )}
-                </p>
+              <div className="bs-detail-header">
+                <div className="bs-detail-bottle-preview">
+                  <PixelBottle style={getBottleStyle(selectedDrink)} size={72} glow />
+                </div>
+                <div className="bs-detail-info">
+                  <h3 className="bs-detail-name" style={{ color: rarityColor }}>
+                    {selectedDrink.name}
+                    {rarity === 'legendary' && <span className="bs-rarity-badge bs-rarity-legendary" title="Legendary">★</span>}
+                    {rarity === 'rare' && <span className="bs-rarity-badge bs-rarity-rare" title="Rare">◆</span>}
+                  </h3>
+                  <p className="bs-detail-meta">
+                    {selectedDrink.category && <span className="bs-detail-cat">{selectedDrink.category}</span>}
+                    {selectedDrink.ingredients && (
+                      <span className="bs-detail-ing-count">{selectedDrink.ingredients.length} ingredients</span>
+                    )}
+                  </p>
+                </div>
+                <button className="bs-detail-close" onClick={dismissDrink}>✕</button>
               </div>
-              <button className="bs-detail-close" onClick={dismissDrink}>✕</button>
-            </div>
 
-            {selectedDrink.ingredients && (
-              <div className="bs-detail-ingredients">
-                {selectedDrink.ingredients.slice(0, 4).map((ing, i) => (
-                  <span key={i} className="bs-ing-chip">{ing}</span>
-                ))}
-                {selectedDrink.ingredients.length > 4 && (
-                  <span className="bs-ing-more">+{selectedDrink.ingredients.length - 4} more</span>
+              {/* ── Ingredient progress bar ── */}
+              {selectedDrink.ingredients && barInventory.length > 0 && (
+                <div className="bs-progress-section">
+                  <div className="bs-progress-bar-wrap">
+                    <div
+                      className="bs-progress-bar-fill"
+                      style={{ width: `${progressPct}%`, background: progressPct === 100 ? '#4caf50' : rarityColor }}
+                    />
+                  </div>
+                  <span className="bs-progress-label">
+                    {progressPct === 100
+                      ? 'Ready to pour!'
+                      : `${ingMatch.matched.length}/${ingMatch.total} ingredients`}
+                  </span>
+                </div>
+              )}
+
+              {/* ── Ingredient chips with matched/missing status ── */}
+              {selectedDrink.ingredients && (
+                <div className="bs-detail-ingredients">
+                  {selectedDrink.ingredients.map((ing, i) => {
+                    const isOwned = barInventory.length > 0 && ingMatch.matched.includes(ing);
+                    const isMissing = barInventory.length > 0 && ingMatch.missing.includes(ing);
+                    return (
+                      <span
+                        key={i}
+                        className={`bs-ing-chip ${isOwned ? 'bs-ing-owned' : ''} ${isMissing ? 'bs-ing-missing' : ''}`}
+                      >
+                        {isOwned && <span className="bs-ing-check">✓</span>}
+                        {isMissing && <QuestScroll size={12} color={rarityColor} />}
+                        {ing}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* ── Quest scroll — add missing to grocery ── */}
+              {ingMatch.missing.length > 0 && onAddToGrocery && (
+                <button
+                  className="bs-quest-btn"
+                  onClick={() => {
+                    onAddToGrocery(ingMatch.missing.map(ing => ({
+                      name: ing,
+                      tag: 'bar-quest',
+                      questDrinkId: selectedDrink.id,
+                      questName: selectedDrink.name,
+                    })));
+                    if (navigator.vibrate) navigator.vibrate([30, 20, 30]);
+                  }}
+                  style={{ borderColor: rarityColor, color: rarityColor }}
+                >
+                  <QuestScroll size={16} color={rarityColor} />
+                  <span>Add {ingMatch.missing.length} missing to Quest List</span>
+                </button>
+              )}
+
+              <div className="bs-detail-actions">
+                <button className="bs-action-btn bs-action-view" onClick={() => onViewDetail(selectedDrink)}>
+                  VIEW RECIPE
+                </button>
+                <button
+                  className="bs-action-btn bs-action-madeit"
+                  onClick={handleMadeIt}
+                  title="Mark as made!"
+                >
+                  🥂 CHEERS!
+                </button>
+                {barInventory.length === 0 && (
+                  <button
+                    className="bs-action-btn bs-action-pantry"
+                    onClick={() => {
+                      if (selectedDrink.ingredients) {
+                        selectedDrink.ingredients.forEach(ing => addToBarInventory(ing));
+                        getBarInventory().then(setBarInventory);
+                      }
+                    }}
+                  >
+                    I HAVE THESE
+                  </button>
                 )}
               </div>
-            )}
+              {drinksMade >= 3 && (
+                <div className="bs-tipsy-notice">*hic* You've had {drinksMade}... drinks 🌀</div>
+              )}
+            </div>
+          );
+        })()}
 
-            <div className="bs-detail-actions">
-              <button className="bs-action-btn bs-action-view" onClick={() => onViewDetail(selectedDrink)}>
-                VIEW RECIPE
-              </button>
+        {/* ── Marquee customization modal ── */}
+        {showMarqueeModal && (
+          <div className="bs-marquee-modal-overlay" onClick={() => setShowMarqueeModal(false)}>
+            <div className="bs-marquee-modal" onClick={e => e.stopPropagation()}>
+              <div className="bs-marquee-modal-title">CUSTOM MARQUEE</div>
+              <input
+                className="bs-marquee-input"
+                value={marqueeInput}
+                onChange={e => setMarqueeInput(e.target.value)}
+                placeholder="Friday Night at My Bar..."
+                maxLength={60}
+                autoFocus
+              />
+              <div className="bs-marquee-modal-btns">
+                <button className="bs-marquee-save-btn" onClick={() => {
+                  const val = marqueeInput.trim();
+                  setCustomMarquee(val);
+                  localStorage.setItem('bs-custom-marquee', val);
+                  setShowMarqueeModal(false);
+                }}>SAVE</button>
+                <button className="bs-marquee-clear-btn" onClick={() => {
+                  setCustomMarquee('');
+                  setMarqueeInput('');
+                  localStorage.removeItem('bs-custom-marquee');
+                  setShowMarqueeModal(false);
+                }}>CLEAR</button>
+              </div>
             </div>
           </div>
         )}
 
         {/* ── Empty state ── */}
-        {drinks.length === 0 && (
+        {filteredDrinks.length === 0 && drinks.length === 0 && (
           <div className="bs-empty-bar">
             <span className="bs-empty-neon"><NeonText text="OPEN" color="#4caf50" /></span>
             <p className="bs-empty-msg">Your bar is empty! Add some drinks to stock the shelves.</p>
+            {onImport && (
+              <button className="bs-empty-import-btn" onClick={onImport}>
+                Import your first drink
+              </button>
+            )}
           </div>
         )}
       </div>
