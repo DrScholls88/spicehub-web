@@ -1,27 +1,46 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import useSwipeDismiss from '../hooks/useSwipeDismiss';
+import { getBarInventory, addToBarInventory, removeFromBarInventory } from '../db';
 
 /**
  * "What's on My Shelf?" — the bar version of Fridge Mode.
- * Type spirits/liqueurs you have, see what cocktails you can make.
+ * Now persists inventory to IndexedDB so your bar shelf stays stocked between sessions.
+ * Quest integration: missing ingredients show quest scroll icons.
  */
-export default function BarFridgeMode({ drinks, onViewDetail, onClose }) {
+export default function BarFridgeMode({ drinks, onViewDetail, onClose, onAddToGrocery }) {
   const { sheetRef, handleTouchStart, handleTouchMove, handleTouchEnd } = useSwipeDismiss(onClose);
   const [inputValue, setInputValue] = useState('');
   const [shelfItems, setShelfItems] = useState([]);
   const [matchMode, setMatchMode] = useState('best'); // 'best' | 'strict'
+  const [loaded, setLoaded] = useState(false);
 
-  const addItem = useCallback(() => {
-    const val = inputValue.trim().toLowerCase();
-    if (val && !shelfItems.includes(val)) {
-      setShelfItems(prev => [...prev, val]);
+  // Load persistent inventory on mount
+  useEffect(() => {
+    getBarInventory().then(items => {
+      setShelfItems(items);
+      setLoaded(true);
+    });
+  }, []);
+
+  // Persist adds/removes to IndexedDB
+  const addItem = useCallback((val) => {
+    const clean = (val || inputValue).trim().toLowerCase();
+    if (clean && !shelfItems.includes(clean)) {
+      setShelfItems(prev => [...prev, clean]);
+      addToBarInventory(clean);
     }
     setInputValue('');
   }, [inputValue, shelfItems]);
 
   const removeItem = useCallback((item) => {
     setShelfItems(prev => prev.filter(i => i !== item));
+    removeFromBarInventory(item);
   }, []);
+
+  const clearAll = useCallback(() => {
+    shelfItems.forEach(item => removeFromBarInventory(item));
+    setShelfItems([]);
+  }, [shelfItems]);
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'Enter') { e.preventDefault(); addItem(); }
@@ -31,12 +50,14 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose }) {
   const QUICK_ADDS = [
     'vodka', 'gin', 'rum', 'tequila', 'bourbon', 'whiskey',
     'triple sec', 'vermouth', 'bitters', 'lime juice', 'simple syrup',
-    'soda water', 'ginger beer', 'tonic', 'ice',
+    'soda water', 'ginger beer', 'tonic', 'ice', 'orange juice',
+    'cranberry juice', 'club soda', 'grenadine', 'sugar',
   ];
 
   const quickAdd = useCallback((item) => {
     if (!shelfItems.includes(item)) {
       setShelfItems(prev => [...prev, item]);
+      addToBarInventory(item);
     }
   }, [shelfItems]);
 
@@ -46,7 +67,8 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose }) {
 
     return drinks
       .map(drink => {
-        const totalIngredients = drink.ingredients.length;
+        const totalIngredients = drink.ingredients?.length || 0;
+        if (totalIngredients === 0) return null;
         let matched = 0;
         const matchedIngredients = [];
         const missingIngredients = [];
@@ -75,6 +97,7 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose }) {
           missingIngredients,
         };
       })
+      .filter(Boolean)
       .filter(s => s.matched > 0)
       .sort((a, b) => b.score - a.score || a.missing - b.missing);
   }, [drinks, shelfItems]);
@@ -98,7 +121,11 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose }) {
             <span className="bfm-icon">🍸</span>
             <div>
               <h2 className="bfm-title">What's on My Shelf?</h2>
-              <p className="bfm-subtitle">Add spirits & mixers you have</p>
+              <p className="bfm-subtitle">
+                {loaded && shelfItems.length > 0
+                  ? `${shelfItems.length} items saved`
+                  : 'Add spirits & mixers you have'}
+              </p>
             </div>
           </div>
           <button className="bfm-close" onClick={onClose}>✕</button>
@@ -116,29 +143,27 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose }) {
               onKeyDown={handleKeyDown}
               autoFocus
             />
-            <button className="bfm-add-btn" onClick={addItem} disabled={!inputValue.trim()}>
+            <button className="bfm-add-btn" onClick={() => addItem()} disabled={!inputValue.trim()}>
               Add
             </button>
           </div>
         </div>
 
         {/* Quick-add chips */}
-        {shelfItems.length === 0 && (
-          <div className="bfm-quick-section">
-            <span className="bfm-quick-label">Common bottles:</span>
-            <div className="bfm-quick-chips">
-              {QUICK_ADDS.map(item => (
-                <button
-                  key={item}
-                  className={`bfm-quick-chip ${shelfItems.includes(item) ? 'added' : ''}`}
-                  onClick={() => quickAdd(item)}
-                >
-                  {item}
-                </button>
-              ))}
-            </div>
+        <div className="bfm-quick-section">
+          <span className="bfm-quick-label">{shelfItems.length === 0 ? 'Common bottles:' : 'Quick add:'}</span>
+          <div className="bfm-quick-chips">
+            {QUICK_ADDS.filter(item => !shelfItems.includes(item)).slice(0, 12).map(item => (
+              <button
+                key={item}
+                className="bfm-quick-chip"
+                onClick={() => quickAdd(item)}
+              >
+                + {item}
+              </button>
+            ))}
           </div>
-        )}
+        </div>
 
         {/* Shelf items */}
         {shelfItems.length > 0 && (
@@ -151,7 +176,7 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose }) {
                 </span>
               ))}
             </div>
-            <button className="bfm-clear-all" onClick={() => setShelfItems([])}>Clear all</button>
+            <button className="bfm-clear-all" onClick={clearAll}>Clear all</button>
           </div>
         )}
 
@@ -193,6 +218,9 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose }) {
             <div className="bfm-empty">
               <span className="bfm-empty-icon">🥃</span>
               <p>Add spirits from your bar to see what cocktails you can mix!</p>
+              <p style={{ fontSize: '12px', color: '#888', marginTop: 8 }}>
+                Your inventory is saved automatically between sessions.
+              </p>
             </div>
           ) : filteredResults.length === 0 ? (
             <div className="bfm-empty">
@@ -224,13 +252,33 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose }) {
                       <span className="bfm-match-missing"> · {missing} missing</span>
                     )}
                   </p>
-                  {missing > 0 && missing <= 2 && (
+                  {missing > 0 && missing <= 3 && (
                     <p className="bfm-missing-list">
-                      Need: {missingIngredients.slice(0, 2).join(', ')}
+                      Need: {missingIngredients.slice(0, 3).join(', ')}
                     </p>
                   )}
                 </div>
-                {missing === 0 && <span className="bfm-ready-badge">Pour it!</span>}
+                <div className="bfm-result-actions">
+                  {missing === 0 && <span className="bfm-ready-badge">Pour it!</span>}
+                  {missing > 0 && missing <= 3 && onAddToGrocery && (
+                    <button
+                      className="bfm-quest-add-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onAddToGrocery(missingIngredients.map(ing => ({
+                          name: ing,
+                          tag: 'bar-quest',
+                          questDrinkId: drink.id,
+                          questName: drink.name,
+                        })));
+                        if (navigator.vibrate) navigator.vibrate([30, 20, 30]);
+                      }}
+                      title="Add missing to grocery quest"
+                    >
+                      📜 Quest
+                    </button>
+                  )}
+                </div>
               </div>
             ))
           )}

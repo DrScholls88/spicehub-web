@@ -464,6 +464,30 @@ useEffect(() => {
     setTab('grocery');
   }, [weekPlan]);
 
+  // ── Add quest items to grocery (Bar → Grocery bridge) ───────────────────────
+  const handleAddToGrocery = useCallback((questItems) => {
+    if (!questItems || questItems.length === 0) return;
+    const storeMemory = window._storeMemory || {};
+    setGroceryItems(prev => {
+      const existingKeys = new Set(prev.map(i => i.name.toLowerCase().trim()));
+      const newItems = questItems
+        .filter(qi => !existingKeys.has(qi.name.toLowerCase().trim()))
+        .map(qi => ({
+          name: qi.name,
+          checked: false,
+          store: storeMemory[qi.name.toLowerCase().trim()] || '',
+          tag: qi.tag || 'bar-quest',
+          questDrinkId: qi.questDrinkId,
+          questName: qi.questName,
+        }));
+      if (newItems.length === 0) return prev;
+      return [...prev, ...newItems];
+    });
+    const count = questItems.length;
+    showToast(`📜 ${count} ingredient${count !== 1 ? 's' : ''} added to grocery quest!`, 'success');
+    if (navigator.vibrate) navigator.vibrate([30, 20, 30]);
+  }, [showToast]);
+
   // ── Import handler — routes to meals or drinks table ─────────────────────────
   const handleImport = useCallback(async (imported) => {
     const target = showImportFor;
@@ -741,6 +765,7 @@ useEffect(() => {
           onViewDetail={(drink) => { setShowBarShelf(false); setDetailItem(drink); }}
           onClose={() => setShowBarShelf(false)}
           onImport={() => { setImportModalKey(k => k + 1); setShowImportFor('drinks'); }}
+          onAddToGrocery={handleAddToGrocery}
         />
       )}
       {showBarFridge && (
@@ -748,6 +773,7 @@ useEffect(() => {
           drinks={drinks}
           onViewDetail={(drink) => { setShowBarFridge(false); setDetailItem(drink); }}
           onClose={() => setShowBarFridge(false)}
+          onAddToGrocery={handleAddToGrocery}
         />
       )}
       {cookModeMeal && (

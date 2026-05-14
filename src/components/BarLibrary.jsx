@@ -1,8 +1,45 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import db from '../db';
+import { getBarInventory } from '../db';
 
 // Category chips shown in the library
 const BAR_CATEGORIES = ['All', 'Cocktail', 'Mocktail', 'Beer & Wine', 'Shots', 'Non-Alcoholic'];
+
+// ── Rarity system (mirrored from BarShelf) ──────────────────────────────────
+const LEGENDARY_NAMES = ['negroni','manhattan','old fashioned','mai tai','singapore sling','sazerac','corpse reviver','aviation','last word','paper plane'];
+
+function getDrinkRarity(drink) {
+  const ingCount = drink.ingredients?.length || 0;
+  const name = (drink.name || '').toLowerCase();
+  if (LEGENDARY_NAMES.some(n => name.includes(n))) return 'legendary';
+  if (ingCount >= 6) return 'legendary';
+  if (ingCount >= 4) return 'rare';
+  return 'common';
+}
+
+function getRarityColor(rarity) {
+  if (rarity === 'legendary') return '#ffd700';
+  if (rarity === 'rare') return '#42a5f5';
+  return null; // common — no special color
+}
+
+function getRarityLabel(rarity) {
+  if (rarity === 'legendary') return '★';
+  if (rarity === 'rare') return '◆';
+  return '';
+}
+
+// ── Ingredient matching ────────────────────────────────────────────────────
+function matchScore(drink, inventory) {
+  if (!drink.ingredients || drink.ingredients.length === 0 || inventory.length === 0) return { matched: 0, total: 0, missing: 0, pct: 0 };
+  let matched = 0;
+  for (const ing of drink.ingredients) {
+    const ingLower = ing.toLowerCase();
+    if (inventory.some(inv => ingLower.includes(inv) || inv.includes(ingLower.split(' ').pop()))) matched++;
+  }
+  const total = drink.ingredients.length;
+  return { matched, total, missing: total - matched, pct: Math.round((matched / total) * 100) };
+}
 
 export default function BarLibrary({ drinks, onAdd, onEdit, onDelete, onViewDetail, onShare, onImport, onReload, onToast, onOpenShelf, onOpenBarFridge }) {
   const [search, setSearch] = useState('');
@@ -10,13 +47,48 @@ export default function BarLibrary({ drinks, onAdd, onEdit, onDelete, onViewDeta
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [showMenu, setShowMenu] = useState(false);
   const [menuAnimation, setMenuAnimation] = useState(false);
+  const [quickFilter, setQuickFilter] = useState('all'); // 'all' | 'canMake' | 'almostReady'
+  const [barInventory, setBarInventory] = useState([]);
   const restoreRef = useRef(null);
 
-  const filtered = drinks.filter(d => {
-    const matchSearch = d.name.toLowerCase().includes(search.toLowerCase());
-    const matchCat = category === 'All' || (d.category || '').toLowerCase() === category.toLowerCase();
-    return matchSearch && matchCat;
-  });
+  // Load bar inventory for progress/quest features
+  useEffect(() => { getBarInventory().then(setBarInventory); }, []);
+
+  // ── Filtering with negative search support ──────────────────────────────
+  const filtered = useMemo(() => {
+    let result = drinks;
+
+    // Category filter
+    if (category !== 'All') {
+      result = result.filter(d => (d.category || '').toLowerCase() === category.toLowerCase());
+    }
+
+    // Search with negative filtering (e.g. "-mocktail")
+    if (search.trim()) {
+      const terms = search.toLowerCase().split(/\s+/);
+      const positive = terms.filter(t => !t.startsWith('-'));
+      const negative = terms.filter(t => t.startsWith('-')).map(t => t.slice(1)).filter(Boolean);
+
+      result = result.filter(d => {
+        const text = (d.name + ' ' + (d.category || '') + ' ' + (d.ingredients || []).join(' ')).toLowerCase();
+        const matchPos = positive.length === 0 || positive.every(t => text.includes(t));
+        const matchNeg = negative.every(t => !text.includes(t));
+        return matchPos && matchNeg;
+      });
+    }
+
+    // Quick filter (requires inventory)
+    if (quickFilter !== 'all' && barInventory.length > 0) {
+      result = result.filter(d => {
+        const ms = matchScore(d, barInventory);
+        if (quickFilter === 'canMake') return ms.missing === 0;
+        if (quickFilter === 'almostReady') return ms.missing > 0 && ms.missing <= 2;
+        return true;
+      });
+    }
+
+    return result;
+  }, [drinks, search, category, quickFilter, barInventory]);
 
   const handleBackup = async () => {
     handleMenuClose();
@@ -101,6 +173,17 @@ export default function BarLibrary({ drinks, onAdd, onEdit, onDelete, onViewDeta
     setConfirmDelete(null);
   };
 
+  // Stats for quick filter badges
+  const canMakeCount = useMemo(() => {
+    if (barInventory.length === 0) return 0;
+    return drinks.filter(d => matchScore(d, barInventory).missing === 0).length;
+  }, [drinks, barInventory]);
+
+  const almostCount = useMemo(() => {
+    if (barInventory.length === 0) return 0;
+    return drinks.filter(d => { const ms = matchScore(d, barInventory); return ms.missing > 0 && ms.missing <= 2; }).length;
+  }, [drinks, barInventory]);
+
   return (
     <div className="bl-library">
       {/* ── Search bar ── */}
@@ -108,12 +191,21 @@ export default function BarLibrary({ drinks, onAdd, onEdit, onDelete, onViewDeta
         <div className="bl-search-bar">
           <input
             type="text"
-            placeholder="Search drinks…"
+            placeholder="Search drinks… (use -term to exclude)"
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
         </div>
       </div>
+
+      {/* ── "Enter the Saloon" hero button ── */}
+      {onOpenShelf && (
+        <button className="bl-saloon-btn" onClick={onOpenShelf}>
+          <span className="bl-saloon-icon">🎮</span>
+          <span className="bl-saloon-text">Enter the Saloon</span>
+          <span className="bl-saloon-count">{drinks.length} bottles</span>
+        </button>
+      )}
 
       {/* ── Header actions ── */}
       <div className="bl-header">
@@ -122,14 +214,6 @@ export default function BarLibrary({ drinks, onAdd, onEdit, onDelete, onViewDeta
             🍸 My Shelf
           </button>
         )}
-        {onOpenShelf && (
-          <button className="bl-import-btn" onClick={onOpenShelf} title="View Bar Shelf" style={{ background: 'linear-gradient(135deg, #1a0a2e, #3a1f5e)', color: '#ff4081', border: 'none' }}>
-            🎮 Shelf View
-          </button>
-        )}
-        <button className="bl-import-btn" onClick={onImport} title="Import from URL or Paprika">
-          📥 Import
-        </button>
         <button className="bl-menu-btn" onClick={handleMenuOpen} title="More options">
           ⋯
         </button>
@@ -148,87 +232,147 @@ export default function BarLibrary({ drinks, onAdd, onEdit, onDelete, onViewDeta
         ))}
       </div>
 
+      {/* ── Quick filter bar (inventory-powered) ── */}
+      {barInventory.length > 0 && (
+        <div className="bl-quick-filters">
+          <button
+            className={`bl-qf-chip ${quickFilter === 'all' ? 'active' : ''}`}
+            onClick={() => setQuickFilter('all')}
+          >
+            All
+          </button>
+          <button
+            className={`bl-qf-chip bl-qf-ready ${quickFilter === 'canMake' ? 'active' : ''}`}
+            onClick={() => setQuickFilter('canMake')}
+          >
+            Ready to Pour {canMakeCount > 0 && <span className="bl-qf-badge">{canMakeCount}</span>}
+          </button>
+          <button
+            className={`bl-qf-chip bl-qf-almost ${quickFilter === 'almostReady' ? 'active' : ''}`}
+            onClick={() => setQuickFilter('almostReady')}
+          >
+            Almost There {almostCount > 0 && <span className="bl-qf-badge">{almostCount}</span>}
+          </button>
+        </div>
+      )}
+
       {/* ── Drinks list ── */}
       <div className="bl-drinks-list">
         {filtered.length === 0 ? (
           <div className="bl-empty-state">
             <div className="bl-empty-emoji">🍹</div>
             <p className="bl-empty-text">
-              {search || category !== 'All'
+              {search || category !== 'All' || quickFilter !== 'all'
                 ? 'No drinks match your search.'
                 : 'The bar is empty! Add cocktail recipes or import from Paprika.'}
             </p>
-            {!search && category === 'All' && (
+            {!search && category === 'All' && quickFilter === 'all' && (
               <button className="bl-btn-primary" onClick={onAdd}>
                 Add a Drink
               </button>
             )}
           </div>
         ) : (
-          filtered.map((drink, idx) => (
-            <div
-              key={drink.id}
-              className={`bl-drink-card${confirmDelete === drink.id ? ' with-delete' : ''}`}
-              style={{
-                animationDelay: `${idx * 0.05}s`,
-              }}
-              onClick={() => onViewDetail(drink)}
-            >
-              <div className="bl-drink-image-container">
-                {drink.imageUrl ? (
-                  <img
-                    src={drink.imageUrl}
-                    alt={drink.name}
-                    className="bl-drink-image"
-                    onError={e => {
-                      e.target.style.display = 'none';
-                    }}
-                  />
-                ) : (
-                  '🍹'
-                )}
-              </div>
-              <div className="bl-drink-info">
-                <div className="bl-drink-name">{drink.name}</div>
-                <div className="bl-drink-meta">
-                  {drink.category && <span className="bl-cat-tag">{drink.category}</span>}
-                  <span>{drink.ingredients?.length ?? 0} ingredients · {drink.directions?.length ?? 0} steps</span>
+          filtered.map((drink, idx) => {
+            const rarity = getDrinkRarity(drink);
+            const rarityColor = getRarityColor(rarity);
+            const rarityBadge = getRarityLabel(rarity);
+            const ms = barInventory.length > 0 ? matchScore(drink, barInventory) : null;
+            return (
+              <div
+                key={drink.id}
+                className={`bl-drink-card${confirmDelete === drink.id ? ' with-delete' : ''} bl-card-${rarity}`}
+                style={{
+                  animationDelay: `${idx * 0.05}s`,
+                  ...(rarityColor ? { borderLeftColor: rarityColor } : {}),
+                }}
+                onClick={() => onViewDetail(drink)}
+              >
+                <div className="bl-drink-image-container">
+                  {drink.imageUrl ? (
+                    <img
+                      src={drink.imageUrl}
+                      alt={drink.name}
+                      className="bl-drink-image"
+                      onError={e => {
+                        e.target.style.display = 'none';
+                      }}
+                    />
+                  ) : (
+                    '🍹'
+                  )}
+                  {/* Rarity badge overlay */}
+                  {rarityBadge && (
+                    <span className={`bl-rarity-pip bl-rarity-${rarity}`}>{rarityBadge}</span>
+                  )}
+                </div>
+                <div className="bl-drink-info">
+                  <div className="bl-drink-name" style={rarityColor ? { color: rarityColor } : undefined}>
+                    {drink.name}
+                  </div>
+                  <div className="bl-drink-meta">
+                    {drink.category && <span className="bl-cat-tag">{drink.category}</span>}
+                    <span>{drink.ingredients?.length ?? 0} ingredients</span>
+                    {ms && ms.pct > 0 && ms.pct < 100 && (
+                      <span className="bl-meta-progress">{ms.pct}% ready</span>
+                    )}
+                    {ms && ms.pct === 100 && (
+                      <span className="bl-meta-pour">Pour it!</span>
+                    )}
+                  </div>
+                  {/* Mini progress bar */}
+                  {ms && ms.total > 0 && (
+                    <div className="bl-mini-progress">
+                      <div
+                        className="bl-mini-progress-fill"
+                        style={{
+                          width: `${ms.pct}%`,
+                          background: ms.pct === 100 ? '#4caf50' : (rarityColor || '#ff4081'),
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+                <div
+                  className="bl-card-actions"
+                  onClick={e => e.stopPropagation()}
+                >
+                  <button
+                    className="bl-icon-btn"
+                    onClick={() => onShare(drink)}
+                    title="Share"
+                  >
+                    📤
+                  </button>
+                  <button
+                    className="bl-icon-btn"
+                    onClick={() => onEdit(drink)}
+                    title="Edit"
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    className="bl-icon-btn danger"
+                    onClick={() => handleDeleteClick(drink.id)}
+                    title="Delete"
+                  >
+                    🗑️
+                  </button>
                 </div>
               </div>
-              <div
-                className="bl-card-actions"
-                onClick={e => e.stopPropagation()}
-              >
-                <button
-                  className="bl-icon-btn"
-                  onClick={() => onShare(drink)}
-                  title="Share"
-                >
-                  📤
-                </button>
-                <button
-                  className="bl-icon-btn"
-                  onClick={() => onEdit(drink)}
-                  title="Edit"
-                >
-                  ✏️
-                </button>
-                <button
-                  className="bl-icon-btn danger"
-                  onClick={() => handleDeleteClick(drink.id)}
-                  title="Delete"
-                >
-                  🗑️
-                </button>
-              </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
 
-      {/* ── Floating Action Button ── */}
-      <button className="bl-fab" onClick={onAdd} title="Add new drink">
-        🍹
+      {/* ── Floating Import Button (bottom-right, matches Meal Library) ── */}
+      <button className="bl-fab bl-fab-import" onClick={onImport} title="Import a drink">
+        📥
+      </button>
+
+      {/* ── Floating Add Button ── */}
+      <button className="bl-fab bl-fab-add" onClick={onAdd} title="Add new drink">
+        +
       </button>
 
       {/* ── Menu Bottom Sheet ── */}
