@@ -1,5 +1,29 @@
 import { useState, useEffect, useCallback } from 'react';
 
+/** Inline shimmer skeleton — no external CSS dependency needed */
+const shimmerStyle = (style) => ({
+  ...style,
+  background: 'linear-gradient(90deg, var(--surface, #f0f0f0) 25%, var(--surface-alt, #e4e4e4) 50%, var(--surface, #f0f0f0) 75%)',
+  backgroundSize: '200% 100%',
+  animation: 'smi-shimmer 1.4s ease-in-out infinite',
+  borderRadius: style?.borderRadius || '8px',
+  flexShrink: style?.flexShrink ?? 0,
+});
+
+const shimmerKeyframes = `
+@keyframes smi-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}`;
+
+// Inject keyframes once into <head>
+if (typeof document !== 'undefined' && !document.getElementById('smi-keyframes')) {
+  const s = document.createElement('style');
+  s.id = 'smi-keyframes';
+  s.textContent = shimmerKeyframes;
+  document.head.appendChild(s);
+}
+
 /**
  * SafeMediaImage — Renders images with smart fallback chain:
  *   1. data: URLs → use directly (already persisted, works offline)
@@ -7,6 +31,9 @@ import { useState, useEffect, useCallback } from 'react';
  *   3. Other URLs → use directly (browser handles caching)
  *   4. On error → allorigins proxy fallback
  *   5. Final fallback → emoji placeholder
+ *
+ * Loading state shows a CSS shimmer skeleton instead of an emoji/spinner.
+ * All <img> elements use loading="lazy" + decoding="async" for better paint perf.
  */
 export default function SafeMediaImage({ src, alt, style, fallbackEmoji = '🍳', ...props }) {
   const [imgSrc, setImgSrc] = useState(null);
@@ -30,7 +57,6 @@ export default function SafeMediaImage({ src, alt, style, fallbackEmoji = '🍳'
 
     // Instagram/FB CDN URLs need proxying — they expire and block cross-origin
     if (/instagram|fbcdn|cdninstagram|scontent/.test(src)) {
-      // Use Vercel serverless proxy for reliable server-side fetch
       setImgSrc(`/api/proxy?mode=image-data-url&url=${encodeURIComponent(src)}`);
       return;
     }
@@ -52,7 +78,6 @@ export default function SafeMediaImage({ src, alt, style, fallbackEmoji = '🍳'
 
   // Handle the special case where image-data-url returns JSON instead of an image
   const handleLoad = useCallback((e) => {
-    // If the proxy returned JSON (data URL response), parse it
     if (imgSrc?.includes('mode=image-data-url') && e.target.naturalWidth === 0) {
       handleError();
     }
@@ -69,16 +94,29 @@ export default function SafeMediaImage({ src, alt, style, fallbackEmoji = '🍳'
           background: 'var(--surface, #f5f5f5)',
           fontSize: '42px',
           borderRadius: style?.borderRadius || '8px',
+          flexShrink: style?.flexShrink ?? 0,
         }}
+        aria-label={alt || fallbackEmoji}
+        role="img"
       >
         {fallbackEmoji}
       </div>
     );
   }
 
-  // For the image-data-url proxy, we need to fetch the JSON and extract the data URL
+  // For the image-data-url proxy, delegate to ProxiedImage which handles async JSON parsing
   if (imgSrc.includes('mode=image-data-url')) {
-    return <ProxiedImage src={imgSrc} originalSrc={src} alt={alt} style={style} fallbackEmoji={fallbackEmoji} onFinalError={handleError} {...props} />;
+    return (
+      <ProxiedImage
+        src={imgSrc}
+        originalSrc={src}
+        alt={alt}
+        style={style}
+        fallbackEmoji={fallbackEmoji}
+        onFinalError={handleError}
+        {...props}
+      />
+    );
   }
 
   return (
@@ -87,6 +125,7 @@ export default function SafeMediaImage({ src, alt, style, fallbackEmoji = '🍳'
       alt={alt || ''}
       style={style}
       loading="lazy"
+      decoding="async"
       referrerPolicy="no-referrer"
       onError={handleError}
       onLoad={handleLoad}
@@ -97,7 +136,7 @@ export default function SafeMediaImage({ src, alt, style, fallbackEmoji = '🍳'
 
 /**
  * ProxiedImage — Fetches a data URL from the image proxy and renders it.
- * This handles the case where /api/proxy?mode=image-data-url returns JSON.
+ * Shows a shimmer skeleton while the proxy fetch is in-flight.
  */
 function ProxiedImage({ src, originalSrc, alt, style, fallbackEmoji, onFinalError, ...props }) {
   const [dataUrl, setDataUrl] = useState(null);
@@ -114,7 +153,7 @@ function ProxiedImage({ src, originalSrc, alt, style, fallbackEmoji, onFinalErro
         if (data?.dataUrl) {
           setDataUrl(data.dataUrl);
         } else {
-          // Proxy failed — try allorigins as final fallback
+          // Proxy returned no data — fall back to allorigins
           setDataUrl(`https://api.allorigins.win/raw?url=${encodeURIComponent(originalSrc)}`);
         }
         setLoading(false);
@@ -129,17 +168,27 @@ function ProxiedImage({ src, originalSrc, alt, style, fallbackEmoji, onFinalErro
     return () => { cancelled = true; };
   }, [src, originalSrc]);
 
+  // Shimmer skeleton while fetching from proxy
   if (loading) {
-    return (
-      <div style={{ ...style, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface, #f5f5f5)', fontSize: '24px', opacity: 0.5 }}>
-        ⏳
-      </div>
-    );
+    return <div style={shimmerStyle(style)} aria-hidden="true" />;
   }
 
   if (!dataUrl) {
     return (
-      <div style={{ ...style, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface, #f5f5f5)', fontSize: '42px' }}>
+      <div
+        style={{
+          ...style,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'var(--surface, #f5f5f5)',
+          fontSize: '42px',
+          borderRadius: style?.borderRadius || '8px',
+          flexShrink: style?.flexShrink ?? 0,
+        }}
+        aria-label={alt || fallbackEmoji}
+        role="img"
+      >
         {fallbackEmoji}
       </div>
     );
@@ -151,6 +200,7 @@ function ProxiedImage({ src, originalSrc, alt, style, fallbackEmoji, onFinalErro
       alt={alt || ''}
       style={style}
       loading="lazy"
+      decoding="async"
       referrerPolicy="no-referrer"
       onError={onFinalError}
       {...props}

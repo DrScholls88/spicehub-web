@@ -977,6 +977,8 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                         type="text"
                         className="preview-title-input"
                         value={m.name}
+                        /* Auto-focus first card's title so keyboard is ready on preview mount */
+                        autoFocus={idx === 0}
                         onChange={e => {
                           const updated = [...preview];
                           updated[idx] = { ...updated[idx], name: e.target.value };
@@ -1333,8 +1335,9 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                 setSocialDetected(null);
                 setError('');
               }}>← Back</button>
+              {/* "Save to Library" — header already shows the count, so label stays clear */}
               <button className="btn-primary" onClick={confirmImport}>
-                Add {preview.length} {title.toLowerCase().includes('drink') ? (preview.length !== 1 ? 'Drinks' : 'Drink') : (preview.length !== 1 ? 'Recipes' : 'Recipe')}
+                Save to Library
               </button>
             </div>
           </div>
