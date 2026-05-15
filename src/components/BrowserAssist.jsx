@@ -1226,40 +1226,46 @@ const toggleDeepMode = () => {
             </div>
           </div>
 
-          <div className="browser-assist-preview-card">
-            <div className="preview-detail-header">
-              {autoRecipe.imageUrl ? (
-                <img
-                  src={autoRecipe.imageUrl}
-                  alt=""
-                  className="preview-detail-thumb"
-                  onError={e => {
-                    const attempt = parseInt(e.target.dataset.proxied || '0');
-                    const enc = encodeURIComponent(autoRecipe.imageUrl);
-                    const proxies = [
-                      `https://images.weserv.nl/?url=${enc}&w=600&output=jpg&q=85`,
-                      `https://corsproxy.io/?url=${enc}`,
-                      `https://api.allorigins.win/raw?url=${enc}`,
-                    ];
-                    if (attempt < proxies.length) {
-                      e.target.dataset.proxied = String(attempt + 1);
-                      e.target.src = proxies[attempt];
-                    } else {
-                      e.target.style.display = 'none';
-                    }
-                  }}
-                />
-              ) : null}
-              <div className="preview-detail-title-zone">
-                <label className="preview-label">Recipe Name</label>
-                <input
-                  type="text"
-                  className="preview-title-input"
-                  value={autoRecipe.name || ''}
-                  onChange={e => updatePreviewField('name', e.target.value)}
-                />
-              </div>
-            </div>
+<div className="browser-assist-preview-card">
+  <div className="preview-detail-header">
+    {(() => {
+      const displayImage = autoRecipe.imageUrl || autoRecipe.capturedImageUrl;
+      if (!displayImage) return null;
+
+      return (
+        <img 
+          src={displayImage} 
+          alt="" 
+          className="preview-detail-thumb" 
+          onError={e => {
+            const attempt = parseInt(e.target.dataset.proxied || '0');
+            const enc = encodeURIComponent(displayImage);
+            const proxies = [
+              `https://images.weserv.nl/?url=${enc}&w=600&output=jpg&q=85`,
+              `https://corsproxy.io/?url=${enc}`,
+              `https://api.allorigins.win/raw?url=${enc}`,
+            ];
+            if (attempt < proxies.length) {
+              e.target.dataset.proxied = String(attempt + 1);
+              e.target.src = proxies[attempt];
+            } else {
+              e.target.style.display = 'none';
+            }
+          }} 
+        />
+      );
+    })()}
+
+    <div className="preview-detail-title-zone">
+      <label className="preview-label">Recipe Name</label>
+      <input 
+        type="text" 
+        className="preview-title-input" 
+        value={autoRecipe.name || ''} 
+        onChange={e => updatePreviewField('name', e.target.value)} 
+      />
+    </div>
+</div>
 
             <div className="preview-detail-section">
               <label className="preview-label">

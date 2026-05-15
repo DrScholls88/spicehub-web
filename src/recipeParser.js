@@ -4423,9 +4423,10 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
       if (recipe && (!isPlaceholder(recipe.ingredients) || !isPlaceholder(recipe.directions))) {
         progress(3, 'done', 'Recipe structured successfully!');
         const persistedImageUrl = await persistCapturedImage(capturedImageUrl || recipe.imageUrl || '');
-        const finalRecipe = {
-          ...recipe,
-          imageUrl: persistedImageUrl,
+const finalRecipe = {
+  ...recipe,
+  imageUrl: persistedImageUrl || finalImageUrl || capturedImageUrl,
+  capturedImageUrl: persistedImageUrl || capturedImageUrl,
           extractedVia: videoRecipe ? 'yt-dlp+ai' : 'caption-ai',
           sourceUrl: url,
           importedAt: new Date().toISOString(),
@@ -4493,11 +4494,16 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   // Pass back whatever we captured so BrowserAssist can pre-fill the manual textarea.
   // capturedCaption may be a full recipe caption that just failed the AI step —
   // handing it back lets the user hit "Parse" without having to re-paste anything.
+  // ── Final image persistence (critical for Instagram) ─────────────────────
+  const finalImageUrl = await persistCapturedImage(capturedImageUrl || '');
+
+  // ── Manual fallback — all phases exhausted ───────────────────────────────
   return {
     _needsManualCaption: true,
     capturedCaption: capturedCaption || '',
-    capturedImageUrl: capturedImageUrl || '',
+    capturedImageUrl: finalImageUrl,           // ← FIXED
     capturedTitle: capturedTitle || '',
+    imageUrl: finalImageUrl,                   // ← NEW: direct field for preview
     sourceUrl: url,
   };
 }
