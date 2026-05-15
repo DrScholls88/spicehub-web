@@ -368,6 +368,41 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     // Detect multiple URLs pasted as newline/space-separated list
     const detectedUrls = trimmedUrl.split(/[\s\n]+/).filter(s => /^https?:\/\//i.test(s));
 
+// Enhanced Instagram image pre-fetch
+if (isInstagramUrl(resolvedUrl)) {
+  try {
+    const html = await fetchHtmlViaProxy(resolvedUrl, 12000);
+    if (html) {
+      // Multiple strong selectors for Instagram post images
+      const imgMatches = [
+        ...html.matchAll(/display_url["']\s*:\s*["']([^"']+)["']/g),
+        ...html.matchAll(/thumbnail_src["']\s*:\s*["']([^"']+)["']/g),
+        ...html.matchAll(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/gi),
+        ...html.matchAll(/scontent.*?\.(jpg|jpeg|png|webp)/gi)
+      ];
+
+      let bestImg = '';
+      for (const m of imgMatches) {
+        const u = m[1] || m[0];
+        if (isValidImageUrl(u) && !isProfilePicUrl(u) && u.length > bestImg.length) {
+          bestImg = u;
+        }
+      }
+
+      if (bestImg) {
+        setBestImage(bestImg);
+        setBrowserAssistSeed(prev => ({
+          ...(prev || {}),
+          imageUrl: bestImg,
+          _source: 'instagram-pre'
+        }));
+      }
+    }
+  } catch (e) {
+    console.warn('IG pre-image soft fail', e);
+  }
+}
+
     if (detectedUrls.length > 1) {
       // Batch mode
       handleBatchImport(detectedUrls);
@@ -390,6 +425,11 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
         setImportProgress('');
         setBrowserAssistUrl(resolvedUrl);
         setBrowserAssistMode('showing');
+        setBrowserAssistSeed({
+  ... (browserAssistSeed || {}),
+  imageUrl: bestImage || undefined,   // ← critical
+  _source: 'instagram'
+});
         return;
       }
 
@@ -831,7 +871,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <div className="modal-overlay" onClick={handleClose}>
-      <div className={`modal-content import-modal${preview ? ' has-preview-screen' : ''}`} onClick={e => e.stopPropagation()}>
+      <div className={`modal-content import-modal${preview ? ' has-preview-screen' : ''}`} onClick={e => e.stopPropagation()} style={{ maxHeight: '100dvh', height: '100dvh' }}>
         <div className="modal-header">
           <h2>{title}</h2>
           <button className="btn-icon" onClick={handleClose}>✕</button>
@@ -937,9 +977,10 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                 </>
               )}
             </div>
-            <div className="preview-detail-list">
-              {preview.map((m, idx) => (
-                <div key={idx} className="preview-detail-card">
+            <div className="preview-scroll-content">
+              <div className="preview-detail-list">
+                {preview.map((m, idx) => (
+                  <div key={idx} className="preview-detail-card">
                   {m._isAddendum && (
                     <div className="addendum-badge">＋ {m._addendumLabel || 'Side / Sauce'}</div>
                   )}
@@ -1301,29 +1342,30 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                 </div>
               ))}
             </div>
-            <div className="preview-addendum-bar">
-              <button
-                className="btn-add-addendum"
-                title="Add a linked side dish, sauce, or sub-recipe"
-                onClick={() => {
-                  setPreview(prev => [
-                    ...(prev || []),
-                    {
-                      name: '',
-                      ingredients: [],
-                      directions: [],
-                      notes: '',
-                      imageUrl: '',
-                      link: prev?.[0]?.link || '',
-                      _isAddendum: true,
-                      _addendumLabel: 'Side / Sauce',
-                    },
-                  ]);
-                }}
+<div className="preview-addendum-bar">
+        <button
+          className="btn-add-addendum"
+          title="Add a linked side dish, sauce, or sub-recipe"
+          onClick={() => {
+            setPreview(prev => [
+              ...(prev || []),
+              {
+                name: '',
+                ingredients: [],
+                directions: [],
+                notes: '',
+                imageUrl: '',
+                link: prev?.[0]?.link || '',
+                _isAddendum: true,
+                _addendumLabel: 'Side / Sauce',
+              },
+            ]);
+          }}
               >
-                ＋ Add Side / Sauce Recipe
-              </button>
-            </div>
+＋ Add Side / Sauce Recipe
+        </button>
+      </div>
+    </div>
             <div className="ip-preview-footer">
               <button className="btn-secondary" onClick={() => {
                 setPreview(null);
@@ -1340,8 +1382,23 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                 Save to Library
               </button>
             </div>
-          </div>
-        ) : (
+<div className="ip-preview-footer">
+      <button className="btn-secondary" onClick={() => {
+        setPreview(null);
+        setUrl('');
+        setImporting(false);
+        setImportProgress('');
+        setBrowserAssistMode('off');
+        setBrowserAssistUrl(null);
+        setSocialDetected(null);
+        setError('');
+      }}>← Back</button>
+      <button className="btn-primary" onClick={confirmImport}>
+        Save to Library
+      </button>
+    </div>
+  </div>
+) : (
           <>
             {/* ── Tab bar — 3 primary + overflow ───────────────────────────── */}
             <div className="import-tabs">

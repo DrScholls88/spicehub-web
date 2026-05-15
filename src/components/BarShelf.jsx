@@ -1320,7 +1320,16 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
   // ──────────────────────────────────────────────────────────────────────────
   return (
     <div className="bs-overlay" onClick={onClose}>
-      <div className={`bs-container ${isHappyHour ? 'bs-happy-hour' : ''} ${drinksMade >= 3 ? 'bs-tipsy' : ''}`} onClick={e => e.stopPropagation()}>
+      <div className={`bs-container ${isHappyHour ? 'bs-happy-hour' : ''} ${drinksMade >= 3 ? 'bs-tipsy' : ''}`}
+  style={{ 
+    height: '100dvh', 
+    maxHeight: '100dvh', 
+    overflow: 'hidden',
+    display: 'flex',
+    flexDirection: 'column'
+  }}
+  onClick={e => e.stopPropagation()}
+>
 
         {/* ── Top bar ── */}
         <div className="bs-topbar">
@@ -1369,10 +1378,10 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
         </div>
 
         {/* ═══ 3-LAYER SALOON STAGE ═══ */}
-        <div className="saloon-stage" ref={barTopRef}>
+        <div className="saloon-stage" ref={barTopRef} style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
 
           {/* ── LAYER 1: Background — brick wall, lanterns, steam ── */}
-          <div className="saloon-bg" aria-hidden="true">
+          <div className="saloon-bg" aria-hidden="true" style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
             <div className="saloon-brick-wall" />
             {/* Decorative picture frames on the wall */}
             <div className="saloon-frames">
@@ -1393,7 +1402,11 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
           </div>
 
           {/* ── LAYER 2: Mid — shelves, bartender, LED board ── */}
-          <div className="saloon-mid">
+          <div className="saloon-mid" style={{ 
+    position: 'absolute', 
+    inset: 0, 
+    overflowY: 'auto', 
+    webkitoverflowscrolling: 'touch', paddingBottom: '80px'  }}>
             {/* Lantern glow tracks bartender with spring lag */}
             <div
               className="lantern-glow"
@@ -1535,7 +1548,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
           </div>
 
           {/* ── LAYER 3: Foreground — bar counter, stools, dog, door ── */}
-          <div className="saloon-fg">
+          <div className="saloon-fg" style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
             {/* Pixel-art bar stools — now interactive filter nav */}
             <div className="saloon-stools">
               {[{filter:'all',label:'ALL',x:18},{filter:'cocktail',label:'CKTL',x:80},{filter:'mocktail',label:'MOCK',x:148},{filter:'recent',label:'NEW',x:210}].map(({filter,label,x}) => (
