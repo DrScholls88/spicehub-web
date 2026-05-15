@@ -885,7 +885,7 @@ if (isInstagramUrl(resolvedUrl)) {
         )}
 
         {browserAssistMode === 'showing' ? (
-          <>
+          <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {/* Fallback breadcrumb — shown when BrowserAssist is a fallback after a failed sync import */}
             <div className="ba-fallback-header">
               <button
@@ -923,10 +923,10 @@ if (isInstagramUrl(resolvedUrl)) {
               }}
               defaultVisualMode={isSocialMediaUrl(browserAssistUrl || '')}
             />
-          </>
+          </div>
         ) : /* ── Preview screen (full detail + editable) ──────────────────────── */
         preview ? (
-          <div className="import-preview ip-preview-screen">
+          <div className="import-preview ip-preview-screen" style={{ minHeight: 0 }}>
             <div className="preview-header-bar">
               <h3>
                 Preview — {preview.length} recipe{preview.length !== 1 ? 's' : ''} found
@@ -977,7 +977,7 @@ if (isInstagramUrl(resolvedUrl)) {
                 </>
               )}
             </div>
-            <div className="preview-scroll-content">
+            <div className="preview-scroll-content" style={{ minHeight: 0 }}>
               <div className="preview-detail-list">
                 {preview.map((m, idx) => (
                   <div key={idx} className="preview-detail-card">
@@ -1341,64 +1341,52 @@ if (isInstagramUrl(resolvedUrl)) {
                   </div>
                 </div>
               ))}
-            </div>
-<div className="preview-addendum-bar">
-        <button
-          className="btn-add-addendum"
-          title="Add a linked side dish, sauce, or sub-recipe"
-          onClick={() => {
-            setPreview(prev => [
-              ...(prev || []),
-              {
-                name: '',
-                ingredients: [],
-                directions: [],
-                notes: '',
-                imageUrl: '',
-                link: prev?.[0]?.link || '',
-                _isAddendum: true,
-                _addendumLabel: 'Side / Sauce',
-              },
-            ]);
-          }}
+            </div>{/* end preview-detail-list */}
+
+            <div className="preview-addendum-bar">
+              <button
+                className="btn-add-addendum"
+                title="Add a linked side dish, sauce, or sub-recipe"
+                onClick={() => {
+                  setPreview(prev => [
+                    ...(prev || []),
+                    {
+                      name: '',
+                      ingredients: [],
+                      directions: [],
+                      notes: '',
+                      imageUrl: '',
+                      link: prev?.[0]?.link || '',
+                      _isAddendum: true,
+                      _addendumLabel: 'Side / Sauce',
+                    },
+                  ]);
+                }}
               >
-＋ Add Side / Sauce Recipe
-        </button>
-      </div>
-    </div>
-            <div className="ip-preview-footer">
-              <button className="btn-secondary" onClick={() => {
-                setPreview(null);
-                setUrl('');
-                setImporting(false);
-                setImportProgress('');
-                setBrowserAssistMode('off');
-                setBrowserAssistUrl(null);
-                setSocialDetected(null);
-                setError('');
-              }}>← Back</button>
-              {/* "Save to Library" — header already shows the count, so label stays clear */}
-              <button className="btn-primary" onClick={confirmImport}>
-                Save to Library
+                ＋ Add Side / Sauce Recipe
               </button>
             </div>
-<div className="ip-preview-footer">
-      <button className="btn-secondary" onClick={() => {
-        setPreview(null);
-        setUrl('');
-        setImporting(false);
-        setImportProgress('');
-        setBrowserAssistMode('off');
-        setBrowserAssistUrl(null);
-        setSocialDetected(null);
-        setError('');
-      }}>← Back</button>
-      <button className="btn-primary" onClick={confirmImport}>
-        Save to Library
-      </button>
-    </div>
-  </div>
-) : (
+          </div>
+          {/* end preview-scroll-content */}
+
+          <div className="ip-preview-footer">
+            <button className="btn-secondary" onClick={() => {
+              setPreview(null);
+              setUrl('');
+              setImporting(false);
+              setImportProgress('');
+              setBrowserAssistMode('off');
+              setBrowserAssistUrl(null);
+              setSocialDetected(null);
+              setError('');
+            }}>← Back</button>
+            <button className="btn-primary" onClick={confirmImport}>
+              Save to Library
+            </button>
+          </div>
+        </div>/* end ip-preview-screen */
+        ) : (
+
           <>
             {/* ── Tab bar — 3 primary + overflow ───────────────────────────── */}
             <div className="import-tabs">

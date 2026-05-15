@@ -469,7 +469,30 @@ function getSmartQuip(drinks) {
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
+
+/**
+ * Returns a bartender quip based on inventory size and time of day.
+ */
+function getBartenderQuip(drinks, hour) {
+  const count = drinks?.length ?? 0;
+  if (hour >= 23 || hour < 2) return "Last call! What'll it be, friend?";
+  if (hour >= 2 && hour < 10) return "Hair of the dog? Bold move. I respect it.";
+  const day = new Date().getDay();
+  if (day === 5 && hour >= 17) return "It's Friday after 5. Happy hour is officially ON.";
+  if (count === 0) return "The shelves are bare. Time to stock up, partner.";
+  if (count <= 3) return "The shelves are drier than a Prohibition-era Sunday…";
+  if (count >= 10) return "Look at this selection! You're making the local liquor store owner very wealthy.";
+  return null;
+}
 // ── Bad bartender jokes (tap 5x easter egg) ──────────────────────────────────
+const BAR_JOKES = [
+  "I'm reading a book about anti-gravity. It's impossible to put down.",
+  "Why don't scientists trust atoms? Because they make up everything.",
+  "I told my wife she was drawing her eyebrows too high. She looked surprised.",
+  "I used to hate facial hair, but then it grew on me.",
+  "What do you call a fake noodle? An impasta.",
+];
+
 const BAD_JOKES = [
   "Why did the bartender break up with the glass? It was too empty inside.",
   "I told a chemistry joke at the bar. No reaction.",
@@ -808,6 +831,17 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
     }
   }, []);
 
+  // ── Inventory-aware startup quip ─────────────────────────────────────────
+  useEffect(() => {
+    const startupQuip = getBartenderQuip(drinks, new Date().getHours());
+    if (startupQuip) {
+      setIdleQuipText(startupQuip);
+      const t = setTimeout(() => { setIdleQuipText(getSmartQuip(drinks)); }, 4000);
+      return () => clearTimeout(t);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // run only on mount
+
   // Convenience alias so existing logic doesn't need rewriting
   const bartenderState    = saloon.mode;
   const setBartenderState = (mode) => dispatch({ type: 'SET_MODE', mode });
@@ -840,7 +874,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
     setTapCount(prev => {
       const next = prev + 1;
       clearTimeout(tapTimerRef.current);
-      tapTimerRef.current = setTimeout(() => setTapCount(0), 2000); // reset after 2s idle
+      tapTimerRef.current = setTimeout(() => setTapCount(0), 3000); // reset after 3s idle
       if (next >= 5) {
         const joke = BAD_JOKES[Math.floor(Math.random() * BAD_JOKES.length)];
         setJokeText(joke);
@@ -1322,8 +1356,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
     <div className="bs-overlay" onClick={onClose}>
       <div className={`bs-container ${isHappyHour ? 'bs-happy-hour' : ''} ${drinksMade >= 3 ? 'bs-tipsy' : ''}`}
   style={{ 
-    height: '100dvh', 
-    maxHeight: '100dvh', 
+    height: '100%', 
     overflow: 'hidden',
     display: 'flex',
     flexDirection: 'column'
@@ -1402,11 +1435,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
           </div>
 
           {/* ── LAYER 2: Mid — shelves, bartender, LED board ── */}
-          <div className="saloon-mid" style={{ 
-    position: 'absolute', 
-    inset: 0, 
-    overflowY: 'auto', 
-    webkitoverflowscrolling: 'touch', paddingBottom: '80px'  }}>
+          <div className="saloon-mid" style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
             {/* Lantern glow tracks bartender with spring lag */}
             <div
               className="lantern-glow"
@@ -1501,18 +1530,19 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
               className="bs-quips-layer"
               style={{
                 left: `${bartenderX}px`,
+                bottom: '180px',
                 transition: 'left 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
               }}
             >
               {/* Joke easter egg (tap 5x) */}
               {jokeText && (
-                <div className="bs-bt-speech bs-bt-speech-joke bs-bt-speech--left">
+                <div className="bs-bt-speech bs-bt-speech-joke bs-bt-speech--left" style={{ maxWidth: 'min(240px, 60vw)' }}>
                   <span>{jokeText}</span>
                 </div>
               )}
               {/* Surprise Me result */}
               {surpriseResult && !selectedDrink && (
-                <div className="bs-bt-speech bs-bt-speech-surprise bs-bt-speech--left">
+                <div className="bs-bt-speech bs-bt-speech-surprise bs-bt-speech--left" style={{ maxWidth: 'min(240px, 60vw)' }}>
                   <span>{surpriseResult.emoji} {surpriseResult.name}!</span>
                   {surpriseResult.isDrink && (
                     <button
@@ -1525,22 +1555,22 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
                 </div>
               )}
               {bartenderState === 'presenting' && selectedDrink && !jokeText && !surpriseResult && (
-                <div className={`bs-bt-speech ${facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'}`}>
+                <div className={`bs-bt-speech ${facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
                   <span>Here ya go!</span>
                 </div>
               )}
               {bartenderState === 'swigging' && swigQuip && (
-                <div className={`bs-bt-speech bs-bt-speech-swig ${facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'}`}>
+                <div className={`bs-bt-speech bs-bt-speech-swig ${facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
                   <span>{swigQuip}</span>
                 </div>
               )}
               {bartenderState === 'tipping' && (
-                <div className={`bs-bt-speech bs-bt-speech-tip ${facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'}`}>
+                <div className={`bs-bt-speech bs-bt-speech-tip ${facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
                   <span>Much obliged!</span>
                 </div>
               )}
               {bartenderState === 'idle' && !selectedDrink && !jokeText && !surpriseResult && (
-                <div className={`bs-bt-speech bs-bt-speech-idle ${facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'}`}>
+                <div className={`bs-bt-speech bs-bt-speech-idle ${facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
                   <span>{idleQuipText}</span>
                 </div>
               )}
@@ -1551,11 +1581,11 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
           <div className="saloon-fg" style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
             {/* Pixel-art bar stools — now interactive filter nav */}
             <div className="saloon-stools">
-              {[{filter:'all',label:'ALL',x:18},{filter:'cocktail',label:'CKTL',x:80},{filter:'mocktail',label:'MOCK',x:148},{filter:'recent',label:'NEW',x:210}].map(({filter,label,x}) => (
+              {[{filter:'all',label:'ALL',x:'8%'},{filter:'cocktail',label:'CKTL',x:'30%'},{filter:'mocktail',label:'MOCK',x:'53%'},{filter:'recent',label:'NEW',x:'75%'}].map(({filter,label,x}) => (
                 <button
                   key={filter}
                   className={`saloon-stool-btn ${stoolFilter === filter ? 'saloon-stool-active' : ''}`}
-                  style={{ left: `${x}px` }}
+                  style={{ left: x }}
                   onClick={() => { setStoolFilter(filter); setCurrentPage(0); }}
                   title={`Filter: ${label}`}
                 >

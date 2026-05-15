@@ -1,5 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
 
+/* ═══════════════════════════════════════════════════════════════════════════════
+   GLOBAL TOKENS & RESET — Variables, box-sizing, base typography
+   ═══════════════════════════════════════════════════════════════════════════════ */
 /* ═══════════════════════════════════════════════════
    SpiceHub Meal Spinner - Complete Styles
    ═══════════════════════════════════════════════════ */
@@ -356,9 +359,9 @@ body {
   transform: scale(0.95);
 }
 
-/* ═══════════════════════════════════════════════════
-   Week View — Mobile-First Design
-   ═══════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════════════
+   WEEK VIEW (wv-) — Mobile-First Calendar & Meal Planning
+   ═══════════════════════════════════════════════════════════════════════════════ */
 
 .wv {
   display: flex;
@@ -1754,7 +1757,9 @@ body {
   border: 1px solid #ffcdd2;
 }
 
-/* ── Import Modal ── */
+/* ═══════════════════════════════════════════════════════════════════════════════
+   BROWSER ASSIST (ba-) — In-app browser overlay and fallback UI
+   ═══════════════════════════════════════════════════════════════════════════════ */
 /* ── BrowserAssist fallback breadcrumb ── */
 .ba-fallback-header {
   display: flex;
@@ -2357,9 +2362,7 @@ body {
     max-height: 90vh;
   }
 
-  .import-modal {
-    max-width: 650px;
-  }
+  /* import-modal max-width consolidated into .modal-content.import-modal section below */
 
   .app-header h1 {
     font-size: 32px;
@@ -5865,9 +5868,9 @@ body {
   }
 }
 
-/* ═══════════════════════════════════════════════════
-   GroceryList Component - Mobile-First Styles (gl- prefix)
-   ═══════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════════════════════════════
+   GROCERY LIST (gl-) — Shopping list, categories, and checkout flow
+   ═══════════════════════════════════════════════════════════════════════════════ */
 
 /* ── Container & Layout ── */
 .gl-container {
@@ -10637,11 +10640,8 @@ body {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
-   BAR SHELF — Retro 16-bit Pixel Art Back Bar (bs-*)
-   ═══════════════════════════════════════════════════════════════════════════════ */
-
-/* ═══════════════════════════════════════════════════════════════════════════════
-   BarShelf — Immersive retro bar with backbar + bar top layout
+   BAR AREA — BarShelf (bs-), BarLibrary (bl-), BarFridgeMode (bf-)
+   Retro 16-bit pixel art back bar — immersive saloon layout
    ═══════════════════════════════════════════════════════════════════════════════ */
 
 /* ── Overlay + container ── */
@@ -10694,15 +10694,25 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 10px 16px;
+  padding-top: env(safe-area-inset-top);
   flex-shrink: 0;
-  z-index: 10;
   position: sticky;
   top: 0;
   z-index: 100;
-  background: #1a1a1a;
-  padding-bottom: env(safe-area-inset-top);
   border-bottom: 2px solid #3a1f5e;
   background: linear-gradient(180deg, rgba(10, 4, 20, 0.95) 0%, rgba(10, 4, 20, 0.7) 100%);
+  /* Horizontal scroll on 320px Android — hides overflow without wrapping */
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.bs-topbar::-webkit-scrollbar { display: none; }
+
+/* Prevent buttons from collapsing on narrow viewports */
+.bs-topbar .hdr-btn,
+.bs-topbar button {
+  flex-shrink: 0;
 }
 
 .bs-back-btn {
@@ -11666,7 +11676,7 @@ body {
 /* Container moves with the bartender via translateX */
 .bs-quips-layer {
   position: absolute;
-  bottom: 155px; /* floats above bartender's head */
+  bottom: 180px; /* raised to clear bartender hat */
   left: 0;
   width: 120px;  /* mirrors bartender SVG width */
   z-index: 100;
@@ -11690,6 +11700,8 @@ body {
   border-radius: 10px;
   border: 2px solid rgba(0, 0, 0, 0.12);
   white-space: nowrap;
+  max-width: min(240px, 60vw); /* keeps bubble beside bartender, not over it */
+  white-space: normal;         /* allow wrap within max-width */
   box-shadow:
     0 4px 18px rgba(0, 0, 0, 0.55),
     inset 0 1px 0 rgba(255, 255, 255, 0.9);
@@ -11697,6 +11709,7 @@ body {
   font-family: 'Press Start 2P', monospace;
   pointer-events: none;
   line-height: 1.6;
+  z-index: 200; /* ensure bubble above all bar layers */
 }
 
 /* Down-pointing triangle tail — positioned by modifier classes */
@@ -11717,8 +11730,8 @@ body {
    --right : bubble anchors RIGHT → use when bartender faces LEFT
              (sprite is mirrored; face is on the left; bubble goes right)
    ─────────────────────────────────────────────────────────────── */
-.bs-bt-speech--left  { --bubble-x: -85%; }
-.bs-bt-speech--right { --bubble-x: -15%; }
+.bs-bt-speech--left  { --bubble-x: calc(-100% - 12px); } /* clear left of sprite */
+.bs-bt-speech--right { --bubble-x: calc(  0% + 12px); }  /* clear right of sprite */
 
 /* Tail aligns toward the bartender's face area */
 .bs-bt-speech--left::after  { right: 18px; left: auto;   } /* tail points right */
@@ -15251,11 +15264,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   pointer-events: none;
 }
 
-/* Allow bar surface buttons to still receive clicks */
-.saloon-fg .bs-bar-surface,
-.saloon-fg .bs-bar-rail {
-  pointer-events: auto;
-}
+/* bar-surface/bar-rail rules consolidated into the ── Ensure bs-bar-surface block below */
 
 /* ── Pixel stools ────────────────────────────────────────────────────────── */
 .saloon-stools {
@@ -15356,6 +15365,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   left: 0;
   right: 0;
   z-index: 6;
+  pointer-events: auto;
 }
 
 .saloon-fg .bs-bar-rail {
@@ -15364,6 +15374,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   left: 0;
   right: 0;
   z-index: 7;
+  pointer-events: auto;
 }
 
 /* ── Reduced motion: kill all ambient animations ─────────────────────────── */
@@ -16981,6 +16992,9 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════════
+   IMPORT MODAL (ip- / import-) — Android preview layout, flex chain, safe-area
+   ═══════════════════════════════════════════════════════════════════════════════ */
 /* ==================== IMPORT PREVIEW FIX (Android) ==================== */
 .import-modal {
   display: flex;
@@ -17001,6 +17015,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 
 .preview-scroll-content {
   flex: 1 1 auto;
+  min-height: 0; /* required: allows flex child to scroll */
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   padding: 12px 16px;
