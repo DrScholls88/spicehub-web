@@ -131,12 +131,26 @@ export default async function handler(req) {
       });
     }
     try {
-      const resp = await fetch(parsed.href, {
-        headers: {
-          ...buildHeaders(parsed.href),
-          Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-        },
-      });
+      const isInstaCdn = /instagram|fbcdn|cdninstagram|scontent/i.test(parsed.href);
+      // Use image-appropriate Sec-Fetch headers — Instagram CDN rejects document/navigate
+      const imageHeaders = {
+        ...buildHeaders(parsed.href),
+        Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        // Override the document-fetch Sec-Fetch-* that buildHeaders adds
+        'Sec-Fetch-Dest': 'image',
+        'Sec-Fetch-Mode': 'no-cors',
+        'Sec-Fetch-Site': isInstaCdn ? 'cross-site' : 'same-site',
+        // Instagram CDN requires these to not block the request
+        ...(isInstaCdn && {
+          'Referer': 'https://www.instagram.com/',
+          'Origin': 'https://www.instagram.com',
+        }),
+      };
+      // Remove headers that browsers wouldn't send for img src requests
+      delete imageHeaders['Upgrade-Insecure-Requests'];
+      delete imageHeaders['Sec-Fetch-User'];
+
+      const resp = await fetch(parsed.href, { headers: imageHeaders });
       if (!resp.ok) {
         return new Response(JSON.stringify({ error: 'Image fetch failed', status: resp.status }), {
           status: resp.status,
@@ -145,13 +159,14 @@ export default async function handler(req) {
       }
       let contentType = resp.headers.get('content-type') || 'image/jpeg';
       const bytes = await resp.arrayBuffer();
-      if (bytes.byteLength < 100 || bytes.byteLength > 3 * 1024 * 1024) {
-        return new Response(JSON.stringify({ error: 'Image size rejected' }), {
+      // Raise size cap to 5MB — Instagram carousel images can be large
+      if (bytes.byteLength < 100 || bytes.byteLength > 5 * 1024 * 1024) {
+        return new Response(JSON.stringify({ error: 'Image size rejected', bytes: bytes.byteLength }), {
           status: 422,
           headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         });
       }
-      // Magic-byte sniffing — some CDNs strip Content-Type
+      // Magic-byte sniffing — some CDNs strip or mangle Content-Type
       if (!contentType.startsWith('image/')) {
         const head = new Uint8Array(bytes.slice(0, 4));
         const isJpeg = head[0] === 0xFF && head[1] === 0xD8;
@@ -161,17 +176,24 @@ export default async function handler(req) {
         else if (isPng) contentType = 'image/png';
         else if (isWebp) contentType = 'image/webp';
         else {
-          return new Response(JSON.stringify({ error: 'Not a recognized image format' }), {
+          return new Response(JSON.stringify({ error: 'Not a recognized image format', head: Array.from(head) }), {
             status: 422,
             headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
           });
         }
       }
-      const binary = Array.from(new Uint8Array(bytes), (b) => String.fromCharCode(b)).join('');
-      const dataUrl = `data:${contentType.split(';')[0]};base64,${btoa(binary)}`;
+      // Use Buffer.from for reliable base64 encoding in Node/Edge environments
+      // (Array.from + btoa can silently fail on large binary buffers)
+      const base64 = Buffer.from(bytes).toString('base64');
+      const dataUrl = `data:${contentType.split(';')[0]};base64,${base64}`;
       return new Response(JSON.stringify({ dataUrl }), {
         status: 200,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          // Cache aggressively — once we have the data URL, it's self-contained
+          'Cache-Control': 'public, max-age=86400, s-maxage=86400',
+        },
       });
     } catch (e) {
       return new Response(JSON.stringify({ error: e.message }), {

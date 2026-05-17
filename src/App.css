@@ -961,7 +961,7 @@ body {
 /* ── Meal Picker (bottom sheet) ── */
 .pk-overlay {
   position: fixed;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   z-index: 500;
   background: rgba(0, 0, 0, 0.4);
   display: flex;
@@ -1400,7 +1400,7 @@ body {
 /* ── Modal Base ── */
 .modal-overlay {
   position: fixed;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   background: rgba(0, 0, 0, 0.45);
   display: flex;
   align-items: flex-end;
@@ -4135,7 +4135,7 @@ body {
 .preview-detail-no-img::after {
   content: '';
   position: absolute;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   background: linear-gradient(135deg, rgba(255,255,255,0.4) 0%, transparent 60%);
   border-radius: inherit;
   pointer-events: none;
@@ -4204,7 +4204,9 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 4px;
+  flex-shrink: 0;
+  padding: 12px 20px 8px;   /* top padding + horizontal margin matches modal sides */
+  margin-bottom: 0;
 }
 
 .preview-header-bar h3 {
@@ -5627,7 +5629,7 @@ body {
 .ml-tile-selected .ml-tile-image::after {
   content: '';
   position: absolute;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   background: rgba(230, 81, 0, 0.12);
   border-radius: 12px 12px 0 0;
   pointer-events: none;
@@ -5660,7 +5662,7 @@ body {
 /* ── Bottom sheet overlay (shared for both dialogs) ── */
 .ml-overlay {
   position: fixed;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   z-index: 500;
   background: rgba(0, 0, 0, 0.4);
   display: flex;
@@ -7147,7 +7149,7 @@ body {
 /* Bar library bottom sheets */
 .bl-overlay {
   position: fixed;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   background: rgba(0, 0, 0, 0.4);
   z-index: 500;
   animation: fadeIn 0.15s ease-out;
@@ -7421,7 +7423,7 @@ body {
 
 .fm-overlay {
   position: fixed;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   background: rgba(0, 0, 0, 0.5);
   z-index: 500;
   animation: fadeIn 0.2s ease-out;
@@ -7826,7 +7828,7 @@ body {
 
 .cm-container {
   position: fixed;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   background: var(--bg);
   z-index: 600;
   display: flex;
@@ -8452,7 +8454,7 @@ body {
 
 .mm-container {
   position: fixed;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   z-index: 600;
   display: flex;
   flex-direction: column;
@@ -9092,7 +9094,7 @@ body {
 
 .ms-overlay {
   position: fixed;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   background: rgba(0, 0, 0, 0.5);
   z-index: 500;
   animation: fadeIn 0.2s ease-out;
@@ -10457,7 +10459,7 @@ body {
 
 .st-overlay {
   position: fixed;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   background: rgba(0, 0, 0, 0.5);
   z-index: 500;
   animation: fadeIn 0.2s ease-out;
@@ -10647,7 +10649,7 @@ body {
 /* ── Overlay + container ── */
 .bs-overlay {
   position: fixed;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   background: rgba(0, 0, 0, 0.92);
   z-index: 550;
   animation: fadeIn 0.2s ease-out;
@@ -11052,7 +11054,7 @@ body {
 /* CRT scanline overlay */
 .bs-display-scanline {
   position: absolute;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   background: repeating-linear-gradient(
     to bottom,
     transparent 0px, transparent 1px,
@@ -11497,7 +11499,7 @@ body {
 .bs-bar-surface::after {
   content: '';
   position: absolute;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   background:
     repeating-linear-gradient(
       90deg,
@@ -12126,7 +12128,7 @@ body {
 
 .bfm-overlay {
   position: fixed;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   background: rgba(0, 0, 0, 0.5);
   z-index: 500;
   animation: fadeIn 0.2s ease-out;
@@ -13819,7 +13821,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
    ═══════════════════════════════════════════════════════════════════ */
 .spinner-overlay {
   position: fixed;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   z-index: 2000;
   background: rgba(0, 0, 0, 0.7);
   display: flex;
@@ -14778,7 +14780,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 /* Spinner overlay inside calendar */
 .cal-spinner-overlay {
   position: fixed;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   background: rgba(0,0,0,0.4);
   z-index: 300;
   display: flex;
@@ -15103,14 +15105,14 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 /* ── Layer 1: Background ─────────────────────────────────────────────────── */
 .saloon-bg {
   position: absolute;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   z-index: 1;
   pointer-events: none;
 }
 
 .saloon-brick-wall {
   position: absolute;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   background:
     repeating-linear-gradient(
       0deg,
@@ -15134,7 +15136,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 .saloon-brick-wall::after {
   content: '';
   position: absolute;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   background: radial-gradient(ellipse 80% 60% at 50% 30%,
     rgba(180,90,20,0.18) 0%,
     transparent 70%
@@ -15144,7 +15146,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 /* Decorative wall frames */
 .saloon-frames {
   position: absolute;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
 }
 
 .saloon-frame {
@@ -15213,7 +15215,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 /* ── Layer 2: Mid-ground ─────────────────────────────────────────────────── */
 .saloon-mid {
   position: absolute;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   z-index: 2;
 }
 
@@ -15236,14 +15238,14 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
    override positioning for saloon context */
 .saloon-mid .bs-backbar {
   position: absolute;
-  inset: 0;
+  top: 0; right: 0; bottom: 0; left: 0;
   background: transparent;
 }
 
 .saloon-mid .bs-bartender-wrap {
   position: absolute;
   bottom: 52px;
-  z-index: 4;
+  z-index: 2; /* aligned with layering contract */
 }
 
 /* Quips layer — positioned absolutely, left driven by JS spring */
@@ -15279,6 +15281,52 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   position: absolute;
   bottom: 52px;
 }
+
+.saloon-stool-btn {
+  position: absolute;
+  bottom: 0;
+  width: 44px;
+  height: 100px;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  -webkit-tap-highlight-color: transparent;
+  pointer-events: auto; /* override parent none */
+}
+
+.saloon-stool-btn:hover {
+  transform: translateY(-4px) scale(1.05);
+}
+
+.saloon-stool-active {
+  transform: translateY(-2px) scale(1.05);
+}
+
+.saloon-stool-active .saloon-stool rect:first-child {
+  fill: #8d6e63 !important; /* highlight seat */
+}
+
+.saloon-stool-label {
+  position: absolute;
+  top: -14px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 6px;
+  color: #c8a882;
+  opacity: 0.6;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.saloon-stool-active .saloon-stool-label {
+  opacity: 1;
+  color: #ffd700;
+}
+
 
 /* ── Saloon door ─────────────────────────────────────────────────────────── */
 .saloon-door-wrap {
@@ -15364,7 +15412,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   bottom: 0;
   left: 0;
   right: 0;
-  z-index: 6;
+  z-index: 5; /* aligned with layering contract */
   pointer-events: auto;
 }
 
@@ -15450,15 +15498,15 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 /* and content overflows the viewport — burying the footer on mobile.      */
 
 .modal-content.has-preview-screen {
-  /* Use dvh instead of vh to ensure the modal respects the actual visible viewport,
-     preventing the footer from clipping off-screen on mobile browsers with dynamic toolbars. */
+  /* Use dvh to respect actual visible viewport — prevents footer clipping on mobile */
   height: 92dvh;
   max-height: 92dvh;
   display: flex;
   flex-direction: column;
+  /* Override base .modal-content padding — inner sections handle their own padding */
+  padding: 0 !important;
   overflow: hidden;
   overflow-x: hidden;
-  padding-bottom: 0;
 }
 
 /* Modal header must not shrink when in flex column */
@@ -15491,6 +15539,27 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   padding: 4px 0 10px;
 }
 
+
+/* ─── Preview scroll area: flex:1 so it fills remaining height and scrolls ─── */
+.preview-scroll-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;                       /* allow flex shrink below natural size */
+  -webkit-overflow-scrolling: touch;   /* smooth momentum scroll on iOS */
+  overscroll-behavior: contain;        /* prevent pull-to-refresh while scrolling list */
+  padding: 0 20px;                     /* horizontal padding — matches modal sides */
+}
+
+/* Scrollbar styling */
+.preview-scroll-content::-webkit-scrollbar {
+  width: 3px;
+}
+.preview-scroll-content::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+
 .ip-preview-screen .preview-detail-list {
   flex: 1;
   min-height: 0;          /* required: allows this flex child to scroll */
@@ -15514,8 +15583,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   display: flex;
   gap: 10px;
   align-items: center;
-  /* Horizontal padding matches modal (20px) + safe area bottom */
-  padding: 12px 0;
+  padding: 12px 20px;
   padding-bottom: calc(12px + env(safe-area-inset-bottom));
   background: var(--card);
   border-top: 1.5px solid var(--border);
@@ -16523,7 +16591,9 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 
 /* ── Modal header: more compact when showing preview (save vertical space) ── */
 .modal-content.has-preview-screen .modal-header {
-  padding-bottom: 12px;
+  padding: 16px 20px 12px;  /* restore padding zeroed by has-preview-screen */
+  flex-shrink: 0;
+  margin-bottom: 0;
 }
 
 .modal-content.has-preview-screen .modal-header h2 {
@@ -17001,59 +17071,4 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   flex-direction: column;
   height: 100dvh;
   max-height: 100dvh;
-  overflow: hidden;
-  box-sizing: border-box;
-}
-
-.ip-preview-screen {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  height: 100%;
-  overflow: hidden;
-}
-
-.preview-scroll-content {
-  flex: 1 1 auto;
-  min-height: 0; /* required: allows flex child to scroll */
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  padding: 12px 16px;
-  padding-bottom: 100px; /* room for footer */
-}
-
-.preview-detail-list {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.ip-preview-footer {
-  position: sticky;
-  bottom: 0;
-  background: var(--modal-bg, white);
-  border-top: 1px solid rgba(0,0,0,0.1);
-  padding: 12px 16px;
-  display: flex;
-  gap: 12px;
-  z-index: 20;
-  margin-top: auto;
-  flex-shrink: 0;
-}
-
-.preview-addendum-bar {
-  margin: 20px 0;
-  text-align: center;
-}
-
-/* Prevent zoom on inputs */
-input, textarea {
-  font-size: 16px !important;
-}
-
-.preview-detail-thumb {
-  max-height: 280px;
-  object-fit: cover;
-  border-radius: 12px;
-  background: #f5f5f5;
 }

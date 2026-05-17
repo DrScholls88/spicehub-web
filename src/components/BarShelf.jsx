@@ -1411,10 +1411,10 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
         </div>
 
         {/* ═══ 3-LAYER SALOON STAGE ═══ */}
-        <div className="saloon-stage" ref={barTopRef} style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
+        <div className="saloon-stage" ref={barTopRef}>
 
           {/* ── LAYER 1: Background — brick wall, lanterns, steam ── */}
-          <div className="saloon-bg" aria-hidden="true" style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
+          <div className="saloon-bg" aria-hidden="true">
             <div className="saloon-brick-wall" />
             {/* Decorative picture frames on the wall */}
             <div className="saloon-frames">
@@ -1435,7 +1435,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
           </div>
 
           {/* ── LAYER 2: Mid — shelves, bartender, LED board ── */}
-          <div className="saloon-mid" style={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
+          <div className="saloon-mid">
             {/* Lantern glow tracks bartender with spring lag */}
             <div
               className="lantern-glow"
@@ -1578,7 +1578,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
           </div>
 
           {/* ── LAYER 3: Foreground — bar counter, stools, dog, door ── */}
-          <div className="saloon-fg" style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+          <div className="saloon-fg">
             {/* Pixel-art bar stools — now interactive filter nav */}
             <div className="saloon-stools">
               {[{filter:'all',label:'ALL',x:'8%'},{filter:'cocktail',label:'CKTL',x:'30%'},{filter:'mocktail',label:'MOCK',x:'53%'},{filter:'recent',label:'NEW',x:'75%'}].map(({filter,label,x}) => (
