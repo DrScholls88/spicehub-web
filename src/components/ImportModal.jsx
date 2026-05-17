@@ -368,41 +368,6 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     // Detect multiple URLs pasted as newline/space-separated list
     const detectedUrls = trimmedUrl.split(/[\s\n]+/).filter(s => /^https?:\/\//i.test(s));
 
-// Enhanced Instagram image pre-fetch
-if (isInstagramUrl(resolvedUrl)) {
-  try {
-    const html = await fetchHtmlViaProxy(resolvedUrl, 12000);
-    if (html) {
-      // Multiple strong selectors for Instagram post images
-      const imgMatches = [
-        ...html.matchAll(/display_url["']\s*:\s*["']([^"']+)["']/g),
-        ...html.matchAll(/thumbnail_src["']\s*:\s*["']([^"']+)["']/g),
-        ...html.matchAll(/<meta[^>]+property="og:image"[^>]+content="([^"]+)"/gi),
-        ...html.matchAll(/scontent.*?\.(jpg|jpeg|png|webp)/gi)
-      ];
-
-      let bestImg = '';
-      for (const m of imgMatches) {
-        const u = m[1] || m[0];
-        if (isValidImageUrl(u) && !isProfilePicUrl(u) && u.length > bestImg.length) {
-          bestImg = u;
-        }
-      }
-
-      if (bestImg) {
-        setBestImage(bestImg);
-        setBrowserAssistSeed(prev => ({
-          ...(prev || {}),
-          imageUrl: bestImg,
-          _source: 'instagram-pre'
-        }));
-      }
-    }
-  } catch (e) {
-    console.warn('IG pre-image soft fail', e);
-  }
-}
-
     if (detectedUrls.length > 1) {
       // Batch mode
       handleBatchImport(detectedUrls);
@@ -426,10 +391,10 @@ if (isInstagramUrl(resolvedUrl)) {
         setBrowserAssistUrl(resolvedUrl);
         setBrowserAssistMode('showing');
         setBrowserAssistSeed({
-  ... (browserAssistSeed || {}),
-  imageUrl: bestImage || undefined,   // ← critical
-  _source: 'instagram'
-});
+          ...(browserAssistSeed || {}),
+          imageUrl: bestImage || undefined,
+          _source: 'instagram',
+        });
         return;
       }
 
