@@ -4246,15 +4246,38 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
         capturedCaption = cleanSocialCaption(apifyData.caption);
         capturedTitle = apifyData.ownerFullName || apifyData.ownerUsername || capturedTitle;
         // Apify displayUrl is a FRESH CDN URL with valid auth tokens — download immediately
+        // as a base64 data URL so it persists after the CDN token expires.
         if (apifyData.displayUrl) {
-          capturedImageUrl = apifyData.displayUrl;
-          // Eagerly persist the image before CDN token expires
+          capturedImageUrl = apifyData.displayUrl; // raw CDN fallback
           try {
-            const persisted = await downloadImageAsDataUrl(apifyData.displayUrl, { timeoutMs: 15000 });
-            if (persisted) capturedImageUrl = persisted;
-          } catch { /* keep raw CDN URL as fallback */ }
+            const persisted = await downloadImageAsDataUrl(apifyData.displayUrl, { timeoutMs: 20000 });
+            if (persisted) {
+              capturedImageUrl = persisted; // promoted to self-contained data URL
+              console.log('[importFromInstagram] Image persisted as data URL ✔');
+            } else {
+              // downloadImageAsDataUrl returned null — try weserv.nl directly as last resort
+              const weservUrl = `https://images.weserv.nl/?url=${encodeURIComponent(apifyData.displayUrl)}&w=1200&output=jpg&q=85`;
+              try {
+                const wResp = await fetch(weservUrl, { signal: AbortSignal.timeout(12000) });
+                if (wResp.ok && wResp.headers.get('content-type')?.startsWith('image/')) {
+                  const buf = await wResp.arrayBuffer();
+                  if (buf.byteLength > 100) {
+                    const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+                    capturedImageUrl = `data:image/jpeg;base64,${b64}`;
+                    console.log('[importFromInstagram] Image via weserv fallback ✔');
+                  }
+                }
+              } catch { /* keep raw CDN URL */ }
+              if (capturedImageUrl === apifyData.displayUrl) {
+                console.warn('[importFromInstagram] Image persist failed — storing raw CDN URL (may expire)');
+              }
+            }
+          } catch (imgErr) {
+            console.warn('[importFromInstagram] Image download threw:', imgErr?.message);
+          }
         }
-        progress(1, 'done', `Apify: caption (${capturedCaption.length} chars) + image ✔`);
+        const imgStatus = capturedImageUrl?.startsWith('data:') ? 'data URL ✔' : capturedImageUrl ? 'raw URL ⚠' : 'none ✗';
+        progress(1, 'done', `Apify: caption (${capturedCaption.length} chars) + image ${imgStatus}`);
         console.log('[importFromInstagram] Apify succeeded — skipping embed/browser phases');
       } else {
         progress(1, 'done', 'Apify: no caption — falling through');

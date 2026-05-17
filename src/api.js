@@ -612,7 +612,7 @@ async function _blobToValidatedDataUrl(resp, { maxBytes = 2 * 1024 * 1024, minBy
  */
 export async function downloadImageAsDataUrl(imageUrl, opts = {}) {
   if (!imageUrl || typeof imageUrl !== 'string') return null;
-  const { timeoutMs = 9000, maxBytes = 2 * 1024 * 1024 } = opts;
+  const { timeoutMs = 9000, maxBytes = 5 * 1024 * 1024 } = opts; // 5MB — Instagram images can be large
   const cleanedImageUrl = cleanUrl(imageUrl);
 
   // Try direct fetch first (may succeed for CORS-friendly hosts)
@@ -642,11 +642,22 @@ export async function downloadImageAsDataUrl(imageUrl, opts = {}) {
     }
   } catch { /* fall through to public proxies */ }
 
-  // Fallback through proxy cascade
-  const html = await fetchHtmlViaProxy(cleanedImageUrl, timeoutMs);
-  if (html && html.startsWith('data:')) return html; // already a data URL
+  // weserv.nl — reliable image proxy that strips auth tokens and re-serves the image.
+  // Particularly good for Instagram CDN URLs whose signed tokens have expired.
+  const isInstaCdn = /instagram|fbcdn|cdninstagram|scontent/i.test(cleanedImageUrl);
+  if (isInstaCdn) {
+    try {
+      const weservUrl = `https://images.weserv.nl/?url=${encodeURIComponent(cleanedImageUrl)}&w=1200&output=jpg&q=85`;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      const resp = await fetch(weservUrl, { signal: ctrl.signal });
+      clearTimeout(timer);
+      const dataUrl = await _blobToValidatedDataUrl(resp, { maxBytes });
+      if (dataUrl) return dataUrl;
+    } catch { /* fall through */ }
+  }
 
-  // Last resort: try via allorigins which might return image data
+  // allorigins — last resort for any URL
   try {
     const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(cleanedImageUrl)}`;
     const ctrl = new AbortController();

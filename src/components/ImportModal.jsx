@@ -871,7 +871,7 @@ if (isInstagramUrl(resolvedUrl)) {
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <div className="modal-overlay" onClick={handleClose}>
-      <div className={`modal-content import-modal${preview ? ' has-preview-screen' : ''}`} onClick={e => e.stopPropagation()} style={{ maxHeight: '100dvh', height: '100dvh' }}>
+      <div className={`modal-content import-modal${preview ? ' has-preview-screen' : ''}`} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <h2>{title}</h2>
           <button className="btn-icon" onClick={handleClose}>✕</button>
