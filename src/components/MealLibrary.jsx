@@ -37,7 +37,10 @@ function CardImage({ src, alt, className, phClass }) {
   );
 }
 
-export const MEAL_CATEGORIES = ['All', '🔄 The Rotation', 'Dinners', 'Breakfasts', 'Lunches', 'Desserts', 'Sides', 'Tailgate', 'Snacks'];
+// Assignable category options (no 'All' or 'The Rotation' — those are filter views)
+const CATEGORY_OPTIONS = ['Dinners', 'Breakfasts', 'Lunches', 'Desserts', 'Sides', 'Tailgate', 'Snacks'];
+
+export const MEAL_CATEGORIES = ['All', '🔄 The Rotation', ...CATEGORY_OPTIONS];
 
 export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDetail, onShare, onImport, onReload, onToast, onToggleFavorite, onRate }) {
   const [search, setSearch] = useState('');
@@ -45,15 +48,24 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [showOptionsSheet, setShowOptionsSheet] = useState(false);
   const [quickPreview, setQuickPreview] = useState(null); // meal object for popup
-  const [selectMode, setSelectMode] = useState(false); // multi-select mode
-  const [selectedIds, setSelectedIds] = useState(new Set()); // selected meal IDs
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const restoreRef = useRef(null);
   const categoryScrollRef = useRef(null);
   const longPressTimer = useRef(null);
-  const touchStartPos = useRef(null); // {x, y} at touchStart — used to cancel long-press on scroll
+  const touchStartPos = useRef(null); // {x, y} at touchStart — cancel long-press on scroll
 
+  // Swipe-to-dismiss state for quickPreview sheet
+  const sheetRef = useRef(null);
+  const sheetDragStartY = useRef(null);
+  const sheetCurrentDragY = useRef(0);
+
+  const [reimportingPhotoId, setReimportingPhotoId] = useState(null);
+
+  // ── Filtered + sorted meal list ────────────────────────────────────────────
   const filtered = meals.filter(m => {
-    const matchSearch = m.name.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = (m.name || '').toLowerCase().includes(search.toLowerCase());
     let matchCat;
     if (category === 'All') matchCat = true;
     else if (category === '🔄 The Rotation') matchCat = !!m.inRotation;
@@ -63,13 +75,30 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
 
   const rotationCount = meals.filter(m => m.inRotation).length;
 
-  // Sort with favorites first
+  // Sort: favorites first, then by creation date (newest first)
   const sorted = [...filtered].sort((a, b) => {
     if (a.isFavorite && !b.isFavorite) return -1;
     if (!a.isFavorite && b.isFavorite) return 1;
-    return 0;
+    const aDate = a.importedAt || a.createdAt || a.created || '';
+    const bDate = b.importedAt || b.createdAt || b.created || '';
+    return bDate.localeCompare(aDate);
   });
 
+  // ── Ghost-selection cleanup: remove deleted meal IDs from selectedIds ──────
+  useEffect(() => {
+    if (selectedIds.size === 0) return;
+    const liveMealIds = new Set(meals.map(m => m.id));
+    const hasGhosts = [...selectedIds].some(id => !liveMealIds.has(id));
+    if (hasGhosts) {
+      setSelectedIds(prev => {
+        const cleaned = new Set([...prev].filter(id => liveMealIds.has(id)));
+        if (cleaned.size === 0) setSelectMode(false);
+        return cleaned;
+      });
+    }
+  }, [meals, selectedIds]);
+
+  // ── Backup / Restore ───────────────────────────────────────────────────────
   const handleBackup = async () => {
     setShowOptionsSheet(false);
     if (navigator.canShare) {
@@ -96,23 +125,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
 
   const closeConfirmDelete = () => setConfirmDeleteId(null);
 
-  // ── Ghost-selection cleanup: remove deleted meal IDs from selectedIds ─────────
-  useEffect(() => {
-    if (selectedIds.size === 0) return;
-    const liveMealIds = new Set(meals.map(m => m.id));
-    const hasGhosts = [...selectedIds].some(id => !liveMealIds.has(id));
-    if (hasGhosts) {
-      setSelectedIds(prev => {
-        const cleaned = new Set([...prev].filter(id => liveMealIds.has(id)));
-        if (cleaned.size === 0) setSelectMode(false);
-        return cleaned;
-      });
-    }
-  }, [meals, selectedIds]);
-
-  // ── Long-press handlers with movement threshold ────────────────────────────────
-  // A long press only fires if the finger hasn't moved more than 8px (prevents
-  // firing during scroll or swipe gestures — the #1 cause of over-sensitivity).
+  // ── Long-press with movement threshold ────────────────────────────────────
   const LONG_PRESS_MS = 500;
   const MOVE_THRESHOLD_PX = 8;
 
@@ -124,7 +137,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
     touchStartPos.current = null;
   }, []);
 
-  // Long press to show quick preview (when NOT in select mode)
+  // Long press (non-select mode) → show quick preview
   const handleTouchStart = useCallback((meal, e) => {
     if (selectMode) return;
     const touch = e.changedTouches?.[0];
@@ -146,67 +159,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
 
   const handleTouchEnd = useCallback(() => cancelLongPress(), [cancelLongPress]);
 
-  // ── Multi-select handlers ──────────────────────────────────────────────────
-  const toggleSelect = (mealId) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(mealId)) next.delete(mealId);
-      else next.add(mealId);
-      // Exit select mode if nothing is selected
-      if (next.size === 0) setSelectMode(false);
-      return next;
-    });
-  };
-
-  const exitSelectMode = () => {
-    setSelectMode(false);
-    setSelectedIds(new Set());
-  };
-
-  const handleSelectAll = () => {
-    setSelectedIds(new Set(sorted.map(m => m.id)));
-  };
-
-  const handleBatchDelete = () => {
-    if (selectedIds.size === 0) return;
-    const count = selectedIds.size;
-    if (!window.confirm(`Delete ${count} meal${count !== 1 ? 's' : ''}? This cannot be undone.`)) return;
-    for (const id of selectedIds) {
-      onDelete(id);
-    }
-    onToast?.(`Deleted ${count} meal${count !== 1 ? 's' : ''}`);
-    exitSelectMode();
-  };
-
-  const handleBatchShare = async () => {
-    if (selectedIds.size === 0) return;
-    const selected = meals.filter(m => selectedIds.has(m.id));
-    if (selected.length === 1) {
-      onShare(selected[0]);
-    } else {
-      // Share as JSON for multiple meals
-      const shareData = selected.map(m => ({
-        name: m.name,
-        ingredients: m.ingredients,
-        directions: m.directions,
-        category: m.category,
-        imageUrl: m.imageUrl,
-      }));
-      const text = selected.map(m => `${m.name}\n\nIngredients:\n${m.ingredients.join('\n')}\n\nDirections:\n${m.directions.join('\n')}`).join('\n\n---\n\n');
-      if (navigator.share) {
-        try {
-          await navigator.share({ title: `${selected.length} SpiceHub Recipes`, text });
-        } catch { /* cancelled */ }
-      } else {
-        await navigator.clipboard?.writeText(text);
-        onToast?.(`${selected.length} recipes copied to clipboard`);
-      }
-    }
-    exitSelectMode();
-  };
-
-  // Enter multi-select via long-press on a tile (when not already in select mode)
-  // NOTE: movement threshold is enforced by handleTouchMove above.
+  // Long press (non-select mode) → enter multi-select
   const handleLongPressSelect = useCallback((meal, e) => {
     if (selectMode) return;
     const touch = e.changedTouches?.[0];
@@ -218,7 +171,103 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
     }, LONG_PRESS_MS);
   }, [selectMode]);
 
-  // ── Rotation handler ─────────────────────────────────────────────────────────
+  // ── Swipe-to-dismiss on quickPreview sheet ────────────────────────────────
+  const handleSheetTouchStart = useCallback((e) => {
+    sheetDragStartY.current = e.touches[0].clientY;
+    sheetCurrentDragY.current = 0;
+    if (sheetRef.current) sheetRef.current.style.transition = 'none';
+  }, []);
+
+  const handleSheetTouchMove = useCallback((e) => {
+    if (sheetDragStartY.current === null) return;
+    const dy = e.touches[0].clientY - sheetDragStartY.current;
+    if (dy <= 0) return; // no pulling up
+    sheetCurrentDragY.current = dy;
+    if (sheetRef.current) {
+      sheetRef.current.style.transform = `translateY(${dy}px)`;
+    }
+  }, []);
+
+  const handleSheetTouchEnd = useCallback(() => {
+    if (sheetRef.current) {
+      sheetRef.current.style.transition = 'transform 0.25s cubic-bezier(0.25, 0.8, 0.5, 1)';
+      sheetRef.current.style.transform = '';
+    }
+    if (sheetCurrentDragY.current > 80) {
+      setQuickPreview(null);
+    }
+    sheetDragStartY.current = null;
+    sheetCurrentDragY.current = 0;
+  }, []);
+
+  // ── Multi-select handlers ──────────────────────────────────────────────────
+  const toggleSelect = (mealId) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(mealId)) next.delete(mealId);
+      else next.add(mealId);
+      if (next.size === 0) setSelectMode(false);
+      return next;
+    });
+  };
+
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+    setShowCategoryPicker(false);
+  }, []);
+
+  const handleSelectAll = () => {
+    setSelectedIds(new Set(sorted.map(m => m.id)));
+  };
+
+  const handleBatchDelete = () => {
+    if (selectedIds.size === 0) return;
+    const count = selectedIds.size;
+    if (!window.confirm(`Delete ${count} meal${count !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+    for (const id of selectedIds) {
+      onDelete?.(id);
+    }
+    onToast?.(`Deleted ${count} meal${count !== 1 ? 's' : ''}`);
+    exitSelectMode();
+  };
+
+  const handleBatchShare = async () => {
+    if (selectedIds.size === 0) return;
+    const selected = meals.filter(m => selectedIds.has(m.id));
+    if (selected.length === 1) {
+      onShare?.(selected[0]);
+    } else {
+      const text = selected.map(m =>
+        `${m.name}\n\nIngredients:\n${(m.ingredients || []).join('\n')}\n\nDirections:\n${(m.directions || []).join('\n')}`
+      ).join('\n\n---\n\n');
+      if (navigator.share) {
+        try { await navigator.share({ title: `${selected.length} SpiceHub Recipes`, text }); }
+        catch { /* cancelled */ }
+      } else {
+        await navigator.clipboard?.writeText(text);
+        onToast?.(`${selected.length} recipes copied to clipboard`);
+      }
+    }
+    exitSelectMode();
+  };
+
+  // ── Batch set category ────────────────────────────────────────────────────
+  const handleBatchSetCategory = useCallback(async (newCategory) => {
+    if (selectedIds.size === 0) return;
+    const ids = [...selectedIds];
+    try {
+      await Promise.all(ids.map(id => db.meals.update(id, { category: newCategory })));
+      onReload?.();
+      onToast?.(`Set category to "${newCategory}" for ${ids.length} meal${ids.length !== 1 ? 's' : ''}`);
+    } catch (err) {
+      onToast?.('Failed to update categories: ' + err.message, 'error');
+    }
+    setShowCategoryPicker(false);
+    exitSelectMode();
+  }, [selectedIds, onReload, onToast, exitSelectMode]);
+
+  // ── Rotation handler ─────────────────────────────────────────────────────
   const handleToggleRotation = useCallback(async (meal) => {
     const newVal = !meal.inRotation;
     await toggleRotation(meal.id, newVal);
@@ -226,11 +275,15 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
     onToast?.(newVal ? `Added "${meal.name}" to The Rotation` : `Removed "${meal.name}" from The Rotation`);
   }, [onReload, onToast]);
 
-  // ── Re-import photo ────────────────────────────────────────────────────────────
-  // Re-runs the photo pipeline for a single meal and updates its imageUrl in Dexie.
-  // Works in-place — no full re-import needed.
-  const [reimportingPhotoId, setReimportingPhotoId] = useState(null);
+  const handleBatchAddToRotation = useCallback(async () => {
+    if (selectedIds.size === 0) return;
+    await bulkSetRotation([...selectedIds], true);
+    onReload?.();
+    onToast?.(`Added ${selectedIds.size} meal${selectedIds.size !== 1 ? 's' : ''} to The Rotation`);
+    exitSelectMode();
+  }, [selectedIds, onReload, onToast, exitSelectMode]);
 
+  // ── Re-import photo ───────────────────────────────────────────────────────
   const handleReimportPhoto = useCallback(async (meal) => {
     const sourceUrl = meal.link || meal.sourceUrl;
     if (!sourceUrl) { onToast?.('No source URL to search for a photo'); return; }
@@ -258,21 +311,32 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
     }
   }, [onToast, onReload]);
 
-  const handleBatchAddToRotation = useCallback(async () => {
-    if (selectedIds.size === 0) return;
-    await bulkSetRotation([...selectedIds], true);
-    onReload?.();
-    onToast?.(`Added ${selectedIds.size} meal${selectedIds.size !== 1 ? 's' : ''} to The Rotation`);
-    exitSelectMode();
-  }, [selectedIds, onReload, onToast]);
+  // ── Tile click handler — safe for broken meals ────────────────────────────
+  const handleTileClick = useCallback((meal) => {
+    if (selectMode) {
+      toggleSelect(meal.id);
+      return;
+    }
+    // Failed imports: tap opens delete confirm instead of crashing detail view
+    if (meal.status === 'failed') {
+      setConfirmDeleteId(meal.id);
+      return;
+    }
+    try {
+      onViewDetail?.(meal);
+    } catch (err) {
+      console.error('[MealLibrary] onViewDetail threw:', err);
+      onToast?.('Could not open this recipe — it may be corrupted.');
+    }
+  }, [selectMode, onViewDetail, onToast]);
 
-  // ── Hardware back button handler (Android PWA) ──────────────────────────────
-  // When in select mode, back button should deselect all items instead of closing the app
+  // ── Hardware back button (Android PWA) ───────────────────────────────────
   useBackHandler(selectMode, exitSelectMode, 'meal-select');
 
   return (
     <div className="ml">
-      {/* ── Search bar with pill style ── */}
+
+      {/* ── Search bar ── */}
       <div className="ml-search-zone">
         <input
           type="text"
@@ -283,7 +347,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
         />
       </div>
 
-      {/* ── Category filter chips (horizontal scroll, no wrap) ── */}
+      {/* ── Category filter chips ── */}
       <div className="ml-categories-scroll" ref={categoryScrollRef}>
         <div className="ml-categories-track">
           {MEAL_CATEGORIES.map(c => (
@@ -303,14 +367,39 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
         <div className="ml-select-toolbar">
           <button className="ml-select-toolbar-btn" onClick={exitSelectMode}>✕ Cancel</button>
           <span className="ml-select-count">{selectedIds.size} selected</span>
-          <button className="ml-select-toolbar-btn" onClick={handleSelectAll}>Select All</button>
-          <button className="ml-select-toolbar-btn" onClick={handleBatchAddToRotation} disabled={selectedIds.size === 0}>🔄 Add to Rotation</button>
-          <button className="ml-select-toolbar-btn" onClick={handleBatchShare} disabled={selectedIds.size === 0}>📤 Share</button>
-          <button className="ml-select-toolbar-btn ml-select-delete" onClick={handleBatchDelete} disabled={selectedIds.size === 0}>🗑️ Delete</button>
+          <button className="ml-select-toolbar-btn" onClick={handleSelectAll}>All</button>
+          <button
+            className="ml-select-toolbar-btn"
+            onClick={() => setShowCategoryPicker(true)}
+            disabled={selectedIds.size === 0}
+          >
+            📁 Category
+          </button>
+          <button
+            className="ml-select-toolbar-btn"
+            onClick={handleBatchAddToRotation}
+            disabled={selectedIds.size === 0}
+          >
+            🔄 Rotation
+          </button>
+          <button
+            className="ml-select-toolbar-btn"
+            onClick={handleBatchShare}
+            disabled={selectedIds.size === 0}
+          >
+            📤 Share
+          </button>
+          <button
+            className="ml-select-toolbar-btn ml-select-delete"
+            onClick={handleBatchDelete}
+            disabled={selectedIds.size === 0}
+          >
+            🗑️ Delete
+          </button>
         </div>
       )}
 
-      {/* ── Gallery grid (Notion-style tiles) ── */}
+      {/* ── Gallery grid ── */}
       <div className="ml-gallery">
         {filtered.length === 0 ? (
           <div className="ml-empty-state">
@@ -318,57 +407,81 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
             <p className="ml-empty-text">
               {search || category !== 'All'
                 ? 'No meals match your search.'
-                : 'No meals found. Add some recipes to get started!'}
+                : 'No meals yet. Add some recipes to get started!'}
             </p>
+            {!search && category === 'All' && (
+              <button className="ml-empty-cta" onClick={onImport}>Import a Recipe</button>
+            )}
           </div>
         ) : (
           sorted.map((meal, idx) => (
             <div
               key={meal.id}
-              className={`ml-tile${selectMode && selectedIds.has(meal.id) ? ' ml-tile-selected' : ''}`}
-              style={{ animationDelay: `${idx * 30}ms` }}
-              onClick={() => {
-                if (selectMode) {
-                  toggleSelect(meal.id);
-                } else {
-                  onViewDetail(meal);
-                }
-              }}
+              className={[
+                'ml-tile',
+                selectMode && selectedIds.has(meal.id) ? 'ml-tile-selected' : '',
+                meal.status === 'failed' ? 'ml-tile-failed' : '',
+              ].filter(Boolean).join(' ')}
+              style={{ animationDelay: `${Math.min(idx * 25, 250)}ms` }}
+              onClick={() => handleTileClick(meal)}
               onTouchStart={e => selectMode ? handleLongPressSelect(meal, e) : handleTouchStart(meal, e)}
               onTouchMove={handleTouchMove}
               onTouchEnd={handleTouchEnd}
               onTouchCancel={handleTouchEnd}
               onContextMenu={e => {
                 e.preventDefault();
-                if (selectMode) { toggleSelect(meal.id); }
-                else { setQuickPreview(meal); }
+                if (selectMode) toggleSelect(meal.id);
+                else setQuickPreview(meal);
               }}
             >
-              {/* Select checkbox overlay in select mode */}
+              {/* Select checkbox overlay */}
               {selectMode && (
                 <div className="ml-tile-check">
                   <span>{selectedIds.has(meal.id) ? '✓' : ''}</span>
                 </div>
               )}
-              {/* Image */}
+
+              {/* Image area */}
               <div className="ml-tile-image">
-                <CardImage src={meal.imageUrl} alt={meal.name} className="ml-tile-img" phClass="ml-tile-placeholder" />
+                <CardImage
+                  src={meal.imageUrl}
+                  alt={meal.name || 'Recipe'}
+                  className="ml-tile-img"
+                  phClass="ml-tile-placeholder"
+                />
                 {meal.isFavorite && <span className="ml-tile-fav">❤️</span>}
                 {meal.inRotation && <span className="ml-tile-rotation">🔄</span>}
                 {meal.category && meal.category !== 'Dinners' && (
                   <span className="ml-tile-cat">{meal.category}</span>
                 )}
+                {/* ⋯ menu button — always visible, bottom-right of image */}
+                {!selectMode && (
+                  <button
+                    className="ml-tile-menu-btn"
+                    aria-label="More options"
+                    onClick={e => { e.stopPropagation(); setQuickPreview(meal); }}
+                    onTouchEnd={e => e.stopPropagation()}
+                  >
+                    ⋯
+                  </button>
+                )}
               </div>
+
               {/* Info row */}
               <div className="ml-tile-info">
-                <span className="ml-tile-name">{meal.name}</span>
+                <span className="ml-tile-name">{meal.name || 'Untitled Recipe'}</span>
                 <span className="ml-tile-meta">
-                  {meal.status === 'processing' ? 'Import in progress…'
-                    : meal.status === 'failed' ? (meal.importError || 'Import failed — tap to delete')
+                  {meal.status === 'processing'
+                    ? '⏳ Import in progress…'
+                    : meal.status === 'failed'
+                    ? '⚠️ Import failed — tap to delete'
                     : `${(meal.ingredients || []).length} ing · ${(meal.directions || []).length} steps`}
                 </span>
                 {formatAddedDate(meal.importedAt || meal.createdAt || meal.created) && (
-                  <span className="ml-tile-added" title={meal.importedAt || meal.createdAt || meal.created}>
+                  <span
+                    className="ml-tile-added"
+                    title={meal.importedAt || meal.createdAt || meal.created}
+                  >
                     {formatAddedDate(meal.importedAt || meal.createdAt || meal.created)}
                   </span>
                 )}
@@ -383,7 +496,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
         )}
       </div>
 
-      {/* ── Floating Action Buttons ── */}
+      {/* ── FABs ── */}
       <div className="ml-fab-group">
         <button className="ml-fab ml-fab-import" onClick={onImport} title="Import Recipe">
           <span>📥</span>
@@ -394,55 +507,84 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
         </button>
       </div>
 
-      {/* ── Quick Preview popup (long press or right-click) ── */}
+      {/* ── Quick Preview bottom sheet (long-press or ⋯ button) ── */}
       {quickPreview && (
         <div className="ml-qp-overlay" onClick={() => setQuickPreview(null)}>
-          <div className="ml-qp-sheet" onClick={e => e.stopPropagation()}>
+          <div
+            ref={sheetRef}
+            className="ml-qp-sheet"
+            onClick={e => e.stopPropagation()}
+            onTouchStart={handleSheetTouchStart}
+            onTouchMove={handleSheetTouchMove}
+            onTouchEnd={handleSheetTouchEnd}
+            onTouchCancel={handleSheetTouchEnd}
+          >
             <div className="ml-qp-handle" />
             {quickPreview.imageUrl && (
-              <img src={quickPreview.imageUrl} alt="" className="ml-qp-image" />
+              <SafeMediaImage
+                src={quickPreview.imageUrl}
+                alt={quickPreview.name || 'Recipe'}
+                style={{
+                  width: '100%',
+                  height: 200,
+                  objectFit: 'cover',
+                  borderRadius: '12px 12px 0 0',
+                  flexShrink: 0,
+                  display: 'block',
+                }}
+                fallbackEmoji="🍽️"
+              />
             )}
             <div className="ml-qp-body">
-              <h3 className="ml-qp-title">{quickPreview.name}</h3>
+              <h3 className="ml-qp-title">{quickPreview.name || 'Untitled Recipe'}</h3>
               {quickPreview.category && quickPreview.category !== 'Dinners' && (
-                <span className="ml-tile-cat" style={{ position: 'static', marginBottom: 8 }}>{quickPreview.category}</span>
+                <span className="ml-tile-cat" style={{ position: 'static', marginBottom: 8 }}>
+                  {quickPreview.category}
+                </span>
               )}
               {(quickPreview.created || quickPreview.createdAt) && (
                 <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', marginBottom: 8 }}>
                   Added: {new Date(quickPreview.created || quickPreview.createdAt).toLocaleDateString()}
                 </div>
               )}
+
               <div className="ml-qp-section">
-                <h4>Ingredients ({quickPreview.ingredients.length})</h4>
+                <h4>Ingredients ({(quickPreview.ingredients || []).length})</h4>
                 <ul className="ml-qp-list">
-                  {quickPreview.ingredients.slice(0, 8).map((ing, i) => (
+                  {(quickPreview.ingredients || []).slice(0, 8).map((ing, i) => (
                     <li key={i}>{ing}</li>
                   ))}
-                  {quickPreview.ingredients.length > 8 && (
-                    <li className="ml-qp-more">+{quickPreview.ingredients.length - 8} more...</li>
+                  {(quickPreview.ingredients || []).length > 8 && (
+                    <li className="ml-qp-more">
+                      +{(quickPreview.ingredients || []).length - 8} more…
+                    </li>
                   )}
                 </ul>
               </div>
+
               <div className="ml-qp-section">
-                <h4>Steps ({quickPreview.directions.length})</h4>
+                <h4>Steps ({(quickPreview.directions || []).length})</h4>
                 <ol className="ml-qp-list ml-qp-steps">
-                  {quickPreview.directions.slice(0, 4).map((step, i) => (
+                  {(quickPreview.directions || []).slice(0, 4).map((step, i) => (
                     <li key={i}>{step}</li>
                   ))}
-                  {quickPreview.directions.length > 4 && (
-                    <li className="ml-qp-more">+{quickPreview.directions.length - 4} more...</li>
+                  {(quickPreview.directions || []).length > 4 && (
+                    <li className="ml-qp-more">
+                      +{(quickPreview.directions || []).length - 4} more…
+                    </li>
                   )}
                 </ol>
               </div>
             </div>
+
             <div className="ml-qp-actions">
-              <button onClick={() => { setQuickPreview(null); onViewDetail(quickPreview); }}>
+              <button onClick={() => { setQuickPreview(null); onViewDetail?.(quickPreview); }}>
                 View Full Recipe
               </button>
-              <button onClick={() => { setQuickPreview(null); onEdit(quickPreview); }}>
+              <button onClick={() => { setQuickPreview(null); onEdit?.(quickPreview); }}>
                 Edit
               </button>
-              <button onClick={() => { onShare(quickPreview); }}>
+              <button onClick={() => { onShare?.(quickPreview); }}>
                 Share
               </button>
               <button onClick={() => { handleToggleRotation(quickPreview); setQuickPreview(null); }}>
@@ -450,7 +592,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
               </button>
               {onToggleFavorite && (
                 <button onClick={() => { onToggleFavorite(quickPreview); setQuickPreview(null); }}>
-                  {quickPreview.isFavorite ? 'Unfavorite' : 'Favorite'}
+                  {quickPreview.isFavorite ? '💔 Unfavorite' : '❤️ Favorite'}
                 </button>
               )}
               {(quickPreview.link || quickPreview.sourceUrl) && (
@@ -458,18 +600,53 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                   onClick={() => { handleReimportPhoto(quickPreview); setQuickPreview(null); }}
                   disabled={reimportingPhotoId === quickPreview.id}
                 >
-                  {reimportingPhotoId === quickPreview.id ? '⏳ Searching…' : quickPreview.imageUrl ? '📸 Find Better Photo' : '📸 Find Photo'}
+                  {reimportingPhotoId === quickPreview.id
+                    ? '⏳ Searching…'
+                    : quickPreview.imageUrl
+                    ? '📸 Find Better Photo'
+                    : '📸 Find Photo'}
                 </button>
               )}
-              <button className="ml-qp-danger" onClick={() => { setQuickPreview(null); setConfirmDeleteId(quickPreview.id); }}>
-                Delete
+              <button
+                className="ml-qp-danger"
+                onClick={() => { setQuickPreview(null); setConfirmDeleteId(quickPreview.id); }}
+              >
+                🗑️ Delete
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Options bottom sheet (backup/restore/import) ── */}
+      {/* ── Category picker sheet (multi-select) ── */}
+      {showCategoryPicker && (
+        <div className="ml-overlay" onClick={() => setShowCategoryPicker(false)}>
+          <div className="ml-sheet" onClick={e => e.stopPropagation()}>
+            <div className="ml-sheet-handle" />
+            <div className="ml-sheet-header">
+              <h3>Set Category</h3>
+              <button className="ml-sheet-close" onClick={() => setShowCategoryPicker(false)}>✕</button>
+            </div>
+            <p className="ml-sheet-subtitle">
+              Assigning to {selectedIds.size} meal{selectedIds.size !== 1 ? 's' : ''}
+            </p>
+            <div className="ml-sheet-options">
+              {CATEGORY_OPTIONS.map(cat => (
+                <button
+                  key={cat}
+                  className="ml-sheet-option"
+                  onClick={() => handleBatchSetCategory(cat)}
+                >
+                  <span className="ml-option-icon">📁</span>
+                  <span>{cat}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Options sheet (backup / restore / import) ── */}
       {showOptionsSheet && (
         <div className="ml-overlay" onClick={() => setShowOptionsSheet(false)}>
           <div className="ml-sheet" onClick={e => e.stopPropagation()}>
@@ -479,9 +656,9 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
               <button className="ml-sheet-close" onClick={() => setShowOptionsSheet(false)}>✕</button>
             </div>
             <div className="ml-sheet-options">
-              <button className="ml-sheet-option" onClick={() => onImport()}>
+              <button className="ml-sheet-option" onClick={() => { onImport?.(); setShowOptionsSheet(false); }}>
                 <span className="ml-option-icon">📥</span>
-                <span>Import from Spreadsheet/URL</span>
+                <span>Import from URL / Spreadsheet</span>
               </button>
               <button className="ml-sheet-option" onClick={handleBackup}>
                 <span className="ml-option-icon">📦</span>
@@ -503,7 +680,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
         </div>
       )}
 
-      {/* ── Delete confirmation bottom sheet ── */}
+      {/* ── Delete confirmation sheet ── */}
       {confirmDeleteId && (
         <div className="ml-overlay" onClick={closeConfirmDelete}>
           <div className="ml-sheet ml-delete-sheet" onClick={e => e.stopPropagation()}>
@@ -516,16 +693,13 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
               This meal will be permanently removed from your library.
             </p>
             <div className="ml-delete-actions">
-              <button
-                className="ml-delete-btn ml-delete-cancel"
-                onClick={closeConfirmDelete}
-              >
+              <button className="ml-delete-btn ml-delete-cancel" onClick={closeConfirmDelete}>
                 Keep Meal
               </button>
               <button
                 className="ml-delete-btn ml-delete-confirm"
                 onClick={() => {
-                  onDelete(confirmDeleteId);
+                  onDelete?.(confirmDeleteId);
                   setConfirmDeleteId(null);
                 }}
               >
@@ -536,7 +710,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
         </div>
       )}
 
-      {/* ── Menu button (top right) to open options sheet ── */}
+      {/* ── Menu button (top right of screen) ── */}
       <button
         className="ml-menu-btn"
         onClick={() => setShowOptionsSheet(true)}
@@ -547,3 +721,132 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
     </div>
   );
 }
+
+<div>
+  Share
+  <button onClick={() => { handleToggleRotation(quickPreview); setQuickPreview(null); }}> 
+    {quickPreview.inRotation ? '🔄 Remove from Rotation' : '🔄 Add to Rotation'} 
+  </button> 
+  
+  {onToggleFavorite && ( 
+    <button onClick={() => { onToggleFavorite(quickPreview); setQuickPreview(null); }}> 
+      {quickPreview.isFavorite ? '💔 Unfavorite' : '❤️ Favorite'} 
+    </button> 
+  )} 
+  
+  {(quickPreview.link || quickPreview.sourceUrl) && ( 
+    <button 
+      onClick={() => { handleReimportPhoto(quickPreview); setQuickPreview(null); }} 
+      disabled={reimportingPhotoId === quickPreview.id} 
+    > 
+      {reimportingPhotoId === quickPreview.id ? '⏳ Searching…' : quickPreview.imageUrl ? '📸 Find Better Photo' : '📸 Find Photo'} 
+    </button> 
+  )} 
+  
+  <button 
+    className="ml-qp-danger" 
+    onClick={() => { setQuickPreview(null); setConfirmDeleteId(quickPreview.id); }} 
+  > 
+    🗑️ Delete 
+  </button> 
+</div>
+
+      {/* ── Category picker sheet (multi-select) ── */}
+      {showCategoryPicker && (
+        <div className="ml-overlay" onClick={() => setShowCategoryPicker(false)}>
+          <div className="ml-sheet" onClick={e => e.stopPropagation()}>
+            <div className="ml-sheet-handle" />
+            <div className="ml-sheet-header">
+              <h3>Set Category</h3>
+              <button className="ml-sheet-close" onClick={() => setShowCategoryPicker(false)}>✕</button>
+            </div>
+            <p className="ml-sheet-subtitle">
+              Assigning to {selectedIds.size} meal{selectedIds.size !== 1 ? 's' : ''}
+            </p>
+            <div className="ml-sheet-options">
+              {CATEGORY_OPTIONS.map(cat => (
+                <button
+                  key={cat}
+                  className="ml-sheet-option"
+                  onClick={() => handleBatchSetCategory(cat)}
+                >
+                  <span className="ml-option-icon">📁</span>
+                  <span>{cat}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Options sheet (backup / restore / import) ── */}
+      {showOptionsSheet && (
+        <div className="ml-overlay" onClick={() => setShowOptionsSheet(false)}>
+          <div className="ml-sheet" onClick={e => e.stopPropagation()}>
+            <div className="ml-sheet-handle" />
+            <div className="ml-sheet-header">
+              <h3>Meal Library Options</h3>
+              <button className="ml-sheet-close" onClick={() => setShowOptionsSheet(false)}>✕</button>
+            </div>
+            <div className="ml-sheet-options">
+              <button className="ml-sheet-option" onClick={() => { onImport?.(); setShowOptionsSheet(false); }}>
+                <span className="ml-option-icon">📥</span>
+                <span>Import from URL / Spreadsheet</span>
+              </button>
+              <button className="ml-sheet-option" onClick={handleBackup}>
+                <span className="ml-option-icon">📦</span>
+                <span>Backup Meals</span>
+              </button>
+              <button className="ml-sheet-option" onClick={() => restoreRef.current?.click()}>
+                <span className="ml-option-icon">📂</span>
+                <span>Restore Backup</span>
+              </button>
+              <input
+                ref={restoreRef}
+                type="file"
+                accept=".json"
+                onChange={handleRestore}
+                style={{ display: 'none' }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+<>
+  {/* ── Delete confirmation sheet ── */} 
+  {confirmDeleteId && ( 
+    <div className="ml-overlay" onClick={closeConfirmDelete}> 
+      <div className="ml-sheet ml-delete-sheet" onClick={e => e.stopPropagation()}> 
+        <div className="ml-sheet-handle" /> 
+        <div className="ml-delete-header"> 
+          <span className="ml-delete-icon">🗑️</span> 
+        </div> 
+        <h3 className="ml-delete-title">Delete Meal?</h3> 
+        <p className="ml-delete-message"> 
+          This meal will be permanently removed from your library. 
+        </p> 
+        <div className="ml-delete-actions"> 
+          <button className="ml-delete-btn ml-delete-cancel" onClick={closeConfirmDelete}> 
+            Keep Meal 
+          </button> 
+          <button 
+            className="ml-delete-btn ml-delete-confirm" 
+            onClick={() => { onDelete?.(confirmDeleteId); setConfirmDeleteId(null); }} 
+          > 
+            Yes, Delete 
+          </button> 
+        </div> 
+      </div> 
+    </div> 
+  )} 
+
+  {/* ── Menu button (top right of screen) ── */} 
+  <button 
+    className="ml-menu-btn" 
+    onClick={() => setShowOptionsSheet(true)} 
+    title="More options" 
+  > 
+    ··· 
+  </button> 
+</>

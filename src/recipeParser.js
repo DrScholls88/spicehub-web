@@ -447,21 +447,33 @@ export function parseManualCaption(captionText, sourceUrl) {
  */
 function _buildExtractionPrompt(rawText, { hintTitle = '', type = 'meal' } = {}) {
   // Auto-upgrade to drink schema when text has strong cocktail signals.
-  // Catches Instagram/TikTok cocktail reels where type detection runs before text
-  // is fetched (URL has no cocktail hint, so defaults to 'meal').
   if (type !== 'drink') {
     const lower = rawText.toLowerCase();
-    const SPIRITS = ['whiskey','whisky','bourbon','scotch','rye whiskey',' gin ','rum ','tequila',
+    const SPIRITS = [
+      'whiskey','whisky','bourbon','scotch','rye whiskey',' gin ','rum ','tequila',
       'mezcal','vodka','cognac','brandy','vermouth','campari','aperol','amaretto','kahlua',
       'baileys','triple sec','cointreau','amaro','bitters','angostura','absinthe','chartreuse',
       'prosecco','champagne','cava','pisco','sake','soju','grappa','limoncello','curaçao',
-      'maraschino','falernum','orgeat','elderflower liqueur','st. germain','fernet'];
-    const COCKTAIL_ACTIONS = [' shake','shaker','stir and strain','muddle','strain into',
-      'double strain','build in glass','top with ','float the ','garnish with','express the',
-      'rimmed glass','jigger','bar spoon','barspoon','cocktail glass','coupe','rocks glass',
-      'highball glass','nick and nora','mixing glass','hawthorne strain','fine strain'];
-    const UNIT_SIGNALS = [' oz ',' oz,','.5 oz','ml ','1 dash','2 dash','splash of','rinse with',
-      '0.5 oz','0.75 oz','1.5 oz','2 oz','3 oz',' cl ',' part ','barspoon of'];
+      'maraschino','falernum','orgeat','elderflower liqueur','st. germain','fernet','grand marnier',
+      'benedictine','drambuie','frangelico','lillet','suze','cynar','galliano','midori',
+      'blue curaçao','sloe gin','raspberry liqueur','peach schnapps','spiced rum','dark rum',
+      'light rum','aged rum','blanco tequila','reposado','añejo','london dry gin','new western gin',
+      'islay scotch','speyside','irish whiskey','japanese whisky','rye bourbon',
+    ];
+    const COCKTAIL_ACTIONS = [
+      ' shake',' shaker','stir and strain','muddle','strain into','double strain',
+      'build in glass','top with ','float the ','garnish with','express the peel',
+      'rimmed glass','jigger','bar spoon','barspoon','cocktail glass','coupe glass',
+      'rocks glass','highball glass','nick and nora','mixing glass','hawthorne strain',
+      'fine strain','throw the cocktail','dry shake','reverse dry shake',
+      'fat wash','infuse','batch cocktail','on the rocks','neat','straight up',
+      'ice sphere','large cube','cracked ice','cobbler','julep cup','tiki mug',
+    ];
+    const UNIT_SIGNALS = [
+      ' oz ',' oz,','.5 oz','ml ','1 dash','2 dash','splash of','rinse with',
+      '0.5 oz','0.75 oz','1.5 oz','2 oz','3 oz',' cl ',' part ','barspoon of',
+      '1/2 oz','3/4 oz','1/4 oz','2 parts','1 part','float of',
+    ];
     const spiritHits = SPIRITS.filter(w => lower.includes(w)).length;
     const verbHits   = COCKTAIL_ACTIONS.filter(w => lower.includes(w)).length;
     const unitHits   = UNIT_SIGNALS.filter(w => lower.includes(w)).length;
@@ -469,68 +481,134 @@ function _buildExtractionPrompt(rawText, { hintTitle = '', type = 'meal' } = {})
       type = 'drink';
     }
   }
+
   const isDrink = type === 'drink';
   const subjectNoun = isDrink ? 'cocktail/drink' : 'recipe';
+
+  // ── JSON schema ─────────────────────────────────────────────────────────────
   const schema = isDrink
     ? `{
-  "title": "string Ã¢â‚¬â€ concise drink name, no hashtags, no emojis, no brand names",
-  "ingredients": [{ "name": "string Ã¢â‚¬â€ spirit/mixer/garnish", "amount": "string Ã¢â‚¬â€ e.g. '2 oz', '1 dash', '3 slices', 'splash'" }],
-  "directions": ["string Ã¢â‚¬â€ one clear step per array item (e.g. 'Muddle mint in shaker', 'Shake with ice', 'Strain into coupe')"],
-  "glass": "string or null Ã¢â‚¬â€ e.g. 'coupe', 'rocks', 'highball', 'martini', 'collins', 'nick & nora'",
-  "garnish": "string or null Ã¢â‚¬â€ e.g. 'lime wheel', 'orange peel', 'mint sprig'",
-  "servings": "string or null Ã¢â‚¬â€ usually '1' for cocktails",
-  "notes": "string or null"
+  "title": "string — concise drink name only (2–5 words), no hashtags, emojis, or brand names unless the drink is specifically named",
+  "ingredients": [{ "name": "string — spirit/mixer/modifier/garnish name", "amount": "string — e.g. '2 oz', '0.75 oz', '1 dash', '3 slices', 'splash', 'float'" }],
+  "directions": ["string — one terse action step per item, verb-first (e.g. 'Combine all ingredients in shaker with ice', 'Shake vigorously for 12 seconds', 'Double-strain into chilled coupe')"],
+  "glass": "string or null — specific glass name, e.g. 'coupe', 'rocks/old fashioned', 'highball', 'martini', 'collins', 'nick & nora', 'champagne flute', 'copper mug', 'tiki mug', 'julep cup'",
+  "garnish": "string or null — precise garnish description, e.g. 'expressed lemon peel', 'dehydrated lime wheel', 'fresh mint sprig', 'Luxardo cherry', 'salted rim', 'smoked rosemary'",
+  "method": "string or null — preparation method: 'shaken', 'stirred', 'built', 'blended', 'thrown', 'dry shaken', 'rolled'",
+  "servings": "string or null — usually '1 cocktail' or '1 serving'",
+  "notes": "string or null — flavor notes, variations, substitutions, or bartender tips"
 }`
     : `{
-  "title": "string Ã¢â‚¬â€ concise recipe name, no hashtags, no emojis, no brand names",
-  "ingredients": [{ "name": "string", "amount": "string Ã¢â‚¬â€ e.g. '2 cups' or 'to taste'" }],
-  "directions": ["string Ã¢â‚¬â€ one clear cooking step per array item, written as an instruction"],
-  "servings": "string or null",
-  "cookTime": "string or null",
-  "notes": "string or null"
+  "title": "string — concise recipe name (2–6 words), no hashtags, emojis, or brand names",
+  "ingredients": [{ "name": "string — ingredient name with prep note if given (e.g. 'chicken thighs, boneless', 'garlic cloves, minced')", "amount": "string — quantity + unit (e.g. '2 cups', '1 lb', '3 tbsp', 'to taste', 'pinch')" }],
+  "directions": ["string — one clear cooking step per item, written as an imperative instruction (verb-first). Each step should be a complete action."],
+  "servings": "string or null — e.g. '4 servings', 'makes 12 cookies', 'serves 6–8'",
+  "prepTime": "string or null — prep time if stated, e.g. '15 minutes'",
+  "cookTime": "string or null — cook/bake/rest time if stated, e.g. '30 minutes', '1 hour'",
+  "totalTime": "string or null — total time if stated, e.g. '45 minutes'",
+  "cuisine": "string or null — cuisine type if determinable, e.g. 'Italian', 'Mexican', 'Thai', 'American BBQ'",
+  "dietaryTags": ["string — only include if clearly stated: 'vegan', 'vegetarian', 'gluten-free', 'dairy-free', 'keto', 'paleo', 'nut-free'"],
+  "notes": "string or null — chef tips, make-ahead notes, storage info, substitution suggestions"
 }`;
 
-  const rulesCommon = `- TITLE: Extract the ${subjectNoun} name only (2-6 words). Remove "on Instagram", "@username", hashtags, emojis. If no explicit title, infer from the dish described.
-- CLEANING: Aggressively strip social chrome: hashtags, @mentions, "link in bio", "save this", "follow me", sponsor lines, timestamps, view/like counts, emoji-only lines, "use code X for Y% off", ebook/meal plan promos.
-- If the text is a spoken/narrated ${subjectNoun} (video transcript), extract what the speaker is describing.
-- If no ${subjectNoun} can be found at all, return: { "error": "not a ${subjectNoun}" }
-- STRICT SORTING (CRITICAL):
-  * INGREDIENT = a food/liquid/spice item, optionally with quantity+unit. Pattern: "[amount] [unit] [food noun]".
-    Examples: "2 cups flour", "1 head cauliflower, chopped", "salt to taste", "olive oil"
-  * DIRECTION = an action step telling the cook what to DO. Pattern: starts with or contains an action verb.
-    Examples: "Preheat oven to 400F", "Toss with oil and spice mix", "Roast for 30 minutes"
-  * Numbered steps (1. 2. 3.) are ALWAYS directions, never ingredients.
-  * Lines with ONLY food nouns + quantities = ingredients[]. Lines with action verbs = directions[].
-  * Mixed lines like "Toss the cauliflower with oil" are DIRECTIONS (action verb present).
-  * Sub-headings like "Spice Mix:" or "For the sauce:" - extract items below them as ingredients, not the heading.
-  * NEVER put an ingredient line into directions[] or a direction into ingredients[].
-- COMPLETENESS: Extract ALL ingredients and ALL steps. Do not summarize or skip items.`;
+  // ── Shared rules ─────────────────────────────────────────────────────────────
+  const rulesCommon = `TITLE EXTRACTION:
+- Extract the ${subjectNoun} name ONLY (2–6 words max). Remove: "@username", "on Instagram", "by [name]", hashtags (#), emojis, brand sponsors.
+- Prefer an explicit title found in the text. If none, infer from the main dish/drink being described.
+- Do NOT include serving context like "for 4" or "easy weeknight" in the title itself.
 
-  const rulesDrink = `- INGREDIENTS: Recognize mixology units: oz, ml, cl, dash, splash, barspoon, part, float, drops. Garnishes (e.g. "3 slices jalapeÃƒÂ±o", "1 orange peel") also go in ingredients.
-- DIRECTIONS: Cocktails often have 2-4 terse steps (shake/stir/strain/pour/top/garnish). Do not pad Ã¢â‚¬â€ brevity is correct.
-- SORTING: Lines with oz/ml/dash + a spirit or mixer name Ã¢â€ â€™ ingredients[]. Action verbs (shake, stir, muddle, build, strain, top, float, garnish, rim) Ã¢â€ â€™ directions[].
-- GLASS / GARNISH: If mentioned anywhere, extract separately into the glass and garnish fields even if they already appear in a direction.`;
+SOCIAL CHROME CLEANING (strip all of these before parsing):
+- Hashtags: #anythingLikeThis, entire hashtag blocks at the end
+- @Mentions and handles: @username, @brand
+- CTAs: "save this", "follow for more", "link in bio", "shop link", "use code X", "DM me", "click link"
+- Engagement bait: "comment your fave", "tag a friend", "like if you agree", "drop a below"
+- Sponsor disclosures: "ad", "#ad", "#sponsored", "partnered with", "gifted by", "collab with"
+- Timestamps/view counts: "3d ago", "12k likes", "2.1M views"
+- Outro lines: "Hope you enjoy!", "Let me know what you think!", "Happy cooking!"
+- Ebook/course promos: "grab my ebook", "join my course", "full recipe on my website"
+- Recipe blog boilerplate: "Jump to Recipe", "Pin this for later", "Print Recipe"
 
-  const rulesMeal = `- INGREDIENTS: Each item = one ingredient with its measurement. Normalize fractions (1/2, 3/4). Include prep notes after comma ("1 onion, diced").
-- DIRECTIONS: Each step = one action sentence. Split compound steps at ". Then" / ". Next" / sentence breaks. Keep steps in chronological order.
-- SORTING: Lines with measurements + food words = ingredients[]. Lines with cooking verbs (mix, bake, saute, chop, stir, roast, etc.) = directions[].
-- SECTIONS: If the caption has section headers ("Spice Mix:", "For the topping:"), list those ingredients under ingredients[] with a note, not as directions.`;
+VIDEO TRANSCRIPT HANDLING:
+- If the text is narrated/spoken (video captions/subtitles), it will sound conversational: "okay so first you're gonna want to...", "what I like to do is...", "you need about..."
+- Extract the RECIPE being described, not the narration style. Convert narrated quantities to normal format.
+- Spoken fractional amounts: "half a cup" → "1/2 cup", "a tablespoon" → "1 tbsp", "some" → omit or "to taste"
 
-  return `You are a ReciME-style ${subjectNoun} extraction assistant. Extract a clean, structured ${subjectNoun} from the following text (from an Instagram caption, TikTok description, YouTube video, or ${isDrink ? 'cocktail/liquor' : 'recipe'} blog).
+STRICT INGREDIENT vs DIRECTION SORTING (CRITICAL — verify each line before assigning):
+- INGREDIENT pattern: [quantity] [unit?] [food noun] [prep note?]
+  Examples: "2 cups all-purpose flour", "1 lemon, juiced", "salt and pepper to taste", "1.5 oz Aperol"
+- DIRECTION pattern: starts with or contains an imperative action verb
+  Examples: "Preheat oven to 400°F", "Toss vegetables with olive oil", "Shake with ice for 15 seconds"
+- Numbered lines (1. 2. 3.) are ALWAYS directions if they describe actions
+- Section headers like "For the sauce:", "Spice mix:", "Marinade:" — extract the items BELOW as ingredients, add a note like "(for the sauce)" in their name field
+- NEVER cross-contaminate: ingredients[] must contain only food items with amounts; directions[] must contain only action steps
+- If a line is ambiguous (e.g. "2 eggs, beaten"), it goes to ingredients (has quantity + food noun)
 
-Return ONLY valid JSON matching this exact schema Ã¢â‚¬â€ no markdown, no explanation:
+COMPLETENESS:
+- Extract ALL ingredients listed. Do not skip minor items (spices, oils, garnishes).
+- Extract ALL steps in order. Do not summarize multiple steps into one.
+- For multi-section recipes (e.g. sauce + protein + assembly), use parenthetical notes in ingredient names: "tomatoes, diced (for sauce)".`;
+
+  // ── Drink-specific rules ─────────────────────────────────────────────────────
+  const rulesDrink = `
+COCKTAIL-SPECIFIC RULES:
+MEASUREMENTS: Recognize all mixology units — oz, ml, cl, dash, splash, barspoon, part, drop, float, rinse. Normalize written forms: "half ounce" → "0.5 oz", "a jigger" → "1.5 oz".
+INGREDIENTS to capture:
+  - Base spirits with full name (keep brand if specified, e.g. "Rittenhouse Rye Whiskey")
+  - Liqueurs and modifiers with amounts ("0.5 oz Cointreau", "2 dashes Angostura bitters")
+  - Fresh juices ("0.75 oz fresh lemon juice" — note "fresh" if stated)
+  - Syrups: include ratio if given ("2:1 simple syrup")
+  - Garnishes in the ingredients list: "1 lemon peel, for garnish"
+  - Rinse/wash: "absinthe (for rinse)" with amount "rinse"
+DIRECTIONS: Cocktail directions are typically brief (3-6 steps):
+  - "Combine [ingredients] in shaker with ice"
+  - "Shake [hard/vigorously] for [time]" or "Stir for [rotations/time]"
+  - "Strain/Double-strain into [glass]"
+  - "Top with [soda/sparkling wine]" / "Float [ingredient] on top"
+  - "Garnish with [garnish item]"
+  Do NOT pad with extra steps. Brevity = correct for cocktails.
+METHOD detection: infer from verbs — "shake/shaker" → "shaken"; "stir/mixing glass" → "stirred"; "build/pour directly" → "built"; "blend/blender" → "blended"; "dry shake" → "dry shaken".
+GLASS/GARNISH: Extract into their dedicated fields. Garnish field should be the item, not the action ("lime wheel" not "garnish with a lime wheel").`;
+
+  // ── Meal-specific rules ──────────────────────────────────────────────────────
+  const rulesMeal = `
+MEAL-SPECIFIC RULES:
+INGREDIENT FORMATTING:
+  - Always include the amount field. Use "to taste" for seasonings or "as needed" for variable items.
+  - Normalize fractions: ½ → "1/2", ¾ → "3/4", ¼ → "1/4"
+  - Include prep notes in the name: "onion, finely diced"
+  - Canned/packaged: "1 can (15 oz) chickpeas, drained and rinsed" — keep the parenthetical size note
+DIRECTION QUALITY:
+  - Each step = ONE action. Split compound steps at ". Then" / ". Next" / sentence breaks.
+  - Include temperatures, timing, and doneness cues ("until golden brown", "internal temp 165°F")
+  - Keep steps in strict chronological order; preheat oven step should always be first if oven is used.
+MULTI-SECTION RECIPES (Sauce, Marinade, Spice Rub, Topping, Filling, Dough, etc.):
+  - Include ALL section ingredients with parenthetical labels: "garlic cloves, minced (for marinade)"
+TIME FIELDS: Extract prepTime, cookTime, totalTime whenever mentioned.
+DIETARY TAGS: Only include tags that are EXPLICITLY stated in the source text. Do not infer.`;
+
+  return `You are an expert recipe extraction AI. Your job is to extract a clean, precise, structured ${subjectNoun} from social media content (Instagram caption, TikTok description, YouTube transcript, or recipe blog text).
+
+Return ONLY valid JSON matching this exact schema — no markdown fences, no explanation text, no preamble:
 ${schema}
 
-Extraction rules (follow strictly):
+=== EXTRACTION RULES ===
 ${rulesCommon}
 ${isDrink ? rulesDrink : rulesMeal}
-${hintTitle ? `\nName hint: "${hintTitle}"` : ''}
 
-Text to parse:
+=== QUALITY CHECK (apply before returning) ===
+1. Verify every item in ingredients[] is a food/liquid item with an amount. If any action verb appears in an ingredient, move it to directions[].
+2. Verify every item in directions[] is an action step (imperative verb). If it describes a food item with a quantity, move it to ingredients[].
+3. Ensure the title has no hashtags, emojis, or @handles.
+4. For drinks: confirm glass, method, and garnish fields are populated if determinable from the text.
+5. If no recipe/drink can be identified at all, return: { "error": "not a recipe" }
+${hintTitle ? `\n=== NAME HINT ===\nThe ${subjectNoun} is likely called: "${hintTitle}" — use this if no better title is found in the text.` : ''}
+
+=== TEXT TO PARSE ===
 ---
-${rawText.slice(0, 7000)}
+${rawText.slice(0, 8000)}
 ---`;
 }
+
+
 
 
 /**
@@ -541,38 +619,76 @@ ${rawText.slice(0, 7000)}
  * @param {object} options - { type: 'meal' | 'drink' }
  * @returns {object|null} Structured recipe or null
  */
-export async function structureRecipeFromImage(imageDataUrl, { type = 'meal' } = {}) {
+export async function structureRecipeFromImage(imageDataUrl, { type = 'meal', hintTitle = '' } = {}) {
   const clientKey = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_GOOGLE_AI_KEY : null;
   if (!clientKey || !imageDataUrl) return null;
 
   const base64Data = imageDataUrl.split(',')[1];
   if (!base64Data) return null;
 
+  // Detect MIME type from data URL header
+  const mimeMatch = imageDataUrl.match(/^data:(image\/[a-zA-Z+]+);base64,/);
+  const mimeType = (mimeMatch?.[1] || 'image/jpeg').replace('image/jpg', 'image/jpeg');
+
   const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${clientKey}`;
-  
+
   const isDrink = type === 'drink';
-  const prompt = `You are a recipe extraction expert. Analyze this image carefully and extract the recipe.
 
-If the image shows a ${isDrink ? 'cocktail/drink' : 'dish/meal'}, identify all visible text including the title, ingredients list, and cooking/mixing directions.
-If the image is a photo of food (not a recipe card), describe what you see and infer a likely recipe name and basic ingredients.
-If the image contains handwritten or printed recipe text, transcribe it accurately.
+  // ── Build image type analysis prefix ────────────────────────────────────────
+  // Gemini Vision performs better when we tell it what kind of image to expect.
+  const imageTypeHint = isDrink
+    ? `This image likely shows a cocktail, drink, or bar recipe. Look for:
+- Recipe card / menu text with spirit names, measurements (oz, ml, dash), and mixing instructions
+- A finished cocktail in a glass — identify the glass type, garnish, color, and likely spirits used
+- A bar setup with bottles — identify the visible spirits/mixers and infer a recipe if instructions are present
+- Handwritten or printed cocktail recipe cards`
+    : `This image likely shows a food dish or recipe. Look for:
+- Recipe card / cookbook page with ingredient lists and numbered cooking steps
+- A plated dish — identify the dish and list likely main ingredients
+- Handwritten recipe notes — transcribe accurately even if hard to read
+- Screenshot of a recipe from a website or app`;
 
-Return ONLY valid JSON matching this exact schema:
-{
-  "title": "string - concise ${isDrink ? 'drink' : 'recipe'} name (2-6 words)",
-  "ingredients": [${isDrink ? '{ "name": "spirit/mixer/garnish", "amount": "e.g. 2 oz, 1 dash" }' : '"string - one ingredient with quantity per item"'}],
-  "directions": ["string - one clear ${isDrink ? 'mixing' : 'cooking'} step per item"],
+  const prompt = `You are an expert recipe extraction AI with computer vision capabilities. Analyze this image and extract the complete recipe.
+
+${imageTypeHint}
+
+ANALYSIS APPROACH:
+1. First, identify what TYPE of image this is: (a) recipe card/text, (b) food photo, (c) handwritten recipe, (d) screenshot
+2. If recipe text is visible: transcribe ALL text accurately, then structure it
+3. If it's a food photo with no text: identify the dish and infer a reasonable recipe based on what's visible
+4. If handwritten: OCR carefully, noting uncertain characters
+
+Return ONLY valid JSON matching this exact schema — no markdown, no explanation:
+${isDrink ? `{
+  "title": "string — concise drink name (2–5 words)",
+  "ingredients": [{ "name": "string — spirit/mixer/garnish name", "amount": "string — e.g. '2 oz', '0.75 oz', '1 dash', 'splash'" }],
+  "directions": ["string — one terse action step, verb-first (e.g. 'Add all ingredients to shaker with ice', 'Shake for 12 seconds', 'Double-strain into coupe')"],
+  "glass": "string or null — glass type (coupe, rocks, highball, martini, nick & nora, julep cup, tiki mug, etc.)",
+  "garnish": "string or null — garnish description (lime wheel, expressed lemon peel, mint sprig, Luxardo cherry, etc.)",
+  "method": "string or null — shaken, stirred, built, blended, thrown, dry shaken",
   "servings": "string or null",
-  ${isDrink ? '"glass": "string or null - e.g. coupe, rocks, highball",\n  "garnish": "string or null",' : '"cookTime": "string or null",'}
-  "notes": "string or null"
-}
+  "notes": "string or null — flavor profile, variations, or tips",
+  "imageAnalysis": "string — brief description of what was in the image (e.g. 'Recipe card showing Aperol Spritz', 'Photo of a dark cocktail in a coupe glass')"
+}` : `{
+  "title": "string — concise recipe name (2–6 words)",
+  "ingredients": [{ "name": "string — ingredient name with prep note (e.g. 'garlic cloves, minced')", "amount": "string — quantity + unit (e.g. '2 cups', '1 lb', '3 tbsp', 'to taste')" }],
+  "directions": ["string — one complete cooking step per item, verb-first and imperative"],
+  "servings": "string or null",
+  "cookTime": "string or null",
+  "prepTime": "string or null",
+  "cuisine": "string or null",
+  "dietaryTags": ["string — only explicitly visible tags: vegan, vegetarian, gluten-free, dairy-free, keto, paleo"],
+  "notes": "string or null",
+  "imageAnalysis": "string — brief description of what was in the image (e.g. 'Printed recipe card for chocolate chip cookies', 'Photo of pasta dish')"
+}`}
 
-Rules:
-- Extract ALL ingredients and directions visible in the image
-- Each ingredient = one food/liquid item with its measurement
-- Each direction = one action step (verb-first)
-- NEVER put ingredients in directions[] or vice versa
-- If no recipe can be identified, return: { "error": "not a recipe" }`;
+STRICT RULES:
+- ingredients[]: ONLY food/liquid items with amounts. NO action verbs in this array.
+- directions[]: ONLY action steps starting with a verb. NO ingredient lists here.
+- If the image is a food photo with no visible text: infer reasonable ingredients from what you can see; note in imageAnalysis.
+- If text is too small/blurry to read: extract what you can and note uncertainty in notes field.
+- If no recipe can be identified at all: return { "error": "not a recipe" }
+${hintTitle ? `- The recipe is likely called: "${hintTitle}"` : ''}`;
 
   try {
     const res = await fetch(GEMINI_ENDPOINT, {
@@ -581,44 +697,57 @@ Rules:
       body: JSON.stringify({
         contents: [{
           parts: [
-            { inlineData: { mimeType: "image/jpeg", data: base64Data } },
+            { inlineData: { mimeType, data: base64Data } },
             { text: prompt }
           ]
-        }]
+        }],
+        generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
       }),
-      signal: AbortSignal.timeout(20000), // Vision can take a bit longer
+      signal: AbortSignal.timeout(25000),
     });
 
-    if (!res.ok) return null;
+    if (!res.ok) {
+      if (import.meta.env.DEV) console.warn('[SpiceHub] Gemini Vision HTTP error:', res.status);
+      return null;
+    }
     const data = await res.json();
     const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     if (!raw) return null;
 
     const jsonText = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
     const parsed = JSON.parse(jsonText);
+    if (parsed.error) return null;
 
     // Normalize ingredients — Gemini may return strings or {name, amount} objects
     const ingredients = Array.isArray(parsed.ingredients)
-      ? parsed.ingredients.map(ing => typeof ing === 'string' ? ing : [ing.amount, ing.name].filter(Boolean).join(' ').trim()).filter(Boolean)
+      ? parsed.ingredients
+          .map(ing => typeof ing === 'string' ? ing : [ing.amount, ing.name].filter(Boolean).join(' ').trim())
+          .filter(Boolean)
       : [];
     const directions = Array.isArray(parsed.directions) ? parsed.directions.filter(Boolean) : [];
 
     return {
-      name: parsed.title || 'Recipe from Photo',
+      name: parsed.title || hintTitle || 'Recipe from Photo',
       ingredients,
       directions,
       ...buildStructuredFields(ingredients, directions),
       servings: parsed.servings || null,
       cookTime: parsed.cookTime || null,
+      prepTime: parsed.prepTime || null,
+      cuisine: parsed.cuisine || null,
+      dietaryTags: Array.isArray(parsed.dietaryTags) ? parsed.dietaryTags.filter(Boolean) : [],
       notes: parsed.notes || null,
-      ...(isDrink ? { glass: parsed.glass || null, garnish: parsed.garnish || null, _type: 'drink' } : { _type: 'meal' }),
+      ...(isDrink
+        ? { glass: parsed.glass || null, garnish: parsed.garnish || null, method: parsed.method || null, _type: 'drink' }
+        : { _type: 'meal' }),
       imageUrl: imageDataUrl,
       link: '',
       _aiStructured: true,
       _structuredVia: 'gemini-vision',
+      _imageAnalysis: parsed.imageAnalysis || null,
     };
   } catch (err) {
-    console.error('[SpiceHub] Gemini Vision error:', err);
+    if (import.meta.env.DEV) console.error('[SpiceHub] Gemini Vision error:', err);
     return null;
   }
 }
@@ -657,9 +786,15 @@ export async function structureWithAIClient(rawText, { title: hintTitle = '', im
       ...buildStructuredFields(ingredients, _dirs),
       servings: parsed.servings || null,
       cookTime: parsed.cookTime || null,
+      prepTime: parsed.prepTime || null,
+      totalTime: parsed.totalTime || null,
+      cuisine: parsed.cuisine || null,
+      dietaryTags: Array.isArray(parsed.dietaryTags) ? parsed.dietaryTags.filter(Boolean) : [],
       notes: parsed.notes || null,
       // Drink-specific fields survive as extras on the result; meal flow ignores them.
-      ...(type === 'drink' ? { glass: parsed.glass || null, garnish: parsed.garnish || null, _type: 'drink' } : { _type: 'meal' }),
+      ...(type === 'drink'
+        ? { glass: parsed.glass || null, garnish: parsed.garnish || null, method: parsed.method || null, _type: 'drink' }
+        : { _type: 'meal' }),
       imageUrl: imageUrl || '',
       link: sourceUrl || '',
       _aiStructured: true,
@@ -4323,7 +4458,11 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   }
 
   // ── Phase 1: Instagram embed page (CORS proxy path — main workhorse) ────────
-  if (!videoRecipe) {
+  // Skip if Apify (or yt-dlp) already gave us a strong caption AND a persisted image.
+  const apifyFullSuccess = capturedCaption && capturedCaption.length > 50
+    && capturedImageUrl && !isCaptionWeak(capturedCaption)
+    && !videoRecipe;
+  if (!videoRecipe && !apifyFullSuccess) {
     progress(1, 'running', 'Fetching Instagram caption…');
     try {
       const embedData = await extractInstagramEmbed(url);
@@ -4336,10 +4475,14 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
       // food photos — always prefer them over the oEmbed profile avatar.
       // Guard: only accept URLs that are actual images (not .js/.css resources).
       if (embedData?.imageUrl && isValidImageUrl(embedData.imageUrl) && !isProfilePicUrl(embedData.imageUrl)) {
-        const isPostSpecific = /scontent|fbcdn/.test(embedData.imageUrl)
-          || embedData.imageUrl.includes('_n.jpg');
-        if (isPostSpecific || !capturedImageUrl) {
-          capturedImageUrl = embedData.imageUrl;
+        // Never overwrite a persisted data: URL — those are already downloaded and stable.
+        // Only prefer embed's CDN URL when we have nothing, or what we have is also a CDN URL.
+        if (!capturedImageUrl?.startsWith('data:')) {
+          const isPostSpecific = /scontent|fbcdn/.test(embedData.imageUrl)
+            || embedData.imageUrl.includes('_n.jpg');
+          if (isPostSpecific || !capturedImageUrl) {
+            capturedImageUrl = embedData.imageUrl;
+          }
         }
       }
       if (embedData?.title && !capturedTitle) capturedTitle = embedData.title;
@@ -4410,6 +4553,10 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
     } else {
       progress(2, 'skipped', 'Strong caption captured');
     }
+  } else if (apifyFullSuccess) {
+    // Apify delivered caption + image — mark embed/browser phases as skipped in UI
+    progress(1, 'skipped', 'Apify captured caption ✔');
+    progress(2, 'skipped', 'Apify captured image ✔');
   } // end phases 0.5–1+2
 
   // ── Phase 3: Gemini AI structuring — ALWAYS runs on any captured text ────────
@@ -4448,7 +4595,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
         const persistedImageUrl = await persistCapturedImage(capturedImageUrl || recipe.imageUrl || '');
 const finalRecipe = {
   ...recipe,
-  imageUrl: persistedImageUrl || finalImageUrl || capturedImageUrl,
+  imageUrl: persistedImageUrl || capturedImageUrl || recipe.imageUrl || '',
   capturedImageUrl: persistedImageUrl || capturedImageUrl,
           extractedVia: videoRecipe ? 'yt-dlp+ai' : 'caption-ai',
           sourceUrl: url,

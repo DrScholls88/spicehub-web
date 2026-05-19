@@ -7,7 +7,8 @@ import {
   scoreExtractionConfidence,
   isWeakResult,
   detectImportType,
-  parseHtml
+  parseHtml,
+  structureRecipeFromImage,
 } from '../recipeParser.js';
 import BrowserAssist from './BrowserAssist';
 import { normalizeInstagramUrl, fetchHtmlViaProxy, cleanUrl } from '../api.js';
@@ -88,12 +89,12 @@ function SocialPreview({ url }) {
  *   title                  — optional modal title (e.g. "Import Recipe" vs "Import Drink")
  *   sharedContent          — optional { mode, url, text, title } from share-target
  */
-export default function ImportModal({ onImport, onClose, title = 'Import Recipe', sharedContent = null }) {
+export default function ImportModal({ onImport, onClose, title = 'Import Recipe', sharedContent = null, initialItemType = 'meal' }) {
   const [mode, setMode] = useState('url');         // 'url' | 'image' | 'paste' | 'spreadsheet' | 'paprika'
   const [url, setUrl] = useState('');
-  // itemType — 'meal' | 'drink'. Auto-detected from URL + paste text, user-overridable
-  // via the one-tap badge next to the URL input. Threaded into importRecipeFromUrl.
-  const [itemType, setItemType] = useState('meal');
+  // itemType — 'meal' | 'drink'. Seeded from initialItemType prop (set by caller), auto-detected
+  // from URL + paste text, and user-overridable via the one-tap toggle.
+  const [itemType, setItemType] = useState(initialItemType);
   const [itemTypeUserOverride, setItemTypeUserOverride] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState('');
@@ -588,26 +589,47 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     setPreview([recipe]);
   };
 
-  // ── Image OCR import ────────────────────────────────────────────────────────
+  // ── Image import — Gemini Vision first, Tesseract OCR fallback ──────────────
   const handleImageUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setImporting(true);
     setError('');
-    setImportProgress('Loading OCR engine...');
+    setImportProgress('Reading image…');
+
     try {
-      // Always capture the original photo as the recipe image
-      setImportProgress('Processing image...');
+      // Capture original photo data URL — always stored as the recipe image
       const imageDataUrl = await fileToDataUrl(file);
 
-      // Preprocess image for better OCR quality
+      // ── Path 1: Gemini Vision (preferred — understands both text and food photos) ──
+      const hasGeminiKey = !!import.meta.env?.VITE_GOOGLE_AI_KEY;
+      if (hasGeminiKey) {
+        setImportProgress('Analyzing image with AI…');
+        const geminiResult = await structureRecipeFromImage(imageDataUrl, {
+          type: itemType, // respect the meal/drink toggle the user has selected
+        });
+
+        if (geminiResult && (geminiResult.ingredients?.length > 0 || geminiResult.directions?.length > 0)) {
+          // Gemini succeeded — always attach the original photo
+          const recipe = { ...geminiResult, imageUrl: imageDataUrl };
+          setPreview([recipe]);
+          setImporting(false);
+          setImportProgress('');
+          e.target.value = '';
+          return;
+        }
+        // Gemini returned empty/error — fall through to OCR
+        setImportProgress('AI analysis inconclusive, trying text recognition…');
+      }
+
+      // ── Path 2: Tesseract OCR fallback ─────────────────────────────────────
+      // Only used when Gemini is not configured or fails to find a recipe.
       const processedImage = await preprocessImageForOCR(file);
 
-      // Dynamic import of Tesseract.js (lazy-loaded, ~3MB)
-      setImportProgress('Loading text recognition...');
+      setImportProgress('Loading text recognition…');
       const Tesseract = await import('tesseract.js');
 
-      setImportProgress('Reading text from image...');
+      setImportProgress('Reading text from image…');
       const result = await Tesseract.recognize(
         processedImage,
         'eng',
@@ -615,7 +637,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
           logger: m => {
             if (m.status === 'recognizing text') {
               const pct = Math.round((m.progress || 0) * 100);
-              setImportProgress(`Reading text... ${pct}%`);
+              setImportProgress(`Reading text… ${pct}%`);
             }
           },
         }
@@ -630,30 +652,22 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
         return;
       }
 
-      // Clean OCR artifacts before parsing
       const cleanedText = cleanOcrText(ocrText);
 
-      // Parse the OCR text through the recipe caption parser
-      setImportProgress('Parsing recipe...');
+      setImportProgress('Parsing recipe…');
       const parsed = parseCaption(cleanedText);
 
-      // Build recipe object — ALWAYS keep the original photo
       const recipe = {
         name: parsed.title || 'Recipe from Photo',
         ingredients: parsed.ingredients.length > 0 ? parsed.ingredients : [],
         directions: parsed.directions.length > 0 ? parsed.directions : [],
-        imageUrl: imageDataUrl, // Always store original photo
+        imageUrl: imageDataUrl,
         link: '',
       };
 
-      // If the caption parser couldn't split into ingredients/directions,
-      // use improved heuristics that consider cooking verbs and measurements
       if (recipe.ingredients.length === 0 && recipe.directions.length === 0) {
         const lines = cleanedText.split('\n').map(l => l.trim()).filter(l => l.length > 2);
-        if (lines.length > 0) {
-          classifyOcrLines(lines, recipe);
-        }
-        // If still nothing, dump everything into directions
+        if (lines.length > 0) classifyOcrLines(lines, recipe);
         if (recipe.ingredients.length === 0 && recipe.directions.length === 0) {
           recipe.directions = lines.length > 0 ? lines : ['See photo for recipe details'];
         }
@@ -661,7 +675,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
 
       setPreview([recipe]);
     } catch (err) {
-      console.error('[SpiceHub] OCR error:', err);
+      console.error('[SpiceHub] Photo import error:', err);
       setError('Could not process image: ' + (err.message || 'Unknown error'));
     }
     setImporting(false);
