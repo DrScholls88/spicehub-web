@@ -1530,55 +1530,67 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
             </div>
 
             {/* Quips layer — spring elastic lag so bubbles trail the bartender */}
-            <div
-              className="bs-quips-layer"
-              style={{
-                left: `${bartenderX}px`,
-                bottom: '180px',
-                transition: 'left 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
-              }}
-            >
-              {/* Joke easter egg (tap 5x) */}
-              {jokeText && (
-                <div className="bs-bt-speech bs-bt-speech-joke bs-bt-speech--left" style={{ maxWidth: 'min(240px, 60vw)' }}>
-                  <span>{jokeText}</span>
-                </div>
-              )}
-              {/* Surprise Me result */}
-              {surpriseResult && !selectedDrink && (
-                <div className="bs-bt-speech bs-bt-speech-surprise bs-bt-speech--left" style={{ maxWidth: 'min(240px, 60vw)' }}>
-                  <span>{surpriseResult.emoji} {surpriseResult.name}!</span>
-                  {surpriseResult.isDrink && (
-                    <button
-                      className="bs-surprise-view-btn"
-                      onClick={(e) => { e.stopPropagation(); onViewDetail(surpriseResult.drink); }}
-                    >
-                      VIEW
-                    </button>
+            {(() => {
+              // Position-aware bubble direction: extend toward center of screen,
+              // never off the left or right edge regardless of facing direction.
+              const barWidth = barTopRef.current?.clientWidth || 360;
+              const bubbleDir = bartenderX < 120
+                ? 'bs-bt-speech--right'                           // too close to left edge → open right
+                : bartenderX > barWidth - 180
+                  ? 'bs-bt-speech--left'                          // too close to right edge → open left
+                  : facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'; // default: away from face
+              return (
+                <div
+                  className="bs-quips-layer"
+                  style={{
+                    left: `${bartenderX}px`,
+                    bottom: '180px',
+                    transition: 'left 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
+                  }}
+                >
+                  {/* Joke easter egg (tap 5x) */}
+                  {jokeText && (
+                    <div className={`bs-bt-speech bs-bt-speech-joke ${bubbleDir}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
+                      <span>{jokeText}</span>
+                    </div>
+                  )}
+                  {/* Surprise Me result */}
+                  {surpriseResult && !selectedDrink && (
+                    <div className={`bs-bt-speech bs-bt-speech-surprise ${bubbleDir}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
+                      <span>{surpriseResult.emoji} {surpriseResult.name}!</span>
+                      {surpriseResult.isDrink && (
+                        <button
+                          className="bs-surprise-view-btn"
+                          onClick={(e) => { e.stopPropagation(); onViewDetail(surpriseResult.drink); }}
+                        >
+                          VIEW
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {bartenderState === 'presenting' && selectedDrink && !jokeText && !surpriseResult && (
+                    <div className={`bs-bt-speech ${bubbleDir}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
+                      <span>Here ya go!</span>
+                    </div>
+                  )}
+                  {bartenderState === 'swigging' && swigQuip && (
+                    <div className={`bs-bt-speech bs-bt-speech-swig ${bubbleDir}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
+                      <span>{swigQuip}</span>
+                    </div>
+                  )}
+                  {bartenderState === 'tipping' && (
+                    <div className={`bs-bt-speech bs-bt-speech-tip ${bubbleDir}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
+                      <span>Much obliged!</span>
+                    </div>
+                  )}
+                  {bartenderState === 'idle' && !selectedDrink && !jokeText && !surpriseResult && (
+                    <div className={`bs-bt-speech bs-bt-speech-idle ${bubbleDir}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
+                      <span>{idleQuipText}</span>
+                    </div>
                   )}
                 </div>
-              )}
-              {bartenderState === 'presenting' && selectedDrink && !jokeText && !surpriseResult && (
-                <div className={`bs-bt-speech ${facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
-                  <span>Here ya go!</span>
-                </div>
-              )}
-              {bartenderState === 'swigging' && swigQuip && (
-                <div className={`bs-bt-speech bs-bt-speech-swig ${facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
-                  <span>{swigQuip}</span>
-                </div>
-              )}
-              {bartenderState === 'tipping' && (
-                <div className={`bs-bt-speech bs-bt-speech-tip ${facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
-                  <span>Much obliged!</span>
-                </div>
-              )}
-              {bartenderState === 'idle' && !selectedDrink && !jokeText && !surpriseResult && (
-                <div className={`bs-bt-speech bs-bt-speech-idle ${facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
-                  <span>{idleQuipText}</span>
-                </div>
-              )}
-            </div>
+              );
+            })()}
           </div>
 
           {/* ── LAYER 3: Foreground — bar counter, stools, dog, door ── */}
