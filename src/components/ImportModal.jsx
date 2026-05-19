@@ -293,7 +293,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     if (sharedContent) {
       if (sharedContent.mode === 'url' && sharedContent.url) {
         setMode('url');
-        setUrl(sharedContent.url);
+        setUrl(cleanUrl(sharedContent.url));
         setError('');
         // Auto-detect social media if applicable
         if (isSocialMediaUrl(sharedContent.url)) {
@@ -312,7 +312,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     if (sharedContent?.mode === 'url' && sharedContent?.url && !preview && !importing) {
       if (autoImportTriggeredRef.current === sharedContent.url) return;
       autoImportTriggeredRef.current = sharedContent.url;
-      const sharedUrl = sharedContent.url;
+      const sharedUrl = cleanUrl(sharedContent.url);
       setUrl(sharedUrl);
       if (isSocialMediaUrl(sharedUrl)) {
         setSocialDetected({ platform: getSocialPlatform(sharedUrl) });
@@ -555,7 +555,8 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       const pastedUrls = pasted.split(/[\s\n]+/).filter(s => /^https?:\/\//i.test(s));
       if (pastedUrls.length === 1) {
         // Single URL pasted — auto-fill and start import
-        setUrl(pastedUrls[0]);
+        // cleanUrl de-duplicates doubled URLs that mobile share sheets sometimes produce
+        setUrl(cleanUrl(pastedUrls[0]));
         if (isSocialMediaUrl(pastedUrls[0])) {
           setSocialDetected({ platform: getSocialPlatform(pastedUrls[0]) });
         }

@@ -1998,6 +1998,62 @@ function stripHtmlToText(html) {
     .trim();
 }
 
+/**
+ * extractVisibleTextFromDoc — extract readable text from a live DOM document
+ * (e.g., an iframe's contentDocument).  Safe to call on cross-origin docs
+ * because all access is wrapped in try/catch.
+ */
+function extractVisibleTextFromDoc(doc) {
+  if (!doc?.body) return '';
+  const SKIP = new Set(['SCRIPT','STYLE','NOSCRIPT','IFRAME','META','LINK','HEAD','SVG']);
+  const parts = [];
+  const walk = (node) => {
+    if (!node) return;
+    if (node.nodeType === 1 /* ELEMENT_NODE */) {
+      if (SKIP.has(node.tagName?.toUpperCase())) return;
+      // Skip visually hidden elements
+      try {
+        const st = node.ownerDocument?.defaultView?.getComputedStyle?.(node);
+        if (st && (st.display === 'none' || st.visibility === 'hidden' || st.opacity === '0')) return;
+      } catch {}
+      if (node.getAttribute?.('aria-hidden') === 'true' || node.hasAttribute?.('hidden')) return;
+      for (const child of node.childNodes) walk(child);
+    } else if (node.nodeType === 3 /* TEXT_NODE */) {
+      const t = node.textContent?.trim();
+      if (t) parts.push(t);
+    }
+  };
+  try { walk(doc.body); } catch { /* cross-origin safety — return what we have */ }
+  return parts.join(' ').replace(/\s{2,}/g, ' ').trim();
+}
+
+/**
+ * extractImageUrlsFromDoc — extract candidate image URLs from a live DOM document.
+ * Prioritises og:image meta tag, then large <img> tags.
+ */
+function extractImageUrlsFromDoc(doc) {
+  if (!doc?.body) return [];
+  const urls = [];
+  const seen = new Set();
+  const add = (src) => {
+    if (src && src.startsWith('http') && isUsableImageUrl(src) && !seen.has(src)) {
+      urls.push(src);
+      seen.add(src);
+    }
+  };
+  try {
+    // og:image is the highest-fidelity signal
+    doc.querySelectorAll('meta[property="og:image"], meta[name="og:image"]').forEach(m => add(m.content));
+    // Large <img> tags sorted by rendered size (best available heuristic)
+    const imgs = [...doc.querySelectorAll('img[src]')];
+    imgs
+      .filter(img => (img.naturalWidth || 0) > 100 || !img.complete)
+      .sort((a, b) => (b.naturalWidth * b.naturalHeight) - (a.naturalWidth * a.naturalHeight))
+      .forEach(img => add(img.getAttribute('src')));
+  } catch { /* cross-origin safety */ }
+  return urls;
+}
+
 function isUsableImageUrl(u) {
   if (!u || !u.startsWith('http')) return false;
   if (/profile_pic|avatar|logo|icon|emoji|tracking|pixel|blank|1x1|spinner/i.test(u)) return false;
