@@ -24,15 +24,21 @@ if (typeof document !== 'undefined' && !document.getElementById('smi-keyframes')
   document.head.appendChild(s);
 }
 
+/** Returns true for Instagram / Facebook CDN URLs that will 403 when accessed cross-origin */
+function isInstagramCdnUrl(url) {
+  return /instagram|fbcdn|cdninstagram|scontent/.test(url);
+}
+
 /**
  * SafeMediaImage — Renders images with smart fallback chain:
  *   1. data: URLs → use directly (already persisted, works offline)
  *   2. Instagram/FB CDN URLs → proxy via /api/proxy?mode=image-data-url
+ *      (ProxiedImage handles the async fetch + falls back to emoji on 403/error)
  *   3. Other URLs → use directly (browser handles caching)
- *   4. On error → allorigins proxy fallback
+ *   4. On error for non-Instagram → allorigins proxy retry once
  *   5. Final fallback → emoji placeholder
  *
- * Loading state shows a CSS shimmer skeleton instead of an emoji/spinner.
+ * Loading state shows a CSS shimmer skeleton.
  * All <img> elements use loading="lazy" + decoding="async" for better paint perf.
  */
 export default function SafeMediaImage({ src, alt, style, fallbackEmoji = '🍳', ...props }) {
@@ -49,14 +55,14 @@ export default function SafeMediaImage({ src, alt, style, fallbackEmoji = '🍳'
       return;
     }
 
-    // data: URLs are self-contained — use directly (best case: already persisted at import)
+    // data: URLs are self-contained — best case (already persisted at import)
     if (src.startsWith('data:')) {
       setImgSrc(src);
       return;
     }
 
     // Instagram/FB CDN URLs need proxying — they expire and block cross-origin
-    if (/instagram|fbcdn|cdninstagram|scontent/.test(src)) {
+    if (isInstagramCdnUrl(src)) {
       setImgSrc(`/api/proxy?mode=image-data-url&url=${encodeURIComponent(src)}`);
       return;
     }
@@ -66,22 +72,20 @@ export default function SafeMediaImage({ src, alt, style, fallbackEmoji = '🍳'
   }, [src]);
 
   const handleError = useCallback(() => {
-    // Retry once with allorigins proxy before giving up
+    // For Instagram URLs: don't bother with allorigins (it can't access these either)
+    // Go straight to emoji fallback to avoid spamming failed requests.
+    if (src && isInstagramCdnUrl(src)) {
+      setHasError(true);
+      return;
+    }
+    // For other URLs: retry once with allorigins before giving up
     if (retryCount === 0 && src && !src.startsWith('data:')) {
       setRetryCount(1);
       setImgSrc(`https://api.allorigins.win/raw?url=${encodeURIComponent(src)}`);
       return;
     }
     setHasError(true);
-    if (import.meta.env.DEV) console.warn('[SafeMediaImage] All sources failed for:', src);
   }, [src, retryCount]);
-
-  // Handle the special case where image-data-url returns JSON instead of an image
-  const handleLoad = useCallback((e) => {
-    if (imgSrc?.includes('mode=image-data-url') && e.target.naturalWidth === 0) {
-      handleError();
-    }
-  }, [imgSrc, handleError]);
 
   if (hasError || !imgSrc) {
     return (
@@ -128,7 +132,6 @@ export default function SafeMediaImage({ src, alt, style, fallbackEmoji = '🍳'
       decoding="async"
       referrerPolicy="no-referrer"
       onError={handleError}
-      onLoad={handleLoad}
       {...props}
     />
   );
@@ -137,30 +140,43 @@ export default function SafeMediaImage({ src, alt, style, fallbackEmoji = '🍳'
 /**
  * ProxiedImage — Fetches a data URL from the image proxy and renders it.
  * Shows a shimmer skeleton while the proxy fetch is in-flight.
+ *
+ * On 403 / proxy error: immediately shows emoji placeholder (no allorigins retry —
+ * Instagram CDN blocks that too, and retrying causes the 403 console spam).
  */
 function ProxiedImage({ src, originalSrc, alt, style, fallbackEmoji, onFinalError, ...props }) {
   const [dataUrl, setDataUrl] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setFailed(false);
+    setDataUrl(null);
 
     fetch(src)
-      .then(r => r.ok ? r.json() : null)
+      .then(r => {
+        if (!r.ok) {
+          // 403, 404, etc — the CDN token has expired; bail out quietly
+          return null;
+        }
+        return r.json();
+      })
       .then(data => {
         if (cancelled) return;
         if (data?.dataUrl) {
           setDataUrl(data.dataUrl);
         } else {
-          // Proxy returned no data — fall back to allorigins
-          setDataUrl(`https://api.allorigins.win/raw?url=${encodeURIComponent(originalSrc)}`);
+          // Proxy returned no data — show emoji placeholder
+          // (do NOT retry with allorigins for Instagram CDN — it will also fail)
+          setFailed(true);
         }
         setLoading(false);
       })
       .catch(() => {
         if (!cancelled) {
-          setDataUrl(`https://api.allorigins.win/raw?url=${encodeURIComponent(originalSrc)}`);
+          setFailed(true);
           setLoading(false);
         }
       });
@@ -173,7 +189,7 @@ function ProxiedImage({ src, originalSrc, alt, style, fallbackEmoji, onFinalErro
     return <div style={shimmerStyle(style)} aria-hidden="true" />;
   }
 
-  if (!dataUrl) {
+  if (failed || !dataUrl) {
     return (
       <div
         style={{

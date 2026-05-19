@@ -748,6 +748,7 @@ useEffect(() => {
           onClose={() => { setShowImportFor(null); setSharedContent(null); }}
           title={showImportFor === 'drinks' ? 'Import Drink' : 'Import Recipe'}
           sharedContent={sharedContent}
+          initialItemType={showImportFor === 'drinks' ? 'drink' : 'meal'}
         />
       )}
 
