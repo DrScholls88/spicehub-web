@@ -665,26 +665,30 @@ function HangingLantern({ x = 50, flicker = true }) {
   );
 }
 
-function BarStool({ x = 0 }) {
+function BarStool({ active = false }) {
   return (
     <svg
       className="saloon-stool"
-      style={{ left: `${x}px`, imageRendering: 'pixelated' }}
-      width="28" height="44" viewBox="0 0 28 44"
+      style={{ imageRendering: 'pixelated', display: 'block' }}
+      width="28" height="64" viewBox="0 0 28 64"
     >
-      {/* Seat */}
-      <rect x="2" y="0" width="24" height="6" fill="#5d4037" rx="2" />
-      <rect x="3" y="1" width="22" height="3" fill="#795548" rx="1" />
+      {/* Seat cushion — highlighted when active */}
+      <rect x="2" y="0" width="24" height="7" fill={active ? '#8d6e63' : '#5d4037'} rx="2" />
+      <rect x="3" y="1" width="22" height="4" fill={active ? '#a1887f' : '#795548'} rx="1" />
+      {/* Seat highlight rim */}
+      <rect x="3" y="0" width="22" height="1" fill="rgba(255,255,255,0.12)" rx="1" />
       {/* Center post */}
-      <rect x="12" y="6" width="4" height="18" fill="#4e342e" />
-      {/* Foot ring */}
-      <rect x="4" y="20" width="20" height="3" fill="#6d4c41" rx="1" />
-      {/* Legs */}
-      <rect x="5"  y="23" width="3" height="18" fill="#4e342e" />
-      <rect x="20" y="23" width="3" height="18" fill="#4e342e" />
+      <rect x="12" y="7" width="4" height="20" fill="#4e342e" />
+      {/* Mid foot ring */}
+      <rect x="4" y="23" width="20" height="3" fill="#6d4c41" rx="1" />
+      {/* Legs — long enough to reach floor */}
+      <rect x="5"  y="26" width="3" height="34" fill="#4e342e" />
+      <rect x="20" y="26" width="3" height="34" fill="#4e342e" />
+      {/* Leg bracing */}
+      <rect x="8" y="42" width="12" height="2" fill="#3e2723" />
       {/* Foot pads */}
-      <rect x="4"  y="39" width="5" height="3" fill="#3e2723" rx="1" />
-      <rect x="19" y="39" width="5" height="3" fill="#3e2723" rx="1" />
+      <rect x="4"  y="58" width="5" height="4" fill="#3e2723" rx="1" />
+      <rect x="19" y="58" width="5" height="4" fill="#3e2723" rx="1" />
     </svg>
   );
 }
@@ -1581,18 +1585,27 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
           <div className="saloon-fg">
             {/* Pixel-art bar stools — now interactive filter nav */}
             <div className="saloon-stools">
-              {[{filter:'all',label:'ALL',x:'8%'},{filter:'cocktail',label:'CKTL',x:'30%'},{filter:'mocktail',label:'MOCK',x:'53%'},{filter:'recent',label:'NEW',x:'75%'}].map(({filter,label,x}) => (
-                <button
-                  key={filter}
-                  className={`saloon-stool-btn ${stoolFilter === filter ? 'saloon-stool-active' : ''}`}
-                  style={{ left: x }}
-                  onClick={() => { setStoolFilter(filter); setCurrentPage(0); }}
-                  title={`Filter: ${label}`}
-                >
-                  <BarStool x={0} />
-                  <span className="saloon-stool-label">{label}</span>
-                </button>
-              ))}
+              {[
+                {filter:'all',      label:'ALL',  x:'8%' },
+                {filter:'cocktail', label:'CKTL', x:'30%'},
+                {filter:'mocktail', label:'MOCK', x:'53%'},
+                {filter:'recent',   label:'NEW',  x:'75%'},
+              ].map(({filter, label, x}) => {
+                const isActive = stoolFilter === filter;
+                return (
+                  <button
+                    key={filter}
+                    className={`saloon-stool-btn ${isActive ? 'saloon-stool-active' : ''}`}
+                    style={{ left: x }}
+                    onClick={() => { setStoolFilter(filter); setCurrentPage(0); if (navigator.vibrate) navigator.vibrate(15); }}
+                    title={`Filter: ${label}`}
+                    aria-pressed={isActive}
+                  >
+                    <span className="saloon-stool-label">{label}</span>
+                    <BarStool active={isActive} />
+                  </button>
+                );
+              })}
             </div>
 
             {/* Saloon door — occasionally swings open */}
@@ -1788,6 +1801,26 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
             </div>
           </div>
         )}
+<div>
+  {/* ── Empty state ── */} 
+  {filteredDrinks.length === 0 && drinks.length === 0 && ( 
+    <div className="bs-empty-bar"> 
+      <span className="bs-empty-neon">
+        <NeonText text="OPEN" color="#4caf50" />
+      </span> 
+      <p className="bs-empty-msg">
+        Your bar is empty! Add some drinks to stock the shelves.
+      </p> 
+      
+      {onImport && ( 
+        <button className="bs-empty-import-btn" onClick={onImport}> 
+          Import your first drink 
+        </button> 
+      )} 
+    </div> 
+  )} 
+</div>
+
 
         {/* ── Empty state ── */}
         {filteredDrinks.length === 0 && drinks.length === 0 && (

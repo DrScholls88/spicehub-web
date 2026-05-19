@@ -15332,62 +15332,78 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 /* bar-surface/bar-rail rules consolidated into the ── Ensure bs-bar-surface block below */
 
 /* ── Pixel stools ────────────────────────────────────────────────────────── */
+/*
+  Layering contract within .saloon-fg:
+    z:1  saloon-bg (behind everything)
+    z:5  .bs-bar-surface  — bar counter top, clips bartender lower body
+    z:6  .saloon-stools   — stools sit on CUSTOMER SIDE, in front of counter
+    z:7  .bs-bar-rail     — brass foot rail at very front bottom edge
+*/
 .saloon-stools {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
   height: 100%;
+  z-index: 6; /* in front of bar surface so stools appear on customer side */
 }
 
+/* The SVG itself — flows naturally inside the flex button */
 .saloon-stool {
-  position: absolute;
-  bottom: 52px;
+  display: block;
+  flex-shrink: 0;
 }
 
 .saloon-stool-btn {
   position: absolute;
-  bottom: 0;
-  width: 44px;
-  height: 100px;
+  /* seat top (64px SVG) lands at 16+64=80px from fg-bottom,
+     bar surface top is at 78px → seat sits 2px above counter ✓  */
+  bottom: 16px;
+  width: 36px;
+  height: auto;
   background: none;
   border: none;
   padding: 0;
   cursor: pointer;
+  /* label above, stool below */
   display: flex;
   flex-direction: column;
   align-items: center;
-  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  gap: 4px;
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
   -webkit-tap-highlight-color: transparent;
   pointer-events: auto; /* override parent none */
+  outline: none;
 }
 
-.saloon-stool-btn:hover {
-  transform: translateY(-4px) scale(1.05);
+.saloon-stool-btn:hover,
+.saloon-stool-btn:focus-visible {
+  transform: translateY(-5px) scale(1.06);
 }
 
 .saloon-stool-active {
-  transform: translateY(-2px) scale(1.05);
+  transform: translateY(-3px) scale(1.06);
 }
 
-.saloon-stool-active .saloon-stool rect:first-child {
-  fill: #8d6e63 !important; /* highlight seat */
-}
-
+/* Label floats above the stool seat */
 .saloon-stool-label {
-  position: absolute;
-  top: -14px;
   font-family: 'Press Start 2P', monospace;
   font-size: 6px;
   color: #c8a882;
-  opacity: 0.6;
+  opacity: 0.55;
   white-space: nowrap;
   pointer-events: none;
+  letter-spacing: 0.5px;
+  line-height: 1;
+  /* Ensure label is visible above bar counter */
+  position: relative;
+  z-index: 1;
 }
 
 .saloon-stool-active .saloon-stool-label {
   opacity: 1;
   color: #ffd700;
+  text-shadow: 0 0 6px rgba(255, 215, 0, 0.5);
 }
 
 
