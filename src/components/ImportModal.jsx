@@ -95,7 +95,10 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   // itemType — 'meal' | 'drink'. Seeded from initialItemType prop (set by caller), auto-detected
   // from URL + paste text, and user-overridable via the one-tap toggle.
   const [itemType, setItemType] = useState(initialItemType);
-  const [itemTypeUserOverride, setItemTypeUserOverride] = useState(false);
+  // Treat an explicit 'drink' caller context as already-overridden so that
+  // detectImportType cannot silently reset it back to 'meal' when the user
+  // pastes a plain Instagram URL (which has no drink keywords in the path).
+  const [itemTypeUserOverride, setItemTypeUserOverride] = useState(initialItemType === 'drink');
   const [importing, setImporting] = useState(false);
   const [importProgress, setImportProgress] = useState('');
   const [error, setError] = useState('');
@@ -418,8 +421,9 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
         return;
       }
 
-      // Populate Editor synchronously
-      setPreview([result]);
+      // Populate Editor synchronously — tag with item type so preview shows
+      // the correct fields (glass/garnish for drinks, etc.)
+      setPreview([{ ...result, _type: itemType }]);
     } catch (e) {
       setError('Import failed: ' + e.message);
       // Fallback on error
@@ -432,6 +436,16 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     setImporting(false);
     setImportProgress('');
   };
+
+  // ── Cancel an in-flight sync import ──────────────────────────────────────────
+  const handleCancelImport = useCallback(() => {
+    abortRef.current?.abort();
+    stageTimersRef.current.forEach(clearTimeout);
+    setSyncPhase('idle');
+    setSyncStageIdx(0);
+    setImporting(false);
+    setImportProgress('');
+  }, []);
 
   // ── Close handler — always wipes transient import state before closing ──────
   // This prevents state from a previous import attempt bleeding through when the
@@ -581,6 +595,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       directions: parsed.directions.length > 0 ? parsed.directions : [],
       imageUrl: '',
       link: pasteLink.trim() || '',
+      _type: itemType, // respect the Meal/Drink toggle the user has selected
     };
     // If parser couldn't split, put everything in directions
     if (recipe.ingredients.length === 0 && recipe.directions.length === 0) {

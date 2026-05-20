@@ -7444,8 +7444,19 @@ body {
   margin-bottom: 24px;
 }
 
+/* Empty state action buttons — stacked for clarity */
+.bl-empty-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  max-width: 260px;
+}
+
 .bl-btn-primary {
-  padding: 12px 24px;
+  width: 100%;
+  padding: 13px 24px;
   background: linear-gradient(135deg, #7b1fa2, #9c27b0);
   color: white;
   border: none;
@@ -7456,10 +7467,621 @@ body {
   transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s, transform 0.2s;
   -webkit-tap-highlight-color: transparent;
   box-shadow: 0 3px 12px rgba(123, 31, 162, 0.3);
+  min-height: 48px;
 }
 
 .bl-btn-primary:active {
   transform: scale(0.97);
+}
+
+.bl-btn-secondary {
+  width: 100%;
+  padding: 11px 24px;
+  background: transparent;
+  color: var(--text-light);
+  border: 1.5px solid var(--border);
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  min-height: 44px;
+}
+
+.bl-btn-secondary:active {
+  background: var(--bg-subtle, #f5f0e8);
+}
+
+/* ── BarLibrary tile-grid layout (mirrors MealLibrary ml-* pattern) ─────────── */
+
+/* Root wrapper — full-height flex column */
+.bl {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  position: relative;
+}
+
+/* ── Search zone ── */
+.bl-search-zone {
+  padding: 10px 12px 6px;
+  flex-shrink: 0;
+}
+
+.bl-search-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 14px;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.15s;
+  -webkit-appearance: none;
+}
+
+.bl-search-input:focus {
+  border-color: #9c27b0;
+}
+
+.bl-search-input::placeholder {
+  color: var(--text-muted, #aaa);
+}
+
+/* ── Horizontal categories scroll ── */
+.bl-categories-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  flex-shrink: 0;
+  padding: 0 12px 6px;
+}
+
+.bl-categories-scroll::-webkit-scrollbar { display: none; }
+
+.bl-categories-track {
+  display: flex;
+  gap: 6px;
+  width: max-content;
+  padding: 2px 0;
+}
+
+/* Category chip active state (new .bl-cat-active class) */
+.bl-cat-chip.bl-cat-active,
+.bl-cat-chip.active {
+  background: #7b1fa2;
+  color: white;
+  border-color: #7b1fa2;
+}
+
+/* ── Header actions row (My Shelf + ⋯) ── */
+.bl-header-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 4px 12px 4px;
+  flex-shrink: 0;
+}
+
+.bl-header-btn {
+  padding: 6px 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s, transform 0.1s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bl-header-btn:active {
+  transform: scale(0.96);
+  background: var(--bg-subtle, #f5f0e8);
+}
+
+/* ── Multi-select toolbar ── */
+.bl-select-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #7b1fa2;
+  color: white;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 95;
+}
+
+.bl-select-toolbar-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bl-select-toolbar-btn:active {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.bl-select-toolbar-btn:disabled {
+  opacity: 0.4;
+}
+
+.bl-select-delete {
+  background: rgba(255, 60, 60, 0.6);
+}
+
+.bl-select-delete:active {
+  background: rgba(255, 60, 60, 0.8);
+}
+
+.bl-select-count {
+  font-size: 13px;
+  font-weight: 700;
+  flex: 1;
+  text-align: center;
+}
+
+/* ── Tile gallery grid ── */
+.bl-gallery {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  padding: 10px 12px 100px; /* extra bottom padding for FABs */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  flex: 1;
+}
+
+@media (min-width: 500px) {
+  .bl-gallery {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    padding: 12px 16px 100px;
+  }
+}
+
+@media (min-width: 768px) {
+  .bl-gallery {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* ── Individual tile ── */
+.bl-tile {
+  position: relative;
+  background: var(--card);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.07);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+  animation: tileIn 0.3s ease-out backwards;
+  -webkit-tap-highlight-color: transparent;
+  display: flex;
+  flex-direction: column;
+}
+
+.bl-tile:active {
+  transform: scale(0.97);
+}
+
+.bl-tile:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  transform: translateY(-2px);
+}
+
+/* Rarity glow variants */
+.bl-tile-legendary {
+  box-shadow: 0 2px 8px rgba(255, 215, 0, 0.25);
+}
+
+.bl-tile-rare {
+  box-shadow: 0 2px 8px rgba(66, 165, 245, 0.2);
+}
+
+/* Selected state */
+.bl-tile-selected {
+  outline: 3px solid #7b1fa2;
+  outline-offset: -3px;
+  border-radius: 12px;
+}
+
+.bl-tile-selected .bl-tile-image::after {
+  content: '';
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0;
+  background: rgba(123, 31, 162, 0.12);
+  border-radius: 12px 12px 0 0;
+  pointer-events: none;
+}
+
+/* ── Tile image area ── */
+.bl-tile-image {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  background: #1a0a2e;
+  overflow: hidden;
+}
+
+.bl-tile-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.bl-tile-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  background: linear-gradient(135deg, #2d1b4e, #1a0a2e);
+}
+
+/* ── Select checkbox ── */
+.bl-tile-check {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 5;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #7b1fa2;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  border: 2px solid white;
+}
+
+.bl-tile-check:empty {
+  background: rgba(255, 255, 255, 0.7);
+  border: 2px solid rgba(0, 0, 0, 0.25);
+}
+
+/* ── Category tag (overlay on tile image, bottom-left) ── */
+.bl-tile-cat-tag {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #e0b8ff;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  pointer-events: none;
+}
+
+/* ── "Ready to pour" indicator ── */
+.bl-tile-pour {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 16px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
+  pointer-events: none;
+}
+
+/* ── ⋯ menu button (bottom-right of image) ── */
+.bl-tile-menu-btn {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  border: none;
+  font-size: 15px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 3;
+  padding: 0 0 2px 1px;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.bl-tile-menu-btn:active {
+  background: rgba(0, 0, 0, 0.8);
+  transform: scale(0.9);
+}
+
+/* ── Tile info row ── */
+.bl-tile-info {
+  padding: 8px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.bl-tile-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.25;
+}
+
+.bl-tile-meta {
+  font-size: 11px;
+  color: var(--text-light);
+}
+
+.bl-tile-added {
+  font-size: 10px;
+  color: var(--text-muted, #aaa);
+  opacity: 0.8;
+  letter-spacing: 0.2px;
+  display: block;
+  margin-top: 1px;
+}
+
+/* ── FAB group (bar-themed: purple import) ── */
+.bl-fab-group {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  z-index: 95;
+}
+
+.bl-fab {
+  background: var(--primary, #e65100);
+  color: white;
+  border: none;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s, box-shadow 0.2s, transform 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bl-fab-import {
+  padding: 12px 20px;
+  border-radius: 28px;
+  font-size: 15px;
+  gap: 6px;
+  background: linear-gradient(135deg, #6a1b9a, #9c27b0);
+  box-shadow: 0 4px 12px rgba(106, 27, 154, 0.4);
+}
+
+.bl-fab-import:hover {
+  background: linear-gradient(135deg, #4a148c, #7b1fa2);
+  box-shadow: 0 6px 16px rgba(106, 27, 154, 0.5);
+}
+
+.bl-fab-label {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+.bl-fab-add {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  font-size: 28px;
+  background: #9c27b0;
+  box-shadow: 0 4px 12px rgba(156, 39, 176, 0.4);
+}
+
+.bl-fab-add:hover {
+  background: #7b1fa2;
+  box-shadow: 0 6px 16px rgba(156, 39, 176, 0.5);
+}
+
+.bl-fab:active {
+  transform: scale(0.93);
+}
+
+/* ── Quick Preview bottom sheet ── */
+.bl-qp-overlay {
+  position: fixed;
+  top: 0; right: 0; bottom: 0; left: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.bl-qp-sheet {
+  background: var(--card);
+  border-radius: 20px 20px 0 0;
+  width: 100%;
+  max-width: 500px;
+  max-height: 85vh;
+  overflow-y: auto;
+  animation: slideUp 0.25s ease-out;
+  -webkit-overflow-scrolling: touch;
+}
+
+.bl-qp-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: #ccc;
+  margin: 8px auto;
+}
+
+.bl-qp-body {
+  padding: 4px 16px 8px;
+}
+
+.bl-qp-title {
+  font-size: 18px;
+  font-weight: 800;
+  margin: 0 0 10px;
+  color: var(--text);
+}
+
+/* ── Category row in quick preview ── */
+.bl-qp-cat-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.bl-qp-cat-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #9c27b0;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding-top: 4px;
+  white-space: nowrap;
+}
+
+.bl-qp-cat-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  flex: 1;
+}
+
+.bl-qp-cat-chip {
+  padding: 4px 10px;
+  border-radius: 14px;
+  border: 1.5px solid var(--border);
+  background: var(--card);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color 0.12s, border-color 0.12s, color 0.12s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bl-qp-cat-chip:active {
+  transform: scale(0.94);
+}
+
+.bl-qp-cat-chip.active,
+.bl-qp-cat-chip[data-active="true"] {
+  background: #7b1fa2;
+  border-color: #7b1fa2;
+  color: white;
+}
+
+/* ── Ingredients / directions sections ── */
+.bl-qp-section {
+  margin-bottom: 10px;
+}
+
+.bl-qp-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #9c27b0;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 4px;
+}
+
+.bl-qp-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.bl-qp-list li {
+  margin-bottom: 2px;
+}
+
+.bl-qp-more {
+  color: var(--text-light);
+  font-style: italic;
+  list-style: none;
+  margin-left: -18px;
+}
+
+/* ── Action buttons row ── */
+.bl-qp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 0 16px;
+  border-top: 1px solid var(--border);
+  margin-top: 8px;
+}
+
+.bl-qp-btn {
+  flex: 1;
+  min-width: 72px;
+  padding: 10px 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color 0.15s, transform 0.1s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bl-qp-btn:active {
+  transform: scale(0.96);
+  background: var(--bg-subtle, #f5f5f5);
+}
+
+.bl-qp-btn-danger {
+  color: #d32f2f;
+  border-color: #ffcdd2;
+}
+
+.bl-qp-btn-danger:active {
+  background: #ffebee;
+}
+
+/* ── Sheet cancel button ── */
+.bl-sheet-cancel {
+  color: var(--text-light);
 }
 
 /* Desktop enhancements for Bar */
@@ -15696,11 +16318,9 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   gap: 6px;
   align-items: stretch;
   min-width: 0;
-  overflow-x: auto;
-  /* Hide scrollbar on mobile but allow scroll if buttons overflow */
-  scrollbar-width: none;
+  /* Wrap to next row if buttons don't fit — never hide buttons behind scroll */
+  flex-wrap: wrap;
 }
-.ip-smart-bar::-webkit-scrollbar { display: none; }
 
 .ip-smart-btn {
   flex-shrink: 0;
@@ -15723,9 +16343,10 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   opacity: 0.85;
 }
 
-/* Primary: the auto-detected best destination — takes remaining space */
+/* Primary: the auto-detected best destination — takes all available row space */
 .ip-smart-primary {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 130px;   /* never collapse below readable text width */
   font-size: 14px;
   padding: 12px 14px;
 }
@@ -16599,21 +17220,23 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
     padding: 2px 0 8px;
   }
 
-  /* Larger, easier-to-tap footer buttons */
+  /* Footer on narrow phones: tighten further to ensure buttons always on screen */
   .ip-preview-footer {
-    padding: 10px 16px;
-    padding-bottom: calc(10px + env(safe-area-inset-bottom));
-    gap: 8px;
+    padding: 8px 12px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom));
+    gap: 6px;
   }
 
-  .ip-preview-footer .btn-primary {
-    padding: 14px 16px;
-    font-size: 15px;
+  .ip-preview-footer .ip-smart-primary {
+    padding: 12px 14px;
+    font-size: 14px;
+    min-height: 46px;
   }
 
   .ip-preview-footer .btn-secondary {
-    padding: 14px 12px;
+    padding: 10px 10px;
     font-size: 13px;
+    min-height: 44px;
   }
 
   /* Tighten pipeline card on narrow screens */
@@ -16981,43 +17604,62 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   box-shadow: 0 0 0 3px rgba(230, 81, 0, 0.08);
 }
 
-/* ── Preview footer buttons: bolder, finger-friendly ────────────────────── */
+/* ── Preview footer: tighter padding so buttons always fit on screen ─────── */
+/* NOTE: ip-preview-footer is flex-shrink:0 inside ip-preview-screen (flex col) */
+/* Reducing padding here ensures the footer never pushes below 92dvh on mobile. */
 .ip-preview-footer {
-  gap: 12px;
-  padding: 16px 20px;
-  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  gap: 8px;
+  padding: 10px 16px;
+  padding-bottom: calc(10px + env(safe-area-inset-bottom));
+  /* Wrap rows if smart bar buttons overflow — belt-and-suspenders */
+  flex-wrap: wrap;
 }
 
 .ip-preview-footer .btn-secondary {
-  padding: 13px 14px;
-  font-size: 14px;
+  padding: 11px 12px;
+  font-size: 13px;
   font-weight: 600;
   border-radius: 12px;
-  min-height: 48px;
+  min-height: 44px;
   color: var(--text-light);
   background: transparent;
   border: 1.5px solid var(--border);
+  flex-shrink: 0;
 }
 
-.ip-preview-footer .btn-primary {
-  padding: 14px 20px;
-  font-size: 16px;
+/* ip-smart-primary replaces the old .btn-primary in the preview footer */
+.ip-preview-footer .ip-smart-primary {
+  padding: 13px 16px;
+  font-size: 15px;
   font-weight: 700;
   border-radius: 14px;
-  min-height: 52px;
-  background: linear-gradient(135deg, #e65100 0%, #ff6d00 100%);
-  box-shadow: 0 4px 16px rgba(230, 81, 0, 0.3);
-  border: none;
+  min-height: 48px;
   letter-spacing: 0.01em;
-  transition: transform 0.15s, box-shadow 0.15s;
 }
 
-.ip-preview-footer .btn-primary:hover {
+/* ── Bar-flavoured smart primary: crisp purple ─────────────────────────── */
+.ip-preview-footer .ip-smart-btn--bar {
+  background: linear-gradient(135deg, #4a2060 0%, #6b2fa0 100%);
+  box-shadow: 0 4px 16px rgba(74, 32, 96, 0.38);
+}
+.ip-preview-footer .ip-smart-btn--bar:hover {
+  box-shadow: 0 6px 20px rgba(74, 32, 96, 0.5);
+}
+.ip-preview-footer .ip-smart-btn--bar:active {
+  transform: scale(0.97);
+  box-shadow: 0 2px 8px rgba(74, 32, 96, 0.28);
+}
+
+/* ── Meals-flavoured smart primary: warm orange ─────────────────────────── */
+.ip-preview-footer .ip-smart-btn--meals {
+  background: linear-gradient(135deg, #e65100 0%, #ff6d00 100%);
+  box-shadow: 0 4px 16px rgba(230, 81, 0, 0.3);
+}
+.ip-preview-footer .ip-smart-btn--meals:hover {
   transform: translateY(-1px);
   box-shadow: 0 6px 20px rgba(230, 81, 0, 0.4);
 }
-
-.ip-preview-footer .btn-primary:active {
+.ip-preview-footer .ip-smart-btn--meals:active {
   transform: scale(0.97);
   box-shadow: 0 2px 8px rgba(230, 81, 0, 0.25);
 }
