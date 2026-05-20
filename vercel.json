@@ -1,8 +1,8 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "name": "spicehub-web",
-  "buildCommand": "npm ci --include=dev && npm run build",
-  "installCommand": "npm ci --include=dev",
+  "buildCommand": "npm install --legacy-peer-deps && npm run build",
+  "installCommand": "npm install --legacy-peer-deps",
   "outputDirectory": "dist",
   "framework": "vite",
   "env": {
