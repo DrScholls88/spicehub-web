@@ -785,26 +785,37 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     e.target.value = '';
   };
 
-  const confirmImport = () => {
+  // destination: 'auto' | 'drinks' | 'meals' | 'grocery' | 'week'
+  // 'auto' defers to showImportFor in App.jsx (the default pre-share behaviour)
+  const confirmImport = (destination = 'auto') => {
     if (!preview) return;
     // Accept any recipe that has a name, real content, or is a side-dish addendum.
-    // Empty name is fine — we fall back to "Untitled Recipe" below.
-    // This prevents cleanRecipe()'s placeholder-title stripping from silently dropping valid recipes.
     const valid = preview.filter(m =>
       m && (m.name || m._isAddendum || (m.ingredients?.length > 0) || (m.directions?.length > 0))
     );
     if (!valid.length) return;
-    onImport(valid.map(m => ({
+    const recipes = valid.map(m => ({
       ...m,
       name: m.name || (m._isAddendum ? (m._addendumLabel || 'Side Dish') : 'Untitled Recipe'),
-      // For drinks: directions are optional (a simple cocktail may just have ingredients)
-      // Use generic fallbacks only when truly empty so the DB never gets undefined fields
       ingredients: m.ingredients?.length ? m.ingredients : [],
       directions: m.directions?.length ? m.directions : [],
       notes: m.notes || '',
       importedAt: m.importedAt || new Date().toISOString(),
-    })));
+    }));
+    // Pass destination to App.jsx handleImport; 'auto' means use showImportFor default
+    onImport(recipes, destination === 'auto' ? undefined : destination);
   };
+
+  // ── Detect if the current preview looks like a drink recipe ──────────────
+  // Used by the Smart Action Bar to highlight the most-likely correct destination.
+  const DRINK_RX = /\b(cocktail|drink|bar\b|bartend|beer|wine|whiskey|whisky|bourbon|vodka|rum\b|gin\b|tequila|mezcal|margarita|martini|negroni|mojito|spritz|mocktail|mixolog|booze|aperol|campari|daiquiri|paloma|highball|sour\b|mule\b|sling\b|punch\b|nightcap|bitters|liqueur|schnapps)\b/i;
+  const previewLooksDrink = preview?.length > 0 && (
+    DRINK_RX.test(preview[0]?.name || '') ||
+    DRINK_RX.test((preview[0]?.ingredients || []).join(' ')) ||
+    DRINK_RX.test(preview[0]?.notes || '') ||
+    DRINK_RX.test(sharedContent?.title || '') ||
+    DRINK_RX.test(sharedContent?.text || '')
+  );
 
   // ── Drag and drop handlers for reordering ingredients/directions ────────────
   const handleDragStart = (field, index, recipeIdx, e) => {
@@ -1350,7 +1361,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
           {/* end preview-scroll-content */}
 
           <div className="ip-preview-footer">
-            <button className="btn-secondary" onClick={() => {
+            <button className="btn-secondary ip-back-btn" onClick={() => {
               setPreview(null);
               setUrl('');
               setImporting(false);
@@ -1360,9 +1371,84 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
               setSocialDetected(null);
               setError('');
             }}>← Back</button>
-            <button className="btn-primary" onClick={confirmImport}>
-              Save to Library
-            </button>
+
+            {/* ── Smart Action Bar ──────────────────────────────────────────
+                From a share: show all destinations so user can one-tap route.
+                Normal import: show Save + a secondary "Send to Bar/Meals" toggle.
+             ────────────────────────────────────────────────────────────────── */}
+            <div className="ip-smart-bar">
+              {sharedContent?.isShare ? (
+                /* Share context — full destination palette */
+                <>
+                  {/* Primary: the auto-detected likely-correct destination */}
+                  <button
+                    className={`ip-smart-btn ip-smart-primary ${previewLooksDrink ? 'ip-smart-btn--bar' : 'ip-smart-btn--meals'}`}
+                    onClick={() => confirmImport(previewLooksDrink ? 'drinks' : 'meals')}
+                    title={previewLooksDrink ? 'Save to The Bar' : 'Save to Meal Library'}
+                  >
+                    {previewLooksDrink ? '🍸 Save to Bar' : '✓ Save to Library'}
+                  </button>
+
+                  {/* Secondary: the other library destination */}
+                  <button
+                    className="ip-smart-btn ip-smart-secondary"
+                    onClick={() => confirmImport(previewLooksDrink ? 'meals' : 'drinks')}
+                    title={previewLooksDrink ? 'Save to Meals instead' : 'Save to The Bar instead'}
+                  >
+                    {previewLooksDrink ? '🍳 → Meals' : '🍸 → Bar'}
+                  </button>
+
+                  {/* Utility: add ingredients to grocery */}
+                  <button
+                    className="ip-smart-btn ip-smart-grocery"
+                    onClick={() => confirmImport('grocery')}
+                    title="Add ingredients to Grocery List"
+                  >
+                    🛒 Grocery
+                  </button>
+
+                  {/* Utility: save + slot into this week (meals only) */}
+                  {!previewLooksDrink && (
+                    <button
+                      className="ip-smart-btn ip-smart-week"
+                      onClick={() => confirmImport('week')}
+                      title="Save and add to this week's plan"
+                    >
+                      📅 This Week
+                    </button>
+                  )}
+                </>
+              ) : (
+                /* Normal import — simple Save + optional secondary routing */
+                <>
+                  <button
+                    className={`ip-smart-btn ip-smart-primary ${initialItemType === 'drink' ? 'ip-smart-btn--bar' : 'ip-smart-btn--meals'}`}
+                    onClick={() => confirmImport('auto')}
+                  >
+                    {initialItemType === 'drink' ? '🍸 Save to Bar' : '✓ Save to Library'}
+                  </button>
+                  {/* If it's a meal import but looks like a drink (or vice versa), offer the switch */}
+                  {initialItemType === 'meal' && previewLooksDrink && (
+                    <button
+                      className="ip-smart-btn ip-smart-secondary"
+                      onClick={() => confirmImport('drinks')}
+                      title="Looks like a drink — save to The Bar instead"
+                    >
+                      🍸 → Bar
+                    </button>
+                  )}
+                  {initialItemType === 'drink' && !previewLooksDrink && (
+                    <button
+                      className="ip-smart-btn ip-smart-secondary"
+                      onClick={() => confirmImport('meals')}
+                      title="Looks like a meal — save to Library instead"
+                    >
+                      🍳 → Meals
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
           </div>
         </div>/* end ip-preview-screen */
         ) : (

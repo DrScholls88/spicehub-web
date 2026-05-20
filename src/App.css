@@ -15662,15 +15662,15 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   display: flex;
   gap: 10px;
   align-items: center;
-  padding: 12px 20px;
+  padding: 12px 16px;
   padding-bottom: calc(12px + env(safe-area-inset-bottom));
   background: var(--card);
   border-top: 1.5px solid var(--border);
   box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.05);
-  /* z-index not needed — normal flow keeps it above list */
 }
 
-.ip-preview-footer .btn-secondary {
+.ip-preview-footer .btn-secondary,
+.ip-back-btn {
   flex-shrink: 0;
   white-space: nowrap;
 }
@@ -15682,8 +15682,102 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   padding: 14px 20px;
   border-radius: 14px;
   letter-spacing: 0.01em;
-  /* Ensure it can never be wider than screen */
   min-width: 0;
+}
+
+/* ── Smart Action Bar ───────────────────────────────────────────────────────
+   The row of destination buttons shown in the preview footer after a parse.
+   On share-target: full palette (Bar / Meals / Grocery / This Week).
+   On normal import: primary Save + optional smart-switch button.
+───────────────────────────────────────────────────────────────────────────── */
+.ip-smart-bar {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  align-items: stretch;
+  min-width: 0;
+  overflow-x: auto;
+  /* Hide scrollbar on mobile but allow scroll if buttons overflow */
+  scrollbar-width: none;
+}
+.ip-smart-bar::-webkit-scrollbar { display: none; }
+
+.ip-smart-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 2px solid transparent;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.13s ease, opacity 0.13s ease, box-shadow 0.13s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.ip-smart-btn:active {
+  transform: scale(0.95);
+  opacity: 0.85;
+}
+
+/* Primary: the auto-detected best destination — takes remaining space */
+.ip-smart-primary {
+  flex: 1;
+  font-size: 14px;
+  padding: 12px 14px;
+}
+
+/* Meals flavour of primary */
+.ip-smart-btn--meals {
+  background: var(--accent, #e65100);
+  color: #fff;
+  box-shadow: 0 3px 10px rgba(230, 81, 0, 0.28);
+  border-color: transparent;
+}
+.ip-smart-btn--meals:hover { box-shadow: 0 4px 14px rgba(230, 81, 0, 0.38); }
+
+/* Bar flavour of primary */
+.ip-smart-btn--bar {
+  background: #4a2060;
+  color: #e0b8ff;
+  box-shadow: 0 3px 10px rgba(74, 32, 96, 0.35);
+  border-color: #7b3fb5;
+}
+.ip-smart-btn--bar:hover { box-shadow: 0 4px 14px rgba(74, 32, 96, 0.5); }
+
+/* Secondary: the alternative library destination */
+.ip-smart-secondary {
+  background: var(--bg, #fff8f0);
+  color: var(--text, #222);
+  border-color: var(--border, #ddd);
+}
+.ip-smart-secondary:hover {
+  background: var(--border, #eee);
+}
+
+/* Utility: Grocery */
+.ip-smart-grocery {
+  background: #e8f5e9;
+  color: #2e7d32;
+  border-color: #a5d6a7;
+}
+.ip-smart-grocery:hover { background: #c8e6c9; }
+
+/* Utility: This Week */
+.ip-smart-week {
+  background: #e3f2fd;
+  color: #1565c0;
+  border-color: #90caf9;
+}
+.ip-smart-week:hover { background: #bbdefb; }
+
+@media (max-width: 380px) {
+  /* Very narrow screens: shrink labels to icons + short text */
+  .ip-smart-btn { padding: 10px 8px; font-size: 12px; }
+  .ip-smart-primary { font-size: 13px; }
 }
 
 /* ── Pipeline loading container ─────────────────────────────────────────── */

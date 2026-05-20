@@ -106,6 +106,16 @@ registerRoute(
 //   1. OS sends POST /share-target with multipart/form-data
 //   2. This handler extracts params, redirects to /?share-target=1&url=...
 //   3. App.jsx detects ?share-target param and auto-opens ImportModal
+//
+// Text blobs from share sheets often look like:
+//   "Check this out!\nhttps://www.instagram.com/p/XYZ/"
+// We extract the first valid URL from the text when the url field is empty.
+function _swExtractUrl(str) {
+  if (!str) return '';
+  const m = str.match(/https?:\/\/[^\s<>"']+/);
+  return m ? m[0].replace(/[.,!?)]+$/, '') : ''; // strip trailing punctuation
+}
+
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
@@ -113,13 +123,19 @@ self.addEventListener('fetch', (event) => {
     event.respondWith((async () => {
       try {
         const formData = await event.request.formData();
-        const sharedUrl = formData.get('url') || formData.get('text') || '';
+        const rawText  = formData.get('text')  || '';
+        const rawUrl   = formData.get('url')   || '';
+        // Prefer an explicit url param; fall back to extracting from text blob
+        const sharedUrl   = rawUrl || _swExtractUrl(rawText) || rawText;
         const sharedTitle = formData.get('title') || '';
+        // Pass the original text blob so App.jsx can use it as a fallback caption
+        const sharedText  = rawText && rawText !== sharedUrl ? rawText : '';
 
         const params = new URLSearchParams();
         params.append('share-target', '1');
-        if (sharedUrl) params.append('url', sharedUrl);
+        if (sharedUrl)   params.append('url',   sharedUrl);
         if (sharedTitle) params.append('title', sharedTitle);
+        if (sharedText)  params.append('text',  sharedText);
 
         return Response.redirect(`/?${params.toString()}`, 303);
       } catch (err) {
