@@ -11379,7 +11379,8 @@ body {
 .bs-topbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: 14px;
   padding: 10px 16px;
   padding-top: env(safe-area-inset-top);
   flex-shrink: 0;
@@ -11454,6 +11455,47 @@ body {
   letter-spacing: 0.5px;
 }
 
+.bs-chiptune-btn,
+.bs-fillshelf-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: none;
+  border: 2px solid #80deea;
+  padding: 6px 10px;
+  color: #80deea;
+  font-size: 14px;
+  cursor: pointer;
+  font-family: 'Press Start 2P', monospace;
+  min-height: 40px;
+  min-width: 52px;
+  border-radius: 0;
+  transition: background 0.15s, transform 0.15s, box-shadow 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bs-fillshelf-btn {
+  border-color: #d4a574;
+  color: #f5e6c8;
+}
+
+.bs-chiptune-btn:active,
+.bs-fillshelf-btn:active {
+  transform: scale(0.96);
+}
+
+.bs-chiptune-on {
+  background: rgba(128, 222, 234, 0.12);
+  box-shadow: inset 0 0 0 2px rgba(128, 222, 234, 0.12);
+}
+
+.bs-chiptune-label,
+.bs-fillshelf-label {
+  font-size: 5px;
+  letter-spacing: 0.5px;
+}
+
 /* ── Surprise Me button ── */
 .bs-surprise-btn {
   display: flex;
@@ -11481,6 +11523,87 @@ body {
   font-size: 5px;
   color: #ffd700;
   letter-spacing: 0.5px;
+}
+
+.bs-pixel-icon {
+  position: relative;
+  display: block;
+  width: 18px;
+  height: 18px;
+  image-rendering: pixelated;
+  flex-shrink: 0;
+}
+
+.bs-pixel-icon-die {
+  background: #f5e6c8;
+  border: 2px solid #ffd700;
+  box-shadow: inset -3px -3px 0 rgba(0, 0, 0, 0.22);
+}
+
+.bs-pixel-icon-die::before,
+.bs-pixel-icon-die::after {
+  content: '';
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  background: #2a1400;
+  box-shadow: 8px 8px 0 #2a1400;
+}
+
+.bs-pixel-icon-die::before { top: 3px; left: 3px; }
+.bs-pixel-icon-die::after  { right: 3px; bottom: 3px; }
+
+.bs-pixel-icon-note::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 2px;
+  width: 4px;
+  height: 13px;
+  background: #80deea;
+  box-shadow: 7px -2px 0 #80deea;
+}
+
+.bs-pixel-icon-note::after {
+  content: '';
+  position: absolute;
+  left: 1px;
+  bottom: 1px;
+  width: 7px;
+  height: 5px;
+  background: #80deea;
+  box-shadow: 7px -2px 0 #80deea;
+}
+
+.bs-pixel-icon-speaker {
+  border-left: 7px solid #80deea;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  margin-top: 3px;
+}
+
+.bs-pixel-icon-speaker::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 1px;
+  width: 5px;
+  height: 10px;
+  border-right: 2px solid #80deea;
+  border-top: 2px solid #80deea;
+  border-bottom: 2px solid #80deea;
+}
+
+.bs-pixel-icon-scroll::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 2px;
+  width: 11px;
+  height: 14px;
+  background: #f5e6c8;
+  border: 2px solid #d4a574;
+  box-shadow: inset 0 4px 0 rgba(139, 105, 20, 0.22);
 }
 
 /* ── Surprise Me speech bubble extras ── */
@@ -11614,6 +11737,8 @@ body {
 .bs-title {
   font-size: 14px;
   margin: 0;
+  flex-shrink: 0;
+  min-width: 92px;
 }
 
 .bs-neon-text {
@@ -11625,6 +11750,8 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
+  flex-shrink: 0;
+  min-width: 52px;
 }
 
 .bs-count-num {
@@ -12155,7 +12282,7 @@ body {
     #4e342e 70%,
     #3e2723 100%
   );
-  border-top: 3px solid #a1887f;   /* polished edge highlight */
+  border-top: 6px solid #a1887f;   /* polished edge highlight */
   box-shadow:
     inset 0 8px 24px rgba(0, 0, 0, 0.5),
     inset 0 -2px 8px rgba(0, 0, 0, 0.3),
@@ -12163,7 +12290,7 @@ body {
   bottom: 0;
   left: 0;
   right: 0;
-  height: 78px; /* counter lip — clips bartender's lower body */
+  height: 110px; /* chest-high counter lip clips bartender's lower body */
   z-index: 5;
   overflow: hidden;
 }
@@ -12220,6 +12347,82 @@ body {
   border-radius: 1px;
   top: 12px;
   right: 10%;
+}
+
+.bs-tip-jar {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  width: 48px;
+  height: 58px;
+  transform: translateX(-50%);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  z-index: 12;
+  pointer-events: auto;
+  image-rendering: pixelated;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bs-tip-jar:focus-visible {
+  outline: 2px solid #ffd700;
+  outline-offset: 3px;
+}
+
+.bs-tip-jar:active {
+  transform: translateX(-50%) translateY(1px) scale(0.96);
+}
+
+.bs-tip-jar-svg {
+  position: absolute;
+  left: 3px;
+  bottom: 0;
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.45));
+}
+
+.bs-tip-coin-slot {
+  position: absolute;
+  left: 17px;
+  top: 3px;
+  width: 14px;
+  height: 3px;
+  background: #2a1400;
+  z-index: 2;
+}
+
+.bs-tip-coin {
+  position: absolute;
+  left: 20px;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+  background: #ffd166;
+  border: 2px solid #b8860b;
+  z-index: 4;
+  animation: bsTipCoinDrop 0.58s steps(5) both;
+}
+
+.bs-tip-count {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  min-width: 13px;
+  height: 10px;
+  padding: 2px 3px;
+  background: #2a1400;
+  color: #ffd166;
+  border: 1px solid #8b6914;
+  font-size: 5px;
+  line-height: 1;
+}
+
+@keyframes bsTipCoinDrop {
+  0%   { transform: translateY(-20px); opacity: 0; }
+  20%  { opacity: 1; }
+  72%  { transform: translateY(10px); opacity: 1; }
+  100% { transform: translateY(16px); opacity: 0; }
 }
 
 /* Brass foot rail — inside bs-bar-top, below the counter */
@@ -12716,6 +12919,29 @@ body {
 }
 
 .bs-action-view:active { background: rgba(255, 64, 129, 0.25); }
+
+.bs-action-madeit {
+  border-color: #ffd166;
+  color: #ffd166;
+  background: rgba(255, 209, 102, 0.1);
+}
+
+.bs-action-madeit:active {
+  background: rgba(255, 209, 102, 0.24);
+}
+
+.bs-tipsy-notice {
+  margin-top: 10px;
+  color: #ffd166;
+  font-size: 7px;
+  line-height: 1.5;
+  text-align: center;
+  opacity: 0.85;
+}
+
+.bs-tipsy .saloon-stage {
+  filter: saturate(1.08);
+}
 
 /* Swipe hint */
 .bs-detail-swipe-hint {
@@ -15782,9 +16008,10 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   position: relative;
   flex: 1;
   width: 100%;
-  min-height: 420px;
+  min-height: 430px;
   background: #1a0f0a;
   overflow: hidden;
+  isolation: isolate;
 }
 
 /* ── Layer 1: Background ─────────────────────────────────────────────────── */
@@ -15929,14 +16156,14 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 
 .saloon-mid .bs-bartender-wrap {
   position: absolute;
-  bottom: 52px;
+  bottom: 60px;
   z-index: 2; /* aligned with layering contract */
 }
 
 /* Quips layer — positioned absolutely, left driven by JS spring */
 .saloon-mid .bs-quips-layer {
   position: absolute;
-  bottom: 100px;
+  bottom: 144px;
   z-index: 100;
 }
 
@@ -15946,7 +16173,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   bottom: 0;
   left: 0;
   right: 0;
-  height: 190px;
+  height: 212px;
   z-index: 3;
   pointer-events: none;
 }
@@ -15958,8 +16185,8 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   Layering contract within .saloon-fg:
     z:1  saloon-bg (behind everything)
     z:5  .bs-bar-surface  — bar counter top, clips bartender lower body
-    z:6  .saloon-stools   — stools sit on CUSTOMER SIDE, in front of counter
-    z:7  .bs-bar-rail     — brass foot rail at very front bottom edge
+    z:7  .bs-bar-rail     — brass foot rail at the counter edge
+    z:8  .saloon-stools   — stools sit on CUSTOMER SIDE, in front of counter
 */
 .saloon-stools {
   position: absolute;
@@ -15967,21 +16194,22 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   left: 0;
   right: 0;
   height: 100%;
-  z-index: 6; /* in front of bar surface so stools appear on customer side */
+  z-index: 8; /* in front of bar surface so stools appear on customer side */
 }
 
 /* The SVG itself — flows naturally inside the flex button */
 .saloon-stool {
   display: block;
   flex-shrink: 0;
+  width: 34px;
+  height: 78px;
+  image-rendering: pixelated;
 }
 
 .saloon-stool-btn {
   position: absolute;
-  /* seat top (64px SVG) lands at 16+64=80px from fg-bottom,
-     bar surface top is at 78px → seat sits 2px above counter ✓  */
-  bottom: 16px;
-  width: 36px;
+  bottom: 8px;
+  width: 42px;
   height: auto;
   background: none;
   border: none;
@@ -16000,26 +16228,27 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 
 .saloon-stool-btn:hover,
 .saloon-stool-btn:focus-visible {
-  transform: translateY(-5px) scale(1.06);
+  transform: translateY(-6px) scale(1.07);
 }
 
 .saloon-stool-active {
-  transform: translateY(-3px) scale(1.06);
+  transform: translateY(-4px) scale(1.07);
 }
 
 /* Label floats above the stool seat */
 .saloon-stool-label {
   font-family: 'Press Start 2P', monospace;
-  font-size: 6px;
+  font-size: 7px;
   color: #c8a882;
-  opacity: 0.55;
+  opacity: 0.72;
   white-space: nowrap;
   pointer-events: none;
   letter-spacing: 0.5px;
   line-height: 1;
   /* Ensure label is visible above bar counter */
   position: relative;
-  z-index: 1;
+  z-index: 2;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.8);
 }
 
 .saloon-stool-active .saloon-stool-label {
