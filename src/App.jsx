@@ -269,20 +269,30 @@ export default function App() {
     localStorage.setItem('pwa-install-dismissed', '1');
   };
 
+// ── Shared-content drink detection helper ────────────────────────────────────
+// Returns true if the URL / title / text looks like a cocktail / drink post.
+// Used to auto-route shares to the Bar instead of the Meal library.
+const DRINK_KEYWORDS_RX = /\b(cocktail|drink|bar\b|bartend|beer|wine|whiskey|whisky|bourbon|vodka|rum\b|gin\b|tequila|mezcal|margarita|martini|negroni|mojito|spritz|mocktail|mixolog|booze|seltzer|cider|mead|sake|liqueur|schnapps|aperol|campari|baileys|kahlua|triple\s*sec|bitters|pour\s*over|pour-over|on\s+the\s+rocks|neat\b|craft\s+beer|ipa\b|lager|ale\b|stout|porter\b|sour\b|daiquiri|paloma|mule\b|sling\b|punch\b|highball|lowball|nightcap|happy\s*hour)\b/i;
+
+function _looksLikeDrink(url, title, text) {
+  return DRINK_KEYWORDS_RX.test(url || '') ||
+         DRINK_KEYWORDS_RX.test(title || '') ||
+         DRINK_KEYWORDS_RX.test(text || '');
+}
+
 // Handle Share Target (Android + PWA)
 // Supports both GET (legacy) and POST (via sw.js redirect) methods
 useEffect(() => {
   const params = new URLSearchParams(window.location.search);
   if (params.has('share-target')) {
-    // Prefer 'url' param, fall back to 'text' (can be either a URL or description)
-    const sharedUrl = params.get('url') || params.get('text') || '';
+    const sharedUrl   = params.get('url')   || '';
     const sharedTitle = params.get('title') || '';
+    const sharedText  = params.get('text')  || '';
+    const target = _looksLikeDrink(sharedUrl, sharedTitle, sharedText) ? 'drinks' : 'meals';
     if (sharedUrl) {
-      // Auto-open import modal and pass shared URL into ImportModal via sharedContent
-      setImportModalKey(k => k + 1); // force fresh ImportModal state
-      setShowImportFor('meals');
-      setSharedContent({ mode: 'url', url: sharedUrl, title: sharedTitle });
-      // Clean URL so refreshing doesn't re-trigger
+      setImportModalKey(k => k + 1);
+      setShowImportFor(target);
+      setSharedContent({ mode: 'url', url: sharedUrl, title: sharedTitle, text: sharedText, isShare: true });
       window.history.replaceState({}, '', window.location.pathname);
     }
   }
@@ -296,13 +306,15 @@ useEffect(() => {
   const handler = (e) => {
     const detail = e?.detail;
     if (!detail || (!detail.url && !detail.text)) return;
+    const target = _looksLikeDrink(detail.url, detail.title, detail.text) ? 'drinks' : 'meals';
     setImportModalKey(k => k + 1);
-    setShowImportFor('meals');
+    setShowImportFor(target);
     setSharedContent({
       mode: detail.mode || (detail.url ? 'url' : 'text'),
       url: detail.url || '',
       text: detail.text || '',
       title: detail.title || '',
+      isShare: true,
     });
   };
   window.addEventListener('spicehub:share-import', handler);
@@ -488,41 +500,89 @@ useEffect(() => {
     if (navigator.vibrate) navigator.vibrate([30, 20, 30]);
   }, [showToast]);
 
-  // ── Import handler — routes to meals or drinks table ─────────────────────────
-  const handleImport = useCallback(async (imported) => {
-    const target = showImportFor;
+  // ── Import handler — routes to meals, drinks, grocery, or week ──────────────
+  // destination overrides showImportFor and is set by the Smart Action Bar
+  // in ImportModal when the user taps "→ Bar", "→ Grocery", or "→ This Week".
+  const handleImport = useCallback(async (imported, destination) => {
+    const target = destination || showImportFor;
     setShowImportFor(null);
+    setSharedContent(null);
 
+    const real = imported.filter(r => r.name);
+
+    // ── Grocery destination ────────────────────────────────────────────────────
+    // Merges recipe ingredients into the grocery list without saving to the library.
+    if (target === 'grocery') {
+      if (!real.length) return;
+      const storeMemory = window._storeMemory || {};
+      setGroceryItems(prev => {
+        const existingKeys = new Set(prev.map(i => i.name.toLowerCase().trim()));
+        const newItems = real.flatMap(r => (r.ingredients || []))
+          .filter(ing => ing && !existingKeys.has(ing.toLowerCase().trim()))
+          .map(ing => ({
+            name: ing,
+            checked: false,
+            store: storeMemory[ing.toLowerCase().trim()] || '',
+            tag: 'imported',
+          }));
+        return [...prev, ...newItems];
+      });
+      const name = real.length === 1 ? (real[0].name || 'Recipe') : `${real.length} recipes`;
+      showToast(`Ingredients from "${name}" added to Grocery`);
+      setTab('grocery');
+      return;
+    }
+
+    // ── Week destination ───────────────────────────────────────────────────────
+    // Saves the recipe AND places it into the first empty day of the current week.
+    if (target === 'week') {
+      try {
+        for (const r of imported) {
+          if (r.id && !r.name && !r.ingredients) continue;
+          await db.meals.put(r);
+        }
+        await loadMeals();
+        // Place first real recipe into the first empty slot
+        if (real.length > 0) {
+          setWeekPlan(prev => {
+            const updated = [...prev];
+            const firstEmpty = updated.findIndex(d => !d);
+            if (firstEmpty !== -1) updated[firstEmpty] = real[0];
+            return updated;
+          });
+        }
+      } catch (err) {
+        console.error('[handleImport] DB write failed (week):', err);
+      }
+      const name = real.length === 1 ? (real[0].name || 'Recipe') : `${real.length} recipes`;
+      showToast(`"${name}" saved and added to this week`);
+      setTab('week');
+      return;
+    }
+
+    // ── Library destination (meals or drinks) ─────────────────────────────────
     // Ghost rows (from V2 optimistic path) arrive with an `id` already set in Dexie.
-    // Normal recipes have no `id` yet — Dexie auto-generates it.
     // We use put() for everything: it upserts, so ghost rows re-save harmlessly
     // and new recipes get inserted. add() would throw ConstraintError on ghost refs.
     try {
       for (const r of imported) {
-        // Skip bare ghost-row references ({id} only) — row is already in DB.
-        // These have no name/ingredients and would clobber the real ghost row data.
         if (r.id && !r.name && !r.ingredients) continue;
-
         if (target === 'drinks') { await db.drinks.put(r); }
         else { await db.meals.put(r); }
       }
     } catch (err) {
       console.error('[handleImport] DB write failed:', err);
     } finally {
-      // Always reload — ensures ghost rows created before onImport also appear,
-      // and that a DB error doesn't leave the library stale.
       if (target === 'drinks') { await loadDrinks(); }
       else { await loadMeals(); }
     }
 
-    // Only show toast for recipes that actually had content
-    const real = imported.filter(r => r.name);
     if (!real.length) return;
     const count = real.length;
     const noun = target === 'drinks' ? (count === 1 ? 'drink' : 'drinks') : (count === 1 ? 'recipe' : 'recipes');
     const name = count === 1 ? (real[0].name || 'Recipe') : `${count} ${noun}`;
-    showToast(`Added ${name} to ${target === 'drinks' ? 'The Bar' : 'your library'}`);
-  }, [showImportFor, loadMeals, loadDrinks, showToast]);
+    showToast(`Added ${name} to ${target === 'drinks' ? 'The Bar 🍸' : 'your library'}`);
+  }, [showImportFor, loadMeals, loadDrinks, showToast, setGroceryItems, setWeekPlan, setTab]);
 
   // ── Cook Mode ────────────────────────────────────────────────────────────────
   const startCookMode = useCallback((meal, scaleFactor = 1.0) => {
