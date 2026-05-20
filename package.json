@@ -16,6 +16,7 @@
     "test:e2e": "playwright test tests/e2e"
   },
   "dependencies": {
+    "@capacitor/core": "^8.3.4",
     "@capgo/capacitor-share-target": "^8.0.29",
     "@google/genai": "^1.48.0",
     "@google/generative-ai": "^0.21.0",
