@@ -176,11 +176,120 @@ function BarbackDisplay({ selectedDrink, isPresenting, customMarquee, onOpenMarq
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// SWINGING WOODEN SHINGLE — replaces the LED marquee board
+// Clickable to rename the bar; sways gently on a CSS animation
+// ══════════════════════════════════════════════════════════════════════════════
+function SwingingShingle({ barName, onClickShingle }) {
+  const displayName = (barName || 'SPICEHUB SALOON').toUpperCase().slice(0, 22);
+  return (
+    <div
+      className="bs-shingle-wrap"
+      onClick={onClickShingle}
+      role="button"
+      tabIndex={0}
+      aria-label="Rename your bar"
+      onKeyDown={e => e.key === 'Enter' && onClickShingle?.()}
+    >
+      {/* Pixel chain links */}
+      <div className="bs-shingle-chains" aria-hidden="true">
+        <svg className="bs-shingle-chain bs-shingle-chain--left" width="8" height="22" viewBox="0 0 8 22" style={{ imageRendering: 'pixelated' }}>
+          <rect x="2" y="0"  width="4" height="4" fill="#8b6914" rx="1" />
+          <rect x="2" y="5"  width="4" height="4" fill="#c8a882" rx="1" />
+          <rect x="2" y="10" width="4" height="4" fill="#8b6914" rx="1" />
+          <rect x="2" y="15" width="4" height="4" fill="#c8a882" rx="1" />
+        </svg>
+        <svg className="bs-shingle-chain bs-shingle-chain--right" width="8" height="22" viewBox="0 0 8 22" style={{ imageRendering: 'pixelated' }}>
+          <rect x="2" y="0"  width="4" height="4" fill="#8b6914" rx="1" />
+          <rect x="2" y="5"  width="4" height="4" fill="#c8a882" rx="1" />
+          <rect x="2" y="10" width="4" height="4" fill="#8b6914" rx="1" />
+          <rect x="2" y="15" width="4" height="4" fill="#c8a882" rx="1" />
+        </svg>
+      </div>
+      {/* Wooden board */}
+      <div className="bs-shingle-board">
+        <div className="bs-shingle-inner">
+          <span className="bs-shingle-star" aria-hidden="true">★</span>
+          <span className="bs-shingle-text">{displayName}</span>
+          <span className="bs-shingle-star" aria-hidden="true">★</span>
+        </div>
+        <span className="bs-shingle-sub" aria-hidden="true">FINE SPIRITS  ✦  EST. 8-BIT</span>
+        <span className="bs-shingle-edit-hint" aria-hidden="true">tap to rename</span>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// WALL CHALKBOARD — back wall, shows "Today's Special" based on inventory
+// ══════════════════════════════════════════════════════════════════════════════
+function WallChalkboard({ specialDrink, onClick }) {
+  const drinkName = specialDrink
+    ? specialDrink.name.toUpperCase().slice(0, 16)
+    : '???';
+  const ingredients = specialDrink
+    ? (specialDrink.ingredients || []).slice(0, 3).join(' · ').slice(0, 28)
+    : 'add bottles to\nsee specials!';
+
+  return (
+    <button
+      className="wall-chalkboard"
+      onClick={onClick}
+      aria-label="Today's special chalkboard — click for bartender reaction"
+    >
+      <div className="chalkboard-frame">
+        <div className="chalkboard-surface">
+          <div className="chalk-header">TODAY&apos;S<br/>SPECIAL</div>
+          <div className="chalk-divider" />
+          <div className="chalk-drink-name">{drinkName}</div>
+          <div className="chalk-ingredients">{ingredients}</div>
+          {/* Chalk corner decorations */}
+          <div className="chalk-corner chalk-corner--tl" aria-hidden="true" />
+          <div className="chalk-corner chalk-corner--tr" aria-hidden="true" />
+          <div className="chalk-corner chalk-corner--bl" aria-hidden="true" />
+          <div className="chalk-corner chalk-corner--br" aria-hidden="true" />
+        </div>
+      </div>
+    </button>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// WALL BOUNTY BOARD — back wall, shows "WANTED" parchment posters for
+// the most-needed missing ingredients
+// ══════════════════════════════════════════════════════════════════════════════
+function WallBountyBoard({ bounties, onClickBounty }) {
+  if (!bounties || bounties.length === 0) return null;
+  return (
+    <div className="wall-bounty-board" aria-label="Wanted board for missing ingredients">
+      <div className="bounty-board-header" aria-hidden="true">⚑ WANTED ⚑</div>
+      <div className="bounty-posters">
+        {bounties.slice(0, 2).map((b, i) => (
+          <button
+            key={i}
+            className="bounty-poster"
+            onClick={() => onClickBounty?.(b)}
+            aria-label={`Wanted: ${b.ingredient} for ${b.drinkName}`}
+          >
+            <div className="bounty-poster-label">WANTED</div>
+            <div className="bounty-ingredient">
+              {b.ingredient.toUpperCase().slice(0, 10)}
+            </div>
+            <div className="bounty-reward">
+              REWARD:<br />{(b.drinkName || '?').slice(0, 9)}
+            </div>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // PIXEL ART BARTENDER
 // States: idle | walking | grabbing | presenting | returning
 //         swigwalk | swigging | swigreturn | polishing | tipping | dozing | shaking | surprised
 // ══════════════════════════════════════════════════════════════════════════════
-function PixelBartender({ state, holdingBottle, facingRight, swigBottle, swigQuip }) {
+function PixelBartender({ state, holdingBottle, facingRight, swigBottle, swigQuip, isDancing }) {
   const flip = facingRight ? '' : 'scale(-1,1)';
   const isWalking   = ['walking', 'returning', 'swigwalk', 'swigreturn'].includes(state);
   const isGrabbing  = state === 'grabbing';
@@ -195,12 +304,14 @@ function PixelBartender({ state, holdingBottle, facingRight, swigBottle, swigQui
 
   return (
     <svg
+      overflow="visible"
       width="120" height="168" viewBox="0 0 40 56"
       className={[
         'bs-bartender-svg',
         isWalking   ? 'bs-bt-walk'        : '',
         isPresenting ? 'bs-bt-present'    : '',
         isSwigging  ? 'bs-bt-swig-bounce' : '',
+        isDancing   ? 'bs-bt-dance'       : '',
       ].join(' ')}
       style={{ imageRendering: 'pixelated' }}
     >
@@ -901,6 +1012,14 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
   const [chiptuneOn, setChiptuneOn] = useState(false);
   const [drinksMade, setDrinksMade] = useState(0);
   const [tipsCollected, setTipsCollected] = useState(0);
+
+  // ── New personality features ───────────────────────────────────────────────
+  const [isPolishingFast, setIsPolishingFast] = useState(false);
+  const [secretCocktailActive, setSecretCocktailActive] = useState(false);
+  const [secretFlash, setSecretFlash] = useState(false);
+  // Bottle flip: 'none' | 'up' | 'catch' | 'crash'
+  const [flipState, setFlipState] = useState('none');
+  const [flipX, setFlipX] = useState('50%');
   const [tipCoinNonce, setTipCoinNonce] = useState(0);
   const [stoolFilter, setStoolFilter] = useState('all');
   const [showMarqueeModal, setShowMarqueeModal] = useState(false);
@@ -955,6 +1074,15 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
   const afkTimerRef      = useRef(null);
   const chiptuneStopRef  = useRef(null);
 
+  // ── New personality refs ──────────────────────────────────────────────────
+  const secretSeqRef       = useRef([]);    // tracks ['top', 'bottom'] sequence
+  const secretTimerRef     = useRef(null);  // 8s window reset
+  const rapidClickCountRef = useRef(0);
+  const rapidClickTimerRef = useRef(null);
+  const polishFastTimerRef = useRef(null);
+  const flipTimerRef       = useRef(null);
+  const prevDrinkCountRef  = useRef(null);  // detects new bottle additions
+
   // ── Happy Hour check (every 60 s) ──────────────────────────────────────────
   useEffect(() => {
     const check = () => setIsHappyHour(getTimeContext().isHappyHour);
@@ -962,12 +1090,34 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
     return () => clearInterval(id);
   }, []);
 
-  // ── Tap bartender 5× for joke ─────────────────────────────────────────────
+  // ── Tap bartender 5× for joke — also completes Secret Pour sequence ──────
   const handleBartenderTap = useCallback(() => {
+    // ── Secret Pour Combination: top-shelf → bottom-shelf → bartender tap ──
+    if (
+      secretSeqRef.current.length === 2 &&
+      secretSeqRef.current[0] === 'top' &&
+      secretSeqRef.current[1] === 'bottom'
+    ) {
+      clearTimeout(secretTimerRef.current);
+      secretSeqRef.current = [];
+      setSecretCocktailActive(true);
+      setSecretFlash(true);
+      setIdleQuipText("★ THE PROHIBITION SPECIAL ★");
+      setBartenderState('presenting');
+      if (navigator.vibrate) navigator.vibrate([30, 15, 30, 15, 60]);
+      setTimeout(() => setSecretFlash(false), 1500);
+      setTimeout(() => {
+        setSecretCocktailActive(false);
+        setBartenderState('idle');
+      }, 4500);
+      return;
+    }
+
+    // ── Regular tap: 5× joke easter egg ──────────────────────────────────
     setTapCount(prev => {
       const next = prev + 1;
       clearTimeout(tapTimerRef.current);
-      tapTimerRef.current = setTimeout(() => setTapCount(0), 3000); // reset after 3s idle
+      tapTimerRef.current = setTimeout(() => setTapCount(0), 3000);
       if (next >= 5) {
         const joke = sample(BAD_JOKES);
         setJokeText(joke);
@@ -977,7 +1127,6 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
       }
       return next;
     });
-    // Haptic tap
     if (navigator.vibrate) navigator.vibrate(15);
   }, []);
 
@@ -1080,6 +1229,40 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
     setTimeout(() => setBartenderState('idle'), 900);
   }, []);
 
+  // ── Chalkboard click: bartender walks left to comment on Today's Special ──
+  const handleChalkClick = useCallback(() => {
+    if (bartenderState !== 'idle') return;
+    const barWidth = barTopRef.current?.clientWidth || 320;
+    const targetX = barWidth * 0.18 - 30;
+    setBartenderState('walking');
+    walkToRef.current?.(targetX, () => {
+      setBartenderState('idle');
+      setIdleQuipText(
+        specialDrink
+          ? `Today I recommend the ${specialDrink.name}! Classic choice, partner.`
+          : "Stock up those shelves and I'll write something special!"
+      );
+    });
+    if (navigator.vibrate) navigator.vibrate(15);
+  }, [bartenderState, specialDrink]);
+
+  // ── Bounty board click: bartender walks right to comment on wanted ingredient
+  const handleBountyClick = useCallback((bounty) => {
+    if (bartenderState !== 'idle') return;
+    const barWidth = barTopRef.current?.clientWidth || 320;
+    const targetX = barWidth * 0.68 - 30;
+    setBartenderState('walking');
+    walkToRef.current?.(targetX, () => {
+      setBartenderState('idle');
+      setIdleQuipText(
+        bounty
+          ? `You'll need ${bounty.ingredient} to unlock the ${bounty.drinkName}!`
+          : "Wanted: more bottles on these shelves, partner!"
+      );
+    });
+    if (navigator.vibrate) navigator.vibrate(15);
+  }, [bartenderState]);
+
   // Cleanup — all timers cleared on unmount
   useEffect(() => () => {
     clearTimeout(behaviorTimerRef.current);
@@ -1095,6 +1278,10 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
     clearTimeout(tipTimerRef.current);
     clearTimeout(spotlightTimerRef.current);
     clearTimeout(afkTimerRef.current);
+    clearTimeout(secretTimerRef.current);
+    clearTimeout(rapidClickTimerRef.current);
+    clearTimeout(polishFastTimerRef.current);
+    clearTimeout(flipTimerRef.current);
   }, []);
 
   // ── Generic walk helper (stable ref prevents stale closure in rAF loops) ────
@@ -1179,6 +1366,39 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
     }, delay);
     return () => clearTimeout(pourTimerRef.current);
   }, [bartenderState, selectedDrink]);
+
+  // ── Today's Special: drink with highest ingredient match in current inventory
+  const specialDrink = useMemo(() => {
+    if (drinks.length === 0 || barInventory.length === 0) return null;
+    const inv = barInventory.map(i => (typeof i === 'string' ? i : (i.name || '')).toLowerCase());
+    let best = null;
+    let bestScore = -1;
+    for (const d of drinks) {
+      const { score } = matchIngredients(d.ingredients || [], inv);
+      if (score > bestScore) { bestScore = score; best = d; }
+    }
+    return best;
+  }, [drinks, barInventory]);
+
+  // ── Bounties: top 2 most-wanted missing ingredients across all drinks
+  const bounties = useMemo(() => {
+    if (drinks.length === 0) return [];
+    const inv = barInventory.map(i => (typeof i === 'string' ? i : (i.name || '')).toLowerCase());
+    const freq = {};
+    const drinkName = {};
+    for (const d of drinks) {
+      const { missing } = matchIngredients(d.ingredients || [], inv);
+      for (const ing of missing) {
+        const k = ing.toLowerCase();
+        freq[k] = (freq[k] || 0) + 1;
+        if (!drinkName[k]) drinkName[k] = d.name;
+      }
+    }
+    return Object.entries(freq)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 2)
+      .map(([ingredient, count]) => ({ ingredient, drinkName: drinkName[ingredient], count }));
+  }, [drinks, barInventory]);
 
   // ── Filtering logic (Stool Navigation) ────────────────────────────────────
   const filteredDrinks = useMemo(() => {
@@ -1422,6 +1642,74 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
     return () => clearTimeout(afkTimerRef.current);
   }, [bartenderState, selectedDrink]);
 
+  // ── Bottle flip easter egg (1% chance when a new drink is added) ──────────
+  useEffect(() => {
+    if (prevDrinkCountRef.current === null) {
+      prevDrinkCountRef.current = drinks.length;
+      return;
+    }
+    if (drinks.length > prevDrinkCountRef.current) {
+      prevDrinkCountRef.current = drinks.length;
+      if (Math.random() < 0.01) {
+        const isCatch = Math.random() < 0.8;
+        // Pick a random X position for the flip (roughly middle of bar area)
+        const barWidth = barTopRef.current?.clientWidth || 320;
+        const xPx = barWidth * (0.3 + Math.random() * 0.4);
+        setFlipX(`${xPx}px`);
+        setFlipState('up');
+        setBartenderState('shaking');
+
+        flipTimerRef.current = setTimeout(() => {
+          setFlipState(isCatch ? 'catch' : 'crash');
+          if (!isCatch) {
+            // Minimal Web Audio crash burst
+            try {
+              const ctx = new (window.AudioContext || window.webkitAudioContext)();
+              const buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.35), ctx.sampleRate);
+              const d = buf.getChannelData(0);
+              for (let i = 0; i < d.length; i++) {
+                d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (ctx.sampleRate * 0.06));
+              }
+              const src = ctx.createBufferSource();
+              src.buffer = buf;
+              const filt = ctx.createBiquadFilter();
+              filt.type = 'highpass';
+              filt.frequency.value = 900;
+              src.connect(filt);
+              filt.connect(ctx.destination);
+              src.start();
+              src.onended = () => ctx.close();
+            } catch {}
+            setIdleQuipText("Oops... didn't see that coming.");
+          } else {
+            setIdleQuipText("Caught it! Like I meant to do that.");
+          }
+          flipTimerRef.current = setTimeout(() => {
+            setFlipState('none');
+            setBartenderState('idle');
+          }, 2000);
+        }, 850);
+      }
+    } else {
+      prevDrinkCountRef.current = drinks.length;
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drinks.length]);
+
+  // ── Rapid activity tracking — used by container onClick ───────────────────
+  const trackRapidClick = useCallback(() => {
+    rapidClickCountRef.current += 1;
+    clearTimeout(rapidClickTimerRef.current);
+    rapidClickTimerRef.current = setTimeout(() => {
+      if (rapidClickCountRef.current >= 3) {
+        setIsPolishingFast(true);
+        clearTimeout(polishFastTimerRef.current);
+        polishFastTimerRef.current = setTimeout(() => setIsPolishingFast(false), 3000);
+      }
+      rapidClickCountRef.current = 0;
+    }, 1400);
+  }, []);
+
   // ── Page navigation ────────────────────────────────────────────────────────
   const goToPage = useCallback((newPage) => {
     if (newPage < 0 || newPage >= totalPages || newPage === currentPage) return;
@@ -1437,8 +1725,23 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
   }, [totalPages, currentPage, bartenderState]);
 
   // ── Bottle tap ─────────────────────────────────────────────────────────────
-  const handleBottleTap = useCallback((drink) => {
+  const handleBottleTap = useCallback((drink, shelfIdx) => {
     if (bartenderState !== 'idle' && bartenderState !== 'presenting') return;
+
+    // ── Secret sequence tracking (top-shelf → bottom-shelf → bartender) ──
+    // shelfIdx 0 = top row, shelfIdx 2 = bottom row of 3-shelf display
+    if (shelfIdx === 0) {
+      secretSeqRef.current = ['top'];
+      clearTimeout(secretTimerRef.current);
+      secretTimerRef.current = setTimeout(() => { secretSeqRef.current = []; }, 8000);
+    } else if (shelfIdx === 2 && secretSeqRef.current[0] === 'top') {
+      secretSeqRef.current = ['top', 'bottom'];
+      clearTimeout(secretTimerRef.current);
+      secretTimerRef.current = setTimeout(() => { secretSeqRef.current = []; }, 8000);
+    } else {
+      // Any other click breaks the sequence
+      secretSeqRef.current = [];
+    }
 
     // Cancel any pending swig
     clearTimeout(swigTimerRef.current);
@@ -1509,14 +1812,15 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
   // ──────────────────────────────────────────────────────────────────────────
   return (
     <div className="bs-overlay" onClick={onClose}>
-      <div className={`bs-container ${isHappyHour ? 'bs-happy-hour' : ''} ${drinksMade >= 3 ? 'bs-tipsy' : ''}`}
-  style={{ 
-    height: '100%', 
-    overflow: 'hidden',
-    display: 'flex',
-    flexDirection: 'column'
-  }}
-  onClick={e => e.stopPropagation()}
+      <div
+  className={[
+    'bs-container',
+    isHappyHour ? 'bs-happy-hour' : '',
+    drinksMade >= 3 ? 'bs-tipsy' : '',
+    isPolishingFast ? 'bs-polishing-fast' : '',
+  ].filter(Boolean).join(' ')}
+  style={{ height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+  onClick={e => { e.stopPropagation(); trackRapidClick(); }}
 >
 
         {/* ── Top bar ── */}
@@ -1589,7 +1893,20 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
             <div className="bs-ambient-right" />
           </div>
 
-          {/* ── LAYER 2: Mid — shelves, bartender, LED board ── */}
+          {/* ── LAYER 1.5: Back wall boards — chalkboard & bounty board ── */}
+          {/* Sits between saloon-bg (z:1) and saloon-mid (z:2) */}
+          <div className="saloon-boards">
+            <WallChalkboard
+              specialDrink={specialDrink}
+              onClick={handleChalkClick}
+            />
+            <WallBountyBoard
+              bounties={bounties}
+              onClickBounty={handleBountyClick}
+            />
+          </div>
+
+          {/* ── LAYER 2: Mid — shelves, bartender, shingle ── */}
           <div className="saloon-mid">
             {/* Lantern glow tracks bartender with spring lag */}
             <div
@@ -1601,12 +1918,10 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
               aria-hidden="true"
             />
 
-            {/* LED menu board */}
-            <BarbackDisplay
-              selectedDrink={selectedDrink}
-              isPresenting={bartenderState === 'presenting'}
-              customMarquee={customMarquee}
-              onOpenMarquee={() => { setShowMarqueeModal(true); if (navigator.vibrate) navigator.vibrate(15); }}
+            {/* Swinging wooden shingle — replaces LED marquee */}
+            <SwingingShingle
+              barName={customMarquee}
+              onClickShingle={() => { setShowMarqueeModal(true); if (navigator.vibrate) navigator.vibrate(15); }}
             />
 
             {/* Paginated bottle shelves */}
@@ -1625,7 +1940,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
                               key={drink.id}
                               ref={el => { if (el) bottleSlotsRef.current[drink.id] = el; }}
                               className={`bs-bottle-slot ${isSelected ? 'bs-selected' : ''} bs-bottle-${rarity}`}
-                              onClick={() => handleBottleTap(drink)}
+                              onClick={() => handleBottleTap(drink, shelfIdx)}
                               title={drink.name}
                             >
                               <div className="bs-bottle-idle" style={{ opacity: isSelected && holdingBottle ? 0.2 : 1 }}>
@@ -1661,7 +1976,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
 
             {/* Bartender behind the bar — tappable for easter eggs */}
             <div
-              className="bs-bartender-wrap"
+              className={`bs-bartender-wrap${secretFlash ? ' bs-secret-flash' : ''}`}
               style={{
                 transform: `translateX(${bartenderX}px)`,
                 transition: bartenderState === 'idle' ? 'transform 0.3s ease' : 'none',
@@ -1677,8 +1992,46 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
                 facingRight={facingRight}
                 swigBottle={swigBottle}
                 swigQuip={swigQuip}
+                isDancing={chiptuneOn && bartenderState === 'idle'}
               />
+              {/* ZZZ floating particles during doze */}
+              {bartenderState === 'dozing' && (
+                <div className="bs-zzzz-wrap" aria-hidden="true">
+                  <span className="bs-zzzz-z" style={{ '--idx': 0, '--delay': '0s' }}>z</span>
+                  <span className="bs-zzzz-z" style={{ '--idx': 1, '--delay': '0.7s' }}>z</span>
+                  <span className="bs-zzzz-z" style={{ '--idx': 2, '--delay': '1.4s' }}>z</span>
+                </div>
+              )}
+              {/* Floating pixel music notes when chiptune is playing */}
+              {chiptuneOn && (
+                <div className="bs-music-notes" aria-hidden="true">
+                  <span className="bs-music-note" style={{ '--idx': 0, '--delay': '0s' }}>♪</span>
+                  <span className="bs-music-note" style={{ '--idx': 1, '--delay': '0.55s' }}>♫</span>
+                  <span className="bs-music-note" style={{ '--idx': 2, '--delay': '1.1s' }}>♩</span>
+                </div>
+              )}
             </div>
+
+            {/* Bottle flip overlay (rare easter egg when adding a drink) */}
+            {flipState !== 'none' && (
+              <div className="bs-flip-wrap" aria-hidden="true">
+                <div
+                  className={`bs-flip-bottle bs-flip-${flipState === 'up' ? 'up' : flipState === 'catch' ? 'catch' : 'crash'}`}
+                  style={{ '--flip-x': flipX, left: flipX, transform: 'translateX(-50%)' }}
+                />
+                {flipState === 'crash' && (
+                  <div className="bs-flip-shards" style={{ '--flip-x': flipX }} />
+                )}
+                {(flipState === 'catch' || flipState === 'crash') && (
+                  <div
+                    className={`bs-flip-badge bs-flip-badge--${flipState}`}
+                    style={{ '--flip-x': flipX }}
+                  >
+                    {flipState === 'catch' ? '✓ CAUGHT' : '✕ OOPS'}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Quips layer — spring elastic lag so bubbles trail the bartender */}
             {(() => {
@@ -1695,17 +2048,31 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
                   className="bs-quips-layer"
                   style={{
                     left: `${bartenderX}px`,
-                    bottom: '180px',
                     transition: 'left 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
                   }}
                 >
-                  {/* Joke easter egg (tap 5x) */}
+                  {/* ── Wake "!" exclamation (surprised without a joke) ── */}
+                  {bartenderState === 'surprised' && !jokeText && !surpriseResult && !secretCocktailActive && (
+                    <div className={`bs-bt-speech bs-bt-speech-wake ${bubbleDir}`}>
+                      <span className="bs-wake-exclaim">!</span>
+                    </div>
+                  )}
+
+                  {/* ── Secret Pour Combination unlock ── */}
+                  {secretCocktailActive && (
+                    <div className={`bs-bt-speech bs-bt-speech-secret ${bubbleDir}`} style={{ maxWidth: 'min(260px, 65vw)' }}>
+                      <span>★ PROHIBITION SPECIAL ★</span>
+                      <span className="bs-secret-sub">Top-shelf locked recipe unlocked!</span>
+                    </div>
+                  )}
+
+                  {/* ── Joke easter egg (tap 5x) ── */}
                   {jokeText && (
                     <div className={`bs-bt-speech bs-bt-speech-joke ${bubbleDir}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
                       <span>{jokeText}</span>
                     </div>
                   )}
-                  {/* Surprise Me result */}
+                  {/* ── Surprise Me result ── */}
                   {surpriseResult && !selectedDrink && (
                     <div className={`bs-bt-speech bs-bt-speech-surprise ${bubbleDir}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
                       <span>Special: {surpriseResult.name}</span>
@@ -1719,7 +2086,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
                       )}
                     </div>
                   )}
-                  {bartenderState === 'presenting' && selectedDrink && !jokeText && !surpriseResult && (
+                  {bartenderState === 'presenting' && selectedDrink && !jokeText && !surpriseResult && !secretCocktailActive && (
                     <div className={`bs-bt-speech ${bubbleDir}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
                       <span>Here ya go!</span>
                     </div>
@@ -1734,7 +2101,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
                       <span>{spotlightQuip || idleQuipText}</span>
                     </div>
                   )}
-                  {bartenderState === 'idle' && !selectedDrink && !jokeText && !surpriseResult && (
+                  {bartenderState === 'idle' && !selectedDrink && !jokeText && !surpriseResult && !secretCocktailActive && (
                     <div className={`bs-bt-speech bs-bt-speech-idle ${bubbleDir}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
                       <span>{spotlightQuip || idleQuipText}</span>
                     </div>
@@ -1760,16 +2127,22 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
               </div>
             )}
 
-            {/* Bar counter surface sits on top of everything */}
+            {/* Bar counter surface — split left/gap/right so bartender can walk through */}
             <div className="bs-bar-surface">
-              <div className="bs-bar-coaster bs-bar-coaster-1" />
-              <div className="bs-bar-coaster bs-bar-coaster-2" />
-              <div className="bs-bar-napkin" />
-              <PixelTipJar
-                tipsCollected={tipsCollected}
-                coinNonce={tipCoinNonce}
-                onTip={handleTipJar}
-              />
+              <div className="bs-bar-seg-l">
+                <div className="bs-bar-coaster bs-bar-coaster-1" />
+                <div className="bs-bar-napkin" />
+              </div>
+              {/* Walkthrough gap — bartender's legs show here */}
+              <div className="bs-bar-gap" aria-hidden="true" />
+              <div className="bs-bar-seg-r">
+                <div className="bs-bar-coaster bs-bar-coaster-2" />
+                <PixelTipJar
+                  tipsCollected={tipsCollected}
+                  coinNonce={tipCoinNonce}
+                  onTip={handleTipJar}
+                />
+              </div>
             </div>
             <div className="bs-bar-rail" />
 
