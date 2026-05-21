@@ -1,90 +1,181 @@
-That 8-bit bartender sprite is fantastic—the bowler hat and handlebar mustache absolutely sell the old-school saloon vibe. Giving him more personality will make the "My Bar" shelf feel like a living, breathing digital hangout rather than just a static inventory page.
-
-Here is a treasure trove of era-appropriate quips, dynamic antics, and interactive features to breathe some pixelated life into your saloon keeper.
-
-💬 The Bartender's Dialogue Tree
-To keep things dynamic, you can rotate his text bubbles based on the state of the app or what the user is doing.
-
-1. Idle & Ambient Musings
-These trigger randomly every 30–60 seconds if the user is just hanging out on the page.
-
-"Keep your muddy boots off the digital counter, partner."
-
-"Wiping down this bar is 90% of my code."
-
-"We don't serve water here unless it's frozen and clinking against glass."
-
-"You look like someone who appreciates a stiff pixel."
-
-"Gold rush outside, flavor rush inside."
-
-"I've seen things... mostly just empty glasses, but still."
-
-"My mustache is perfectly calibrated to 8-bit precision."
-
-2. Contextual Reactions
-Tie these directly to your existing UI elements to make him feel reactive.
-
-Trigger Event	What He Says
-Shelf is totally empty	
-• "Tumbleweeds are blowing through my top shelf..."
-
-
-• "A dry bar is a sad bar. Drop some bottles in!"
-
-Clicking SURPRISE	
-• "Wild West roulette, coming right up!"
-
-
-• "Let’s see where the spinner lands..."
-
-Clicking TUNE	
-• "Ah, some honky-tonk melodies to soothe the pixels."
-
-
-• "Turning up the player piano!"
-
-Adding a rare/top-shelf bottle	
-• "Ooh, the fancy stuff. Mind if I sneak a sip?"
-
-
-• "Now we're running a classy establishment."
-
-Spamming clicks on the Bartender	
-• "Hey, watch the vest! It’s dry-clean only."
-
-
-• "Need a drink, or are you just testing my hitbox?"
-
-🏃 Quirky Antics & Sprite Micro-Animations
-If you are using sprite sheets or basic CSS transformations, these visual cues can happen automatically.
-
-The Sleepy Saloon (AFK Idle): If the user doesn't move their mouse or click anything for 2 minutes, the bartender’s head drops, eyes close, and little 8-bit zZz pixels float up from his hat. Moving the mouse "wakes" him up with a startled exclamation mark ! over his head.
-
-The Polishing Speedup: His default animation can be the classic rag-wipe. If the user starts scrolling or clicking buttons rapidly, his wiping animation speed doubles to look like he’s panicking or getting overwhelmed by orders.
-
-The Flawed Bottle Flip: Rarely (maybe a 1% chance when adding a bottle), trigger an animation where he throws a bottle into the air. 80% of the time he catches it and flashes a grin; 20% of the time it crashes off-screen with a classic low-fi glass smash sound effect, and he looks around guiltily.
-
-The Tip-of-the-Hat: Whenever a user successfully logs a drink or completes a recipe, the bartender does a quick 3-frame hat-tip animation.
-
-🕹️ Interactive Features to Implement
-If you want to give the user more things to fiddle with right inside the saloon view, try these mechanics:
-
-1. The Interactive "Tip Jar"
-Add a tiny pixel-art jar right next to him on the bar.
-
-How it works: Clicking it drops an 8-bit coin inside with a high-pitched ding! sound.
-
-The Payoff: Tipping him makes him instantly drop a unique piece of bartender wisdom, a secret cocktail tip, or triggers a small shower of pixel confetti. You could even keep a "Tips Collected" counter in local storage just for fun.
-
-2. The "Bad Batch" Toxic Shaker
-Let users drag an ingredient directly onto the bartender sprite instead of the shelf.
-
-The Payoff: If they feed him something normal, he smiles. If they feed him something mismatched (like mixing hot sauce and milk), his sprite turns bright green, his eyes bug out, and he says, "Oof... that's got a kick like a pixelated mule."
-
-3. A Hidden "Secret Pour" Combination
-Create a classic Konami-code easter egg or a specific sequence of clicking the shelves.
-
-The Payoff: If someone clicks the top shelf, bottom shelf, then the bartender's hat, he slides an exclusive "Secret Menu" cocktail into their inventory that can't be unlocked any other way.
-
 Are you planning to handle these extra behaviors mostly through CSS/state-based sprite swaps, or are you looking to write a custom React hook to manage his mood and dialogue cycles?
+
+Going with both is absolutely the right call.
+
+Using a custom React hook to act as the "brain" (managing timers, state, and text updates) combined with CSS classes to handle the "body" (the sprite-sheet animations) keeps your component clean, performant, and incredibly easy to scale.
+
+Here is a blueprint for how you can wire up a useBartender hook to drive your 8-bit companion's mood and animations.
+
+🧠 The Brain: The useBartender Hook
+This hook manages the bartender's current mood, the active quip, and handles an internal idle timer that puts him to sleep if the user goes AFK.
+
+JavaScript
+import { useState, useEffect, useCallback, useRef } from 'react';
+
+const QUIPS = {
+  idle: [
+    "Keep your muddy boots off the digital counter, partner.",
+    "Wiping down this bar is 90% of my code.",
+    "My mustache is perfectly calibrated to 8-bit precision."
+  ],
+  sleeping: ["zZz...", "Hrrrk... *snort*...", "v_1.0.199... zZz..."],
+  excited: ["Wild West roulette, coming right up!", "Let's see where the spinner lands!"],
+  shocked: ["Hey, watch the vest! It’s dry-clean only.", "Need a drink, or just testing my hitbox?"]
+};
+
+export function useBartender(bottleCount) {
+  const [mood, setMood] = useState('idle');
+  const [quip, setQuip] = useState("Welcome to SpiceHub, partner.");
+  const idleTimer = useRef(null);
+
+  // Helper to pick a random line from a mood category
+  const getRandomQuip = (currentMood) => {
+    const lines = QUIPS[currentMood] || QUIPS.idle;
+    return lines[Math.floor(Math.random() * lines.length)];
+  };
+
+  // Reset the idle timer whenever the user does something
+  const resetIdleTimer = useCallback(() => {
+    if (idleTimer.current) clearTimeout(idleTimer.current);
+    
+    // If they were sleeping, wake them up!
+    setMood((prev) => {
+      if (prev === 'sleeping') {
+        setQuip("GAH! I'm awake! I was just... checking the floorboards.");
+        return 'idle';
+      }
+      return prev;
+    });
+
+    // Set a 45-second timer to fall asleep
+    idleTimer.current = setTimeout(() => {
+      setMood('sleeping');
+      setQuip(getRandomQuip('sleeping'));
+    }, 45000); 
+  }, []);
+
+  // Trigger specific interactive events from the UI
+  const triggerEvent = useCallback((eventType) => {
+    resetIdleTimer();
+    
+    if (eventType === 'SURPRISE') {
+      setMood('excited');
+      setQuip(getRandomQuip('excited'));
+    } else if (eventType === 'POKE') {
+      setMood('shocked');
+      setQuip(getRandomQuip('shocked'));
+    }
+
+    // Snap back to normal idle behavior after 3 seconds
+    setTimeout(() => {
+      setMood('idle');
+    }, 3000);
+  }, [resetIdleTimer]);
+
+  // Ambient ambient chatter (every 20 seconds if idle)
+  useEffect(() => {
+    const ambientInterval = setInterval(() => {
+      if (mood === 'idle') {
+        setQuip(getRandomQuip('idle'));
+      }
+    }, 20000);
+
+    return () => clearInterval(ambientInterval);
+  }, [mood]);
+
+  // Start idle timer on mount and cleanup on unmount
+  useEffect(() => {
+    resetIdleTimer();
+    return () => {
+      if (idleTimer.current) clearTimeout(idleTimer.current);
+    };
+  }, [resetIdleTimer]);
+
+  // Contextual text check: If the shelf becomes completely empty
+  useEffect(() => {
+    if (bottleCount === 0) {
+      setQuip("Tumbleweeds are blowing through my top shelf... Drop some bottles in!");
+    }
+  }, [bottleCount]);
+
+  return { mood, quip, triggerEvent, resetIdleTimer };
+}
+🩻 The Body: JSX & CSS Sprite Sheet Swapping
+Now, use the mood string returned by the hook as a dynamic class name. This lets your CSS dictate which frame coordinates of your sprite sheet to play.
+
+The React Component
+JavaScript
+import React from 'react';
+import { useBartender } from './hooks/useBartender';
+
+export function SaloonBar({ bottles }) {
+  const { mood, quip, triggerEvent, resetIdleTimer } = useBartender(bottles.length);
+
+  return (
+    <div className="saloon-container" onMouseMove={resetIdleTimer} onClick={resetIdleTimer}>
+      
+      {/* Dialogue Bubble */}
+      <div className={`speech-bubble bubble-${mood}`}>
+        <p>{quip}</p>
+      </div>
+
+      {/* The Bartender Sprite */}
+      <div 
+        className={`bartender-sprite ${mood}`} 
+        onClick={() => triggerEvent('POKE')}
+      />
+
+      {/* Example Button Interacting with Hook */}
+      <button onClick={() => triggerEvent('SURPRISE')}>
+        🎲 SURPRISE
+      </button>
+
+    </div>
+  );
+}
+The CSS Blueprint
+Assuming your sprite sheet has animations laid out in clean rows or columns:
+
+CSS
+/* Base sprite layout */
+.bartender-sprite {
+  width: 64px; /* Size of one frame */
+  height: 64px;
+  background-image: url('/assets/bartender-spritesheet.png');
+  background-repeat: no-repeat;
+  image-rendering: pixelated; /* Keeps the 8-bit crispness */
+}
+
+/* Row 1: Idle Wiping Animation */
+.bartender-sprite.idle {
+  animation: wipeBar 1s steps(4) infinite;
+}
+
+/* Row 2: Excited/Pouring Animation */
+.bartender-sprite.excited {
+  background-position-y: -64px; 
+  animation: pourDrink 0.5s steps(3) infinite;
+}
+
+/* Row 3: Shocked Animation */
+.bartender-sprite.shocked {
+  background-position-y: -128px;
+  animation: shakeVest 0.2s steps(2) infinite;
+}
+
+/* Row 4: Sleeping Animation */
+.bartender-sprite.sleeping {
+  background-position-y: -192px;
+  animation: slowNod 2s steps(2) infinite;
+}
+
+/* Keyframe example mapping to X-coordinates on the sheet */
+@keyframes wipeBar {
+  from { background-position-x: 0px; }
+  to { background-position-x: -256px; } /* 4 frames * 64px */
+}
+🚀 Why this combination shines:
+Performance: The React hook only triggers a re-render when a state actually changes (text updates or mood swaps). The heavy lifting of the 8-bit frame-by-frame animation runs purely on the GPU via CSS transitions.
+
+Global Integration: If you have an audio player connected to that TUNE button, you can easily pass a isPlayingMusic boolean into the hook to give him a unique dancing animation when the honky-tonk piano kicks in.
+

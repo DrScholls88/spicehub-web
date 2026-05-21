@@ -16156,14 +16156,14 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 
 .saloon-mid .bs-bartender-wrap {
   position: absolute;
-  bottom: 60px;
+  bottom: 72px; /* bar-surface 110px; bartender 168px tall → 110-72=38px of lower body hidden behind counter */
   z-index: 2; /* aligned with layering contract */
 }
 
 /* Quips layer — positioned absolutely, left driven by JS spring */
 .saloon-mid .bs-quips-layer {
   position: absolute;
-  bottom: 144px;
+  bottom: 156px; /* bartender hat ~72+168-14=226px; place bubbles just below hat */
   z-index: 100;
 }
 
@@ -16208,7 +16208,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 
 .saloon-stool-btn {
   position: absolute;
-  bottom: 8px;
+  bottom: 28px; /* raised so stool seats visually rest against the counter front edge (bar-surface top ~110px; stool height 78px → seat at 28+78=106px ≈ counter top) */
   width: 42px;
   height: auto;
   background: none;
@@ -16355,6 +16355,729 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   pointer-events: auto;
 }
 
+/* ── ZZZ floating particles (bartender doze state) ─────────────────────── */
+.bs-zzzz-wrap {
+  position: absolute;
+  top: -8px;
+  right: -4px;
+  width: 40px;
+  height: 64px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.bs-zzzz-z {
+  position: absolute;
+  right: 0;
+  bottom: calc(var(--idx, 0) * 16px);
+  font-family: 'Press Start 2P', monospace;
+  font-size: calc(5px + var(--idx, 0) * 2px);
+  color: rgba(180, 210, 255, 0.9);
+  text-shadow: 0 0 4px rgba(100, 160, 255, 0.5);
+  animation: bsZzzFloat 2.4s ease-in-out var(--delay, 0s) infinite;
+  opacity: 0;
+  image-rendering: pixelated;
+}
+
+@keyframes bsZzzFloat {
+  0%   { transform: translateY(0) translateX(0) scale(0.8);  opacity: 0; }
+  15%  { opacity: 0.85; }
+  70%  { opacity: 0.5; }
+  100% { transform: translateY(-52px) translateX(10px) scale(1.3); opacity: 0; }
+}
+
+/* ── Wake "!" exclamation (surprised state without joke/surprise) ───────── */
+.bs-bt-speech-wake {
+  padding: 4px 6px !important;
+}
+
+.bs-wake-exclaim {
+  display: block;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 18px;
+  color: #ffd700;
+  text-shadow: 0 0 6px rgba(255, 215, 0, 0.7), 2px 2px 0 #000;
+  animation: bsWakeExclaim 0.25s steps(2) 3;
+  line-height: 1;
+}
+
+@keyframes bsWakeExclaim {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.35) rotate(-4deg); }
+}
+
+/* ── Secret pour combination — flash effect on bartender ───────────────── */
+.bs-bt-speech-secret {
+  background: linear-gradient(135deg, #2a0a3e, #1a0025) !important;
+  border-color: #ffd700 !important;
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.5), inset 0 0 8px rgba(255, 215, 0, 0.1) !important;
+  animation: bsSecretPulse 0.8s ease-in-out infinite alternate !important;
+}
+
+@keyframes bsSecretPulse {
+  from { box-shadow: 0 0 8px rgba(255, 215, 0, 0.4); }
+  to   { box-shadow: 0 0 16px rgba(255, 215, 0, 0.8), 0 0 32px rgba(255, 215, 0, 0.2); }
+}
+
+.bs-secret-sub {
+  display: block;
+  margin-top: 4px;
+  font-size: 5px !important;
+  color: #ffd700;
+  opacity: 0.8;
+  letter-spacing: 0.5px;
+}
+
+/* Flash the bartender wrap gold on secret unlock */
+.bs-bartender-wrap.bs-secret-flash {
+  animation: bsSecretFlash 0.5s steps(2) 3;
+}
+
+@keyframes bsSecretFlash {
+  0%, 100% { filter: drop-shadow(0 2px 6px rgba(0,0,0,0.6)); }
+  50%      { filter: drop-shadow(0 0 16px rgba(255,215,0,0.9)) brightness(1.4); }
+}
+
+/* ── Polishing speed-up on rapid user activity ───────────────────────────── */
+/* Normal wipe: 1.2s. Fast mode: 0.4s (3× faster = overwhelmed) */
+.bs-polishing-fast .bs-bt-wipe-arm {
+  animation-duration: 0.38s !important;
+}
+
+/* ── Bottle flip easter egg ───────────────────────────────────────────────── */
+.bs-flip-wrap {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 50;
+}
+
+.bs-flip-bottle {
+  position: absolute;
+  width: 8px;
+  height: 22px;
+  background: linear-gradient(180deg, #c8a882 0%, #8b6914 100%);
+  border: 2px solid #5d4037;
+  border-radius: 1px 1px 3px 3px;
+  left: var(--flip-x, 50%);
+  top: 50px;
+  transform-origin: center bottom;
+  image-rendering: pixelated;
+}
+
+.bs-flip-bottle.bs-flip-up {
+  animation: bsBottleFlipUp 0.8s cubic-bezier(0.2, 0.8, 0.6, 1) forwards;
+}
+
+.bs-flip-bottle.bs-flip-catch {
+  animation: bsBottleFlipCatch 0.7s cubic-bezier(0.5, 1.4, 0.6, 1) 0.75s forwards;
+  opacity: 0;
+}
+
+.bs-flip-bottle.bs-flip-crash {
+  animation: bsBottleFlipCrash 0.6s ease-in 0.75s forwards;
+  opacity: 0;
+}
+
+@keyframes bsBottleFlipUp {
+  0%   { transform: translateY(0)    rotate(0deg);   opacity: 1; }
+  35%  { transform: translateY(-70px) rotate(180deg); opacity: 1; }
+  70%  { transform: translateY(-50px) rotate(330deg); opacity: 1; }
+  100% { transform: translateY(-20px) rotate(360deg); opacity: 0; }
+}
+
+@keyframes bsBottleFlipCatch {
+  0%   { transform: translateY(-20px) rotate(360deg); opacity: 0; }
+  30%  { opacity: 1; }
+  60%  { transform: translateY(8px) rotate(380deg); opacity: 1; }
+  100% { transform: translateY(0) rotate(360deg); opacity: 0.9; }
+}
+
+@keyframes bsBottleFlipCrash {
+  0%   { transform: translateY(-20px) rotate(360deg); opacity: 0; }
+  20%  { opacity: 1; }
+  60%  { transform: translateY(30px) translateX(20px) rotate(440deg); opacity: 0.8; }
+  100% { transform: translateY(60px) translateX(40px) rotate(500deg); opacity: 0; }
+}
+
+/* Pixel shard burst on crash */
+.bs-flip-shards {
+  position: absolute;
+  left: var(--flip-x, 50%);
+  top: 60px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  opacity: 0;
+  animation: bsFlipShards 0.6s steps(3) 1.3s forwards;
+}
+
+.bs-flip-shards::before {
+  content: '✦  ✦  ✦';
+  font-size: 9px;
+  color: rgba(220, 240, 255, 0.9);
+  letter-spacing: 5px;
+  text-shadow: 0 0 4px rgba(200, 220, 255, 0.7);
+}
+
+@keyframes bsFlipShards {
+  0%   { opacity: 1; transform: translateX(-50%) scale(0.5); }
+  60%  { opacity: 0.7; transform: translateX(-50%) scale(1.5); }
+  100% { opacity: 0; transform: translateX(-50%) scale(2.5); }
+}
+
+/* Guilty look / catch grin badge */
+.bs-flip-badge {
+  position: absolute;
+  left: var(--flip-x, 50%);
+  top: 24px;
+  transform: translateX(-50%);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  opacity: 0;
+  animation: bsFlipBadge 1.2s ease-out 1.3s forwards;
+  text-shadow: 2px 2px 0 rgba(0,0,0,0.8);
+  white-space: nowrap;
+}
+
+.bs-flip-badge--catch { color: #4caf50; }
+.bs-flip-badge--crash { color: #ff5722; }
+
+@keyframes bsFlipBadge {
+  0%   { opacity: 0; transform: translateX(-50%) translateY(8px) scale(0.7); }
+  25%  { opacity: 1; transform: translateX(-50%) translateY(-2px) scale(1.1); }
+  75%  { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-6px) scale(0.9); }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SESSION 2 SALOON UPGRADES
+   Swinging Shingle · Wall Boards · Bar Gap · Dancing · Music Notes
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Swig bottle overflow fix — let the tilted bottle render outside viewBox */
+.bs-bartender-wrap { overflow: visible; }
+.bs-bartender-svg  { overflow: visible; }
+
+/* ── Pointer-events architecture fix — saloon-mid passes clicks to boards ── */
+/* Note: saloon-mid children that need clicks get pointer-events: auto below  */
+.saloon-mid .bs-bartender-wrap {
+  pointer-events: auto; /* bartender must be tappable */
+}
+.saloon-mid button,
+.saloon-mid [role="button"] {
+  pointer-events: auto;
+}
+
+/* ── saloon-boards — new layer between bg (z:1) and mid (z:2) ─────────────── */
+.saloon-boards {
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0;
+  z-index: 1;            /* sits above saloon-bg, below saloon-mid */
+  pointer-events: none;  /* transparent by default */
+}
+
+/* Children of saloon-boards are individually clickable */
+.saloon-boards > * {
+  pointer-events: auto;
+}
+
+/* ══ SWINGING WOODEN SHINGLE ══════════════════════════════════════════════════
+   Hangs from two pixel chains at the top of saloon-mid, sways on a 3 s loop  */
+.bs-shingle-wrap {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  /* Pivot from the chain attachment point */
+  transform-origin: top center;
+  animation: bsShingleSway 3.4s ease-in-out infinite;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+
+.bs-shingle-wrap:focus-visible .bs-shingle-board {
+  box-shadow: 0 0 0 2px #ffd700, 0 4px 14px rgba(0,0,0,0.55);
+}
+
+/* Chain row — positions the two chain SVGs on left and right */
+.bs-shingle-chains {
+  display: flex;
+  justify-content: space-between;
+  width: 160px;
+  /* Align chains just above the wooden board */
+  padding: 0 14px;
+  margin-bottom: -2px;
+}
+
+/* Wooden hanging board */
+.bs-shingle-board {
+  background: linear-gradient(180deg,
+    #a0714f 0%,
+    #7d4b28 35%,
+    #6b3a1f 70%,
+    #5a3018 100%
+  );
+  border: 3px solid #4e2f1a;
+  border-radius: 2px;
+  padding: 7px 18px 8px;
+  min-width: 160px;
+  max-width: 240px;
+  text-align: center;
+  position: relative;
+  box-shadow:
+    0 4px 16px rgba(0,0,0,0.6),
+    inset 0 1px 0 rgba(255,255,255,0.12),
+    inset 0 -2px 0 rgba(0,0,0,0.3);
+  /* Wood-grain lines */
+  background-image:
+    linear-gradient(180deg, #a0714f 0%, #7d4b28 35%, #6b3a1f 70%, #5a3018 100%),
+    repeating-linear-gradient(0deg,
+      transparent 0, transparent 6px,
+      rgba(0,0,0,0.06) 6px, rgba(0,0,0,0.06) 7px
+    );
+}
+
+/* Metal nail/screw at each corner of the shingle */
+.bs-shingle-board::before,
+.bs-shingle-board::after {
+  content: '●';
+  position: absolute;
+  top: 5px;
+  font-size: 6px;
+  color: #c8a882;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.7);
+}
+.bs-shingle-board::before { left: 7px; }
+.bs-shingle-board::after  { right: 7px; }
+
+.bs-shingle-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.bs-shingle-text {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  color: #f5e6c8;
+  text-shadow:
+    0 1px 3px rgba(0,0,0,0.9),
+    0 0 10px rgba(255,200,100,0.35);
+  letter-spacing: 1px;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.bs-shingle-star {
+  font-size: 8px;
+  color: #ffd700;
+  text-shadow: 0 0 6px rgba(255,215,0,0.6);
+  flex-shrink: 0;
+}
+
+.bs-shingle-sub {
+  display: block;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 5px;
+  color: #c8a882;
+  margin-top: 5px;
+  letter-spacing: 0.8px;
+  white-space: nowrap;
+  opacity: 0.85;
+}
+
+.bs-shingle-edit-hint {
+  display: block;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 4px;
+  color: #8b6914;
+  margin-top: 3px;
+  letter-spacing: 0.5px;
+  opacity: 0.7;
+}
+
+/* Hover state — subtle brightness lift and quicker sway */
+.bs-shingle-wrap:hover .bs-shingle-board {
+  box-shadow:
+    0 4px 16px rgba(0,0,0,0.6),
+    0 0 12px rgba(255,200,100,0.2),
+    inset 0 1px 0 rgba(255,255,255,0.18);
+}
+.bs-shingle-wrap:hover {
+  animation-duration: 1.6s;
+}
+
+@keyframes bsShingleSway {
+  0%   { transform: translateX(-50%) rotate(-2deg); }
+  25%  { transform: translateX(-50%) rotate( 0.5deg); }
+  50%  { transform: translateX(-50%) rotate( 2deg); }
+  75%  { transform: translateX(-50%) rotate(-0.5deg); }
+  100% { transform: translateX(-50%) rotate(-2deg); }
+}
+
+/* ══ WALL CHALKBOARD ══════════════════════════════════════════════════════════
+   Positioned on the back wall left-of-center; chalk text for Today's Special  */
+.wall-chalkboard {
+  position: absolute;
+  left: 4%;
+  top: 20%;
+  width: 26%;
+  max-width: 110px;
+  min-width: 72px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  z-index: 2;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.18s ease, filter 0.18s ease;
+}
+
+.wall-chalkboard:hover,
+.wall-chalkboard:focus-visible {
+  transform: scale(1.04) rotate(-0.5deg);
+  filter: brightness(1.12);
+  outline: none;
+}
+
+.chalkboard-frame {
+  background: #4a2e22;
+  border: 3px solid #3b2318;
+  border-radius: 2px;
+  padding: 3px;
+  box-shadow:
+    2px 3px 0 #1a0a00,
+    inset 0 0 10px rgba(0,0,0,0.45);
+}
+
+.chalkboard-surface {
+  background: #1a4b1e;
+  padding: 7px 5px 6px;
+  position: relative;
+  min-height: 72px;
+  /* subtle chalk dust texture */
+  background-image: radial-gradient(
+    ellipse 80% 50% at 50% 50%,
+    rgba(255,255,255,0.03) 0%,
+    transparent 70%
+  );
+}
+
+.chalk-header {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 6px;
+  color: rgba(255,255,255,0.88);
+  text-align: center;
+  line-height: 1.6;
+  letter-spacing: 0.5px;
+  text-shadow: 0 0 6px rgba(255,255,255,0.25);
+}
+
+.chalk-divider {
+  width: 75%;
+  margin: 4px auto;
+  height: 1px;
+  background: rgba(255,255,255,0.35);
+  box-shadow: 0 0 3px rgba(255,255,255,0.2);
+}
+
+.chalk-drink-name {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 5px;
+  color: #fffde7;
+  text-align: center;
+  text-shadow: 0 0 5px rgba(255,253,231,0.6);
+  line-height: 1.7;
+  word-break: break-word;
+  padding: 0 4px;
+  min-height: 12px;
+}
+
+.chalk-ingredients {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 4px;
+  color: rgba(255,253,231,0.65);
+  text-align: center;
+  margin-top: 4px;
+  line-height: 1.8;
+  word-break: break-word;
+  white-space: pre-line;
+  padding: 0 3px;
+}
+
+/* Chalk corner L-brackets */
+.chalk-corner {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border: 1px solid rgba(255,255,255,0.28);
+}
+.chalk-corner--tl { top: 3px;  left: 3px;  border-right: none; border-bottom: none; }
+.chalk-corner--tr { top: 3px;  right: 3px; border-left: none;  border-bottom: none; }
+.chalk-corner--bl { bottom: 3px; left: 3px;  border-right: none; border-top: none;  }
+.chalk-corner--br { bottom: 3px; right: 3px; border-left: none;  border-top: none;  }
+
+/* ══ WALL BOUNTY BOARD ════════════════════════════════════════════════════════
+   Positioned on back wall right-of-center; parchment WANTED posters           */
+.wall-bounty-board {
+  position: absolute;
+  right: 4%;
+  top: 20%;
+  width: 26%;
+  max-width: 105px;
+  min-width: 68px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.bounty-board-header {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 5px;
+  color: #c8a882;
+  text-align: center;
+  background: #3e2723;
+  padding: 3px 4px;
+  border: 2px solid #5d4037;
+  letter-spacing: 1px;
+  margin-bottom: 3px;
+  box-shadow: 1px 1px 0 rgba(0,0,0,0.5);
+}
+
+.bounty-posters {
+  display: flex;
+  gap: 3px;
+}
+
+.bounty-poster {
+  flex: 1;
+  background: linear-gradient(170deg, #f5e6c8 0%, #dfc9a0 60%, #c8a882 100%);
+  border: 2px solid #8b6914;
+  border-radius: 1px;
+  padding: 4px 3px;
+  text-align: center;
+  box-shadow: 1px 2px 0 rgba(0,0,0,0.5);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  /* Torn parchment edge */
+  clip-path: polygon(
+    0% 0%, 100% 0%,
+    98% 15%, 100% 32%, 97% 50%, 100% 68%, 98% 85%, 100% 100%,
+    0% 100%, 2% 85%, 0% 68%, 3% 50%, 0% 32%, 2% 15%
+  );
+  transition: filter 0.15s, transform 0.15s;
+}
+
+.bounty-poster:hover,
+.bounty-poster:focus-visible {
+  filter: brightness(1.1) saturate(1.15);
+  transform: rotate(-1deg) scale(1.03);
+  outline: none;
+}
+
+.bounty-poster-label {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 4px;
+  color: #8b0000;
+  letter-spacing: 1px;
+  border-bottom: 1px solid rgba(139,105,20,0.6);
+  padding-bottom: 2px;
+  margin-bottom: 3px;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.5);
+}
+
+.bounty-ingredient {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 5px;
+  color: #3e2723;
+  word-break: break-all;
+  line-height: 1.5;
+  padding: 2px 1px;
+  min-height: 12px;
+}
+
+.bounty-reward {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 3px;
+  color: #8b6914;
+  line-height: 1.9;
+  margin-top: 3px;
+  word-break: break-word;
+  border-top: 1px dashed rgba(139,105,20,0.4);
+  padding-top: 2px;
+}
+
+/* ══ BAR COUNTER WALKTHROUGH GAP ═════════════════════════════════════════════
+   .bs-bar-surface becomes a flex row: [seg-l] [gap] [seg-r]
+   The gap is transparent so the bartender's legs show through                  */
+
+/* Override the overflow:hidden so the gap is actually transparent */
+.saloon-fg .bs-bar-surface {
+  overflow: visible;
+  background: transparent;
+  display: flex;
+  align-items: stretch;
+  padding: 0;
+  /* Keep border-top but let segments have the wood gradient */
+  border-top: none;
+}
+
+.bs-bar-seg-l,
+.bs-bar-seg-r {
+  flex: 1;
+  position: relative;
+  background: linear-gradient(
+    to bottom,
+    #6d4c41 0%,
+    #5d4037 30%,
+    #4e342e 70%,
+    #3e2723 100%
+  );
+  border-top: 6px solid #a1887f;
+  box-shadow:
+    inset 0 8px 24px rgba(0,0,0,0.5),
+    inset 0 -2px 8px rgba(0,0,0,0.3),
+    0 -2px 12px rgba(0,0,0,0.4);
+  /* Polished top-edge highlight */
+  overflow: hidden;
+}
+
+/* Wood-grain on each segment */
+.bs-bar-seg-l::after,
+.bs-bar-seg-r::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(90deg,
+      transparent 0, transparent 14px,
+      rgba(0,0,0,0.06) 14px, rgba(0,0,0,0.06) 15px,
+      transparent 15px, transparent 28px,
+      rgba(0,0,0,0.03) 28px, rgba(0,0,0,0.03) 29px
+    ),
+    repeating-linear-gradient(88deg,
+      transparent 0, transparent 40px,
+      rgba(255,255,255,0.025) 40px, rgba(255,255,255,0.025) 41px
+    );
+  pointer-events: none;
+}
+
+/* Left segment: coasters and napkin float inside */
+.bs-bar-seg-l {
+  flex: 5; /* wider on left */
+}
+
+/* Right segment: tip jar lives here */
+.bs-bar-seg-r {
+  flex: 7; /* wider on right */
+}
+
+/* The walkthrough gap — transparent, just a dark floor strip at bottom */
+.bs-bar-gap {
+  width: 64px;
+  flex-shrink: 0;
+  position: relative;
+  background: transparent;
+}
+
+/* Dark floor trim visible in gap so it doesn't look like a floating gap */
+.bs-bar-gap::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 10px;
+  background: linear-gradient(180deg, transparent 0%, #2a1a12 100%);
+}
+
+/* Reposition coasters/napkin within the left segment */
+.bs-bar-seg-l .bs-bar-coaster {
+  position: absolute;
+}
+.bs-bar-seg-l .bs-bar-coaster-1 { left: 14%; top: 6px; }
+
+.bs-bar-seg-l .bs-bar-napkin {
+  position: absolute;
+  top: 12px;
+  left: 40%;
+}
+
+/* Tip jar within the right segment */
+.bs-bar-seg-r .bs-tip-jar {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 8px;
+}
+
+/* Coaster in right segment */
+.bs-bar-seg-r .bs-bar-coaster-2 {
+  position: absolute;
+  right: 14%;
+  top: 6px;
+}
+
+/* ══ BARTENDER DANCING (chiptune active) ══════════════════════════════════════
+   Gentle rhythmic bob when the honky-tonk player is on                         */
+.bs-bt-dance {
+  animation:
+    bs-bt-walk 0.55s steps(2) infinite,  /* repurpose walk for footwork feel */
+    bsBartenderBob 0.55s ease-in-out infinite !important;
+}
+
+@keyframes bsBartenderBob {
+  0%   { transform: translateY(0)     rotate(-1.5deg) scaleX(1); }
+  25%  { transform: translateY(-4px)  rotate(0deg)    scaleX(1.04); }
+  50%  { transform: translateY(0)     rotate(1.5deg)  scaleX(1); }
+  75%  { transform: translateY(-2px)  rotate(0deg)    scaleX(1.02); }
+  100% { transform: translateY(0)     rotate(-1.5deg) scaleX(1); }
+}
+
+/* ══ FLOATING PIXEL MUSIC NOTES ═══════════════════════════════════════════════
+   Float up from the bartender and fade out when chiptune is playing            */
+.bs-music-notes {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60px;
+  pointer-events: none;
+  z-index: 15;
+}
+
+.bs-music-note {
+  position: absolute;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  color: #ffd700;
+  text-shadow:
+    0 0 6px rgba(255,215,0,0.8),
+    0 0 12px rgba(255,215,0,0.4),
+    2px 2px 0 rgba(0,0,0,0.6);
+  animation: bsMusicNoteFloat 2.2s ease-in-out var(--delay, 0s) infinite;
+  opacity: 0;
+  /* Offset each note so they don't stack */
+  left: calc(50% + (var(--idx, 0) - 1) * 18px);
+}
+
+@keyframes bsMusicNoteFloat {
+  0%   { transform: translateY(0)    rotate(-5deg)  scale(0.7); opacity: 0; }
+  12%  { opacity: 1; }
+  50%  { transform: translateY(-30px) rotate(8deg)  scale(1.05); opacity: 0.85; }
+  85%  { transform: translateY(-55px) rotate(-4deg) scale(0.9);  opacity: 0.3; }
+  100% { transform: translateY(-70px) rotate(5deg)  scale(0.7);  opacity: 0; }
+}
+
 /* ── Reduced motion: kill all ambient animations ─────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   .saloon-lantern,
@@ -16362,7 +17085,14 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   .steam-particle,
   .saloon-door,
   .secret-pour-glass,
-  .secret-pour-trail {
+  .secret-pour-trail,
+  .bs-zzzz-z,
+  .bs-flip-bottle,
+  .bs-flip-shards,
+  .bs-flip-badge,
+  .bs-shingle-wrap,
+  .bs-bt-dance,
+  .bs-music-note {
     animation: none !important;
     transition: none !important;
   }
