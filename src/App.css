@@ -16739,12 +16739,12 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   cursor: pointer;
   z-index: 2;
   -webkit-tap-highlight-color: transparent;
-  transition: transform 0.18s ease, filter 0.18s ease;
+  /* transform handled by Framer Motion whileHover / whileTap */
+  transition: filter 0.18s ease;
 }
 
 .wall-chalkboard:hover,
 .wall-chalkboard:focus-visible {
-  transform: scale(1.04) rotate(-0.5deg);
   filter: brightness(1.12);
   outline: none;
 }
@@ -16876,13 +16876,13 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
     98% 15%, 100% 32%, 97% 50%, 100% 68%, 98% 85%, 100% 100%,
     0% 100%, 2% 85%, 0% 68%, 3% 50%, 0% 32%, 2% 15%
   );
-  transition: filter 0.15s, transform 0.15s;
+  /* transform handled by Framer Motion whileHover / whileTap */
+  transition: filter 0.15s;
 }
 
 .bounty-poster:hover,
 .bounty-poster:focus-visible {
   filter: brightness(1.1) saturate(1.15);
-  transform: rotate(-1deg) scale(1.03);
   outline: none;
 }
 
