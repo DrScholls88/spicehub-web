@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import SafeMediaImage from './SafeMediaImage.jsx';
 import './LandingPage.css';
@@ -256,7 +256,6 @@ const STYLES = {
     zIndex: 310,
     maxHeight: '70vh',
     overflowY: 'auto',
-    animation: 'lp-slideUp 0.3s cubic-bezier(0.32,0.72,0,1) both',
   },
   previewHandle: {
     width: 36,
@@ -329,23 +328,20 @@ const STYLES = {
   },
 };
 
-// Inject slideUp keyframe once
-let _injectedLPStyle = false;
-function injectLPStyle() {
-  if (_injectedLPStyle || document.getElementById('lp-anim-style')) return;
-  _injectedLPStyle = true;
-  const s = document.createElement('style');
-  s.id = 'lp-anim-style';
-  s.textContent = `
-    @keyframes lp-slideUp {
-      from { transform: translateY(100%); opacity: 0; }
-      to   { transform: translateY(0);   opacity: 1; }
-    }
-  `;
-  document.head.appendChild(s);
-}
-
 const DOW_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+// ── Animation variants ────────────────────────────────────────────────────────
+const dayCardVariants = {
+  hidden: { opacity: 0, y: 18, scale: 0.94 },
+  visible: {
+    opacity: 1, y: 0, scale: 1,
+    transition: { type: 'spring', stiffness: 320, damping: 26 },
+  },
+};
+const diceVariants = {
+  rest:  { rotate: 0 },
+  hover: { rotate: [0, -22, 20, -10, 6, 0], transition: { duration: 0.55, ease: 'easeInOut' } },
+};
 
 const TILE_COLORS = {
   planWeek: '#e65100',
@@ -365,7 +361,8 @@ function DayPhotoCard({ date, meal, isToday, onClick }) {
 
   return (
     <motion.button
-      whileHover={{ y: -4, boxShadow: '0 8px 16px rgba(0,0,0,0.1)' }}
+      variants={dayCardVariants}
+      whileHover={{ y: -4, boxShadow: '0 8px 16px rgba(0,0,0,0.12)' }}
       whileTap={{ scale: 0.95 }}
       onClick={onClick}
       style={{
@@ -414,7 +411,6 @@ function DayPhotoCard({ date, meal, isToday, onClick }) {
 // ── MealPreviewSheet ──────────────────────────────────────────────────────────
 function MealPreviewSheet({ date, meal, isToday, onClose, onViewFull }) {
   const [imgErr, setImgErr] = useState(false);
-  useEffect(() => { injectLPStyle(); }, []);
 
   const dayLabel = isToday ? 'Today' : DOW_SHORT[date.getDay()];
   const dateStr = date.toLocaleDateString('en-US', { month: 'long', day: 'numeric' });
@@ -422,9 +418,22 @@ function MealPreviewSheet({ date, meal, isToday, onClose, onViewFull }) {
   return (
     <>
       {/* Scrim */}
-      <div style={STYLES.scrim} onClick={onClose} />
+      <motion.div
+        style={STYLES.scrim}
+        onClick={onClose}
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.22 }}
+      />
       {/* Sheet */}
-      <div style={STYLES.previewSheet}>
+      <motion.div
+        style={STYLES.previewSheet}
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ type: 'spring', stiffness: 300, damping: 32 }}
+      >
         <div style={STYLES.previewHandle} />
         {/* Header row */}
         <div style={STYLES.previewHeader}>
@@ -476,7 +485,7 @@ function MealPreviewSheet({ date, meal, isToday, onClose, onViewFull }) {
             </>
           )}
         </div>
-      </div>
+      </motion.div>
     </>
   );
 }
@@ -495,8 +504,6 @@ export default function LandingPage({
   onOpenFridge = () => {},
   onOpenStats = () => {},
 }) {
-  useEffect(() => { injectLPStyle(); }, []);
-
   const [hoveredTile, setHoveredTile] = useState(null);
   const [hoveredStats, setHoveredStats] = useState(false);
   const [hoverEmptyButton, setHoverEmptyButton] = useState(false);
@@ -622,13 +629,20 @@ export default function LandingPage({
             {formattedDate} • {streak > 0 ? <span style={{ color: 'var(--primary)', fontWeight: 700 }}>{streak} Day Streak 🔥</span> : 'Ready to spin?'}
           </p>
           <div className="hero-actions" style={{ animation: 'none', opacity: 1, marginTop: '20px' }}>
-            <motion.button 
-              className="btn-primary" 
+            <motion.button
+              className="btn-primary"
               onClick={onGenerate}
-              whileHover={{ scale: 1.05, boxShadow: "0 8px 16px rgba(255,107,53,0.3)" }}
+              initial="rest"
+              whileHover="hover"
               whileTap={{ scale: 0.95 }}
+              animate="rest"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
             >
-              Spin the Week 🎲
+              Spin the Week{' '}
+              <motion.span
+                variants={diceVariants}
+                style={{ display: 'inline-block', transformOrigin: 'center' }}
+              >🎲</motion.span>
             </motion.button>
           </div>
         </div>
@@ -640,7 +654,12 @@ export default function LandingPage({
       <div style={STYLES.nextDaysSection}>
         <div style={STYLES.sectionLabel}>Next 5 Days</div>
         {hasAnyMeal ? (
-          <div style={STYLES.nextDaysScroll}>
+          <motion.div
+            style={STYLES.nextDaysScroll}
+            initial="hidden"
+            animate="visible"
+            variants={{ visible: { transition: { staggerChildren: 0.07 } } }}
+          >
             {next5Days.map(({ date, meal, isToday }) => (
               <DayPhotoCard
                 key={localDateKey(date)}
@@ -650,7 +669,7 @@ export default function LandingPage({
                 onClick={() => setPreviewDay({ date, meal, isToday })}
               />
             ))}
-          </div>
+          </motion.div>
         ) : (
           <div style={STYLES.emptyState}>
             <div style={STYLES.emptyStateText}>Nothing planned — let's spin!</div>
@@ -726,15 +745,18 @@ export default function LandingPage({
       )}
 
       {/* ── Day preview bottom sheet ── */}
-      {previewDay && (
-        <MealPreviewSheet
-          date={previewDay.date}
-          meal={previewDay.meal}
-          isToday={previewDay.isToday}
-          onClose={() => setPreviewDay(null)}
-          onViewFull={(meal) => { onViewDetail(meal); }}
-        />
-      )}
+      <AnimatePresence>
+        {previewDay && (
+          <MealPreviewSheet
+            key="preview-sheet"
+            date={previewDay.date}
+            meal={previewDay.meal}
+            isToday={previewDay.isToday}
+            onClose={() => setPreviewDay(null)}
+            onViewFull={(meal) => { onViewDetail(meal); }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
