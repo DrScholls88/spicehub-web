@@ -132,50 +132,6 @@ function NeonText({ text, color = '#ff4081' }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// BARBACK DISPLAY — Retro LED / dot-matrix menu board
-// Shows scrolling marquee when idle; shows drink recipe when bartender presents
-// ══════════════════════════════════════════════════════════════════════════════
-function BarbackDisplay({ selectedDrink, isPresenting, customMarquee, onOpenMarquee }) {
-  const showRecipe = selectedDrink && isPresenting;
-  const marqueeText = customMarquee 
-    ? `${customMarquee.toUpperCase()} ★ `
-    : '★ HAPPY HOUR ★  HANDCRAFTED COCKTAILS ★  TOP SHELF SPIRITS ★  NAME YOUR POISON ★  FINE DRINKS SERVED HERE ★  ';
-
-  return (
-    <div className="bs-barback-display" onClick={onOpenMarquee} style={{ cursor: 'pointer' }}>
-      <div className="bs-display-inner">
-        <div className="bs-display-scanline" aria-hidden="true" />
-        <div className="bs-display-grid-overlay" />
-        <div className="bs-display-toprow" style={{ borderBottom: '2px solid #333' }}>
-          <span className="bs-display-led bs-led-grn">● RECIPE_FEED</span>
-          <span className="bs-display-title-text">MOD_0.8.bit</span>
-        </div>
-        <div className="bs-display-body">
-          {showRecipe ? (
-            <div className="bs-display-recipe" key={selectedDrink.id}>
-              <span className="bs-display-drink-name">
-                {selectedDrink.name.toUpperCase().slice(0, 22)}
-              </span>
-              {selectedDrink.ingredients?.length > 0 && (
-                <span className="bs-display-recipe-ings">
-                  {selectedDrink.ingredients.slice(0, 3).join('  ·  ')}
-                </span>
-              )}
-            </div>
-          ) : (
-            <div className="bs-display-marquee-wrap">
-              <span className="bs-display-marquee">
-                {marqueeText.repeat(4)}
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
 // SWINGING WOODEN SHINGLE — replaces the LED marquee board
 // Clickable to rename the bar; sways gently on a CSS animation
 // ══════════════════════════════════════════════════════════════════════════════
