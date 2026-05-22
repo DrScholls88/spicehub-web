@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useReducer, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import useBackHandler from '../hooks/useBackHandler';
 import { getBarInventory, addToBarInventory } from '../db';
 
@@ -162,7 +163,11 @@ function SwingingShingle({ barName, onClickShingle }) {
         </svg>
       </div>
       {/* Wooden board */}
-      <div className="bs-shingle-board">
+      <motion.div
+        className="bs-shingle-board"
+        whileTap={{ scale: 0.93, y: 3 }}
+        transition={{ type: 'spring', stiffness: 500, damping: 28 }}
+      >
         <div className="bs-shingle-inner">
           <span className="bs-shingle-star" aria-hidden="true">★</span>
           <span className="bs-shingle-text">{displayName}</span>
@@ -170,7 +175,7 @@ function SwingingShingle({ barName, onClickShingle }) {
         </div>
         <span className="bs-shingle-sub" aria-hidden="true">FINE SPIRITS  ✦  EST. 8-BIT</span>
         <span className="bs-shingle-edit-hint" aria-hidden="true">tap to rename</span>
-      </div>
+      </motion.div>
     </div>
   );
 }
@@ -187,16 +192,32 @@ function WallChalkboard({ specialDrink, onClick }) {
     : 'add bottles to\nsee specials!';
 
   return (
-    <button
+    <motion.button
       className="wall-chalkboard"
       onClick={onClick}
       aria-label="Today's special chalkboard — click for bartender reaction"
+      initial={{ opacity: 0, y: -20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ type: 'spring', stiffness: 260, damping: 22, delay: 0.3 }}
+      whileHover={{ scale: 1.05, rotate: -0.6 }}
+      whileTap={{ scale: 0.93 }}
     >
       <div className="chalkboard-frame">
         <div className="chalkboard-surface">
           <div className="chalk-header">TODAY&apos;S<br/>SPECIAL</div>
           <div className="chalk-divider" />
-          <div className="chalk-drink-name">{drinkName}</div>
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={drinkName}
+              className="chalk-drink-name"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.28, ease: 'easeOut' }}
+            >
+              {drinkName}
+            </motion.div>
+          </AnimatePresence>
           <div className="chalk-ingredients">{ingredients}</div>
           {/* Chalk corner decorations */}
           <div className="chalk-corner chalk-corner--tl" aria-hidden="true" />
@@ -205,7 +226,7 @@ function WallChalkboard({ specialDrink, onClick }) {
           <div className="chalk-corner chalk-corner--br" aria-hidden="true" />
         </div>
       </div>
-    </button>
+    </motion.button>
   );
 }
 
@@ -216,27 +237,41 @@ function WallChalkboard({ specialDrink, onClick }) {
 function WallBountyBoard({ bounties, onClickBounty }) {
   if (!bounties || bounties.length === 0) return null;
   return (
-    <div className="wall-bounty-board" aria-label="Wanted board for missing ingredients">
+    <motion.div
+      className="wall-bounty-board"
+      aria-label="Wanted board for missing ingredients"
+      initial={{ opacity: 0, y: -20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ type: 'spring', stiffness: 260, damping: 22, delay: 0.55 }}
+    >
       <div className="bounty-board-header" aria-hidden="true">⚑ WANTED ⚑</div>
       <div className="bounty-posters">
-        {bounties.slice(0, 2).map((b, i) => (
-          <button
-            key={i}
-            className="bounty-poster"
-            onClick={() => onClickBounty?.(b)}
-            aria-label={`Wanted: ${b.ingredient} for ${b.drinkName}`}
-          >
-            <div className="bounty-poster-label">WANTED</div>
-            <div className="bounty-ingredient">
-              {b.ingredient.toUpperCase().slice(0, 10)}
-            </div>
-            <div className="bounty-reward">
-              REWARD:<br />{(b.drinkName || '?').slice(0, 9)}
-            </div>
-          </button>
-        ))}
+        <AnimatePresence>
+          {bounties.slice(0, 2).map((b, i) => (
+            <motion.button
+              key={b.ingredient}
+              className="bounty-poster"
+              onClick={() => onClickBounty?.(b)}
+              aria-label={`Wanted: ${b.ingredient} for ${b.drinkName}`}
+              initial={{ opacity: 0, scale: 0.72, rotate: i === 0 ? -10 : 10 }}
+              animate={{ opacity: 1, scale: 1, rotate: i === 0 ? -2.5 : 2.5 }}
+              exit={{ opacity: 0, scale: 0.65, transition: { duration: 0.15 } }}
+              transition={{ type: 'spring', stiffness: 320, damping: 18, delay: i * 0.14 + 0.68 }}
+              whileHover={{ scale: 1.09, rotate: 0 }}
+              whileTap={{ scale: 0.92 }}
+            >
+              <div className="bounty-poster-label">WANTED</div>
+              <div className="bounty-ingredient">
+                {b.ingredient.toUpperCase().slice(0, 10)}
+              </div>
+              <div className="bounty-reward">
+                REWARD:<br />{(b.drinkName || '?').slice(0, 9)}
+              </div>
+            </motion.button>
+          ))}
+        </AnimatePresence>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
@@ -1185,6 +1220,39 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
     setTimeout(() => setBartenderState('idle'), 900);
   }, []);
 
+  // ── Today's Special: drink with highest ingredient match in current inventory
+  const specialDrink = useMemo(() => {
+    if (drinks.length === 0 || barInventory.length === 0) return null;
+    const inv = barInventory.map(i => (typeof i === 'string' ? i : (i.name || '')).toLowerCase());
+    let best = null;
+    let bestScore = -1;
+    for (const d of drinks) {
+      const { score } = matchIngredients(d.ingredients || [], inv);
+      if (score > bestScore) { bestScore = score; best = d; }
+    }
+    return best;
+  }, [drinks, barInventory]);
+
+  // ── Bounties: top 2 most-wanted missing ingredients across all drinks
+  const bounties = useMemo(() => {
+    if (drinks.length === 0) return [];
+    const inv = barInventory.map(i => (typeof i === 'string' ? i : (i.name || '')).toLowerCase());
+    const freq = {};
+    const drinkName = {};
+    for (const d of drinks) {
+      const { missing } = matchIngredients(d.ingredients || [], inv);
+      for (const ing of missing) {
+        const k = ing.toLowerCase();
+        freq[k] = (freq[k] || 0) + 1;
+        if (!drinkName[k]) drinkName[k] = d.name;
+      }
+    }
+    return Object.entries(freq)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 2)
+      .map(([ingredient, count]) => ({ ingredient, drinkName: drinkName[ingredient], count }));
+  }, [drinks, barInventory]);
+
   // ── Chalkboard click: bartender walks left to comment on Today's Special ──
   const handleChalkClick = useCallback(() => {
     if (bartenderState !== 'idle') return;
@@ -1322,39 +1390,6 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
     }, delay);
     return () => clearTimeout(pourTimerRef.current);
   }, [bartenderState, selectedDrink]);
-
-  // ── Today's Special: drink with highest ingredient match in current inventory
-  const specialDrink = useMemo(() => {
-    if (drinks.length === 0 || barInventory.length === 0) return null;
-    const inv = barInventory.map(i => (typeof i === 'string' ? i : (i.name || '')).toLowerCase());
-    let best = null;
-    let bestScore = -1;
-    for (const d of drinks) {
-      const { score } = matchIngredients(d.ingredients || [], inv);
-      if (score > bestScore) { bestScore = score; best = d; }
-    }
-    return best;
-  }, [drinks, barInventory]);
-
-  // ── Bounties: top 2 most-wanted missing ingredients across all drinks
-  const bounties = useMemo(() => {
-    if (drinks.length === 0) return [];
-    const inv = barInventory.map(i => (typeof i === 'string' ? i : (i.name || '')).toLowerCase());
-    const freq = {};
-    const drinkName = {};
-    for (const d of drinks) {
-      const { missing } = matchIngredients(d.ingredients || [], inv);
-      for (const ing of missing) {
-        const k = ing.toLowerCase();
-        freq[k] = (freq[k] || 0) + 1;
-        if (!drinkName[k]) drinkName[k] = d.name;
-      }
-    }
-    return Object.entries(freq)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 2)
-      .map(([ingredient, count]) => ({ ingredient, drinkName: drinkName[ingredient], count }));
-  }, [drinks, barInventory]);
 
   // ── Filtering logic (Stool Navigation) ────────────────────────────────────
   const filteredDrinks = useMemo(() => {
@@ -2059,7 +2094,17 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
                   )}
                   {bartenderState === 'idle' && !selectedDrink && !jokeText && !surpriseResult && !secretCocktailActive && (
                     <div className={`bs-bt-speech bs-bt-speech-idle ${bubbleDir}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
-                      <span>{spotlightQuip || idleQuipText}</span>
+                      <AnimatePresence mode="wait">
+                        <motion.span
+                          key={spotlightQuip || idleQuipText}
+                          initial={{ opacity: 0, y: 5 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -4 }}
+                          transition={{ duration: 0.22, ease: 'easeOut' }}
+                        >
+                          {spotlightQuip || idleQuipText}
+                        </motion.span>
+                      </AnimatePresence>
                     </div>
                   )}
                 </div>
