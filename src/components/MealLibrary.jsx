@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { downloadMealsFile, importMealsFromJson, shareMealsFile } from '../sync';
 import { toggleRotation, bulkSetRotation } from '../db';
 import db from '../db';
@@ -189,12 +190,22 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
   }, []);
 
   const handleSheetTouchEnd = useCallback(() => {
+    const dy = sheetCurrentDragY.current;
+    if (dy > 80) {
+      // Animate sheet offscreen manually, THEN unmount — avoids FM entrance/exit state mismatch
+      if (sheetRef.current) {
+        sheetRef.current.style.transition = 'transform 0.22s cubic-bezier(0.25, 0.8, 0.5, 1)';
+        sheetRef.current.style.transform = 'translateY(110%)';
+      }
+      sheetDragStartY.current = null;
+      sheetCurrentDragY.current = 0;
+      setTimeout(() => setQuickPreview(null), 230);
+      return;
+    }
+    // Snap back
     if (sheetRef.current) {
       sheetRef.current.style.transition = 'transform 0.25s cubic-bezier(0.25, 0.8, 0.5, 1)';
       sheetRef.current.style.transform = '';
-    }
-    if (sheetCurrentDragY.current > 80) {
-      setQuickPreview(null);
     }
     sheetDragStartY.current = null;
     sheetCurrentDragY.current = 0;
@@ -351,20 +362,44 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
       <div className="ml-categories-scroll" ref={categoryScrollRef}>
         <div className="ml-categories-track">
           {MEAL_CATEGORIES.map(c => (
-            <button
+            <motion.button
               key={c}
               className={`ml-category-chip${category === c ? ' ml-active' : ''}${c === '🔄 The Rotation' ? ' ml-rotation-chip' : ''}`}
               onClick={() => setCategory(c)}
+              whileTap={{ scale: 0.93 }}
+              style={{ position: 'relative', overflow: 'hidden' }}
             >
               {c}{c === '🔄 The Rotation' && rotationCount > 0 ? ` (${rotationCount})` : ''}
-            </button>
+              {category === c && (
+                <motion.span
+                  layoutId="ml-active-indicator"
+                  style={{
+                    position: 'absolute',
+                    bottom: 0,
+                    left: '4px',
+                    right: '4px',
+                    height: '2px',
+                    borderRadius: '1px',
+                    background: 'var(--primary)',
+                  }}
+                  transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                />
+              )}
+            </motion.button>
           ))}
         </div>
       </div>
 
       {/* ── Multi-select toolbar ── */}
+      <AnimatePresence>
       {selectMode && (
-        <div className="ml-select-toolbar">
+        <motion.div
+          className="ml-select-toolbar"
+          initial={{ y: -40, opacity: 0 }}
+          animate={{ y: 0, opacity: 1 }}
+          exit={{ y: -40, opacity: 0 }}
+          transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+        >
           <button className="ml-select-toolbar-btn" onClick={exitSelectMode}>✕ Cancel</button>
           <span className="ml-select-count">{selectedIds.size} selected</span>
           <button className="ml-select-toolbar-btn" onClick={handleSelectAll}>All</button>
@@ -396,8 +431,9 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
           >
             🗑️ Delete
           </button>
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
       {/* ── Gallery grid ── */}
       <div className="ml-gallery">
@@ -414,15 +450,31 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
             )}
           </div>
         ) : (
-          sorted.map((meal, idx) => (
-            <div
+          <AnimatePresence mode="popLayout">
+          {sorted.map((meal, idx) => (
+            <motion.div
               key={meal.id}
+              layout="position"
+              initial={{ opacity: 0, y: 14, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.88, transition: { duration: 0.14 } }}
+              transition={{
+                type: 'spring',
+                stiffness: 480,
+                damping: 32,
+                delay: Math.min(idx * 0.03, 0.22),
+              }}
+              whileHover={!selectMode ? {
+                y: -3,
+                scale: 1.02,
+                transition: { type: 'spring', stiffness: 300, damping: 20, delay: 0 },
+              } : undefined}
+              whileTap={{ scale: 0.96, transition: { duration: 0.1 } }}
               className={[
                 'ml-tile',
                 selectMode && selectedIds.has(meal.id) ? 'ml-tile-selected' : '',
                 meal.status === 'failed' ? 'ml-tile-failed' : '',
               ].filter(Boolean).join(' ')}
-              style={{ animationDelay: `${Math.min(idx * 25, 250)}ms` }}
               onClick={() => handleTileClick(meal)}
               onTouchStart={e => selectMode ? handleLongPressSelect(meal, e) : handleTouchStart(meal, e)}
               onTouchMove={handleTouchMove}
@@ -491,29 +543,61 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                   </span>
                 )}
               </div>
-            </div>
-          ))
+            </motion.div>
+          ))}
+          </AnimatePresence>
         )}
       </div>
 
       {/* ── FABs ── */}
-      <div className="ml-fab-group">
-        <button className="ml-fab ml-fab-import" onClick={onImport} title="Import Recipe">
+      <motion.div
+        className="ml-fab-group"
+        initial={{ y: 80, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ type: 'spring', stiffness: 260, damping: 22, delay: 0.15 }}
+      >
+        <motion.button
+          className="ml-fab ml-fab-import"
+          onClick={onImport}
+          title="Import Recipe"
+          whileHover={{ scale: 1.08, y: -2 }}
+          whileTap={{ scale: 0.91 }}
+          transition={{ type: 'spring', stiffness: 380, damping: 22 }}
+        >
           <span>📥</span>
           <span className="ml-fab-label">Import</span>
-        </button>
-        <button className="ml-fab ml-fab-add" onClick={onAdd} title="Add New Meal">
+        </motion.button>
+        <motion.button
+          className="ml-fab ml-fab-add"
+          onClick={onAdd}
+          title="Add New Meal"
+          whileHover={{ scale: 1.12, rotate: 90 }}
+          whileTap={{ scale: 0.88 }}
+          transition={{ type: 'spring', stiffness: 380, damping: 22 }}
+        >
           <span>+</span>
-        </button>
-      </div>
+        </motion.button>
+      </motion.div>
 
       {/* ── Quick Preview bottom sheet (long-press or ⋯ button) ── */}
+      <AnimatePresence>
       {quickPreview && (
-        <div className="ml-qp-overlay" onClick={() => setQuickPreview(null)}>
-          <div
+        <motion.div
+          key="qp-overlay"
+          className="ml-qp-overlay"
+          onClick={() => setQuickPreview(null)}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.22 }}
+        >
+          <motion.div
             ref={sheetRef}
             className="ml-qp-sheet"
             onClick={e => e.stopPropagation()}
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 34 }}
             onTouchStart={handleSheetTouchStart}
             onTouchMove={handleSheetTouchMove}
             onTouchEnd={handleSheetTouchEnd}
@@ -614,14 +698,31 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                 🗑️ Delete
               </button>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
       {/* ── Category picker sheet (multi-select) ── */}
+      <AnimatePresence>
       {showCategoryPicker && (
-        <div className="ml-overlay" onClick={() => setShowCategoryPicker(false)}>
-          <div className="ml-sheet" onClick={e => e.stopPropagation()}>
+        <motion.div
+          key="cat-picker"
+          className="ml-overlay"
+          onClick={() => setShowCategoryPicker(false)}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <motion.div
+            className="ml-sheet"
+            onClick={e => e.stopPropagation()}
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', stiffness: 320, damping: 34 }}
+          >
             <div className="ml-sheet-handle" />
             <div className="ml-sheet-header">
               <h3>Set Category</h3>
@@ -642,14 +743,31 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                 </button>
               ))}
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
       {/* ── Options sheet (backup / restore / import) ── */}
+      <AnimatePresence>
       {showOptionsSheet && (
-        <div className="ml-overlay" onClick={() => setShowOptionsSheet(false)}>
-          <div className="ml-sheet" onClick={e => e.stopPropagation()}>
+        <motion.div
+          key="options-sheet"
+          className="ml-overlay"
+          onClick={() => setShowOptionsSheet(false)}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <motion.div
+            className="ml-sheet"
+            onClick={e => e.stopPropagation()}
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', stiffness: 320, damping: 34 }}
+          >
             <div className="ml-sheet-handle" />
             <div className="ml-sheet-header">
               <h3>Meal Library Options</h3>
@@ -676,14 +794,31 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                 style={{ display: 'none' }}
               />
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
       {/* ── Delete confirmation sheet ── */}
+      <AnimatePresence>
       {confirmDeleteId && (
-        <div className="ml-overlay" onClick={closeConfirmDelete}>
-          <div className="ml-sheet ml-delete-sheet" onClick={e => e.stopPropagation()}>
+        <motion.div
+          key="delete-confirm"
+          className="ml-overlay"
+          onClick={closeConfirmDelete}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <motion.div
+            className="ml-sheet ml-delete-sheet"
+            onClick={e => e.stopPropagation()}
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', stiffness: 320, damping: 34 }}
+          >
             <div className="ml-sheet-handle" />
             <div className="ml-delete-header">
               <span className="ml-delete-icon">🗑️</span>
@@ -706,18 +841,22 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                 Yes, Delete
               </button>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
       {/* ── Menu button (top right of screen) ── */}
-      <button
+      <motion.button
         className="ml-menu-btn"
         onClick={() => setShowOptionsSheet(true)}
         title="More options"
+        whileHover={{ scale: 1.1 }}
+        whileTap={{ scale: 0.9 }}
+        transition={{ type: 'spring', stiffness: 400, damping: 20 }}
       >
         ···
-      </button>
+      </motion.button>
     </div>
   );
 }
