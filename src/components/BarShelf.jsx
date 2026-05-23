@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useReducer, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useMotionValue, useAnimation } from 'framer-motion';
 import useBackHandler from '../hooks/useBackHandler';
 import { getBarInventory, addToBarInventory } from '../db';
 
@@ -849,14 +849,37 @@ function BarStool({ active = false }) {
 
 function PixelTipJar({ tipsCollected, coinNonce, onTip }) {
   return (
-    <button
+    <motion.button
       className="bs-tip-jar"
       onClick={onTip}
-      title={`${tipsCollected} tips collected`}
+      title={`${tipsCollected} tips collected — tap to tip!`}
       aria-label={`Tip the bartender. ${tipsCollected} tips collected.`}
+      whileHover={{ y: -3, transition: { type: 'spring', stiffness: 400, damping: 15 } }}
+      whileTap={{ scale: 0.92 }}
+      style={{ position: 'relative', display: 'inline-flex', flexDirection: 'column', alignItems: 'center' }}
     >
-      <span className="bs-tip-coin-slot" aria-hidden="true" />
-      {coinNonce > 0 && <span key={coinNonce} className="bs-tip-coin" aria-hidden="true" />}
+      {/* Framer Motion spring coin drop */}
+      <AnimatePresence>
+        {coinNonce > 0 && (
+          <motion.div
+            key={coinNonce}
+            aria-hidden="true"
+            className="bs-tip-coin-fm"
+            style={{ position: 'absolute', top: 0, left: '50%', translateX: '-50%', zIndex: 10 }}
+            initial={{ y: -52, opacity: 1, scale: 1.1, rotate: 0 }}
+            animate={{ y: 18, opacity: [1, 1, 0.8], scale: [1.1, 1, 0.85], rotate: [0, 15, -10, 5, 0] }}
+            exit={{ opacity: 0, scale: 0.5 }}
+            transition={{ type: 'spring', stiffness: 260, damping: 14, bounce: 0.42 }}
+          >
+            <svg width="18" height="18" viewBox="0 0 18 18" style={{ imageRendering: 'pixelated' }}>
+              <circle cx="9" cy="9" r="7" fill="#ffd166" />
+              <circle cx="9" cy="9" r="5" fill="#f0a500" />
+              <text x="9" y="12" textAnchor="middle" fontSize="7" fill="#ffd166" fontFamily="monospace">$</text>
+              <circle cx="6" cy="6" r="1.5" fill="rgba(255,255,200,0.5)" />
+            </svg>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <svg width="42" height="46" viewBox="0 0 42 46" className="bs-tip-jar-svg" aria-hidden="true">
         <rect x="11" y="4" width="20" height="5" fill="#c8a882" />
         <rect x="8" y="9" width="26" height="31" fill="rgba(184,220,255,0.28)" />
@@ -872,7 +895,7 @@ function PixelTipJar({ tipsCollected, coinNonce, onTip }) {
         <rect x="8" y="40" width="26" height="4" fill="#5d4037" />
       </svg>
       <span className="bs-tip-count">{tipsCollected}</span>
-    </button>
+    </motion.button>
   );
 }
 
@@ -944,8 +967,252 @@ function SteamParticles({ count = 5 }) {
   );
 }
 
+// ── Pixel-art SVG Tumbleweed ──────────────────────────────────────────────────
+function PixelTumbleweed() {
+  return (
+    <svg width="36" height="36" viewBox="0 0 36 36" style={{ imageRendering: 'pixelated' }}>
+      {/* Outer rough circle */}
+      <rect x="8"  y="2"  width="20" height="4"  fill="#8d6e63" />
+      <rect x="4"  y="6"  width="28" height="4"  fill="#795548" />
+      <rect x="2"  y="10" width="32" height="16" fill="#6d4c41" />
+      <rect x="4"  y="26" width="28" height="4"  fill="#795548" />
+      <rect x="8"  y="30" width="20" height="4"  fill="#8d6e63" />
+      {/* Inner cross-hatch */}
+      <rect x="16" y="4"  width="4"  height="28" fill="#5d4037" opacity="0.5" />
+      <rect x="4"  y="16" width="28" height="4"  fill="#5d4037" opacity="0.5" />
+      {/* Highlight */}
+      <rect x="8"  y="6"  width="6"  height="6"  fill="rgba(255,255,255,0.12)" />
+    </svg>
+  );
+}
+
+// ── Pixel-art SVG Rattlesnake ─────────────────────────────────────────────────
+function PixelRattlesnake({ facingLeft = true }) {
+  const flip = facingLeft ? 'scale(-1,1) translate(-100,0)' : '';
+  return (
+    <svg width="64" height="18" viewBox="0 0 64 18" style={{ imageRendering: 'pixelated' }}>
+      <g transform={flip}>
+        {/* Body segments */}
+        <rect x="0"  y="8"  width="10" height="6" fill="#558b2f" rx="1" />
+        <rect x="2"  y="6"  width="9"  height="2" fill="#33691e" />
+        <rect x="10" y="7"  width="10" height="6" fill="#689f38" rx="1" />
+        <rect x="12" y="5"  width="8"  height="2" fill="#558b2f" />
+        <rect x="20" y="8"  width="10" height="6" fill="#558b2f" rx="1" />
+        <rect x="22" y="6"  width="8"  height="2" fill="#33691e" />
+        <rect x="30" y="7"  width="10" height="6" fill="#689f38" rx="1" />
+        {/* Head */}
+        <rect x="40" y="4"  width="14" height="10" fill="#558b2f" rx="2" />
+        <rect x="50" y="3"  width="8"  height="4"  fill="#33691e" rx="1" />
+        {/* Eye */}
+        <rect x="50" y="5"  width="3"  height="3"  fill="#1a1a1a" />
+        <rect x="51" y="5"  width="1"  height="1"  fill="#fff" />
+        {/* Tongue */}
+        <rect x="54" y="8"  width="8"  height="1"  fill="#e53935" />
+        <rect x="59" y="7"  width="3"  height="1"  fill="#e53935" />
+        <rect x="59" y="9"  width="3"  height="1"  fill="#e53935" />
+        {/* Rattle */}
+        <rect x="0"  y="9"  width="3"  height="4"  fill="#ffb74d" rx="1" />
+        <rect x="1"  y="8"  width="4"  height="2"  fill="#ffa726" />
+      </g>
+    </svg>
+  );
+}
+
+// ── Saloon Ambient Events Engine ──────────────────────────────────────────────
+function SaloonAmbience({ bartenderX, onBartenderSurprise }) {
+  const [activeEvent, setActiveEvent] = useState(null); // null | 'tumbleweed' | 'snake'
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (activeEvent) return;
+      const roll = Math.random();
+      if (roll < 0.08) setActiveEvent('tumbleweed');
+      else if (roll > 0.94) setActiveEvent('snake');
+    }, 18000);
+    return () => clearInterval(interval);
+  }, [activeEvent]);
+
+  const handleComplete = useCallback(() => setActiveEvent(null), []);
+
+  return (
+    <div className="saloon-ambience" aria-hidden="true">
+      <AnimatePresence>
+        {activeEvent === 'tumbleweed' && (
+          <motion.div
+            key="tumbleweed"
+            className="saloon-tumbleweed"
+            style={{ bottom: '92px' }}
+            initial={{ x: '-60px', y: 0 }}
+            animate={{
+              x: 'calc(100vw + 60px)',
+              y: [0, -18, 0, -10, 0, -5, 0],
+            }}
+            transition={{
+              x: { duration: 5.5, ease: 'linear' },
+              y: { duration: 5.5, times: [0, 0.15, 0.32, 0.48, 0.64, 0.80, 1], ease: 'easeInOut' },
+            }}
+            onAnimationComplete={handleComplete}
+          >
+            <motion.div
+              animate={{ rotate: 720 }}
+              transition={{ duration: 5.5, ease: 'linear' }}
+            >
+              <PixelTumbleweed />
+            </motion.div>
+          </motion.div>
+        )}
+        {activeEvent === 'snake' && (
+          <SnakeAnim
+            onComplete={handleComplete}
+            bartenderX={bartenderX}
+            onBartenderSurprise={onBartenderSurprise}
+          />
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+function SnakeAnim({ onComplete, bartenderX, onBartenderSurprise }) {
+  const surprisedRef = useRef(false);
+  const slitherY = Array.from({ length: 28 }, (_, i) => i % 2 === 0 ? '0px' : '3px');
+
+  return (
+    <motion.div
+      className="saloon-snake"
+      style={{ bottom: '92px', right: '-80px' }}
+      initial={{ x: 0 }}
+      animate={{
+        x: 'calc(-100vw - 80px)',
+        y: slitherY,
+      }}
+      transition={{
+        x: { duration: 10, ease: 'linear' },
+        y: { duration: 10, ease: 'linear' },
+      }}
+      onUpdate={(latest) => {
+        // Surprise bartender when snake passes under them (~center of screen)
+        const progressPct = Math.abs(parseFloat(latest.x)) / (window.innerWidth + 80);
+        if (!surprisedRef.current && progressPct > 0.4 && progressPct < 0.6) {
+          surprisedRef.current = true;
+          onBartenderSurprise?.();
+        }
+      }}
+      onAnimationComplete={onComplete}
+    >
+      <PixelRattlesnake facingLeft={true} />
+    </motion.div>
+  );
+}
+
+// ── Chiptune Visualizer ───────────────────────────────────────────────────────
+const VISUALIZER_SEQS = [
+  [1, 2.5, 0.8, 1.8, 1.2, 1],
+  [1, 1.8, 2.8, 1, 2.2, 1],
+  [1, 3, 1.5, 0.6, 2, 1],
+  [1, 1.4, 2, 2.6, 1.2, 1],
+];
+function ChiptuneVisualizer() {
+  return (
+    <span className="bs-ct-visualizer" aria-hidden="true">
+      {VISUALIZER_SEQS.map((seq, i) => (
+        <motion.span
+          key={i}
+          className="bs-ct-bar"
+          style={{ display: 'inline-block', height: '3px', transformOrigin: 'bottom center' }}
+          animate={{ scaleY: seq }}
+          transition={{
+            repeat: Infinity,
+            duration: 0.45 + i * 0.07,
+            ease: 'easeInOut',
+            delay: i * 0.09,
+            repeatType: 'mirror',
+          }}
+        />
+      ))}
+    </span>
+  );
+}
+
+// ── Floating Piano Notes — Framer Motion sine-wave spawner ───────────────────
+const NOTE_SYMBOLS = ['♪', '♫', '♩', '♬'];
+function FloatingNotes({ active }) {
+  const [notes, setNotes] = useState([]);
+  const counter = useRef(0);
+  useEffect(() => {
+    if (!active) { setNotes([]); return; }
+    const tick = () => {
+      const id = ++counter.current;
+      setNotes(prev => [
+        ...prev.slice(-7),
+        { id, sym: NOTE_SYMBOLS[id % NOTE_SYMBOLS.length], dx: (Math.random() * 50 - 25) },
+      ]);
+    };
+    tick(); // immediate first note
+    const iv = setInterval(tick, 900 + Math.random() * 500);
+    return () => clearInterval(iv);
+  }, [active]);
+  return (
+    <div className="bs-float-notes" aria-hidden="true">
+      <AnimatePresence>
+        {notes.map(n => (
+          <motion.span
+            key={n.id}
+            className="bs-float-note"
+            style={{ position: 'absolute', bottom: 0, left: '50%' }}
+            initial={{ y: 0, x: n.dx, opacity: 0 }}
+            animate={{
+              y:       [-8, -55, -100, -145, -185],
+              x:       [n.dx, n.dx + 14, n.dx - 14, n.dx + 7, n.dx - 7],
+              opacity: [0, 1, 1, 0.7, 0],
+            }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 2.6, ease: 'easeOut' }}
+            onAnimationComplete={() => setNotes(p => p.filter(x => x.id !== n.id))}
+          >
+            {n.sym}
+          </motion.span>
+        ))}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ── Pixel Sliding Mug — bar-surface delivery animation ────────────────────────
+function PixelSlidingMug({ fromX, toX, onDone }) {
+  return (
+    <motion.div
+      className="bs-sliding-mug"
+      style={{ position: 'absolute', bottom: 10, zIndex: 6 }}
+      initial={{ x: fromX }}
+      animate={{ x: toX }}
+      transition={{ type: 'spring', stiffness: 140, damping: 20, mass: 0.9 }}
+      onAnimationComplete={onDone}
+    >
+      <svg width="32" height="30" viewBox="0 0 32 30" style={{ imageRendering: 'pixelated', display: 'block' }}>
+        {/* Mug body */}
+        <rect x="2" y="10" width="22" height="18" fill="#c8a044" rx="1" />
+        <rect x="3" y="11" width="20" height="16" fill="#f0b429" />
+        <rect x="3" y="11" width="3" height="16" fill="rgba(255,255,255,0.3)" />
+        {/* Handle */}
+        <rect x="24" y="12" width="5" height="2" fill="#a07520" />
+        <rect x="24" y="22" width="5" height="2" fill="#a07520" />
+        <rect x="27" y="12" width="2" height="12" fill="#c8a044" />
+        {/* Foam crown */}
+        <rect x="2" y="7"  width="22" height="5" fill="white" rx="1" />
+        <rect x="5" y="5"  width="5"  height="4" fill="white" rx="1" />
+        <rect x="12" y="4" width="5"  height="4" fill="white" rx="1" />
+        <rect x="19" y="5" width="4"  height="4" fill="white" rx="1" />
+      </svg>
+      {/* Foam particle trail */}
+      <div className="bs-mug-foam-trail" />
+    </motion.div>
+  );
+}
+
 // ── Saloon stage constants ─────────────────────────────────────────────────────
-const WAYPOINTS = { left: 0.10, center: 0.42, right: 0.74 };
+// Bartender home is at 80% right — opens left/center for chalkboard + tip jar
+const WAYPOINTS = { left: 0.10, center: 0.42, home: 0.78 };
 
 // ── Saloon reducer ─────────────────────────────────────────────────────────────
 const initialSaloonState = {
@@ -975,8 +1242,19 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
   // ── Reducer for discrete mode transitions ──────────────────────────────────
   const [saloon, dispatch] = useReducer(saloonReducer, initialSaloonState);
 
-  // ── Frame-level animation position (not in reducer — updated 60fps) ─────────
-  const [bartenderX, setBartenderX] = useState(140);
+  // ── Framer Motion bartender position (motion value for drag compatibility) ──
+  // Home base is 78% of bar width — initialized to 260 (≈78% × 340px default)
+  const xMV = useMotionValue(260);
+  const bartenderControls = useAnimation(); // for rotate during toss
+
+  // ── Synced state for quips/lantern positioning (cheaper than transform reads) ─
+  const [bartenderX, setBartenderX] = useState(260);
+
+  // ── Bartender home X: 78% of bar width, re-read on every use ─────────────
+  const homeX = useCallback(
+    () => (barTopRef.current?.clientWidth || 340) * 0.78 - 30,
+    []
+  );
 
   // ── Derived / legacy state kept for compatibility ───────────────────────────
   const [selectedDrink, setSelectedDrink] = useState(null);
@@ -1016,6 +1294,21 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
   const [showMarqueeModal, setShowMarqueeModal] = useState(false);
   const [marqueeInput, setMarqueeInput] = useState('');
   const [customMarquee, setCustomMarquee] = useState('');
+
+  // ── Arcade Toss Bartender ─────────────────────────────────────────────────
+  const [isGrabbed, setIsGrabbed] = useState(false);
+  const [isFlying, setIsFlying] = useState(false);
+  const [flyScream, setFlyScream] = useState(false);
+  const [tossQuip, setTossQuip] = useState(null);
+
+  // ── Sliding mug delivery animation ─────────────────────────────────────
+  // { key, fromX, toX } — fires when user taps a bottle
+  const [slidingMug, setSlidingMug] = useState(null);
+
+  // ── Screen shake ──────────────────────────────────────────────────────────
+  const [shakeActive, setShakeActive] = useState(false);
+  const [showImpactFlash, setShowImpactFlash] = useState(false);
+  const shakeTimerRef = useRef(null);
 
   // Load persistence on mount
   useEffect(() => {
@@ -1074,12 +1367,121 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
   const flipTimerRef       = useRef(null);
   const prevDrinkCountRef  = useRef(null);  // detects new bottle additions
 
+  // ── Arcade Toss refs ──────────────────────────────────────────────────────
+  const longPressTimerRef  = useRef(null);
+  const constraintsRef     = useRef(null); // saloon-stage bounding box
+  const wasDraggedRef      = useRef(false); // suppress click after drag
+
+  // ── Sync xMV → bartenderX state (for quips/lantern positioning) ────────────
+  useEffect(() => xMV.on('change', v => setBartenderX(v)), [xMV]);
+
   // ── Happy Hour check (every 60 s) ──────────────────────────────────────────
   useEffect(() => {
     const check = () => setIsHappyHour(getTimeContext().isHappyHour);
     const id = setInterval(check, 60000);
     return () => clearInterval(id);
   }, []);
+
+  // ── Screen shake helper ───────────────────────────────────────────────────
+  const triggerCabinetShake = useCallback(() => {
+    setShowImpactFlash(true);
+    setShakeActive(true);
+    clearTimeout(shakeTimerRef.current);
+    shakeTimerRef.current = setTimeout(() => {
+      setShakeActive(false);
+      setShowImpactFlash(false);
+    }, 380);
+    if (navigator.vibrate) navigator.vibrate([40, 20, 40, 10, 40]);
+  }, []);
+
+  // ── Arcade Toss: long-press detection ────────────────────────────────────
+  const handleBartenderPointerDown = useCallback((e) => {
+    e.stopPropagation();
+    if (selectedDrink || isFlying) return;
+    longPressTimerRef.current = setTimeout(() => {
+      setIsGrabbed(true);
+      cancelAnimationFrame(animationRef.current); // freeze any walk
+      setBartenderState('surprised');
+      if (navigator.vibrate) navigator.vibrate([30, 10, 30]);
+    }, 480);
+  }, [selectedDrink, isFlying]);
+
+  const handleBartenderPointerUp = useCallback(() => {
+    clearTimeout(longPressTimerRef.current);
+    if (!isGrabbed) return;
+    // Soft release without throw — return home
+    setIsGrabbed(false);
+    setBartenderState('walking');
+    setFacingRight(false);
+    walkToRef.current?.(homeX(), () => { setBartenderState('idle'); setFacingRight(true); });
+  }, [isGrabbed]);
+
+  const handleBartenderPointerLeave = useCallback(() => {
+    clearTimeout(longPressTimerRef.current);
+  }, []);
+
+  // ── Arcade Toss: drag end physics ────────────────────────────────────────
+  const TOSS_QUIPS = [
+    "That... was undignified.",
+    "*dusts off vest* Happens more than you'd think.",
+    "Did anyone see that?",
+    "Occupational hazard, partner.",
+    "My mustache survived. That's all that matters.",
+    "I've been thrown outta worse saloons.",
+    "I'm fine. The hat took most of it.",
+  ];
+
+  const handleBartenderDragEnd = useCallback(async (event, info) => {
+    clearTimeout(longPressTimerRef.current);
+    const speed = Math.sqrt(info.velocity.x ** 2 + info.velocity.y ** 2);
+
+    if (speed > 180 && isGrabbed) {
+      setIsGrabbed(false);
+      setIsFlying(true);
+      setFlyScream(true);
+      setBartenderState('surprised');
+      wasDraggedRef.current = true;
+
+      const spinDir = info.velocity.x >= 0 ? 1 : -1;
+      const spins = Math.min(Math.max(Math.round(speed / 200), 1), 4);
+
+      // Spin animation via bartenderControls on the inner motion.div
+      await bartenderControls.start({
+        rotate: 360 * spins * spinDir,
+        transition: { duration: 0.65, ease: [0.16, 1, 0.3, 1] },
+      });
+      // Brief pause at landing
+      await new Promise(r => setTimeout(r, 180));
+      setFlyScream(false);
+
+      // Reset rotation
+      await bartenderControls.start({
+        rotate: 0,
+        transition: { type: 'spring', stiffness: 180, damping: 18 },
+      });
+
+      setBartenderState('walking');
+      setFacingRight(false);
+
+      // Walk of shame back to home
+      walkToRef.current?.(homeX(), () => {
+        setIsFlying(false);
+        setBartenderState('idle');
+        setFacingRight(true);
+        const quip = TOSS_QUIPS[Math.floor(Math.random() * TOSS_QUIPS.length)];
+        setTossQuip(quip);
+        setIdleQuipText(quip);
+        setTimeout(() => setTossQuip(null), 4000);
+      });
+    } else {
+      // Soft drop — no real throw
+      setIsGrabbed(false);
+      setIsFlying(false);
+      setFlyScream(false);
+      setBartenderState('walking');
+      walkToRef.current?.(homeX(), () => { setBartenderState('idle'); setFacingRight(true); });
+    }
+  }, [isGrabbed, bartenderControls]);
 
   // ── Tap bartender 5× for joke — also completes Secret Pour sequence ──────
   const handleBartenderTap = useCallback(() => {
@@ -1146,6 +1548,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
   const handleSurpriseMe = useCallback(() => {
     if (bartenderState !== 'idle' && bartenderState !== 'presenting') return;
     setIdleQuipText(sample(CONTEXTUAL_QUIPS.surprise));
+    triggerCabinetShake();
 
     // Pick from user's own drinks first, else from classics
     const pick = drinks.length > 0
@@ -1203,9 +1606,10 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
       .map(([name]) => ({ name, tag: 'bar-quest', questName: 'Fill the Shelf' }));
     if (top3.length && onAddToGrocery) {
       onAddToGrocery(top3);
+      triggerCabinetShake();
       if (navigator.vibrate) navigator.vibrate([30, 20, 30]);
     }
-  }, [drinks, barInventory, onAddToGrocery]);
+  }, [drinks, barInventory, onAddToGrocery, triggerCabinetShake]);
 
   // ── Made It! (Tipsy mode counter) ─────────────────────────────────────
   const handleMadeIt = useCallback(() => {
@@ -1310,24 +1714,25 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
 
   // ── Generic walk helper (stable ref prevents stale closure in rAF loops) ────
   const walkTo = useCallback((targetX, onArrive) => {
+    if (isGrabbed || isFlying) return; // don't walk while being dragged/flying
     cancelAnimationFrame(animationRef.current);
-    const startX    = bartenderX;
+    const startX    = xMV.get(); // read from motion value, not state
     const walkTime  = Math.min(800, Math.max(200, Math.abs(targetX - startX) * 3));
     const walkStart = performance.now();
     setFacingRight(targetX > startX);
     const step = (now) => {
       const p = Math.min(1, (now - walkStart) / walkTime);
       const e = 1 - Math.pow(1 - p, 3);
-      setBartenderX(startX + (targetX - startX) * e);
+      xMV.set(startX + (targetX - startX) * e); // drives xMV directly
       if (p < 1) {
         animationRef.current = requestAnimationFrame(step);
       } else {
-        setBartenderX(targetX);
+        xMV.set(targetX);
         onArrive?.();
       }
     };
     animationRef.current = requestAnimationFrame(step);
-  }, [bartenderX]);
+  }, [xMV, isGrabbed, isFlying]);
   useEffect(() => { walkToRef.current = walkTo; }, [walkTo]);
 
   // ── Bartender wander (12–25 s idle → picks new waypoint) ───────────────────
@@ -1339,8 +1744,9 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
     const delay = 12000 + Math.random() * 13000;
     wanderTimerRef.current = setTimeout(() => {
       const barWidth = barTopRef.current?.clientWidth || 320;
-      const keys     = Object.keys(WAYPOINTS);
-      const key      = keys[Math.floor(Math.random() * keys.length)];
+      // Wander left/center — bartender home is 'home' (right side)
+      const wanderKeys = ['left', 'center', 'home'];
+      const key      = wanderKeys[Math.floor(Math.random() * wanderKeys.length)];
       const targetX  = WAYPOINTS[key] * barWidth - 30;
       setBartenderState('walking');
       walkToRef.current?.(targetX, () => setBartenderState('idle'));
@@ -1392,17 +1798,23 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
   }, [bartenderState, selectedDrink]);
 
   // ── Filtering logic (Stool Navigation) ────────────────────────────────────
+  // For cocktail/mocktail: show ALL bottles but dim non-matching ones (thematic bar look).
+  // For 'recent': still filter (time-based — not a visual preference).
   const filteredDrinks = useMemo(() => {
-    let list = drinks;
-    if (stoolFilter === 'cocktail') {
-      list = list.filter(d => (d.category || '').toLowerCase().includes('cocktail'));
-    } else if (stoolFilter === 'mocktail') {
-      list = list.filter(d => (d.category || '').toLowerCase().includes('mocktail'));
-    } else if (stoolFilter === 'recent') {
-      list = [...drinks].sort((a, b) => (b.id || 0) - (a.id || 0)).slice(0, 12);
+    if (stoolFilter === 'recent') {
+      return [...drinks].sort((a, b) => (b.id || 0) - (a.id || 0)).slice(0, 12);
     }
-    return list;
+    return drinks; // all — dimming is handled per-bottle in render
   }, [drinks, stoolFilter]);
+
+  // Per-bottle dim predicate
+  const isDimmed = useCallback((drink) => {
+    if (stoolFilter === 'all' || stoolFilter === 'recent') return false;
+    const cat = (drink.category || '').toLowerCase();
+    if (stoolFilter === 'cocktail') return !cat.includes('cocktail');
+    if (stoolFilter === 'mocktail') return !cat.includes('mocktail');
+    return false;
+  }, [stoolFilter]);
 
   // ── Pagination ──────────────────────────────────────────────────────────────
   const totalPages        = Math.max(1, Math.ceil(filteredDrinks.length / BOTTLES_PER_PAGE));
@@ -1436,10 +1848,10 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
 
     const drink     = selectedDrink;
     const returnPos = getBottlePosition(drink.id);
-    const startX    = bartenderX;
+    const startX    = xMV.get();
 
     setSelectedDrink(null);
-    setFacingRight(returnPos > bartenderX);
+    setFacingRight(returnPos > startX);
     setBartenderState('returning');
 
     const returnStart = performance.now();
@@ -1448,23 +1860,23 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
     const animateReturn = (now) => {
       const progress = Math.min(1, (now - returnStart) / returnTime);
       const eased    = 1 - Math.pow(1 - progress, 3);
-      setBartenderX(startX + (returnPos - startX) * eased);
+      xMV.set(startX + (returnPos - startX) * eased);
 
       if (progress < 1) {
         animationRef.current = requestAnimationFrame(animateReturn);
       } else {
         setHoldingBottle(null);
         setBartenderState('walking');
-        setFacingRight(20 < returnPos);
+        const restPos = homeX();
+        setFacingRight(restPos < returnPos);
 
-        const restPos  = 20;
         const idleStart = performance.now();
         const idleTime  = Math.min(600, Math.max(200, Math.abs(restPos - returnPos) * 3));
 
         const animateIdle = (iNow) => {
           const ip = Math.min(1, (iNow - idleStart) / idleTime);
           const ie = 1 - Math.pow(1 - ip, 3);
-          setBartenderX(returnPos + (restPos - returnPos) * ie);
+          xMV.set(returnPos + (restPos - returnPos) * ie);
           if (ip < 1) {
             animationRef.current = requestAnimationFrame(animateIdle);
           } else {
@@ -1476,7 +1888,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
       }
     };
     animationRef.current = requestAnimationFrame(animateReturn);
-  }, [selectedDrink, bartenderState, bartenderX, getBottlePosition]);
+  }, [xMV, selectedDrink, bartenderState, getBottlePosition]);
 
   // ── Android back button — detail card first, then whole shelf ─────────────
   // This is LIFO with App.jsx's bar-shelf handler; pressing back dismisses
@@ -1501,12 +1913,13 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
   // ── Idle swig sequence ──────────────────────────────────────────────────────
   // After 8–15 s of inactivity the bartender sneaks a swig from a random bottle
   const runSwigSequence = useCallback(() => {
+    if (isGrabbed || isFlying) return;
     const barWidth  = barTopRef.current?.clientWidth || 320;
     // Target somewhere in the middle 60 % of the bar
     const targetPos = barWidth * (0.15 + Math.random() * 0.55) - 60;
     const style     = BOTTLE_STYLES[Math.floor(Math.random() * BOTTLE_STYLES.length)];
     const quip      = SWIG_QUIPS[Math.floor(Math.random() * SWIG_QUIPS.length)];
-    const startX    = bartenderX;
+    const startX    = xMV.get();
 
     setSwigBottle(style);
     setFacingRight(targetPos > startX);
@@ -1518,32 +1931,32 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
     const animSwigWalk = (now) => {
       const p = Math.min(1, (now - walkStart) / walkTime);
       const e = 1 - Math.pow(1 - p, 3);
-      setBartenderX(startX + (targetPos - startX) * e);
+      xMV.set(startX + (targetPos - startX) * e);
 
       if (p < 1) {
         animationRef.current = requestAnimationFrame(animSwigWalk);
       } else {
-        setBartenderX(targetPos);
+        xMV.set(targetPos);
         setBartenderState('swigging');
         setSwigQuip(quip);
 
         timeoutRef.current = setTimeout(() => {
           setSwigQuip(null);
-          const restPos  = 20;
+          const restPos  = homeX();
           const retStart = performance.now();
           const retTime  = Math.min(700, Math.max(300, Math.abs(restPos - targetPos) * 3));
           setBartenderState('swigreturn');
-          setFacingRight(restPos > targetPos); // face left back to home
+          setFacingRight(restPos > targetPos); // face right back to home at 80%
 
           const animSwigReturn = (rNow) => {
             const rp = Math.min(1, (rNow - retStart) / retTime);
             const re = 1 - Math.pow(1 - rp, 3);
-            setBartenderX(targetPos + (restPos - targetPos) * re);
+            xMV.set(targetPos + (restPos - targetPos) * re);
 
             if (rp < 1) {
               animationRef.current = requestAnimationFrame(animSwigReturn);
             } else {
-              setBartenderX(restPos);
+              xMV.set(restPos);
               setFacingRight(true);
               setSwigBottle(null);
 
@@ -1563,7 +1976,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
       }
     };
     animationRef.current = requestAnimationFrame(animSwigWalk);
-  }, [bartenderX]);
+  }, [xMV, isGrabbed, isFlying]);
 
   // Keep a stable ref to the latest swig sequence function so the timer isn't recreated on every X change
   const runSwigRef = useRef(runSwigSequence);
@@ -1717,10 +2130,10 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
 
   // ── Bottle tap ─────────────────────────────────────────────────────────────
   const handleBottleTap = useCallback((drink, shelfIdx) => {
+    if (isGrabbed || isFlying) return;
     if (bartenderState !== 'idle' && bartenderState !== 'presenting') return;
 
     // ── Secret sequence tracking (top-shelf → bottom-shelf → bartender) ──
-    // shelfIdx 0 = top row, shelfIdx 2 = bottom row of 3-shelf display
     if (shelfIdx === 0) {
       secretSeqRef.current = ['top'];
       clearTimeout(secretTimerRef.current);
@@ -1730,11 +2143,9 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
       clearTimeout(secretTimerRef.current);
       secretTimerRef.current = setTimeout(() => { secretSeqRef.current = []; }, 8000);
     } else {
-      // Any other click breaks the sequence
       secretSeqRef.current = [];
     }
 
-    // Cancel any pending swig
     clearTimeout(swigTimerRef.current);
 
     if (selectedDrink?.id === drink.id) { dismissDrink(); return; }
@@ -1749,17 +2160,17 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
     const rarity      = getDrinkRarity(drink);
     if (rarity !== 'common') setIdleQuipText(sample(CONTEXTUAL_QUIPS.topShelf));
 
-    setFacingRight(targetPos > bartenderX);
+    const startX = xMV.get();
+    setFacingRight(targetPos > startX);
     setBartenderState('walking');
 
-    const startX    = bartenderX;
     const walkTime  = Math.min(800, Math.max(300, Math.abs(targetPos - startX) * 3));
     const walkStart = performance.now();
 
     const animateWalk = (now) => {
       const p = Math.min(1, (now - walkStart) / walkTime);
       const e = 1 - Math.pow(1 - p, 3);
-      setBartenderX(startX + (targetPos - startX) * e);
+      xMV.set(startX + (targetPos - startX) * e);
 
       if (p < 1) {
         animationRef.current = requestAnimationFrame(animateWalk);
@@ -1771,6 +2182,14 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
           setBartenderState('presenting');
           setSelectedDrink(drink);
 
+          // ── Slide the mug across the bar surface toward the customer ──
+          const barWidth = barTopRef.current?.clientWidth || 340;
+          setSlidingMug({
+            key: Date.now(),
+            fromX: homeX(),
+            toX: barWidth * 0.12,
+          });
+
           const centerX    = (barTopRef.current?.clientWidth ?? 200) / 2 - 60;
           const grabX      = targetPos;
           const presStart  = performance.now();
@@ -1780,7 +2199,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
           const animatePresent = (pNow) => {
             const pp = Math.min(1, (pNow - presStart) / presTime);
             const pe = 1 - Math.pow(1 - pp, 3);
-            setBartenderX(grabX + (centerX - grabX) * pe);
+            xMV.set(grabX + (centerX - grabX) * pe);
             if (pp < 1) animationRef.current = requestAnimationFrame(animatePresent);
           };
           animationRef.current = requestAnimationFrame(animatePresent);
@@ -1788,7 +2207,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
       }
     };
     animationRef.current = requestAnimationFrame(animateWalk);
-  }, [bartenderState, bartenderX, selectedDrink, getBottlePosition, dismissDrink]);
+  }, [xMV, bartenderState, selectedDrink, getBottlePosition, dismissDrink, isGrabbed, isFlying, homeX]);
 
   // ── Swipe-down to dismiss detail card ─────────────────────────────────────
   const handleDetailTouchStart = useCallback((e) => setSwipeStartY(e.touches[0].clientY), []);
@@ -1809,10 +2228,13 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
     isHappyHour ? 'bs-happy-hour' : '',
     drinksMade >= 3 ? 'bs-tipsy' : '',
     isPolishingFast ? 'bs-polishing-fast' : '',
+    shakeActive ? 'bs-cabinet-shake' : '',
   ].filter(Boolean).join(' ')}
-  style={{ height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+  style={{ height: '100%', overflow: 'hidden', display: 'flex', flexDirection: 'column', position: 'relative' }}
   onClick={e => { e.stopPropagation(); trackRapidClick(); }}
 >
+        {/* Impact flash overlay */}
+        {showImpactFlash && <div className="bs-impact-flash" key={Date.now()} aria-hidden="true" />}
 
         {/* ── Top bar ── */}
         <div className="bs-topbar">
@@ -1841,6 +2263,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
           >
             <span className={`bs-pixel-icon ${chiptuneOn ? 'bs-pixel-icon-speaker' : 'bs-pixel-icon-note'}`} aria-hidden="true" />
             <span className="bs-chiptune-label">{chiptuneOn ? 'MUTE' : 'TUNE'}</span>
+            {chiptuneOn && <ChiptuneVisualizer />}
           </button>
           {onAddToGrocery && drinks.length > 0 && (
             <button
@@ -1861,7 +2284,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
         </div>
 
         {/* ═══ 3-LAYER SALOON STAGE ═══ */}
-        <div className="saloon-stage" ref={barTopRef}>
+        <div className="saloon-stage" ref={(el) => { barTopRef.current = el; constraintsRef.current = el; }}>
 
           {/* ── LAYER 1: Background — brick wall, lanterns, steam ── */}
           <div className="saloon-bg" aria-hidden="true">
@@ -1926,13 +2349,26 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
                           const bottleStyle = getBottleStyle(drink);
                           const isSelected  = selectedDrink?.id === drink.id;
                           const rarity = getDrinkRarity(drink);
+                          const dimmed = isDimmed(drink);
+                          const activeFilter = !dimmed && stoolFilter !== 'all' && stoolFilter !== 'recent';
                           return (
-                            <button
+                            <motion.button
                               key={drink.id}
                               ref={el => { if (el) bottleSlotsRef.current[drink.id] = el; }}
-                              className={`bs-bottle-slot ${isSelected ? 'bs-selected' : ''} bs-bottle-${rarity}`}
-                              onClick={() => handleBottleTap(drink, shelfIdx)}
+                              className={[
+                                'bs-bottle-slot',
+                                isSelected ? 'bs-selected' : '',
+                                `bs-bottle-${rarity}`,
+                                dimmed ? 'bs-bottle-dimmed' : '',
+                                activeFilter ? 'bs-bottle-active-filter' : '',
+                              ].filter(Boolean).join(' ')}
+                              onClick={() => !dimmed && handleBottleTap(drink, shelfIdx)}
                               title={drink.name}
+                              whileHover={dimmed ? {} : {
+                                rotate: [-4, 4, -3, 3, 0],
+                                transition: { duration: 0.35, ease: 'easeInOut' },
+                              }}
+                              whileTap={dimmed ? {} : { scale: 0.88 }}
                             >
                               <div className="bs-bottle-idle" style={{ opacity: isSelected && holdingBottle ? 0.2 : 1 }}>
                                 <PixelBottle style={bottleStyle} size={52} glow={isSelected || rarity === 'legendary'} />
@@ -1940,7 +2376,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
                               <span className="bs-bottle-label" style={rarity !== 'common' ? { color: getRarityColor(rarity) } : undefined}>
                                 {drink.name.length > 9 ? drink.name.slice(0, 8) + '…' : drink.name}
                               </span>
-                            </button>
+                            </motion.button>
                           );
                         })}
                         {row.length < BOTTLES_PER_SHELF && Array.from({ length: BOTTLES_PER_SHELF - row.length }).map((_, i) => (
@@ -1965,43 +2401,67 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
               </div>
             </div>
 
-            {/* Bartender behind the bar — tappable for easter eggs */}
-            <div
-              className={`bs-bartender-wrap${secretFlash ? ' bs-secret-flash' : ''}`}
+            {/* Bartender — outer: x position + drag; inner: rotation + visual ── */}
+            {/* Outer motion.div drives horizontal position via xMV + drag */}
+            <motion.div
               style={{
-                transform: `translateX(${bartenderX}px)`,
-                transition: bartenderState === 'idle' ? 'transform 0.3s ease' : 'none',
+                x: xMV,
+                position: 'absolute',
+                bottom: '30px',
+                zIndex: isGrabbed ? 50 : 2,
+                touchAction: 'none',
+                cursor: isGrabbed ? 'grabbing' : 'grab',
               }}
-              onClick={handleBartenderTap}
-              role="button"
-              tabIndex={0}
-              aria-label="Tap the bartender"
+              drag={isGrabbed}
+              dragConstraints={constraintsRef}
+              dragElastic={0.12}
+              dragMomentum={false}
+              onDragEnd={handleBartenderDragEnd}
             >
-              <PixelBartender
-                state={bartenderState}
-                holdingBottle={holdingBottle}
-                facingRight={facingRight}
-                swigBottle={swigBottle}
-                swigQuip={swigQuip}
-                isDancing={chiptuneOn && bartenderState === 'idle'}
-              />
-              {/* ZZZ floating particles during doze */}
-              {bartenderState === 'dozing' && (
-                <div className="bs-zzzz-wrap" aria-hidden="true">
-                  <span className="bs-zzzz-z" style={{ '--idx': 0, '--delay': '0s' }}>z</span>
-                  <span className="bs-zzzz-z" style={{ '--idx': 1, '--delay': '0.7s' }}>z</span>
-                  <span className="bs-zzzz-z" style={{ '--idx': 2, '--delay': '1.4s' }}>z</span>
-                </div>
-              )}
-              {/* Floating pixel music notes when chiptune is playing */}
-              {chiptuneOn && (
-                <div className="bs-music-notes" aria-hidden="true">
-                  <span className="bs-music-note" style={{ '--idx': 0, '--delay': '0s' }}>♪</span>
-                  <span className="bs-music-note" style={{ '--idx': 1, '--delay': '0.55s' }}>♫</span>
-                  <span className="bs-music-note" style={{ '--idx': 2, '--delay': '1.1s' }}>♩</span>
-                </div>
-              )}
-            </div>
+              {/* Inner motion.div handles rotation during toss */}
+              <motion.div
+                className={`bs-bartender-wrap bs-bartender-draggable${secretFlash ? ' bs-secret-flash' : ''}${isGrabbed ? ' bs-bartender-grabbed' : ''}`}
+                animate={bartenderControls}
+                onPointerDown={handleBartenderPointerDown}
+                onPointerUp={handleBartenderPointerUp}
+                onPointerLeave={handleBartenderPointerLeave}
+                onClick={(e) => {
+                  if (wasDraggedRef.current) { wasDraggedRef.current = false; return; }
+                  handleBartenderTap(e);
+                }}
+                role="button"
+                tabIndex={0}
+                aria-label="Long-press to grab the bartender! Tap for quips."
+                style={{ position: 'relative', display: 'inline-block' }}
+              >
+                <PixelBartender
+                  state={isGrabbed || isFlying ? 'surprised' : bartenderState}
+                  holdingBottle={holdingBottle}
+                  facingRight={facingRight}
+                  swigBottle={swigBottle}
+                  swigQuip={swigQuip}
+                  isDancing={chiptuneOn && bartenderState === 'idle' && !isGrabbed && !isFlying}
+                />
+                {/* Grab exclamation */}
+                {isGrabbed && (
+                  <div className="bs-grab-exclaim" aria-hidden="true">??!!</div>
+                )}
+                {/* Flying scream */}
+                {isFlying && flyScream && (
+                  <div className="bs-fly-scream" aria-hidden="true">AAAHH!!</div>
+                )}
+                {/* ZZZ floating particles during doze */}
+                {bartenderState === 'dozing' && !isGrabbed && !isFlying && (
+                  <div className="bs-zzzz-wrap" aria-hidden="true">
+                    <span className="bs-zzzz-z" style={{ '--idx': 0, '--delay': '0s' }}>z</span>
+                    <span className="bs-zzzz-z" style={{ '--idx': 1, '--delay': '0.7s' }}>z</span>
+                    <span className="bs-zzzz-z" style={{ '--idx': 2, '--delay': '1.4s' }}>z</span>
+                  </div>
+                )}
+                {/* Framer Motion floating music notes when chiptune is playing */}
+                <FloatingNotes active={chiptuneOn && !isGrabbed && !isFlying} />
+              </motion.div>
+            </motion.div>
 
             {/* Bottle flip overlay (rare easter egg when adding a drink) */}
             {flipState !== 'none' && (
@@ -2042,8 +2502,21 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
                     transition: 'left 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
                   }}
                 >
+                  {/* ── Post-toss shame quip ── */}
+                  {tossQuip && !isFlying && !isGrabbed && bartenderState === 'idle' && (
+                    <motion.div
+                      className={`bs-bt-speech bs-bt-speech-shame ${bubbleDir}`}
+                      initial={{ scale: 0, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={{ scale: 0, opacity: 0 }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+                    >
+                      <span>{tossQuip}</span>
+                    </motion.div>
+                  )}
+
                   {/* ── Wake "!" exclamation (surprised without a joke) ── */}
-                  {bartenderState === 'surprised' && !jokeText && !surpriseResult && !secretCocktailActive && (
+                  {bartenderState === 'surprised' && !jokeText && !surpriseResult && !secretCocktailActive && !isFlying && !isGrabbed && (
                     <div className={`bs-bt-speech bs-bt-speech-wake ${bubbleDir}`}>
                       <span className="bs-wake-exclaim">!</span>
                     </div>
@@ -2112,6 +2585,18 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
             })()}
           </div>
 
+          {/* ── LAYER 4: Ambient Events (tumbleweed, snake) — above all static layers ── */}
+          <SaloonAmbience
+            bartenderX={bartenderX}
+            onBartenderSurprise={() => {
+              if (bartenderState === 'idle') {
+                setBartenderState('surprised');
+                setIdleQuipText("SNAKE!! *leaps*");
+                setTimeout(() => setBartenderState('idle'), 900);
+              }
+            }}
+          />
+
           {/* ── LAYER 3: Foreground — bar counter, stools, dog, door ── */}
           <div className="saloon-fg">
             {/* Saloon door — occasionally swings open */}
@@ -2128,21 +2613,33 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
               </div>
             )}
 
-            {/* Bar counter surface — split left/gap/right so bartender can walk through */}
+            {/* Bar counter surface — wide left | gap at ~80% | narrow right */}
             <div className="bs-bar-surface">
               <div className="bs-bar-seg-l">
                 <div className="bs-bar-coaster bs-bar-coaster-1" />
                 <div className="bs-bar-napkin" />
-              </div>
-              {/* Walkthrough gap — bartender's legs show here */}
-              <div className="bs-bar-gap" aria-hidden="true" />
-              <div className="bs-bar-seg-r">
-                <div className="bs-bar-coaster bs-bar-coaster-2" />
+                {/* Tip jar lives in the newly opened left real estate */}
                 <PixelTipJar
                   tipsCollected={tipsCollected}
                   coinNonce={tipCoinNonce}
                   onTip={handleTipJar}
                 />
+                {/* Sliding mug delivery animation */}
+                <AnimatePresence>
+                  {slidingMug && (
+                    <PixelSlidingMug
+                      key={slidingMug.key}
+                      fromX={slidingMug.fromX}
+                      toX={slidingMug.toX}
+                      onDone={() => setSlidingMug(null)}
+                    />
+                  )}
+                </AnimatePresence>
+              </div>
+              {/* Walkthrough gap — bartender's legs show here, now at ~80% */}
+              <div className="bs-bar-gap bs-bar-gap-right" aria-hidden="true" />
+              <div className="bs-bar-seg-r">
+                <div className="bs-bar-coaster bs-bar-coaster-2" />
               </div>
             </div>
             <div className="bs-bar-rail" />
@@ -2157,17 +2654,41 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
               ].map(({filter, label, x}) => {
                 const isActive = stoolFilter === filter;
                 return (
-                  <button
+                  <motion.button
                     key={filter}
                     className={`saloon-stool-btn ${isActive ? 'saloon-stool-active' : ''}`}
                     style={{ left: x }}
-                    onClick={() => { setStoolFilter(filter); setCurrentPage(0); if (navigator.vibrate) navigator.vibrate(15); }}
+                    onClick={() => {
+                      if (navigator.vibrate) navigator.vibrate(15);
+                      setCurrentPage(0);
+                      // Walk bartender to behind this tap handle before switching filter
+                      const bw = barTopRef.current?.clientWidth || 340;
+                      const tapX = bw * (parseFloat(x) / 100) + 10;
+                      if (bartenderState === 'idle' && !isGrabbed && !isFlying) {
+                        walkToRef.current?.(tapX, () => {
+                          setStoolFilter(filter);
+                          // Drift back home after a beat
+                          setTimeout(() => {
+                            if (bartenderState === 'idle') walkToRef.current?.(homeX(), () => {});
+                          }, 700);
+                        });
+                      } else {
+                        setStoolFilter(filter);
+                      }
+                    }}
                     title={`Filter: ${label}`}
                     aria-pressed={isActive}
+                    whileTap={{
+                      scaleY: 0.78,
+                      y: 6,
+                      transition: { type: 'spring', stiffness: 600, damping: 10 },
+                    }}
+                    animate={isActive ? { y: -4 } : { y: 0 }}
+                    transition={{ type: 'spring', stiffness: 280, damping: 22 }}
                   >
                     <span className="saloon-stool-label">{label}</span>
                     <BarStool active={isActive} />
-                  </button>
+                  </motion.button>
                 );
               })}
             </div>

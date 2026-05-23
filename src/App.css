@@ -16974,13 +16974,15 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 }
 
 /* Left segment: coasters and napkin float inside */
+/* Left segment: wide — tip jar + coasters + mug delivery live here */
 .bs-bar-seg-l {
-  flex: 5; /* wider on left */
+  flex: 7; /* ~78% of flex space — gap lands at ~80% of bar total width */
+  position: relative; /* needed for absolute-positioned mug + tip jar */
 }
 
-/* Right segment: tip jar lives here */
+/* Right segment: narrow sliver past the gap (bartender territory) */
 .bs-bar-seg-r {
-  flex: 7; /* wider on right */
+  flex: 1;
 }
 
 /* The walkthrough gap — transparent, just a dark floor strip at bottom */
@@ -17012,19 +17014,66 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   left: 40%;
 }
 
-/* Tip jar within the right segment */
-.bs-bar-seg-r .bs-tip-jar {
+/* Tip jar — relocated to left segment (opened real estate) */
+.bs-bar-seg-l .bs-tip-jar {
   position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  top: 8px;
+  right: 12%;
+  top: 6px;
 }
 
 /* Coaster in right segment */
 .bs-bar-seg-r .bs-bar-coaster-2 {
   position: absolute;
-  right: 14%;
+  left: 50%;
+  transform: translateX(-50%);
   top: 6px;
+}
+
+/* ── Sliding Mug Delivery ─────────────────────────────────────────────────── */
+.bs-sliding-mug {
+  pointer-events: none;
+  will-change: transform;
+}
+.bs-mug-foam-trail {
+  position: absolute;
+  top: 12px;
+  right: 30px;
+  width: 40px;
+  height: 3px;
+  background: linear-gradient(to left, rgba(255,255,255,0.7) 0%, transparent 100%);
+  border-radius: 2px;
+  animation: bsMugTrailFade 0.45s ease-out forwards;
+}
+@keyframes bsMugTrailFade {
+  0%   { opacity: 0.85; width: 40px; }
+  100% { opacity: 0; width: 10px; }
+}
+
+/* ── Framer Motion Tip Coin ─────────────────────────────────────────────── */
+.bs-tip-coin-fm {
+  pointer-events: none;
+  will-change: transform, opacity;
+  filter: drop-shadow(0 2px 4px rgba(255, 193, 7, 0.6));
+}
+
+/* ── Framer Motion Floating Notes ──────────────────────────────────────── */
+.bs-float-notes {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 10;
+}
+.bs-float-note {
+  font-size: 16px;
+  color: #ffd700;
+  text-shadow: 0 0 6px rgba(255, 215, 0, 0.8);
+  will-change: transform, opacity;
+  pointer-events: none;
+  image-rendering: pixelated;
 }
 
 /* ══ BARTENDER DANCING (chiptune active) ══════════════════════════════════════
@@ -18805,4 +18854,325 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   letter-spacing: 0.06em;
   color: var(--text-light);
   text-transform: uppercase;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   BARSHELF EXPANSION — Arcade Saloon v2 Upgrades
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Cabinet Screen Shake ─────────────────────────────────────────────────── */
+@keyframes bsCabinetShake {
+  0%   { transform: translate(0, 0) rotate(0deg); }
+  8%   { transform: translate(-6px, 4px) rotate(-0.3deg); }
+  16%  { transform: translate(6px, -4px) rotate(0.3deg); }
+  24%  { transform: translate(-5px, 3px) rotate(-0.2deg); }
+  32%  { transform: translate(5px, -2px) rotate(0.2deg); }
+  40%  { transform: translate(-3px, 2px) rotate(-0.1deg); }
+  50%  { transform: translate(3px, -1px) rotate(0.1deg); }
+  60%  { transform: translate(-2px, 1px); }
+  75%  { transform: translate(1px, -1px); }
+  90%  { transform: translate(-1px, 0); }
+  100% { transform: translate(0, 0); }
+}
+.bs-cabinet-shake {
+  animation: bsCabinetShake 0.38s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+/* White flash overlay for impact */
+@keyframes bsImpactFlash {
+  0%   { opacity: 0; }
+  15%  { opacity: 0.55; }
+  100% { opacity: 0; }
+}
+.bs-impact-flash {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.85);
+  pointer-events: none;
+  z-index: 200;
+  border-radius: inherit;
+  animation: bsImpactFlash 0.3s ease-out forwards;
+}
+
+/* ── Dimmed Bottles (filter dim, not hide) ────────────────────────────────── */
+.bs-bottle-slot.bs-bottle-dimmed {
+  opacity: 0.15;
+  filter: grayscale(1);
+  transition: opacity 0.35s ease, filter 0.35s ease;
+  pointer-events: none;
+}
+.bs-bottle-slot:not(.bs-bottle-dimmed) {
+  transition: opacity 0.35s ease, filter 0.35s ease;
+}
+/* Active bottles pulse with golden outline glow */
+.bs-bottle-slot.bs-bottle-active-filter {
+  filter: drop-shadow(0 0 6px rgba(255, 215, 0, 0.7));
+}
+
+/* ── Chiptune Visualizer Bars ─────────────────────────────────────────────── */
+.bs-ct-visualizer {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+.bs-ct-bar {
+  width: 3px;
+  background: #ffd700;
+  border-radius: 1px 1px 0 0;
+  transform-origin: bottom center;
+  min-height: 3px;
+  box-shadow: 0 0 4px rgba(255, 215, 0, 0.6);
+}
+
+/* ── Grab / Flying Bartender States ──────────────────────────────────────── */
+.bs-grab-exclaim {
+  position: absolute;
+  top: -22px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  color: #1a1a1a;
+  background: #ffd700;
+  padding: 3px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+  animation: bsGrabExclaimBounce 0.3s ease-out infinite alternate;
+  z-index: 10;
+  pointer-events: none;
+}
+@keyframes bsGrabExclaimBounce {
+  from { transform: translateX(-50%) translateY(0); }
+  to   { transform: translateX(-50%) translateY(-3px); }
+}
+
+/* Flying scream speech bubble */
+.bs-fly-scream {
+  position: absolute;
+  top: -30px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 6px;
+  color: #1a1a1a;
+  background: #ff5722;
+  padding: 4px 7px;
+  border-radius: 3px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 10;
+  animation: bsFlyScreamWiggle 0.12s ease-in-out infinite alternate;
+}
+@keyframes bsFlyScreamWiggle {
+  from { transform: translateX(-50%) rotate(-4deg) scale(1.02); }
+  to   { transform: translateX(-50%) rotate(4deg) scale(0.98); }
+}
+/* Speech bubble tail for scream */
+.bs-fly-scream::after {
+  content: '';
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: #ff5722;
+  border-bottom: none;
+}
+
+/* ── Landing quip bubble after toss ──────────────────────────────────────── */
+.bs-bt-speech-toss {
+  background: linear-gradient(135deg, #5d4037 0%, #3e2723 100%);
+  border: 2px solid #a1887f;
+  border-radius: 4px;
+  font-size: 7px;
+  color: #f5e6c8;
+  font-style: italic;
+}
+.bs-bt-speech-toss::after {
+  border-top-color: #5d4037;
+}
+
+/* ── Cursor states for bartender drag ────────────────────────────────────── */
+.bs-bartender-draggable {
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.bs-bartender-draggable:active {
+  cursor: grabbing;
+}
+
+/* ── Saloon Ambient Events Layer ─────────────────────────────────────────── */
+.saloon-ambience {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 4; /* above fg (z:3) but below detail card */
+}
+
+/* Tumbleweed */
+.saloon-tumbleweed {
+  position: absolute;
+  width: 36px;
+  height: 36px;
+  pointer-events: none;
+  image-rendering: pixelated;
+}
+
+/* Pixel art tumbleweed (CSS-drawn) */
+.saloon-tumbleweed-inner {
+  width: 36px;
+  height: 36px;
+  position: relative;
+  image-rendering: pixelated;
+}
+.saloon-tumbleweed-inner::before {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 40% 40%, #8d6e63 0%, #6d4c41 45%, #5d4037 100%);
+  box-shadow:
+    inset -3px -3px 0 #4e342e,
+    inset 2px 2px 0 rgba(255,255,255,0.15);
+}
+.saloon-tumbleweed-inner::after {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  background:
+    linear-gradient(45deg, transparent 30%, rgba(255,255,255,0.1) 50%, transparent 70%),
+    linear-gradient(-45deg, transparent 30%, rgba(0,0,0,0.15) 50%, transparent 70%);
+  border-radius: 50%;
+}
+
+/* Rattlesnake */
+.saloon-snake {
+  position: absolute;
+  pointer-events: none;
+  image-rendering: pixelated;
+  height: 20px;
+}
+
+/* ── Floor dust particles (on bottle add) ────────────────────────────────── */
+@keyframes bsDustPuff {
+  0%   { transform: scale(0.2) translateY(0); opacity: 0.8; }
+  60%  { transform: scale(1.2) translateY(-10px); opacity: 0.4; }
+  100% { transform: scale(1.8) translateY(-20px); opacity: 0; }
+}
+
+/* ── Empty slot "cobweb" dust overlay ────────────────────────────────────── */
+.bs-empty-slot::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(100,100,100,0.3) 0%, transparent 70%);
+  box-shadow:
+    4px 0 0 -3px rgba(100,100,100,0.2),
+    0 4px 0 -3px rgba(100,100,100,0.2),
+    3px 3px 0 -3px rgba(100,100,100,0.2);
+  pointer-events: none;
+  animation: bsCobwebPulse 4s ease-in-out infinite alternate;
+}
+@keyframes bsCobwebPulse {
+  from { opacity: 0.3; }
+  to   { opacity: 0.7; }
+}
+
+/* ── Stool tap pull-down ──────────────────────────────────────────────────── */
+.saloon-stool-btn {
+  /* inherits existing rules — tap behavior layered on top */
+  will-change: transform;
+}
+
+/* ── Speech bubble AnimatePresence improvements ──────────────────────────── */
+.bs-bt-speech-idle {
+  animation: bsBubbleEntry 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+@keyframes bsBubbleEntry {
+  from { transform: translateX(var(--bubble-x, 0)) scale(0.7) translateY(4px); opacity: 0; }
+  to   { transform: translateX(var(--bubble-x, 0)) scale(1) translateY(0); opacity: 1; }
+}
+
+/* ── Bartender return-of-shame idle quip ─────────────────────────────────── */
+.bs-bt-speech-shame {
+  background: linear-gradient(135deg, #4a3520 0%, #3e2723 100%);
+  border-color: #a1887f;
+  font-style: italic;
+  color: #d7ccc8;
+}
+
+/* ── Z-index fortification overrides ─────────────────────────────────────── */
+/* Enforce strict saloon layering contract */
+.saloon-stage { isolation: isolate; }
+.saloon-bg    { z-index: 1;  }
+.saloon-boards { z-index: 2; } /* bump up: boards need to be above bg clearly */
+.saloon-mid   { z-index: 3;  }
+.saloon-fg    { z-index: 4;  }
+.saloon-ambience { z-index: 5; } /* ambient events float above fg */
+
+/* Within saloon-mid */
+.saloon-mid .bs-backbar      { z-index: 1; }
+.saloon-mid .bs-bartender-wrap { z-index: 2; }
+.saloon-mid .bs-shingle-wrap  { z-index: 6; }
+.saloon-mid .bs-quips-layer   { z-index: 100; }
+
+/* Within saloon-fg */
+.saloon-fg .bs-bar-surface  { z-index: 5; }
+.saloon-fg .bs-bar-rail     { z-index: 7; }
+.saloon-fg .saloon-stools   { z-index: 8; }
+
+/* Grabbed bartender floats above everything in the stage */
+.bs-bartender-grabbed {
+  z-index: 200 !important;
+  cursor: grabbing !important;
+  filter: drop-shadow(0 8px 20px rgba(0,0,0,0.6));
+}
+
+/* Detail card always on top */
+.bs-detail-card { z-index: 300; }
+
+/* Modal overlays */
+.bs-marquee-modal-overlay { z-index: 400; }
+
+/* ── Improved lantern flicker timing ─────────────────────────────────────── */
+@keyframes lanternFlicker {
+  0%   { opacity: 0.82; }
+  12%  { opacity: 0.95; }
+  24%  { opacity: 0.78; }
+  36%  { opacity: 1;    }
+  48%  { opacity: 0.86; }
+  60%  { opacity: 0.92; }
+  72%  { opacity: 0.75; }
+  84%  { opacity: 0.98; }
+  100% { opacity: 0.82; }
+}
+.saloon-lantern--flicker rect:nth-child(3),
+.saloon-lantern--flicker rect:nth-child(4) {
+  animation: lanternFlicker 2.1s ease-in-out infinite;
+}
+
+/* ── Reduced motion: disable all new animations ─────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .bs-cabinet-shake,
+  .bs-impact-flash,
+  .bs-grab-exclaim,
+  .bs-fly-scream,
+  .bs-bt-speech-shame,
+  .bs-float-note,
+  .bs-sliding-mug,
+  .bs-tip-coin-fm,
+  .saloon-tumbleweed,
+  .saloon-snake {
+    animation: none !important;
+    transition: none !important;
+  }
 }
