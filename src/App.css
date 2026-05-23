@@ -12258,7 +12258,7 @@ body {
    giving the illusion he's standing physically behind the mahogany counter. */
 .bs-bartender-wrap {
   position: absolute;
-  bottom: 30px; /* raise him so torso is above the 78px counter */
+  bottom: 0;    /* feet flush with stage floor; counter (110px) hides lower body */
   left: 0;
   z-index: 2;   /* above back-shelf (1), below bar-surface (5) */
   pointer-events: none;
@@ -16150,20 +16150,20 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
    override positioning for saloon context */
 .saloon-mid .bs-backbar {
   position: absolute;
-  top: 0; right: 0; bottom: 0; left: 0;
+  top: 64px; right: 0; bottom: 0; left: 0; /* push below SwingingShingle (~60px) */
   background: transparent;
 }
 
 .saloon-mid .bs-bartender-wrap {
   position: absolute;
-  bottom: 72px; /* bar-surface 110px; bartender 168px tall → 110-72=38px of lower body hidden behind counter */
+  bottom: 0; /* feet at stage floor; 110px counter hides ~100px of lower body */
   z-index: 2; /* aligned with layering contract */
 }
 
 /* Quips layer — positioned absolutely, left driven by JS spring */
 .saloon-mid .bs-quips-layer {
   position: absolute;
-  bottom: 156px; /* bartender hat ~72+168-14=226px; place bubbles just below hat */
+  bottom: 120px; /* adjusted down from 156px to match bartender's lowered position */
   z-index: 100;
 }
 
@@ -16729,7 +16729,8 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 .wall-chalkboard {
   position: absolute;
   left: 4%;
-  top: 20%;
+  top: auto;
+  bottom: 122px; /* anchor near bar counter (110px surface + 12px gap) */
   width: 26%;
   max-width: 110px;
   min-width: 72px;
@@ -16831,7 +16832,8 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 .wall-bounty-board {
   position: absolute;
   right: 4%;
-  top: 20%;
+  top: auto;
+  bottom: 122px; /* anchor near bar counter, matching chalkboard */
   width: 26%;
   max-width: 105px;
   min-width: 68px;
@@ -19165,7 +19167,6 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   .bs-cabinet-shake,
   .bs-impact-flash,
   .bs-grab-exclaim,
-  .bs-fly-scream,
   .bs-bt-speech-shame,
   .bs-float-note,
   .bs-sliding-mug,
