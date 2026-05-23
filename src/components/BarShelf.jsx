@@ -1300,6 +1300,10 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
   const [isFlying, setIsFlying] = useState(false);
   const [flyScream, setFlyScream] = useState(false);
   const [tossQuip, setTossQuip] = useState(null);
+  // Refs that mirror grab/fly state synchronously — prevents stale closures
+  // in walkTo's guard (useCallback closures lag one render behind).
+  const isGrabbedRef = useRef(false);
+  const isFlyingRef  = useRef(false);
 
   // ── Sliding mug delivery animation ─────────────────────────────────────
   // { key, fromX, toX } — fires when user taps a bottle
@@ -1397,9 +1401,9 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
   // ── Arcade Toss: long-press detection ────────────────────────────────────
   const handleBartenderPointerDown = useCallback((e) => {
     e.stopPropagation();
-    if (selectedDrink || isFlying) return;
+    if (selectedDrink || isFlyingRef.current) return;
     longPressTimerRef.current = setTimeout(() => {
-      setIsGrabbed(true);
+      isGrabbedRef.current = true; setIsGrabbed(true);
       cancelAnimationFrame(animationRef.current); // freeze any walk
       setBartenderState('surprised');
       if (navigator.vibrate) navigator.vibrate([30, 10, 30]);
@@ -1408,13 +1412,13 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
 
   const handleBartenderPointerUp = useCallback(() => {
     clearTimeout(longPressTimerRef.current);
-    if (!isGrabbed) return;
+    if (!isGrabbedRef.current) return;
     // Soft release without throw — return home
-    setIsGrabbed(false);
+    isGrabbedRef.current = false; setIsGrabbed(false);
     setBartenderState('walking');
     setFacingRight(false);
     walkToRef.current?.(homeX(), () => { setBartenderState('idle'); setFacingRight(true); });
-  }, [isGrabbed]);
+  }, []);
 
   const handleBartenderPointerLeave = useCallback(() => {
     clearTimeout(longPressTimerRef.current);
@@ -1435,9 +1439,10 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
     clearTimeout(longPressTimerRef.current);
     const speed = Math.sqrt(info.velocity.x ** 2 + info.velocity.y ** 2);
 
-    if (speed > 180 && isGrabbed) {
-      setIsGrabbed(false);
-      setIsFlying(true);
+    if (speed > 180 && isGrabbedRef.current) {
+      // Sync refs FIRST (before any await) so walkTo guard sees updated values
+      isGrabbedRef.current = false; setIsGrabbed(false);
+      isFlyingRef.current  = true;  setIsFlying(true);
       setFlyScream(true);
       setBartenderState('surprised');
       wasDraggedRef.current = true;
@@ -1460,12 +1465,13 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
         transition: { type: 'spring', stiffness: 180, damping: 18 },
       });
 
+      // Clear flying ref BEFORE walk call so walkTo guard allows passage
+      isFlyingRef.current = false; setIsFlying(false);
       setBartenderState('walking');
       setFacingRight(false);
 
       // Walk of shame back to home
       walkToRef.current?.(homeX(), () => {
-        setIsFlying(false);
         setBartenderState('idle');
         setFacingRight(true);
         const quip = TOSS_QUIPS[Math.floor(Math.random() * TOSS_QUIPS.length)];
@@ -1475,13 +1481,13 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
       });
     } else {
       // Soft drop — no real throw
-      setIsGrabbed(false);
-      setIsFlying(false);
+      isGrabbedRef.current = false; setIsGrabbed(false);
+      isFlyingRef.current  = false; setIsFlying(false);
       setFlyScream(false);
       setBartenderState('walking');
       walkToRef.current?.(homeX(), () => { setBartenderState('idle'); setFacingRight(true); });
     }
-  }, [isGrabbed, bartenderControls]);
+  }, [bartenderControls]);
 
   // ── Tap bartender 5× for joke — also completes Secret Pour sequence ──────
   const handleBartenderTap = useCallback(() => {
@@ -1714,7 +1720,9 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
 
   // ── Generic walk helper (stable ref prevents stale closure in rAF loops) ────
   const walkTo = useCallback((targetX, onArrive) => {
-    if (isGrabbed || isFlying) return; // don't walk while being dragged/flying
+    // Guard uses refs (not state) so it reads the *current* grab/fly value
+    // even inside stale useCallback closures — avoids walk-of-shame never firing.
+    if (isGrabbedRef.current || isFlyingRef.current) return;
     cancelAnimationFrame(animationRef.current);
     const startX    = xMV.get(); // read from motion value, not state
     const walkTime  = Math.min(800, Math.max(200, Math.abs(targetX - startX) * 3));
@@ -1732,7 +1740,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
       }
     };
     animationRef.current = requestAnimationFrame(step);
-  }, [xMV, isGrabbed, isFlying]);
+  }, [xMV]); // refs are stable — no isGrabbed/isFlying in deps needed
   useEffect(() => { walkToRef.current = walkTo; }, [walkTo]);
 
   // ── Bartender wander (12–25 s idle → picks new waypoint) ───────────────────
@@ -2407,7 +2415,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
               style={{
                 x: xMV,
                 position: 'absolute',
-                bottom: '30px',
+                bottom: '0px',
                 zIndex: isGrabbed ? 50 : 2,
                 touchAction: 'none',
                 cursor: isGrabbed ? 'grabbing' : 'grab',
