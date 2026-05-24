@@ -38,6 +38,8 @@ export default function AddEditMeal({
   const [importProgress, setImportProgress] = useState('');
   const [error, setError] = useState('');
   const ocrFileRef = useRef(null);
+  // Drag state for within-list reordering
+  const [dragSrc, setDragSrc] = useState(null); // { listName, idx }
 
   const applyParsed = (result) => {
     if (!result || result._error) return false;
@@ -159,6 +161,50 @@ export default function AddEditMeal({
   };
 
   const updateList = (setter, idx, val) => setter(prev => prev.map((v, i) => i === idx ? val : v));
+
+  // Move item from one list to the other (cross-section arrow buttons)
+  const moveToOtherList = (fromList, idx) => {
+    if (fromList === 'ingredients') {
+      const item = ingredients[idx];
+      setIngredients(prev => prev.filter((_, i) => i !== idx));
+      setDirections(prev => [...prev, item]);
+    } else {
+      const item = directions[idx];
+      setDirections(prev => prev.filter((_, i) => i !== idx));
+      setIngredients(prev => [...prev, item]);
+    }
+  };
+
+  // Swap adjacent items within a list (↑/↓ reorder buttons)
+  const reorderList = (setter, list, idx, dir) => {
+    const newIdx = dir === 'up' ? idx - 1 : idx + 1;
+    if (newIdx < 0 || newIdx >= list.length) return;
+    const next = [...list];
+    [next[idx], next[newIdx]] = [next[newIdx], next[idx]];
+    setter(next);
+  };
+
+  // HTML5 drag handlers — within-list reordering only
+  const handleDragStart = (listName, idx, e) => {
+    setDragSrc({ listName, idx });
+    e.dataTransfer.effectAllowed = 'move';
+    e.currentTarget.style.opacity = '0.45';
+  };
+  const handleDragOver = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; };
+  const handleDropOnRow = (listName, dropIdx, e) => {
+    e.preventDefault();
+    if (!dragSrc || dragSrc.listName !== listName) return;
+    const setter = listName === 'ingredients' ? setIngredients : setDirections;
+    const list = listName === 'ingredients' ? [...ingredients] : [...directions];
+    const [item] = list.splice(dragSrc.idx, 1);
+    list.splice(dropIdx, 0, item);
+    setter(list);
+    setDragSrc(null);
+  };
+  const handleDragEnd = (e) => {
+    e.currentTarget.style.opacity = '';
+    setDragSrc(null);
+  };
   const addToList = (setter) => setter(prev => [...prev, '']);
   const removeFromList = (setter, idx) => setter(prev => prev.filter((_, i) => i !== idx));
 
@@ -263,9 +309,50 @@ export default function AddEditMeal({
           <div className="form-group">
             <label>{ingredientLabel}</label>
             {ingredients.map((ing, i) => (
-              <div key={i} className="list-input-row">
-                <input type="text" value={ing} onChange={e => updateList(setIngredients, i, e.target.value)} placeholder={`Ingredient ${i + 1}`} />
-                {ingredients.length > 1 && <button className="btn-icon small danger" onClick={() => removeFromList(setIngredients, i)}>✕</button>}
+              <div
+                key={i}
+                className={`list-input-row has-controls${dragSrc?.listName === 'ingredients' && dragSrc?.idx === i ? ' dragging' : ''}`}
+                draggable
+                onDragStart={(e) => handleDragStart('ingredients', i, e)}
+                onDragOver={handleDragOver}
+                onDrop={(e) => handleDropOnRow('ingredients', i, e)}
+                onDragEnd={handleDragEnd}
+              >
+                <input
+                  type="text"
+                  value={ing}
+                  onChange={e => updateList(setIngredients, i, e.target.value)}
+                  placeholder={`Ingredient ${i + 1}`}
+                />
+                <div className="list-row-controls">
+                  <button
+                    className="list-reorder-btn"
+                    onClick={() => reorderList(setIngredients, ingredients, i, 'up')}
+                    disabled={i === 0}
+                    title="Move up"
+                    aria-label="Move ingredient up"
+                  >↑</button>
+                  <button
+                    className="list-reorder-btn"
+                    onClick={() => reorderList(setIngredients, ingredients, i, 'down')}
+                    disabled={i === ingredients.length - 1}
+                    title="Move down"
+                    aria-label="Move ingredient down"
+                  >↓</button>
+                  <button
+                    className="list-move-btn"
+                    onClick={() => moveToOtherList('ingredients', i)}
+                    title="Move to Directions"
+                    aria-label="Move to Directions"
+                  >→</button>
+                  {ingredients.length > 1 && (
+                    <button
+                      className="btn-icon small danger"
+                      onClick={() => removeFromList(setIngredients, i)}
+                      aria-label="Remove ingredient"
+                    >✕</button>
+                  )}
+                </div>
               </div>
             ))}
             <button className="btn-small" onClick={() => addToList(setIngredients)}>+ Add Ingredient</button>
@@ -274,22 +361,55 @@ export default function AddEditMeal({
 <div className="form-group">
   <label>{directionsLabel}</label>
   {directions.map((dir, i) => (
-    <div key={i} className="list-input-row">
+    <div
+      key={i}
+      className={`list-input-row has-controls${dragSrc?.listName === 'directions' && dragSrc?.idx === i ? ' dragging' : ''}`}
+      draggable
+      onDragStart={(e) => handleDragStart('directions', i, e)}
+      onDragOver={handleDragOver}
+      onDrop={(e) => handleDropOnRow('directions', i, e)}
+      onDragEnd={handleDragEnd}
+    >
       <textarea
         value={dir}
         onChange={e => {
           updateList(setDirections, i, e.target.value);
           autoExpand(e.target);
         }}
-        /* Cleaned up ref for list items */
-        ref={el => el && autoExpand(el)} 
+        ref={el => el && autoExpand(el)}
         placeholder={`Step ${i + 1}...`}
         rows={1}
         style={{ resize: 'none', overflow: 'hidden' }}
       />
-      {directions.length > 1 && (
-        <button className="btn-icon small danger" onClick={() => removeFromList(setDirections, i)}>✕</button>
-      )}
+      <div className="list-row-controls">
+        <button
+          className="list-reorder-btn"
+          onClick={() => reorderList(setDirections, directions, i, 'up')}
+          disabled={i === 0}
+          title="Move step up"
+          aria-label="Move step up"
+        >↑</button>
+        <button
+          className="list-reorder-btn"
+          onClick={() => reorderList(setDirections, directions, i, 'down')}
+          disabled={i === directions.length - 1}
+          title="Move step down"
+          aria-label="Move step down"
+        >↓</button>
+        <button
+          className="list-move-btn"
+          onClick={() => moveToOtherList('directions', i)}
+          title="Move to Ingredients"
+          aria-label="Move to Ingredients"
+        >←</button>
+        {directions.length > 1 && (
+          <button
+            className="btn-icon small danger"
+            onClick={() => removeFromList(setDirections, i)}
+            aria-label="Remove step"
+          >✕</button>
+        )}
+      </div>
     </div>
   ))}
   <button className="btn-small" onClick={() => addToList(setDirections)}>+ Add Step</button>

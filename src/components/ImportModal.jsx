@@ -188,6 +188,18 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     setPreview(updated);
   }, [preview]);
 
+  // ── Reorder items within a section (↑/↓ arrow buttons) ───────────────────
+  const reorderItem = useCallback((field, index, direction, recipeIdx) => {
+    if (!preview) return;
+    const newIdx = direction === 'up' ? index - 1 : index + 1;
+    const updated = [...preview];
+    const list = [...(updated[recipeIdx][field] || [])];
+    if (newIdx < 0 || newIdx >= list.length) return;
+    [list[index], list[newIdx]] = [list[newIdx], list[index]];
+    updated[recipeIdx] = { ...updated[recipeIdx], [field]: list };
+    setPreview(updated);
+  }, [preview]);
+
   // ── Auto-expand textarea / input on focus & input ─────────────────────────
   const handleAutoExpand = useCallback((e) => {
     const el = e.target;
@@ -848,7 +860,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   const handleDrop = (field, index, recipeIdx, e) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!dragSource) return;
+    if (!dragSource || dragSource.field !== field) return; // cross-section uses arrow buttons, not drag
 
     const { field: srcField, index: srcIdx, recipeIdx: srcRecipeIdx } = dragSource;
     const updated = [...preview];
@@ -1137,6 +1149,21 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                             className="preview-move-btn"
                             onClick={() => moveItemBetweenSections('ingredients', ingIdx, idx)}
                             title="Move to Steps"
+                            aria-label="Move to Steps"
+                          >↓</button>
+                          <button
+                            className="preview-reorder-btn"
+                            onClick={() => reorderItem('ingredients', ingIdx, 'up', idx)}
+                            disabled={ingIdx === 0}
+                            title="Move ingredient up"
+                            aria-label="Move ingredient up"
+                          >↑</button>
+                          <button
+                            className="preview-reorder-btn"
+                            onClick={() => reorderItem('ingredients', ingIdx, 'down', idx)}
+                            disabled={ingIdx >= (m.ingredients?.length ?? 1) - 1}
+                            title="Move ingredient down"
+                            aria-label="Move ingredient down"
                           >↓</button>
                           <button
                             className="preview-remove-btn"
@@ -1231,7 +1258,22 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                             className="preview-move-btn"
                             onClick={() => moveItemBetweenSections('directions', stepIdx, idx)}
                             title="Move to Ingredients"
+                            aria-label="Move to Ingredients"
                           >↑</button>
+                          <button
+                            className="preview-reorder-btn"
+                            onClick={() => reorderItem('directions', stepIdx, 'up', idx)}
+                            disabled={stepIdx === 0}
+                            title="Move step up"
+                            aria-label="Move step up"
+                          >↑</button>
+                          <button
+                            className="preview-reorder-btn"
+                            onClick={() => reorderItem('directions', stepIdx, 'down', idx)}
+                            disabled={stepIdx >= (m.directions?.length ?? 1) - 1}
+                            title="Move step down"
+                            aria-label="Move step down"
+                          >↓</button>
                           <button
                             className="preview-remove-btn"
                             onClick={() => {
