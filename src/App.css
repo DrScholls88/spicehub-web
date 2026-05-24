@@ -16156,14 +16156,14 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 
 .saloon-mid .bs-bartender-wrap {
   position: absolute;
-  bottom: 0; /* feet at stage floor; 110px counter hides ~100px of lower body */
+  bottom: 14px; /* raised 14px so arm top sits flush with bar counter top (110px) */
   z-index: 2; /* aligned with layering contract */
 }
 
 /* Quips layer — positioned absolutely, left driven by JS spring */
 .saloon-mid .bs-quips-layer {
   position: absolute;
-  bottom: 120px; /* adjusted down from 156px to match bartender's lowered position */
+  bottom: 134px; /* synced with bartender raise: 120 + 14px = 134px */
   z-index: 100;
 }
 
@@ -16751,36 +16751,35 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 }
 
 .chalkboard-frame {
-  background: #4a2e22;
-  border: 3px solid #3b2318;
-  border-radius: 2px;
-  padding: 3px;
+  background: #2e1508; /* deep espresso — frame pops against saloon wall */
+  border: 4px solid #0d0500;
+  border-radius: 3px;
+  padding: 4px;
   box-shadow:
-    2px 3px 0 #1a0a00,
-    inset 0 0 10px rgba(0,0,0,0.45);
+    0 0 0 1px #7a4515,         /* warm gilt hairline */
+    3px 5px 0 #000,            /* hard pixel shadow */
+    inset 0 0 14px rgba(0,0,0,0.6);
 }
 
 .chalkboard-surface {
-  background: #1a4b1e;
+  background: #0b3010; /* deeper blackboard green — more contrast */
   padding: 7px 5px 6px;
   position: relative;
   min-height: 72px;
-  /* subtle chalk dust texture */
-  background-image: radial-gradient(
-    ellipse 80% 50% at 50% 50%,
-    rgba(255,255,255,0.03) 0%,
-    transparent 70%
-  );
+  /* chalk dust texture + faint vignette */
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% 50%, rgba(255,255,255,0.06) 0%, transparent 70%),
+    radial-gradient(ellipse 120% 100% at 50% 0%, rgba(0,0,0,0.3) 0%, transparent 60%);
 }
 
 .chalk-header {
   font-family: 'Press Start 2P', monospace;
   font-size: 6px;
-  color: rgba(255,255,255,0.88);
+  color: #ffffff;
   text-align: center;
   line-height: 1.6;
   letter-spacing: 0.5px;
-  text-shadow: 0 0 6px rgba(255,255,255,0.25);
+  text-shadow: 0 0 8px rgba(255,255,255,0.55), 0 0 2px rgba(255,255,255,0.9);
 }
 
 .chalk-divider {
@@ -16794,9 +16793,11 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 .chalk-drink-name {
   font-family: 'Press Start 2P', monospace;
   font-size: 5px;
-  color: #fffde7;
+  color: #fff8c0;
   text-align: center;
-  text-shadow: 0 0 5px rgba(255,253,231,0.6);
+  text-shadow:
+    0 0 8px rgba(255,248,192,0.8),
+    0 0 16px rgba(255,220,100,0.4);
   line-height: 1.7;
   word-break: break-word;
   padding: 0 4px;
@@ -16847,14 +16848,15 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 .bounty-board-header {
   font-family: 'Press Start 2P', monospace;
   font-size: 5px;
-  color: #c8a882;
+  color: #ffd700;
   text-align: center;
-  background: #3e2723;
-  padding: 3px 4px;
-  border: 2px solid #5d4037;
+  background: #1a0800; /* near-black so text blazes */
+  padding: 4px 4px;
+  border: 2px solid #7a4515;
   letter-spacing: 1px;
   margin-bottom: 3px;
-  box-shadow: 1px 1px 0 rgba(0,0,0,0.5);
+  text-shadow: 0 0 6px rgba(255,215,0,0.7);
+  box-shadow: 2px 2px 0 #000, 0 0 0 1px rgba(255,215,0,0.15);
 }
 
 .bounty-posters {
@@ -16864,12 +16866,15 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 
 .bounty-poster {
   flex: 1;
-  background: linear-gradient(170deg, #f5e6c8 0%, #dfc9a0 60%, #c8a882 100%);
-  border: 2px solid #8b6914;
+  /* Rich aged parchment — warm amber tones that pop against dark wood */
+  background: linear-gradient(170deg, #f2c955 0%, #d4961e 55%, #b07212 100%);
+  border: 2px solid #3a1e00;
   border-radius: 1px;
   padding: 4px 3px;
   text-align: center;
-  box-shadow: 1px 2px 0 rgba(0,0,0,0.5);
+  box-shadow:
+    2px 3px 0 #000,            /* heavy pixel shadow */
+    inset 0 1px 0 rgba(255,255,200,0.3);  /* top sheen */
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   /* Torn parchment edge */
@@ -16878,7 +16883,6 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
     98% 15%, 100% 32%, 97% 50%, 100% 68%, 98% 85%, 100% 100%,
     0% 100%, 2% 85%, 0% 68%, 3% 50%, 0% 32%, 2% 15%
   );
-  /* transform handled by Framer Motion whileHover / whileTap */
   transition: filter 0.15s;
 }
 
@@ -16891,32 +16895,34 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 .bounty-poster-label {
   font-family: 'Press Start 2P', monospace;
   font-size: 4px;
-  color: #8b0000;
+  color: #6b0000; /* deep blood red on amber — high contrast */
   letter-spacing: 1px;
-  border-bottom: 1px solid rgba(139,105,20,0.6);
+  border-bottom: 1px solid rgba(60,20,0,0.5);
   padding-bottom: 2px;
   margin-bottom: 3px;
-  text-shadow: 0 1px 0 rgba(255,255,255,0.5);
+  text-shadow: 0 1px 0 rgba(255,200,100,0.4);
+  font-weight: bold;
 }
 
 .bounty-ingredient {
   font-family: 'Press Start 2P', monospace;
   font-size: 5px;
-  color: #3e2723;
+  color: #1a0800; /* near-black ink — maximum readability on amber */
   word-break: break-all;
   line-height: 1.5;
   padding: 2px 1px;
   min-height: 12px;
+  text-shadow: 0 1px 0 rgba(255,200,100,0.3);
 }
 
 .bounty-reward {
   font-family: 'Press Start 2P', monospace;
   font-size: 3px;
-  color: #8b6914;
+  color: #3a1e00; /* dark ink — readable against bright amber */
   line-height: 1.9;
   margin-top: 3px;
   word-break: break-word;
-  border-top: 1px dashed rgba(139,105,20,0.4);
+  border-top: 1px dashed rgba(40,15,0,0.4);
   padding-top: 2px;
 }
 
@@ -19018,16 +19024,16 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 /* Tumbleweed */
 .saloon-tumbleweed {
   position: absolute;
-  width: 36px;
-  height: 36px;
+  width: 72px;  /* 2× — now clearly visible rolling across saloon floor */
+  height: 72px;
   pointer-events: none;
   image-rendering: pixelated;
 }
 
 /* Pixel art tumbleweed (CSS-drawn) */
 .saloon-tumbleweed-inner {
-  width: 36px;
-  height: 36px;
+  width: 72px;
+  height: 72px;
   position: relative;
   image-rendering: pixelated;
 }
@@ -19057,7 +19063,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   position: absolute;
   pointer-events: none;
   image-rendering: pixelated;
-  height: 20px;
+  height: 48px; /* 2.4× bigger — rattlesnake now actually visible */
 }
 
 /* ── Floor dust particles (on bottle add) ────────────────────────────────── */
@@ -19177,3 +19183,71 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
     transition: none !important;
   }
 }
+
+
+/* ═══════════════════════════════════════════════════════════════
+   Reorder / Move buttons — ImportModal & AddEditMeal
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Reorder-within-list buttons (↑/↓) — ImportModal preview ── */
+.preview-reorder-btn {
+  width: 28px; height: 28px; min-width: 28px; flex-shrink: 0;
+  border: 1px solid #e0e0e0; background: #f5f5f5; border-radius: 6px;
+  font-size: 13px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #555;
+  transition: background 0.15s, color 0.15s, transform 0.12s;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+.preview-reorder-btn:hover:not(:disabled) {
+  background: #e8f5e9; color: #2e7d32; border-color: #a5d6a7;
+}
+.preview-reorder-btn:active:not(:disabled) { transform: scale(0.88); }
+.preview-reorder-btn:disabled { opacity: 0.25; cursor: not-allowed; }
+
+/* ── List reorder buttons (↑/↓) — AddEditMeal ── */
+.list-reorder-btn {
+  width: 30px; height: 30px; min-width: 30px; flex-shrink: 0;
+  border: 1px solid #e0e0e0; background: #f5f5f5; border-radius: 6px;
+  font-size: 14px; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #555;
+  transition: background 0.15s, color 0.15s, transform 0.12s;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.list-reorder-btn:hover:not(:disabled) {
+  background: #e8f5e9; color: #2e7d32; border-color: #a5d6a7;
+}
+.list-reorder-btn:active:not(:disabled) { transform: scale(0.88); }
+.list-reorder-btn:disabled { opacity: 0.22; cursor: not-allowed; }
+
+/* ── Cross-section move buttons (→/←) — AddEditMeal ── */
+.list-move-btn {
+  width: 30px; height: 30px; min-width: 30px; flex-shrink: 0;
+  border: 1px solid #bbdefb; background: #e3f2fd; border-radius: 6px;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: #1565c0;
+  transition: background 0.15s, color 0.15s, transform 0.12s;
+  touch-action: manipulation; -webkit-tap-highlight-color: transparent;
+}
+.list-move-btn:hover { background: #bbdefb; color: #0d47a1; }
+.list-move-btn:active { transform: scale(0.88); }
+
+/* ── Moved-item highlight animation ── */
+@keyframes itemHighlight {
+  0%   { background: rgba(76, 175, 80, 0.25); box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.4); }
+  100% { background: transparent; box-shadow: none; }
+}
+.item-moved { animation: itemHighlight 1.2s ease-out forwards; }
+
+/* ── Row layout with controls ── */
+.list-input-row.has-controls { align-items: center; gap: 4px; }
+.list-input-row.has-controls input,
+.list-input-row.has-controls textarea { flex: 1; min-width: 0; }
+.list-row-controls {
+  display: flex; flex-direction: row; gap: 3px;
+  flex-shrink: 0; align-items: center;
+}
+.list-input-row.dragging { opacity: 0.45; }

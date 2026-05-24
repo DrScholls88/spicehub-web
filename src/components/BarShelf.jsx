@@ -2415,7 +2415,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
               style={{
                 x: xMV,
                 position: 'absolute',
-                bottom: '0px',
+                bottom: '14px', /* raised 14px so arm aligns with bartop counter top */
                 zIndex: isGrabbed ? 50 : 2,
                 touchAction: 'none',
                 cursor: isGrabbed ? 'grabbing' : 'grab',
@@ -2655,10 +2655,10 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
             {/* Pixel-art bar stools — interactive filter nav on the customer side */}
             <div className="saloon-stools">
               {[
-                {filter:'all',      label:'ALL',  x:'8%' },
-                {filter:'cocktail', label:'CKTL', x:'30%'},
-                {filter:'mocktail', label:'MOCK', x:'53%'},
-                {filter:'recent',   label:'NEW',  x:'75%'},
+                {filter:'all',      label:'ALL',  x:'5%' },   /* left anchor */
+                {filter:'cocktail', label:'CKTL', x:'23%'},  /* left-center */
+                {filter:'mocktail', label:'MOCK', x:'42%'},  /* right-center */
+                {filter:'recent',   label:'NEW',  x:'60%'},  /* stops before gap (~71%) */
               ].map(({filter, label, x}) => {
                 const isActive = stoolFilter === filter;
                 return (
