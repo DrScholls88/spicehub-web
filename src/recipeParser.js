@@ -352,6 +352,38 @@ export function cleanSocialCaption(text) {
   return t.trim();
 }
 
+
+/**
+ * cleanLine — normalize a single ingredient or direction string.
+ * Port of Mealie's "recursive clean until stable" pattern.
+ * Strips HTML entities, residual tags, non-breaking spaces, and excess whitespace.
+ * Safe to call on already-clean strings. Max 5 iterations.
+ */
+export function cleanLine(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  const HTML_ENTITIES = {
+    '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"',
+    '&#39;': "'", '&apos;': "'", '&nbsp;': ' ', '&hellip;': '…',
+    '&mdash;': '—', '&ndash;': '–', '&lsquo;': '‘', '&rsquo;': '’',
+    '&ldquo;': '“', '&rdquo;': '”', '&frac12;': '½',
+    '&frac14;': '¼', '&frac34;': '¾',
+  };
+  let s = raw.replace(/&[a-zA-Z0-9#]+;/g, m => HTML_ENTITIES[m] || m);
+  let prev;
+  let iter = 0;
+  do {
+    prev = s;
+    s = s
+      .replace(/<[^>]+>/g, '')        // strip residual HTML tags
+      .replace(/ /g, ' ')         // non-breaking space → space
+      .replace(/​/g, '')          // zero-width space
+      .replace(/	/g, ' ')             // tab → space
+      .replace(/[ ]{2,}/g, ' ')        // collapse multi-space
+      .replace(/^[\s]+|[\s]+$/g, ''); // trim
+  } while (s !== prev && ++iter < 5);
+  return s;
+}
+
 function isSocialCaptionProse(line) {
   const value = String(line || '').trim();
   if (!value) return true;
@@ -595,11 +627,23 @@ ${rulesCommon}
 ${isDrink ? rulesDrink : rulesMeal}
 
 === QUALITY CHECK (apply before returning) ===
-1. Verify every item in ingredients[] is a food/liquid item with an amount. If any action verb appears in an ingredient, move it to directions[].
-2. Verify every item in directions[] is an action step (imperative verb). If it describes a food item with a quantity, move it to ingredients[].
-3. Ensure the title has no hashtags, emojis, or @handles.
-4. For drinks: confirm glass, method, and garnish fields are populated if determinable from the text.
-5. If no recipe/drink can be identified at all, return: { "error": "not a recipe" }
+STEP 1 — Audit ingredients[]:
+- Scan every entry. If it starts with a cooking verb (Mix, Combine, Preheat, Add, Cook, Bake, Stir, Pour, Heat, Fold, Whisk, Blend, Season, Serve, Place, Remove, Transfer, Bring, Let, Cover, Simmer, Boil, Drain, Rinse, Prepare, Sprinkle, Drizzle, Toss, Marinate, Melt, Beat, Knead, Roll, Broil, Brush, Sear, Steam) — MOVE IT to directions[].
+- Concrete violation: ingredients: ["Preheat oven to 400°F"] → WRONG. Move to directions.
+- Concrete violation: ingredients: ["1. Mix flour and butter"] → WRONG. Move to directions (strip the number).
+STEP 2 — Audit directions[]:
+- Scan every entry. If it is purely a food quantity + item with no action verb — MOVE IT to ingredients[].
+- Concrete violation: directions: ["2 cups all-purpose flour"] → WRONG. Move to ingredients.
+- Concrete violation: directions: ["1 lemon, juiced"] → WRONG. Move to ingredients.
+STEP 3 — Title check:
+- Remove all hashtags (#word), @handles, emojis, and trailing punctuation from the title.
+- Title must be 2–6 words only.
+STEP 4 — Section sub-headers:
+- Lines like "For the sauce:", "Marinade:", "Spice rub:" are NOT ingredients. Either skip them or add them as parenthetical labels on the ingredients below (e.g., "tomatoes, diced (for sauce)").
+STEP 5 — Drinks only:
+- Confirm glass, method, and garnish fields are populated if determinable from the text.
+STEP 6 — Empty result:
+- If no recipe or drink can be identified at all, return: { "error": "not a recipe" }
 ${hintTitle ? `\n=== NAME HINT ===\nThe ${subjectNoun} is likely called: "${hintTitle}" — use this if no better title is found in the text.` : ''}
 
 === TEXT TO PARSE ===
@@ -752,6 +796,77 @@ ${hintTitle ? `- The recipe is likely called: "${hintTitle}"` : ''}`;
   }
 }
 
+
+// ─── Post-Gemini cross-contamination validator ──────────────────────────────
+// Runs SpiceHub's existing heuristics (looksLikeIngredient / looksLikeDirection)
+// against Gemini's output to catch every misfiled item. Gemini is reliable but
+// still misclassifies ~5–15% of lines, especially from social media captions.
+// This is the JS equivalent of Mealie's cleaner.py validation loop.
+//
+// Input/output use SpiceHub's internal schema: { ingredients: string[], directions: string[] }
+// NOT Schema.org field names.
+function postProcessGeminiResult(rawIngredients, rawDirs) {
+  const ingredients = [];
+  const directions  = [];
+  const rescued     = [];
+
+  // Pass 1: validate each Gemini ingredient — eject action steps to directions
+  for (const line of rawIngredients) {
+    const t = cleanLine(line);
+    if (!t) continue;
+    // Strip leading step numbers that Gemini sometimes puts in ingredients
+    const stripped = t.replace(/^(step\s*)?\d+[.):\s-]+/i, '').trim();
+    if (looksLikeDirection(stripped) && !looksLikeIngredient(stripped)) {
+      // This is clearly a direction masquerading as an ingredient
+      directions.push(stripped.replace(/^\d+[.):\s]+/, '').trim());
+      rescued.push({ line: t, movedTo: 'directions' });
+    } else {
+      // Strip leading bullet chars that Gemini sometimes retains
+      ingredients.push(stripped.replace(/^[-•*]\s*/, '').trim());
+    }
+  }
+
+  // Pass 2: validate each Gemini direction — eject food lines to ingredients
+  for (const line of rawDirs) {
+    const t = cleanLine(line);
+    if (!t) continue;
+    // Strip leading step numbers first before testing
+    const stripped = t.replace(/^\d+[.):\s]+/, '').trim();
+    if ((looksLikeIngredientLine(stripped) || looksLikeIngredient(stripped)) && !looksLikeDirection(stripped)) {
+      // This is an ingredient that ended up in directions[]
+      ingredients.push(stripped);
+      rescued.push({ line: t, movedTo: 'ingredients' });
+    } else {
+      // Keep as direction, but strip leading step numbers since SpiceHub numbers them
+      directions.push(stripped || t);
+    }
+  }
+
+  // Deduplicate both lists while preserving order
+  const seenIng = new Set();
+  const cleanIngredients = ingredients.filter(i => {
+    if (!i || seenIng.has(i)) return false;
+    seenIng.add(i);
+    return true;
+  });
+  const seenDir = new Set();
+  const cleanDirections = directions.filter(d => {
+    if (!d || seenDir.has(d)) return false;
+    seenDir.add(d);
+    return true;
+  });
+
+  if (rescued.length > 0 && typeof import.meta !== 'undefined' && import.meta.env?.DEV) {
+    console.log('🔧 postProcessGeminiResult: moved', rescued.length, 'item(s)', rescued);
+  }
+
+  return {
+    ingredients: cleanIngredients,
+    directions:  cleanDirections,
+    _rescued:    rescued.length,
+  };
+}
+
 export async function structureWithAIClient(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal' } = {}) {
   const clientKey = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_GOOGLE_AI_KEY : null;
   if (!clientKey || !rawText || rawText.trim().length < 20) return null;
@@ -773,16 +888,14 @@ export async function structureWithAIClient(rawText, { title: hintTitle = '', im
     const jsonText = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
     const parsed = JSON.parse(jsonText);
     if (parsed.error) return null;
-    const ingredients = Array.isArray(parsed.ingredients)
+    const rawIngredients = Array.isArray(parsed.ingredients)
       ? parsed.ingredients.map(ing => typeof ing === 'string' ? ing : [ing.amount, ing.name].filter(Boolean).join(' ').trim()).filter(Boolean)
       : [];
-    // IMPORTANT: Leave empty arrays empty. Don't inject "See original postÃ¢â‚¬Â¦"
-    // placeholder strings Ã¢â‚¬â€ the UI decides how to present thin results.
-    const _dirs = Array.isArray(parsed.directions) ? parsed.directions.filter(Boolean) : [];
+    // IMPORTANT: Leave empty arrays empty — UI decides how to present thin results.
+    const rawDirs = Array.isArray(parsed.directions) ? parsed.directions.filter(Boolean) : [];
+    // Post-Gemini validation: run heuristics to catch ingredient/direction cross-contamination
+    const { ingredients, directions: _dirs, _rescued } = postProcessGeminiResult(rawIngredients, rawDirs);
     return {
-      name: parsed.title || hintTitle || 'Imported Recipe',
-      ingredients,
-      directions: _dirs,
       ...buildStructuredFields(ingredients, _dirs),
       servings: parsed.servings || null,
       cookTime: parsed.cookTime || null,
@@ -799,6 +912,7 @@ export async function structureWithAIClient(rawText, { title: hintTitle = '', im
       link: sourceUrl || '',
       _aiStructured: true,
       _structuredVia: 'gemini-client',
+      _rescued: _rescued || 0,
     };
   } catch {
     return null;
@@ -839,18 +953,17 @@ export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl
     if (!data.ok || !data.recipe) return null;
     const r = data.recipe;
     // Normalize ingredients Ã¢â‚¬â€ Gemini returns [{name, amount}], SpiceHub uses strings
-    const ingredients = Array.isArray(r.ingredients)
+    const rawServerIngredients = Array.isArray(r.ingredients)
       ? r.ingredients.map(ing => {
         if (typeof ing === 'string') return ing;
         return [ing.amount, ing.name].filter(Boolean).join(' ').trim();
       }).filter(Boolean)
       : [];
-    // IMPORTANT: Empty arrays remain empty Ã¢â‚¬â€ never inject placeholder strings.
-    const _serverDirs = Array.isArray(r.directions) ? r.directions.filter(Boolean) : [];
+    // IMPORTANT: Empty arrays remain empty — never inject placeholder strings.
+    const rawServerDirs = Array.isArray(r.directions) ? r.directions.filter(Boolean) : [];
+    // Post-Gemini validation: same cross-contamination check as client path
+    const { ingredients, directions: _serverDirs, _rescued: _serverRescued } = postProcessGeminiResult(rawServerIngredients, rawServerDirs);
     return {
-      name: r.title || hintTitle || 'Imported Recipe',
-      ingredients,
-      directions: _serverDirs,
       ...buildStructuredFields(ingredients, _serverDirs),
       servings: r.servings || null,
       cookTime: r.cookTime || null,
@@ -896,8 +1009,9 @@ export async function captionToRecipe(captionText, { title = '', imageUrl = '', 
   if (!parsed) return null;
 
   const name = parsed.title || title || '';
-  const ingredients = parsed.ingredients?.length > 0 ? parsed.ingredients : [];
-  const directions = parsed.directions?.length > 0 ? parsed.directions : [];
+  // Apply cleanLine (Mealie-style recursive stable-clean) to heuristic parser output
+  const ingredients = (parsed.ingredients?.length > 0 ? parsed.ingredients : []).map(cleanLine).filter(Boolean);
+  const directions  = (parsed.directions?.length > 0  ? parsed.directions  : []).map(cleanLine).filter(Boolean);
 
   if (ingredients.length === 0 && directions.length === 0) return null;
 
@@ -1063,14 +1177,14 @@ export function parseCaption(text) {
     }
 
     // Strip hashtags and @mentions (keep the rest of the line)
-    let cleanLine = line.replace(/#\w[\w.]*/g, '').replace(/@\w+/g, '').trim();
-    if (!cleanLine) continue;
+    let lineStripped = line.replace(/#\w[\w.]*/g, '').replace(/@\w+/g, '').trim();
+    if (!lineStripped) continue;
 
     // Extract title from the first meaningful line before any section
     if (title === null && !inIngredients && !inDirections && !foundSections) {
-      const isBulletOrNum = BULLET_RE.test(cleanLine) || STEP_NUM_RE.test(cleanLine);
-      if (!isBulletOrNum && cleanLine.length > 3 && !looksLikeIngredient(cleanLine)) {
-        let titleCandidate = cleanLine;
+      const isBulletOrNum = BULLET_RE.test(lineStripped) || STEP_NUM_RE.test(lineStripped);
+      if (!isBulletOrNum && lineStripped.length > 3 && !looksLikeIngredient(lineStripped)) {
+        let titleCandidate = lineStripped;
 
         // Remove emoji from title candidates
         titleCandidate = titleCandidate.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{1FA00}-\u{1FA9F}\u{200D}]/gu, '').trim();
@@ -1112,14 +1226,14 @@ export function parseCaption(text) {
 
     // PASS 3: Heuristic fallback classification
     if (!foundSections) {
-      const looksIng = looksLikeIngredient(cleanLine);
-      const looksDir = looksLikeDirection(cleanLine);
+      const looksIng = looksLikeIngredient(lineStripped);
+      const looksDir = looksLikeDirection(lineStripped);
 
       // Only switch modes if the signal is clear — avoid misclassification
       if (looksIng && !looksDir) {
         // Extra check: if line contains a cooking verb AND a measurement, it's ambiguous
         // e.g. "Add 2 cups flour" — this is a direction that mentions an ingredient
-        if (COOKING_VERBS_RE.test(cleanLine) && cleanLine.length > 40) {
+        if (COOKING_VERBS_RE.test(lineStripped) && lineStripped.length > 40) {
           // Long line with cooking verb — treat as direction even if it has measurements
           inIngredients = false; inDirections = true;
         } else {
@@ -1129,7 +1243,7 @@ export function parseCaption(text) {
       else if (looksDir && !looksIng) { inIngredients = false; inDirections = true; }
       // If both look true, use length as tiebreaker: short = ingredient, long = direction
       else if (looksIng && looksDir) {
-        if (cleanLine.length < 50) { inIngredients = true; inDirections = false; }
+        if (lineStripped.length < 50) { inIngredients = true; inDirections = false; }
         else { inIngredients = false; inDirections = true; }
       }
     }
@@ -1138,9 +1252,9 @@ export function parseCaption(text) {
     // ── Contamination guard A: Sub-section headers (e.g. "jalapeño crema:") ──────
     // Lines ending with ":" that carry no quantity are organisational labels, not
     // ingredients or directions. Skip them so they don't pollute the ingredient list.
-    const hasQuantity = /\d|½|¼|¾|⅓|⅔|⅛|⅜|⅝|⅞/.test(cleanLine);
-    const isSubHeader = /:\s*$/.test(cleanLine) && !hasQuantity && cleanLine.length < 70
-      && !isIngredientsHeader(cleanLine.toLowerCase()) && !isDirectionsHeader(cleanLine.toLowerCase());
+    const hasQuantity = /\d|½|¼|¾|⅓|⅔|⅛|⅜|⅝|⅞/.test(lineStripped);
+    const isSubHeader = /:\s*$/.test(lineStripped) && !hasQuantity && lineStripped.length < 70
+      && !isIngredientsHeader(lineStripped.toLowerCase()) && !isDirectionsHeader(lineStripped.toLowerCase());
     if (isSubHeader) {
       // Sub-section header — preserve current in/out mode, skip adding to any list
       continue;
@@ -1148,7 +1262,7 @@ export function parseCaption(text) {
 
     // Clean prefix markers
     // First strip bullet markers (but preserve what follows, including leading numbers)
-    let cleaned = cleanLine
+    let cleaned = lineStripped
       .replace(/^[-\u2022*\u203A\u2023\u2043\u2212\u2022\u00A3\u29B8\u2714\u2713]\s*/, '');
     // Only strip leading numbers when followed by punctuation delimiter (step numbers like "1." or "2)")
     // NOT when followed by a space + unit (ingredient quantities like "2 tbsp")
@@ -1176,9 +1290,9 @@ export function parseCaption(text) {
       directions.push(cleaned);
     } else {
       // Final fallback
-      if (looksLikeIngredient(cleanLine) && !looksLikeDirection(cleanLine)) {
+      if (looksLikeIngredient(lineStripped) && !looksLikeDirection(lineStripped)) {
         if (!ingredients.includes(cleaned)) ingredients.push(cleaned);
-      } else if (looksLikeDirection(cleanLine)) {
+      } else if (looksLikeDirection(lineStripped)) {
         directions.push(cleaned);
       }
     }

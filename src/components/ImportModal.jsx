@@ -22,6 +22,7 @@ import {
   XEmbed,
   PinterestEmbed,
 } from 'react-social-media-embed';
+import './ImportModal.css';
 
 
 /**
