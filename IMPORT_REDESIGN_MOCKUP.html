@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>SpiceHub Import Redesign — Annotated Mockup</title>
+<style>
+  :root{
+    --primary:#e65100; --primary-light:#ff833a; --primary-dark:#ac1900;
+    --accent:#2e7d32; --bg:#fff8f0; --surface:#f5f0e8; --text:#2c2c2c;
+    --text-light:#666; --text-muted:#999; --border:#e8e2d8;
+    --shadow:0 4px 12px rgba(0,0,0,.08); --shadow-lg:0 8px 32px rgba(0,0,0,.12);
+    --radius:16px; --radius-sm:10px; --radius-lg:20px; --pill:100px;
+    --ann:#1565c0; --ann-bg:#e3f2fd;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+  body{margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background:linear-gradient(135deg,#2c2622,#3a322b); color:var(--text); padding:24px 12px 60px}
+  h1{color:#fff; text-align:center; font-size:20px; margin:0 0 4px}
+  .sub{color:#c9bfb3; text-align:center; font-size:13px; margin:0 0 20px}
+  .toolbar{display:flex; gap:8px; justify-content:center; flex-wrap:wrap; margin-bottom:22px}
+  .toolbar button{font:inherit; font-size:13px; font-weight:700; padding:9px 16px; border-radius:var(--pill);
+    border:1px solid rgba(255,255,255,.25); background:rgba(255,255,255,.08); color:#fff; cursor:pointer; transition:.15s}
+  .toolbar button.on{background:var(--primary); border-color:var(--primary)}
+  .stage{display:flex; gap:26px; justify-content:center; align-items:flex-start; flex-wrap:wrap}
+
+  /* phone frame */
+  .phone{width:390px; max-width:100%; background:var(--bg); border-radius:34px; overflow:hidden;
+    box-shadow:var(--shadow-lg),0 0 0 10px #14110e,0 0 0 12px #2a2520; display:flex; flex-direction:column;
+    height:780px; position:relative}
+  .scrim{position:absolute; inset:0; background:rgba(20,15,10,.45); z-index:1}
+  /* the sheet */
+  .sheet{position:absolute; left:0; right:0; bottom:0; top:54px; background:var(--bg);
+    border-radius:22px 22px 0 0; z-index:2; display:flex; flex-direction:column; box-shadow:0 -8px 30px rgba(0,0,0,.18)}
+  .grab{width:42px; height:5px; border-radius:3px; background:#d8cebf; margin:9px auto 4px}
+
+  /* sticky header */
+  .shead{flex:0 0 auto; padding:2px 16px 12px; border-bottom:1px solid var(--border); position:relative}
+  .shead .row1{display:flex; align-items:center; justify-content:space-between}
+  .shead h2{font-size:17px; margin:6px 0}
+  .x{width:34px;height:34px;border:none;background:var(--surface);border-radius:50%;font-size:16px;color:var(--text-light);cursor:pointer}
+  /* step rail */
+  .rail{display:flex; align-items:center; gap:6px; margin-top:8px}
+  .rail .node{display:flex; align-items:center; gap:6px; flex:1}
+  .dot{width:22px;height:22px;border-radius:50%;background:var(--surface);border:2px solid var(--border);
+    display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--text-muted);flex:0 0 auto}
+  .rail .node.done .dot,.rail .node.active .dot{background:var(--primary);border-color:var(--primary);color:#fff}
+  .rail .lbl{font-size:11px;font-weight:700;color:var(--text-muted)}
+  .rail .node.active .lbl{color:var(--primary)}
+  .bar{height:2px;background:var(--border);flex:1;border-radius:2px}
+  .bar.done{background:var(--primary)}
+
+  /* scroll body */
+  .sbody{flex:1 1 auto; overflow-y:auto; padding:14px 16px 8px; -webkit-overflow-scrolling:touch}
+  .sbody::-webkit-scrollbar{width:0}
+
+  /* sticky footer */
+  .sfoot{flex:0 0 auto; padding:12px 16px calc(12px + env(safe-area-inset-bottom)); border-top:1px solid var(--border);
+    display:flex; gap:10px; align-items:center; background:var(--bg)}
+  .btn{font:inherit; font-weight:800; border:none; border-radius:var(--pill); padding:14px 18px; cursor:pointer; min-height:50px}
+  .btn-primary{background:var(--primary); color:#fff; flex:1; box-shadow:0 4px 12px rgba(230,81,0,.3)}
+  .btn-ghost{background:var(--surface); color:var(--text-light)}
+  .btn-primary:active{transform:translateY(1px)}
+
+  /* generic ui bits */
+  .seg{display:flex; background:var(--surface); border-radius:var(--pill); padding:4px; gap:4px; margin-bottom:14px}
+  .seg button{flex:1; border:none; background:transparent; font:inherit; font-weight:700; font-size:12px; color:var(--text-light);
+    padding:9px 6px; border-radius:var(--pill); cursor:pointer}
+  .seg button.on{background:#fff; color:var(--primary); box-shadow:var(--shadow)}
+  label.fl{display:block; font-size:12px; font-weight:700; color:var(--text-light); margin:14px 0 6px}
+  input.ti,textarea.ti{width:100%; border:1.5px solid var(--border); background:#fffdf9; border-radius:var(--radius-sm);
+    padding:13px 14px; font:inherit; font-size:15px; color:var(--text)}
+  input.ti:focus,textarea.ti:focus{outline:none; border-color:var(--primary); box-shadow:var(--shadow-glow)}
+  .pillrow{display:flex; gap:10px; margin-bottom:6px}
+  .typepill{flex:1; display:flex; align-items:center; justify-content:center; gap:7px; min-height:46px; border-radius:var(--radius-sm);
+    border:1.5px solid var(--border); background:#fffdf9; font-weight:700; font-size:14px; color:var(--text-light); cursor:pointer}
+  .typepill.on{border-color:var(--primary); background:#fff3ec; color:var(--primary-dark)}
+
+  /* collapsed social card */
+  .social-card{display:flex; align-items:center; gap:12px; padding:12px; border:1.5px solid var(--border);
+    border-radius:var(--radius); background:#fff; margin-top:6px; cursor:pointer}
+  .social-thumb{width:54px;height:54px;border-radius:12px;background:linear-gradient(135deg,#f09433,#dc2743,#bc1888);flex:0 0 auto;
+    display:flex;align-items:center;justify-content:center;font-size:24px}
+  .social-card .meta{flex:1}
+  .social-card .meta b{display:block; font-size:14px}
+  .social-card .meta span{font-size:12px; color:var(--text-muted)}
+  .chev{color:var(--text-muted); font-size:18px}
+
+  /* review hero */
+  .hero{position:relative; border-radius:var(--radius); overflow:hidden; height:172px; margin-bottom:6px;
+    background:linear-gradient(135deg,#e88c4a,#d2572b)}
+  .hero .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:54px;opacity:.85}
+  .hero .grad{position:absolute;left:0;right:0;bottom:0;height:90px;background:linear-gradient(transparent,rgba(0,0,0,.6))}
+  .hero .titlewrap{position:absolute; left:12px; right:12px; bottom:10px}
+  .hero .titlewrap input{width:100%; background:rgba(255,255,255,.94); border:none; border-radius:10px;
+    padding:9px 12px; font:inherit; font-weight:800; font-size:16px; color:var(--text)}
+  .conf{position:absolute; top:10px; right:10px; background:rgba(255,255,255,.95); color:var(--accent);
+    border-radius:var(--pill); padding:5px 11px; font-size:11px; font-weight:800; display:flex; gap:5px; align-items:center}
+  .conf.low{color:#b26a00}
+
+  /* original caption accordion */
+  .acc{border:1px solid var(--border); border-radius:var(--radius-sm); margin:12px 0; overflow:hidden; background:#fff}
+  .acc>.head{display:flex; align-items:center; justify-content:space-between; padding:12px 14px; cursor:pointer; user-select:none}
+  .acc>.head .lt{display:flex; align-items:center; gap:9px; font-weight:800; font-size:14px}
+  .count{background:var(--surface); color:var(--text-light); border-radius:var(--pill); font-size:11px; font-weight:800; padding:2px 9px}
+  .acc>.head .cdot{width:8px;height:8px;border-radius:50%;background:var(--accent)}
+  .acc>.head .cdot.mid{background:#f59e0b}
+  .acc>.body{padding:0 12px 12px; max-height:230px; overflow-y:auto}
+  .acc.collapsed>.body{display:none}
+  .acc .chev2{transition:.2s; color:var(--text-muted)}
+  .acc.collapsed .chev2{transform:rotate(-90deg)}
+  .capt{font-size:12.5px; line-height:1.5; color:var(--text-light); white-space:pre-wrap; font-family:ui-monospace,Menlo,monospace}
+
+  /* rows */
+  .row{display:flex; align-items:center; gap:10px; padding:7px 4px; border-bottom:1px solid #f4efe6}
+  .row:last-child{border-bottom:none}
+  .hdl{width:26px;height:40px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;color:#c4b8a6;cursor:grab;font-size:17px}
+  .row .txt{flex:1; font-size:14px}
+  .row .txt small{color:var(--text-muted)}
+  .row .more{width:30px;height:30px;border:none;background:transparent;color:var(--text-muted);font-size:18px;cursor:pointer;flex:0 0 auto}
+  .hint{font-size:10px;font-weight:800;color:#b26a00;background:#fff3e0;border-radius:var(--pill);padding:2px 7px}
+  .stepnum{width:22px;height:22px;border-radius:50%;background:var(--primary);color:#fff;font-size:11px;font-weight:800;
+    display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+  .addrow{display:flex;align-items:center;gap:7px;color:var(--primary);font-weight:800;font-size:13px;padding:9px 4px;cursor:pointer}
+
+  /* save step */
+  .dest{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:6px}
+  .destcard{border:1.5px solid var(--border); border-radius:var(--radius); padding:14px; text-align:center; cursor:pointer; background:#fff}
+  .destcard.on{border-color:var(--primary); background:#fff3ec}
+  .destcard .ic{font-size:24px}
+  .destcard b{display:block; font-size:13px; margin-top:5px}
+  .savesum{display:flex; gap:12px; align-items:center; background:#fff; border:1px solid var(--border); border-radius:var(--radius); padding:12px; margin-bottom:4px}
+  .savesum .t{width:46px;height:46px;border-radius:10px;background:linear-gradient(135deg,#e88c4a,#d2572b);display:flex;align-items:center;justify-content:center;font-size:22px}
+
+  /* annotations */
+  .ann{position:relative; border:1.5px dashed var(--ann); border-radius:8px; }
+  body.noann .ann{border-color:transparent}
+  .tag{position:absolute; z-index:5; background:var(--ann); color:#fff; font-size:10.5px; font-weight:800; line-height:1.25;
+    padding:5px 8px; border-radius:7px; max-width:185px; box-shadow:var(--shadow)}
+  .tag::after{content:""; position:absolute; width:8px;height:8px; background:var(--ann); transform:rotate(45deg)}
+  body.noann .tag{display:none}
+  .tag.tl{top:-8px; left:10px; transform:translateY(-100%)} .tag.tl::after{bottom:-4px; left:14px}
+  .tag.tr{top:-8px; right:10px; transform:translateY(-100%)} .tag.tr::after{bottom:-4px; right:14px}
+  .tag.rt{top:6px; left:calc(100% + 12px)} .tag.rt::after{top:10px; left:-4px}
+  .tag.lt{top:6px; right:calc(100% + 12px)} .tag.lt::after{top:10px; right:-4px}
+  .tag.bl{bottom:-8px; left:10px; transform:translateY(100%)} .tag.bl::after{top:-4px; left:14px}
+  @media(max-width:900px){ .tag.rt,.tag.lt{position:static; transform:none; max-width:none; margin:6px 0 0; display:block} .tag.rt::after,.tag.lt::after{display:none} }
+
+  .legend{width:330px; max-width:100%; color:#e8ded2; font-size:13px; line-height:1.6}
+  .legend h3{color:#fff; font-size:15px; margin:0 0 8px}
+  .legend .k{display:flex; gap:9px; margin-bottom:12px}
+  .legend .n{flex:0 0 auto;width:20px;height:20px;border-radius:50%;background:var(--ann);color:#fff;font-weight:800;font-size:11px;display:flex;align-items:center;justify-content:center;margin-top:1px}
+  .legend b{color:#fff}
+  .pageonly{display:none}
+</style>
+</head>
+<body>
+<h1>SpiceHub Import — Redesigned Flow</h1>
+<p class="sub">3-step wizard · sticky header &amp; footer · collapsible review · one scroll region</p>
+
+<div class="toolbar">
+  <button id="t1" class="on" onclick="go(1)">1 · Paste</button>
+  <button id="t2" onclick="go(2)">2 · Review</button>
+  <button id="t3" onclick="go(3)">3 · Save</button>
+  <button id="ta" class="on" onclick="toggleAnn()">Annotations: ON</button>
+</div>
+
+<div class="stage">
+  <div class="phone">
+    <div class="scrim"></div>
+    <div class="sheet">
+      <div class="grab ann"><span class="tag tr">Drag-down-to-dismiss handle — fulfills the constitution's "slide-down gestures on all modals." Today dismissal is X-only.</span></div>
+
+      <!-- STICKY HEADER -->
+      <div class="shead ann">
+        <span class="tag tl">STICKY HEADER — never scrolls. Replaces the overcrowded preview header bar (title + 2 badges + Auto-Sort + confidence on one row).</span>
+        <div class="row1">
+          <h2 id="htitle">Import Recipe</h2>
+          <button class="x">✕</button>
+        </div>
+        <div class="rail" id="rail">
+          <div class="node active" data-n="1"><span class="dot">1</span><span class="lbl">Paste</span></div>
+          <div class="bar" data-b="1"></div>
+          <div class="node" data-n="2"><span class="dot">2</span><span class="lbl">Review</span></div>
+          <div class="bar" data-b="2"></div>
+          <div class="node" data-n="3"><span class="dot">3</span><span class="lbl">Save</span></div>
+        </div>
+      </div>
+
+      <!-- SCROLL BODY -->
+      <div class="sbody" id="sbody"></div>
+
+      <!-- STICKY FOOTER -->
+      <div class="sfoot ann" id="sfoot">
+        <span class="tag tl">STICKY FOOTER — one primary CTA, always on-screen with safe-area padding. Fixes the "Save button cut off on mobile" bug.</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <h3>What changed &amp; why</h3>
+    <div class="k"><span class="n">1</span><div><b>One scroll region.</b> Header + footer are pinned; only the middle scrolls. Today the whole recipe is one 1500–2500px column inside a ~650px viewport.</div></div>
+    <div class="k"><span class="n">2</span><div><b>Collapsed social embed.</b> The 500–700px live IG embed becomes a tap-to-preview card, so the Import button stops getting pushed off-screen.</div></div>
+    <div class="k"><span class="n">3</span><div><b>Accordion review sections</b> with count badges + section-level confidence dots; each long section gets its own inner max-height so a 15-step recipe can't blow out the page.</div></div>
+    <div class="k"><span class="n">4</span><div><b>Hero image + title overlay.</b> Promotes the wasted 84px thumbnail into the strongest visual asset.</div></div>
+    <div class="k"><span class="n">5</span><div><b>Rows simplified to handle + text;</b> move/remove hide behind "⋯". Today each row has 6–7 controls, several sub-44px.</div></div>
+    <div class="k"><span class="n">6</span><div><b>"Show original caption"</b> collapsed by default — raw text and structured fields are no longer both expanded at once.</div></div>
+    <div class="k"><span class="n">7</span><div><b>Single warm-orange accent.</b> Replaces competing cyan/amber toggles; Meal/Drink shown via tint + icon.</div></div>
+    <p style="color:#b6ab9d;font-size:12px">Tap the step buttons above to walk the flow. Toggle annotations to see the clean consumer view.</p>
+  </div>
+</div>
+
+<script>
+const STEP1=`
+  <div class="seg ann">
+    <span class="tag tr">Segmented control replaces the wrapping tab bar. One accent only.</span>
+    <button class="on">From URL</button><button>Paste Text</button><button>From Photo</button>
+  </div>
+  <div class="pillrow ann">
+    <span class="tag tr">Meal/Drink via subtle tint + icon — not two saturated colors.</span>
+    <div class="typepill on">🍽️ Meal</div><div class="typepill">🍹 Drink</div>
+  </div>
+  <label class="fl">Recipe URL</label>
+  <input class="ti" value="instagram.com/reel/Cx9..." />
+  <div class="social-card ann">
+    <span class="tag bl">Embed COLLAPSED by default — tap to preview in its own sheet. This is the #1 fix for input-screen scrolling.</span>
+    <div class="social-thumb">📷</div>
+    <div class="meta"><b>Instagram post detected</b><span>@thefoodie · tap to preview ▸</span></div>
+    <div class="chev">▸</div>
+  </div>
+  <p style="font-size:12.5px;color:var(--text-muted);margin-top:14px;line-height:1.5">
+    We'll grab the caption, photo, ingredients &amp; steps automatically. You can fix anything in the next step.</p>
+`;
+
+const STEP2=`
+  <div class="hero ann">
+    <span class="tag tr">HERO image + title overlay (was an 84px thumb). Confidence as one chip — not 4 controls in a header row.</span>
+    <div class="ph">🍝</div><div class="grad"></div>
+    <div class="conf">✓ High confidence</div>
+    <div class="titlewrap"><input value="Creamy Tuscan Chicken Pasta" /></div>
+  </div>
+
+  <div class="acc collapsed ann">
+    <span class="tag tr">Original caption COLLAPSED — raw text & fields never both expanded.</span>
+    <div class="head" onclick="acc(this)">
+      <div class="lt">📄 Show original caption</div><span class="chev2">▾</span>
+    </div>
+    <div class="body"><div class="capt">😍 The BEST weeknight dinner!! 🍝 link in bio for more
+#pasta #dinner #easyrecipe
+
+For the sauce:
+- 1 cup heavy cream
+- 1/2 cup sun-dried tomatoes ...</div></div>
+  </div>
+
+  <div class="acc ann">
+    <span class="tag tl">ACCORDION + count badge + section-level confidence dot. Inner max-height keeps long lists contained.</span>
+    <div class="head" onclick="acc(this)">
+      <div class="lt"><span class="cdot"></span>Ingredients <span class="count">9</span></div><span class="chev2">▾</span>
+    </div>
+    <div class="body">
+      <div class="row ann">
+        <span class="tag rt">Reading state = just handle + text. Move/remove live behind "⋯" or swipe. (Was 6–7 controls per row.)</span>
+        <span class="hdl">⠿</span><span class="txt">2 cups <b>chicken breast</b>, diced</span><button class="more">⋯</button>
+      </div>
+      <div class="row"><span class="hdl">⠿</span><span class="txt">1 cup <b>heavy cream</b> <small>(for sauce)</small></span><button class="more">⋯</button></div>
+      <div class="row"><span class="hdl">⠿</span><span class="txt">½ cup <b>sun-dried tomatoes</b> <small>(for sauce)</small></span><button class="more">⋯</button></div>
+      <div class="row"><span class="hdl">⠿</span><span class="txt">3 cloves <b>garlic</b>, minced</span><span class="hint">check</span><button class="more">⋯</button></div>
+      <div class="row"><span class="hdl">⠿</span><span class="txt">2 cups <b>baby spinach</b></span><button class="more">⋯</button></div>
+      <div class="addrow">＋ Add ingredient</div>
+    </div>
+  </div>
+
+  <div class="acc ann">
+    <span class="tag tl">Steps default open but scroll inside their own region — no page blow-out at 15 steps.</span>
+    <div class="head" onclick="acc(this)">
+      <div class="lt"><span class="cdot mid"></span>Steps <span class="count">6</span></div><span class="chev2">▾</span>
+    </div>
+    <div class="body">
+      <div class="row"><span class="stepnum">1</span><span class="txt">Season and sear chicken until golden, ~5 min. Set aside.</span><button class="more">⋯</button></div>
+      <div class="row"><span class="stepnum">2</span><span class="txt">Sauté garlic, add cream &amp; sun-dried tomatoes; simmer 3 min.</span><button class="more">⋯</button></div>
+      <div class="row"><span class="stepnum">3</span><span class="txt">Stir in spinach until wilted.</span><button class="more">⋯</button></div>
+      <div class="addrow">＋ Add step</div>
+    </div>
+  </div>
+
+  <div class="acc collapsed">
+    <div class="head" onclick="acc(this)"><div class="lt">📝 Notes</div><span class="chev2">▾</span></div>
+    <div class="body"><div class="capt">Source: instagram.com/reel/Cx9...</div></div>
+  </div>
+`;
+
+const STEP3=`
+  <div class="savesum ann">
+    <span class="tag tr">Compact confirm — title + count, not the full form again.</span>
+    <div class="t">🍝</div>
+    <div><b style="display:block">Creamy Tuscan Chicken Pasta</b>
+      <span style="font-size:12px;color:var(--text-muted)">9 ingredients · 6 steps · Meal</span></div>
+  </div>
+  <label class="fl">Save to</label>
+  <div class="dest ann">
+    <span class="tag bl">Smart-bar destinations as a clean grid instead of a wrapping 4-button row. One stays primary in the footer.</span>
+    <div class="destcard on"><div class="ic">📚</div><b>Library</b></div>
+    <div class="destcard"><div class="ic">📅</div><b>This Week</b></div>
+    <div class="destcard"><div class="ic">🛒</div><b>Grocery</b></div>
+    <div class="destcard"><div class="ic">🍸</div><b>Bar</b></div>
+  </div>
+`;
+
+const FOOT={
+  1:'<button class="btn btn-primary" onclick="go(2)">Import Recipe →</button>',
+  2:'<button class="btn btn-ghost" onclick="go(1)">← Back</button><button class="btn btn-primary" onclick="go(3)">Looks good →</button>',
+  3:'<button class="btn btn-ghost" onclick="go(2)">← Back</button><button class="btn btn-primary" onclick="alert(\\'Saved! (mockup)\\')">Save to Library</button>'
+};
+const TITLE={1:'Import Recipe',2:'Review &amp; Edit',3:'Save Recipe'};
+const BODY={1:STEP1,2:STEP2,3:STEP3};
+
+function go(n){
+  document.getElementById('sbody').innerHTML=BODY[n];
+  document.getElementById('sfoot').innerHTML=
+    '<span class="tag tl">STICKY FOOTER — one primary CTA, always on-screen. Fixes the cut-off Save button.</span>'+FOOT[n];
+  document.getElementById('htitle').innerHTML=TITLE[n];
+  document.getElementById('sbody').scrollTop=0;
+  [1,2,3].forEach(i=>document.getElementById('t'+i).classList.toggle('on',i===n));
+  document.querySelectorAll('#rail .node').forEach(el=>{
+    const d=+el.dataset.n; el.classList.toggle('active',d===n); el.classList.toggle('done',d<n);
+    el.querySelector('.dot').textContent=d<n?'✓':d;
+  });
+  document.querySelectorAll('#rail .bar').forEach(el=>el.classList.toggle('done',+el.dataset.b<n));
+}
+function acc(h){ h.parentElement.classList.toggle('collapsed'); }
+function toggleAnn(){
+  document.body.classList.toggle('noann');
+  const on=!document.body.classList.contains('noann');
+  document.getElementById('ta').textContent='Annotations: '+(on?'ON':'OFF');
+  document.getElementById('ta').classList.toggle('on',on);
+}
+go(1);
+</script>
+</body>
+</html>

@@ -12,6 +12,88 @@ import { getCachedImport, setCachedImport } from './db.js';
 import { isRedditUrl, isRedditPostUrl, tryRedditJson } from './scrapers/redditDiscovery.js';
 import { htmlToMarkdown, htmlLooksLikeRecipe } from './scrapers/markdownConverter.js';
 import { parseIngredient } from 'parse-ingredient';
+import {
+  canonicalizeUnit,
+  normalizeFraction,
+  wordToNumber,
+  resolveIngredientAlias,
+  isSectionHeader,
+  sectionLabelFrom,
+  detectKindHeuristic,
+  COURSE,
+  DISH_TYPE,
+  RECIPE_SCHEMA,
+  SYSTEM_INSTRUCTION,
+  buildFewShotContents,
+  thinFromStructured,
+} from './recipeSchema.js';
+
+// ─── Phase 1: Global abort + timeout plumbing ───────────────────────────────
+// One AbortController + a hard 45s race aborts every in-flight fetch and Gemini
+// call, then resolves the public entry point to { _error, reason:'timeout' }.
+const GLOBAL_IMPORT_TIMEOUT_MS = 45000;
+
+/**
+ * Compose a caller-supplied AbortSignal with one or more internal signals.
+ * Returns a single AbortSignal that fires when ANY input signal fires. Uses the
+ * native AbortSignal.any when available, falling back to manual wiring.
+ */
+function composeSignals(...signals) {
+  const real = signals.filter(Boolean);
+  if (real.length === 0) return undefined;
+  if (real.length === 1) return real[0];
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.any === 'function') {
+    try { return AbortSignal.any(real); } catch { /* fall through */ }
+  }
+  const ctrl = new AbortController();
+  const onAbort = () => { try { ctrl.abort(); } catch { /* noop */ } };
+  for (const s of real) {
+    if (s.aborted) { onAbort(); break; }
+    s.addEventListener('abort', onAbort, { once: true });
+  }
+  return ctrl.signal;
+}
+
+/** True if the given signal is aborted (defensive against undefined). */
+function isAborted(signal) {
+  return Boolean(signal && signal.aborted);
+}
+
+// ─── Phase 6 (Frontier): optional spoken-recipe transcription, OFF by default ──
+// Mealie-style video path. Provider-agnostic and env-gated: unless a Whisper-
+// compatible endpoint is configured via VITE_ASR_ENDPOINT, this is a no-op and
+// the pipeline behaves exactly as before. When configured, the server is asked
+// to pull subtitles first (cheapest) and only transcribe audio if needed; the
+// returned transcript is fed back through captionToRecipe. No key lives in code.
+async function transcribeViaASR(mediaUrl, { type = 'meal', signal } = {}) {
+  const asrEndpoint = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_ASR_ENDPOINT : null;
+  if (!asrEndpoint || !mediaUrl) return null;              // disabled → unchanged behavior
+  if (isAborted(signal)) return null;
+  try {
+    // The actual subtitle/audio extraction runs server-side (yt-dlp + ffmpeg +
+    // Whisper) because the browser cannot download media streams. We only ask
+    // the configured backend for a transcript here; the network/credentials live
+    // entirely in env + server. This stub returns null until ASR is provisioned.
+    const serverBase =
+      (typeof window !== 'undefined' && window.__SPICEHUB_SERVER__)
+      || (typeof import.meta !== 'undefined' ? import.meta.env?.VITE_SERVER_URL : null)
+      || null;
+    if (!serverBase) return null;
+    const res = await fetch(`${serverBase}/api/transcribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: mediaUrl, type }),
+      signal: composeSignals(signal, AbortSignal.timeout(GLOBAL_IMPORT_TIMEOUT_MS)),
+    });
+    if (!res.ok) return null;                              // 501 when server ASR disabled
+    const data = await res.json();
+    const transcript = (data && (data.transcript || data.text)) || '';
+    if (!transcript || transcript.trim().length < 20) return null;
+    return captionToRecipe(transcript, { imageUrl: '', sourceUrl: mediaUrl, type, signal });
+  } catch {
+    return null;
+  }
+}
 
 /**
  * looksLikeIngredientLine Ã¢â‚¬â€ uses parse-ingredient (battle-tested NLP for
@@ -92,13 +174,32 @@ export function structureIngredient(raw = '') {
   const UNITS = /^(cups?|tbsp|tablespoons?|tsp|teaspoons?|oz|ounces?|lbs?|pounds?|grams?|g|kg|ml|liters?|l|cloves?|pieces?|pinch(?:es)?|dash(?:es)?|handfuls?|slices?|cans?|packages?|pkgs?|bunches?|heads?|stalks?|sprigs?|leaves?)/i;
   // Match: optional fraction/decimal/integer, optional unit, rest = item
   const m = text.match(/^(\d+(?:[\/\.]\d+)?(?:\s+\d+\/\d+)?)\s+(?:(\S+)\s+)?(.*)/);
-  if (!m) return { quantity: '', unit: '', item: text };
+
+  // Phase 4: finalize() canonicalizes the unit (teaspoons->tsp) and resolves the
+  // ingredient to its canonical name + grocery aisle via the shared schema, so
+  // downstream search/sort/shopping-list grouping is consistent. Additive fields
+  // (unitCanon, canonicalName, aisle) preserve the original {quantity,unit,item}.
+  const finalize = (quantity, unit, item) => {
+    const cleanItem = (item || '').trim();
+    const canonUnit = unit ? (canonicalizeUnit(unit) || unit.trim()) : '';
+    const alias = resolveIngredientAlias(cleanItem);
+    return {
+      quantity: (quantity || '').trim(),
+      unit: canonUnit,
+      item: cleanItem,
+      unitCanon: canonUnit,
+      canonicalName: alias.canonical || cleanItem,
+      aisle: alias.aisle || '',
+    };
+  };
+
+  if (!m) return finalize('', '', text);
   const [, qty, maybeUnit, rest] = m;
   if (maybeUnit && UNITS.test(maybeUnit)) {
-    return { quantity: qty.trim(), unit: maybeUnit.trim(), item: rest.trim() };
+    return finalize(qty, maybeUnit, rest);
   }
   // No unit match Ã¢â‚¬â€ quantity only, rest is item
-  return { quantity: qty.trim(), unit: '', item: ((maybeUnit || '') + ' ' + (rest || '')).trim() };
+  return finalize(qty, '', ((maybeUnit || '') + ' ' + (rest || '')).trim());
 }
 
 /**
@@ -663,7 +764,89 @@ ${rawText.slice(0, 8000)}
  * @param {object} options - { type: 'meal' | 'drink' }
  * @returns {object|null} Structured recipe or null
  */
-export async function structureRecipeFromImage(imageDataUrl, { type = 'meal', hintTitle = '' } = {}) {
+// ─── Phase 3: vision-transcribe an image to plain recipe text ────────────────
+// Instead of asking Gemini Vision to both READ and STRUCTURE in one shot (the
+// old weak path), we first transcribe the image to faithful plain text, then
+// feed that text through the SAME captionToRecipe pipeline used for social
+// captions. This means OCR output gets the full shared SYSTEM_INSTRUCTION,
+// quantity/unit canonicalization, and cross-contamination validation — closing
+// the gap that made photo imports noticeably worse than URL imports.
+async function transcribeImageToText(imageDataUrl, { type = 'meal', signal } = {}) {
+  const clientKey = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_GOOGLE_AI_KEY : null;
+  if (!clientKey || !imageDataUrl) return '';
+  const base64Data = imageDataUrl.split(',')[1];
+  if (!base64Data) return '';
+  const mimeMatch = imageDataUrl.match(/^data:(image\/[a-zA-Z+]+);base64,/);
+  const mimeType = (mimeMatch?.[1] || 'image/jpeg').replace('image/jpg', 'image/jpeg');
+  const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${clientKey}`;
+
+  const isDrink = type === 'drink';
+  const prompt = `Transcribe this ${isDrink ? 'cocktail/drink' : 'food'} recipe image into plain text, exactly as written.
+- Output ONLY the transcribed text — no commentary, no JSON, no markdown fences.
+- Preserve line breaks: put each ingredient on its own line and each step on its own line.
+- Keep section headers (e.g. "Ingredients", "For the sauce", "Directions") on their own lines.
+- Transcribe quantities and units precisely (e.g. "2 1/4 cups", "1.5 oz", "1 tbsp").
+- If the image is a finished dish/drink photo with NO readable recipe text, output exactly: NO_TEXT`;
+
+  try {
+    const res = await fetch(GEMINI_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ inlineData: { mimeType, data: base64Data } }, { text: prompt }] }],
+        generationConfig: { temperature: 0, maxOutputTokens: 2048 },
+      }),
+      signal: composeSignals(signal, AbortSignal.timeout(25000)),
+    });
+    if (!res.ok) return '';
+    const data = await res.json();
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+    if (/^NO_TEXT\b/i.test(text)) return '';
+    return text;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Phase 3 public entry: transcribe → captionToRecipe, with the legacy one-shot
+ * vision structuring kept as a fallback for text-free dish/drink photos.
+ * Returns a recipe object, or { _error:true, reason:'photo_unreadable' } when
+ * nothing usable can be extracted (the shape ImportModal renders against).
+ */
+export async function structureRecipeFromImage(imageDataUrl, { type = 'meal', hintTitle = '', signal } = {}) {
+  const clientKey = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_GOOGLE_AI_KEY : null;
+  if (!clientKey || !imageDataUrl) return { _error: true, reason: 'photo_unreadable' };
+  if (isAborted(signal)) return { _error: true, reason: 'aborted' };
+
+  // 1. Transcribe the image, then run the shared caption pipeline.
+  const transcript = await transcribeImageToText(imageDataUrl, { type, signal });
+  if (transcript && transcript.length >= 20) {
+    const fromCaption = await captionToRecipe(transcript, {
+      title: hintTitle,
+      imageUrl: imageDataUrl,
+      type,
+      signal,
+    });
+    if (fromCaption && (fromCaption.ingredients?.length || fromCaption.directions?.length)) {
+      return { ...fromCaption, _structuredVia: 'vision-transcribe', _imageAnalysis: 'transcribed from photo' };
+    }
+  }
+
+  if (isAborted(signal)) return { _error: true, reason: 'aborted' };
+
+  // 2. Fallback: legacy one-shot vision structuring (handles text-free photos by
+  //    inferring a recipe from the visible dish/drink).
+  const inferred = await _structureImageViaVision(imageDataUrl, { type, hintTitle, signal });
+  if (inferred && (inferred.ingredients?.length || inferred.directions?.length)) {
+    return inferred;
+  }
+
+  // 3. Nothing usable — let the UI show an inviting "couldn't read it" state.
+  return { _error: true, reason: 'photo_unreadable' };
+}
+
+async function _structureImageViaVision(imageDataUrl, { type = 'meal', hintTitle = '', signal } = {}) {
   const clientKey = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_GOOGLE_AI_KEY : null;
   if (!clientKey || !imageDataUrl) return null;
 
@@ -747,7 +930,7 @@ ${hintTitle ? `- The recipe is likely called: "${hintTitle}"` : ''}`;
         }],
         generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
       }),
-      signal: AbortSignal.timeout(25000),
+      signal: composeSignals(signal, AbortSignal.timeout(25000)),
     });
 
     if (!res.ok) {
@@ -867,19 +1050,38 @@ function postProcessGeminiResult(rawIngredients, rawDirs) {
   };
 }
 
-export async function structureWithAIClient(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal' } = {}) {
+export async function structureWithAIClient(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal', signal } = {}) {
   const clientKey = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_GOOGLE_AI_KEY : null;
   if (!clientKey || !rawText || rawText.trim().length < 20) return null;
+  if (isAborted(signal)) return null;
 
   const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${clientKey}`;
   const prompt = _buildExtractionPrompt(rawText, { hintTitle, type });
+
+  // Phase 2: shared SYSTEM_INSTRUCTION + JSON mode for reliable auto-sorting.
+  // responseSchema (RECIPE_SCHEMA) is gated behind an env flag so it can be
+  // verified against a live key before becoming the default — when off, Gemini
+  // still returns JSON in the legacy {ingredients, directions} shape the parser
+  // has always read, so there is zero regression risk.
+  const useResponseSchema = typeof import.meta !== 'undefined'
+    && import.meta.env?.VITE_GEMINI_RESPONSE_SCHEMA === 'true';
+  const generationConfig = {
+    temperature: 0.1,
+    maxOutputTokens: 2048,
+    responseMimeType: 'application/json',
+    ...(useResponseSchema ? { responseSchema: RECIPE_SCHEMA } : {}),
+  };
 
   try {
     const res = await fetch(GEMINI_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-      signal: AbortSignal.timeout(14000),
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig,
+      }),
+      signal: composeSignals(signal, AbortSignal.timeout(14000)),
     });
     if (!res.ok) return null;
     const data = await res.json();
@@ -887,31 +1089,49 @@ export async function structureWithAIClient(rawText, { title: hintTitle = '', im
     if (!raw) return null;
     const jsonText = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
     const parsed = JSON.parse(jsonText);
-    if (parsed.error) return null;
-    const rawIngredients = Array.isArray(parsed.ingredients)
-      ? parsed.ingredients.map(ing => typeof ing === 'string' ? ing : [ing.amount, ing.name].filter(Boolean).join(' ').trim()).filter(Boolean)
-      : [];
+    if (parsed.error || parsed.isRecipe === false) return null;
+
+    // Support BOTH the new RECIPE_SCHEMA shape (ingredientGroups + kind + course)
+    // and the legacy flat {ingredients, directions} shape. thinFromStructured
+    // flattens groups (section → parenthetical suffix) and surfaces confidence,
+    // course, and dishType so auto-sorting metadata flows through unchanged.
+    const isStructuredShape = Array.isArray(parsed.ingredientGroups);
+    const thin = isStructuredShape ? thinFromStructured(parsed) : null;
+
+    const rawIngredients = isStructuredShape
+      ? thin.ingredients
+      : (Array.isArray(parsed.ingredients)
+          ? parsed.ingredients.map(ing => typeof ing === 'string' ? ing : [ing.amount, ing.name].filter(Boolean).join(' ').trim()).filter(Boolean)
+          : []);
     // IMPORTANT: Leave empty arrays empty — UI decides how to present thin results.
-    const rawDirs = Array.isArray(parsed.directions) ? parsed.directions.filter(Boolean) : [];
+    const rawDirs = isStructuredShape
+      ? thin.directions
+      : (Array.isArray(parsed.directions) ? parsed.directions.filter(Boolean) : []);
     // Post-Gemini validation: run heuristics to catch ingredient/direction cross-contamination
     const { ingredients, directions: _dirs, _rescued } = postProcessGeminiResult(rawIngredients, rawDirs);
+
+    const meta = isStructuredShape ? thin : parsed;
     return {
       ...buildStructuredFields(ingredients, _dirs),
-      servings: parsed.servings || null,
-      cookTime: parsed.cookTime || null,
-      prepTime: parsed.prepTime || null,
-      totalTime: parsed.totalTime || null,
-      cuisine: parsed.cuisine || null,
-      dietaryTags: Array.isArray(parsed.dietaryTags) ? parsed.dietaryTags.filter(Boolean) : [],
-      notes: parsed.notes || null,
+      servings: meta.servings || null,
+      cookTime: meta.cookTime || null,
+      prepTime: meta.prepTime || null,
+      totalTime: meta.totalTime || null,
+      cuisine: meta.cuisine || null,
+      course: meta.course || null,
+      dishType: meta.dishType || null,
+      dietaryTags: Array.isArray(meta.dietaryTags) ? meta.dietaryTags.filter(Boolean) : [],
+      notes: meta.notes || null,
       // Drink-specific fields survive as extras on the result; meal flow ignores them.
-      ...(type === 'drink'
-        ? { glass: parsed.glass || null, garnish: parsed.garnish || null, method: parsed.method || null, _type: 'drink' }
+      ...(type === 'drink' || meta._type === 'drink'
+        ? { glass: meta.glass || null, garnish: meta.garnish || null, method: meta.method || null, _type: 'drink' }
         : { _type: 'meal' }),
       imageUrl: imageUrl || '',
       link: sourceUrl || '',
       _aiStructured: true,
-      _structuredVia: 'gemini-client',
+      _structuredVia: isStructuredShape ? 'gemini-client-schema' : 'gemini-client',
+      _confidence: typeof meta.confidence === 'number' ? meta.confidence : null,
+      _needsReview: !!meta.needsReview,
       _rescued: _rescued || 0,
     };
   } catch {
@@ -922,12 +1142,13 @@ export async function structureWithAIClient(rawText, { title: hintTitle = '', im
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ AI-powered structuring via server /api/structure-recipe (Gemini Flash) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 // Falls back to direct client call if VITE_GOOGLE_AI_KEY is configured.
 // Returns a SpiceHub recipe object on success, null if unavailable.
-export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal' } = {}) {
+export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal', signal } = {}) {
   if (!rawText || rawText.trim().length < 20) return null;
+  if (isAborted(signal)) return null;
 
   // Try client-side Gemini first (faster, no backend roundtrip)
   try {
-    const clientResult = await structureWithAIClient(rawText, { title: hintTitle, imageUrl, sourceUrl, type });
+    const clientResult = await structureWithAIClient(rawText, { title: hintTitle, imageUrl, sourceUrl, type, signal });
     if (clientResult && (clientResult.ingredients?.length || clientResult.directions?.length)) {
       return clientResult;
     }
@@ -981,8 +1202,9 @@ export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ captionToRecipe: Gemini-first structuring with heuristic fallback Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 // Takes raw caption text and returns a structured recipe object.
 // Used by BrowserAssist Pass 0 and extractInstagramAgent to get clean results.
-export async function captionToRecipe(captionText, { title = '', imageUrl = '', sourceUrl = '', type = 'meal' } = {}) {
+export async function captionToRecipe(captionText, { title = '', imageUrl = '', sourceUrl = '', type = 'meal', signal } = {}) {
   if (!captionText || captionText.trim().length < 20) return null;
+  if (isAborted(signal)) return null;
 
   // ReciME-style: aggressively clean social chrome before sending to AI
   const cleanedCaption = cleanSocialCaption(captionText);
@@ -990,7 +1212,7 @@ export async function captionToRecipe(captionText, { title = '', imageUrl = '', 
 
   // Try Gemini AI structuring first (most reliable for social media captions)
   try {
-    const aiResult = await structureWithAI(textForAI, { title, imageUrl, sourceUrl, type });
+    const aiResult = await structureWithAI(textForAI, { title, imageUrl, sourceUrl, type, signal });
     if (aiResult) {
       const hasRealIngs = (aiResult.ingredients || []).some(i => i && !/^see (original post|recipe) for/i.test(i.trim()));
       const hasRealDirs = (aiResult.directions || []).some(d => d && !/^see (original post|recipe) for/i.test(d.trim()));
@@ -2560,7 +2782,17 @@ export async function parseFromUrl(url, onProgress, { type = 'meal' } = {}) {
   return await importRecipeFromUrl(url, onProgress, { type });
 }
 
-export async function importRecipeFromUrl(url, onProgress, { type = 'meal' } = {}) {
+export async function importRecipeFromUrl(url, onProgress, { type = 'meal', signal: callerSignal } = {}) {
+
+  // ── Phase 1: global abort + 45s budget ──────────────────────────────────────
+  // Compose any caller signal (the Cancel button) with a self-clearing 45s
+  // timeout budget. Downstream calls that accept { signal } abort immediately;
+  // for stages that don't, we poll isAborted(signal) at each boundary so a
+  // cancel/timeout is still honored between awaits and we resolve to a
+  // structured { _error, reason } rather than hanging.
+  const signal = composeSignals(callerSignal, AbortSignal.timeout(GLOBAL_IMPORT_TIMEOUT_MS));
+  const _bail = () => ({ _error: true, reason: (callerSignal && callerSignal.aborted) ? 'aborted' : 'timeout' });
+  if (isAborted(signal)) return _bail();
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ 0. Reddit: zero-auth JSON endpoint (fastest non-Instagram path) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   // Reddit's .json trick gives structured post data with no scraping, no auth,
@@ -2602,27 +2834,30 @@ export async function importRecipeFromUrl(url, onProgress, { type = 'meal' } = {
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ 1. Instagram: try embed first, then Agent extraction Ã¢â€â‚¬Ã¢â€â‚¬
   if (isInstagramUrl(url)) {
+    if (isAborted(signal)) return _bail();
     console.log('[SpiceHub] Instagram URL Ã¢â‚¬â€ trying embed extraction...');
     if (onProgress) onProgress('Trying Instagram embed extraction...');
 
     const instagramRecipe = await importFromInstagram(url, (phaseOrMsg, status, msg) => {
       if (!onProgress) return;
       onProgress(typeof msg === 'string' ? msg : String(phaseOrMsg || 'Importing Instagram post...'));
-    }, { type });
+    }, { type, signal });
     if (instagramRecipe && !instagramRecipe._needsManualCaption && !instagramRecipe._error) {
       return instagramRecipe;
     }
+    if (isAborted(signal)) return _bail();
 
     // Instagram all paths failed Ã¢â‚¬â€ route to BrowserAssist
     console.log('[SpiceHub] Instagram extraction failed Ã¢â‚¬â€ routing to BrowserAssist');
-    return null;
+    return { _needsBrowserAssist: true, url, type };
   }
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ 2. Video/Social URLs: try Agent extraction, then yt-dlp, then CORS proxy Ã¢â€â‚¬Ã¢â€â‚¬
   if (isSocialMediaUrl(url)) {
+    if (isAborted(signal)) return _bail();
     console.log('[SpiceHub] Social/video URL Ã¢â‚¬â€ trying extraction pipeline...');
 
-    const videoRecipe = await tryVideoExtraction(url, onProgress, { type });
+    const videoRecipe = await tryVideoExtraction(url, onProgress, { type, signal });
     if (videoRecipe && !videoRecipe._error && hasRecipeContent(videoRecipe)) return videoRecipe;
 
     // Fallback: CORS proxy (sometimes works for public pages)
@@ -2644,6 +2879,14 @@ export async function importRecipeFromUrl(url, onProgress, { type = 'meal' } = {
     } catch {
       console.log('[SpiceHub] Social media CORS proxy failed');
     }
+
+    // Last resort (Phase 6, opt-in): spoken-recipe transcription for video-only
+    // posts. No-op unless VITE_ASR_ENDPOINT is configured.
+    if (!isAborted(signal)) {
+      const asrRecipe = await transcribeViaASR(url, { type, signal });
+      if (asrRecipe && hasRecipeContent(asrRecipe)) return asrRecipe;
+    }
+    if (isAborted(signal)) return _bail();
 
     return { _error: true, reason: 'social-fetch-failed', platform: getSocialPlatform(url) };
   }
@@ -4832,3 +5075,4 @@ export function detectImportType(url = '', initialText = '') {
   // Default fallback
   return 'meal';
 }
+
