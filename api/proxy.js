@@ -14,6 +14,13 @@ export const config = {
 
 // Sites known to require special handling
 const INSTAGRAM_HOST = /instagram\.com|cdninstagram\.com|fbcdn\.net|scontent/i;
+// Broader social/video host set — these reject bot-like headers and benefit
+// from a realistic Referer so the origin treats us like an organic visitor.
+const SOCIAL_HOST = /instagram\.com|cdninstagram\.com|fbcdn\.net|scontent|tiktok\.com|facebook\.com|fb\.watch|pinterest\.|youtube\.com|youtu\.be/i;
+
+// Hard cap on HTML body we forward — protects the (memory-limited) edge function
+// from pathological pages and keeps responses bounded. 4MB is ample for HTML.
+const MAX_HTML_BYTES = 4 * 1024 * 1024;
 
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -40,6 +47,7 @@ function cleanUrl(input = '') {
  */
 function buildHeaders(targetUrl) {
   const isInsta = INSTAGRAM_HOST.test(targetUrl);
+  const isSocial = SOCIAL_HOST.test(targetUrl);
   // Rotate UA every ~15 minutes to break bot-wall fingerprinting
   const ua = USER_AGENTS[Math.floor(Date.now() / 900000) % USER_AGENTS.length];
 
@@ -60,6 +68,15 @@ function buildHeaders(targetUrl) {
 
   if (isInsta) {
     base['Referer'] = 'https://www.instagram.com/';
+    base['sec-ch-ua'] = '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"';
+    base['sec-ch-ua-mobile'] = '?0';
+    base['sec-ch-ua-platform'] = '"Windows"';
+  } else if (isSocial) {
+    // Other social/video hosts: a same-origin Referer makes the request look
+    // like an in-site navigation rather than a cold bot hit.
+    try {
+      base['Referer'] = `${new URL(targetUrl).origin}/`;
+    } catch { /* leave Referer unset on unparseable URLs */ }
     base['sec-ch-ua'] = '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"';
     base['sec-ch-ua-mobile'] = '?0';
     base['sec-ch-ua-platform'] = '"Windows"';

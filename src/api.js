@@ -105,30 +105,66 @@ export function cleanUrl(url) {
  *     no CORS issues, not IP-blocked like public proxies. This is the PRIMARY path.
  *  2. Public CORS proxy waterfall — fallback for local dev or if Vercel fn fails.
  */
-export async function fetchHtmlViaProxy(url, timeoutMs = 30000) {
+/**
+ * Combine an external AbortSignal with a per-attempt timeout into one controller.
+ * Returns { signal, cleanup }. cleanup() must be called to clear the timer and
+ * detach the abort listener (avoids leaks across many proxy attempts).
+ */
+function _attemptSignal(timeoutMs, outerSignal) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  let onAbort = null;
+  if (outerSignal) {
+    if (outerSignal.aborted) ctrl.abort();
+    else {
+      onAbort = () => ctrl.abort();
+      outerSignal.addEventListener('abort', onAbort, { once: true });
+    }
+  }
+  return {
+    signal: ctrl.signal,
+    cleanup() {
+      clearTimeout(timer);
+      if (onAbort && outerSignal) outerSignal.removeEventListener('abort', onAbort);
+    },
+  };
+}
+
+export async function fetchHtmlViaProxy(url, timeoutMs = 30000, { signal } = {}) {
   const targetUrl = cleanUrl(url);
   console.log('[fetchHtmlViaProxy] Target:', targetUrl);
 
+  // Bail immediately if the caller already aborted.
+  if (signal?.aborted) return null;
+
+  // Per-proxy timeout — short so a hung proxy fails over fast instead of eating
+  // the whole global budget. Capped at 10s, never exceeding the overall budget.
+  const perProxyTimeout = Math.min(Math.max(timeoutMs, 1000), 10000);
 
   // ── 1. Internal Vercel /api/proxy (primary) ──────────────────────────────────
   // In production on Vercel, this is a same-origin call with zero CORS overhead.
   // In local dev (vite), this will 404 which is fine — we fall through to public proxies.
   try {
     const internalUrl = `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-    const resp = await fetch(internalUrl, { signal: ctrl.signal });
-    clearTimeout(timer);
+    const att = _attemptSignal(perProxyTimeout, signal);
+    let resp;
+    try {
+      resp = await fetch(internalUrl, { signal: att.signal });
+    } finally {
+      att.cleanup();
+    }
 
     if (resp.ok) {
-      // Check what the TARGET site actually returned (proxy always returns 200,
-      // but forwards the real status in X-Proxy-Status header).
-      const proxyStatus = parseInt(resp.headers.get('X-Proxy-Status') || '200', 10);
-      if (proxyStatus >= 400) {
+      // Check what the TARGET site actually returned (proxy always returns the
+      // real status, and forwards it in the X-Proxy-Status header). Treat a
+      // missing header as "unknown" (we still read the body and length-gate it).
+      const proxyStatusHeader = resp.headers.get('X-Proxy-Status');
+      const proxyStatus = proxyStatusHeader != null ? parseInt(proxyStatusHeader, 10) : null;
+      if (proxyStatus != null && proxyStatus >= 400) {
         console.log(`[fetchHtmlViaProxy] Internal proxy: target returned ${proxyStatus}, falling to public proxies`);
       } else {
         const text = await resp.text();
-        if (text && text.length > 1000 && !text.includes('"error"')) {
+        if (text && text.length > 1000 && !text.startsWith('{"error"')) {
           console.log('[fetchHtmlViaProxy] ✅ Internal proxy succeeded');
           return text;
         }
@@ -136,44 +172,45 @@ export async function fetchHtmlViaProxy(url, timeoutMs = 30000) {
     }
     console.log('[fetchHtmlViaProxy] Internal proxy returned empty/error, trying public proxies...');
   } catch (e) {
+    if (signal?.aborted) return null;
     console.log('[fetchHtmlViaProxy] Internal proxy unavailable (local dev?), using public proxies');
   }
 
+  if (signal?.aborted) return null;
+
   // ── 2. Public CORS proxy waterfall (secondary / local dev fallback) ────────────
-  // Ordered by observed reliability (codetabs and allorigins succeed most often).
-  // corsproxy.io often returns 403 for major recipe/social sites — kept but de-prioritized.
-  // proxy.cors.sh and cors.bridged.cc hit 429 rate limits quickly — kept as last resorts.
+  // Trimmed to the proxies that reliably support arbitrary URLs + CORS and are
+  // not chronically rate-limited. Ordered fastest/most-reliable first:
+  //   - codetabs: fast, generous, handles most recipe/social hosts.
+  //   - allorigins/raw: reliable, returns body directly.
+  //   - allorigins/get: JSON envelope, exposes the target's real status code.
+  //   - corsproxy.io: kept as a last resort (sometimes 403s major sites).
+  // Dropped: thingproxy (frequently dead), proxy.cors.sh + cors.bridged.cc
+  // (aggressive 429 rate limits, key-gated). Still 4 fallbacks — no SPOF.
   const PUBLIC_PROXIES = [
     (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
     (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
     (u) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
-    (u) => `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(u)}`,
     (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-    (u) => `https://proxy.cors.sh/${u}`,
-    (u) => `https://cors.bridged.cc/${u}`,
   ];
 
-  // Per-proxy timeout is shorter since we try multiple
-  const perProxyTimeout = Math.min(timeoutMs / 2, 15000);
-
   for (const makeProxy of PUBLIC_PROXIES) {
+    if (signal?.aborted) return null;
     const proxyUrl = makeProxy(targetUrl);
     try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), perProxyTimeout);
-      const resp = await fetch(proxyUrl, {
-        signal: ctrl.signal,
-        headers: proxyUrl.includes('proxy.cors.sh')
-          ? { 'x-cors-api-key': import.meta.env.VITE_CORS_SH_KEY || '' }
-          : {},
-      });
-      clearTimeout(timer);
+      const att = _attemptSignal(perProxyTimeout, signal);
+      let resp;
+      try {
+        resp = await fetch(proxyUrl, { signal: att.signal });
+      } finally {
+        att.cleanup();
+      }
 
-         // If we get a 403 or 429, don't crash—just skip to the next proxy
-    if (resp.status === 403 || resp.status === 429 || !resp.ok) {
-      console.warn(`[Proxy skip] ${proxyUrl.split('/')[2]} returned ${resp.status}`);
-      continue; 
-    }
+      // If we get a 403 or 429 (or any non-2xx), don't crash — fail over fast.
+      if (resp.status === 403 || resp.status === 429 || !resp.ok) {
+        console.warn(`[Proxy skip] ${proxyUrl.split('/')[2]} returned ${resp.status}`);
+        continue;
+      }
 
       let text = await resp.text();
 
@@ -203,11 +240,12 @@ export async function fetchHtmlViaProxy(url, timeoutMs = 30000) {
 
       console.log(`[fetchHtmlViaProxy] ✅ Public proxy succeeded: ${proxyUrl.split('/')[2]}`);
       return text;
-  } catch (err) {
-    console.error("Proxy request failed:", err);
-    // Continue to next proxy in list
+    } catch (err) {
+      if (signal?.aborted) return null;
+      console.error('Proxy request failed:', err);
+      // Continue to next proxy in list (timeout/network → fast failover)
+    }
   }
-}
 
   console.warn('[fetchHtmlViaProxy] ❌ All proxies failed for:', targetUrl);
   return null;
@@ -608,39 +646,54 @@ async function _blobToValidatedDataUrl(resp, { maxBytes = 2 * 1024 * 1024, minBy
  * @param {object} [opts]
  * @param {number} [opts.timeoutMs=9000]
  * @param {number} [opts.maxBytes=2*1024*1024]
+ * @param {AbortSignal} [opts.signal] — external cancel (e.g. the parser's 45s global abort)
  * @returns {Promise<string|null>} data URL or null
  */
 export async function downloadImageAsDataUrl(imageUrl, opts = {}) {
   if (!imageUrl || typeof imageUrl !== 'string') return null;
-  const { timeoutMs = 9000, maxBytes = 5 * 1024 * 1024 } = opts; // 5MB — Instagram images can be large
+  const { timeoutMs = 9000, maxBytes = 5 * 1024 * 1024, signal } = opts; // 5MB — Instagram images can be large
+  if (signal?.aborted) return null;
   const cleanedImageUrl = cleanUrl(imageUrl);
 
-  // Try direct fetch first (may succeed for CORS-friendly hosts)
+  // Try direct fetch first (may succeed for CORS-friendly hosts). Follow
+  // redirects (CDN URLs often 30x to a signed edge); validate it's actually an
+  // image inside _blobToValidatedDataUrl (content-type + magic-byte sniff).
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs / 2);
-    const resp = await fetch(cleanedImageUrl, {
-      signal: ctrl.signal,
-      headers: { 'Accept': 'image/*' },
-    });
-    clearTimeout(timer);
+    const att = _attemptSignal(Math.round(timeoutMs / 2), signal);
+    let resp;
+    try {
+      resp = await fetch(cleanedImageUrl, {
+        signal: att.signal,
+        headers: { 'Accept': 'image/*' },
+        redirect: 'follow',
+      });
+    } finally {
+      att.cleanup();
+    }
     const dataUrl = await _blobToValidatedDataUrl(resp, { maxBytes });
     if (dataUrl) return dataUrl;
-  } catch { /* fall through to proxy */ }
+  } catch { if (signal?.aborted) return null; /* fall through to proxy */ }
+
+  if (signal?.aborted) return null;
 
   // Same-origin serverless image fetcher can read CDN bytes without browser CORS.
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-    const resp = await fetch(`/api/proxy?mode=image-data-url&url=${encodeURIComponent(cleanedImageUrl)}`, {
-      signal: ctrl.signal,
-    });
-    clearTimeout(timer);
+    const att = _attemptSignal(timeoutMs, signal);
+    let resp;
+    try {
+      resp = await fetch(`/api/proxy?mode=image-data-url&url=${encodeURIComponent(cleanedImageUrl)}`, {
+        signal: att.signal,
+      });
+    } finally {
+      att.cleanup();
+    }
     if (resp.ok) {
       const data = await resp.json();
       if (typeof data?.dataUrl === 'string' && data.dataUrl.startsWith('data:image/')) return data.dataUrl;
     }
-  } catch { /* fall through to public proxies */ }
+  } catch { if (signal?.aborted) return null; /* fall through to public proxies */ }
+
+  if (signal?.aborted) return null;
 
   // weserv.nl — reliable image proxy that strips auth tokens and re-serves the image.
   // Particularly good for Instagram CDN URLs whose signed tokens have expired.
@@ -648,24 +701,43 @@ export async function downloadImageAsDataUrl(imageUrl, opts = {}) {
   if (isInstaCdn) {
     try {
       const weservUrl = `https://images.weserv.nl/?url=${encodeURIComponent(cleanedImageUrl)}&w=1200&output=jpg&q=85`;
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-      const resp = await fetch(weservUrl, { signal: ctrl.signal });
-      clearTimeout(timer);
+      const att = _attemptSignal(timeoutMs, signal);
+      let resp;
+      try {
+        resp = await fetch(weservUrl, { signal: att.signal, redirect: 'follow' });
+      } finally {
+        att.cleanup();
+      }
       const dataUrl = await _blobToValidatedDataUrl(resp, { maxBytes });
       if (dataUrl) return dataUrl;
-    } catch { /* fall through */ }
+    } catch { if (signal?.aborted) return null; /* fall through */ }
   }
 
-  // allorigins — last resort for any URL
-  try {
-    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(cleanedImageUrl)}`;
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs / 2);
-    const resp = await fetch(proxyUrl, { signal: ctrl.signal });
-    clearTimeout(timer);
-    return await _blobToValidatedDataUrl(resp, { maxBytes });
-  } catch { return null; }
+  if (signal?.aborted) return null;
+
+  // Public CORS proxy fallback — last resort for any URL when direct + serverless
+  // both failed (e.g. CORS-blocked host with no Vercel fn in local dev). Try
+  // codetabs then allorigins so we don't depend on a single proxy.
+  const imageProxies = [
+    (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+    (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  ];
+  for (const makeProxy of imageProxies) {
+    if (signal?.aborted) return null;
+    try {
+      const att = _attemptSignal(Math.round(timeoutMs / 2), signal);
+      let resp;
+      try {
+        resp = await fetch(makeProxy(cleanedImageUrl), { signal: att.signal, redirect: 'follow' });
+      } finally {
+        att.cleanup();
+      }
+      const dataUrl = await _blobToValidatedDataUrl(resp, { maxBytes });
+      if (dataUrl) return dataUrl;
+    } catch { if (signal?.aborted) return null; /* try next proxy */ }
+  }
+
+  return null;
 }
 
 // ── Import reliability: oEmbed + TikTok fetchers ──────────────────────────────

@@ -12,6 +12,14 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'node:child_process';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+// Shared extraction contract (single source of truth). recipeSchema.js has ZERO
+// imports and is ESM + browser/server safe, so the server imports it directly to
+// guarantee server-routed structuring produces output identical to the client.
+import {
+  SYSTEM_INSTRUCTION,
+  RECIPE_SCHEMA,
+  buildFewShotContents,
+} from '../src/recipeSchema.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -362,20 +370,155 @@ app.post('/api/structure-recipe', async (req, res) => {
 
   const type = req.body?.type === 'drink' ? 'drink' : 'meal';
   const title = String(req.body?.title || '').trim();
-  const schema = type === 'drink'
-    ? '{"title":"string","ingredients":[{"name":"string","amount":"string"}],"directions":["string"],"glass":"string or null","garnish":"string or null","servings":"string or null","notes":"string or null"}'
-    : '{"title":"string","ingredients":[{"name":"string","amount":"string"}],"directions":["string"],"servings":"string or null","cookTime":"string or null","notes":"string or null"}';
-
-  const prompt = `Extract a clean ${type === 'drink' ? 'cocktail/drink' : 'recipe'} from the text. Remove social-media filler, hashtags, usernames, sponsor text, and calls to follow. Return only valid JSON matching this schema: ${schema}${title ? `\nName hint: ${title}` : ''}\n\nText:\n${rawText.slice(0, 9000)}`;
+  // The user turn: the raw source, plus an optional name hint. The structuring
+  // rules, taxonomy, and JSON shape all come from the shared SYSTEM_INSTRUCTION +
+  // RECIPE_SCHEMA below, so this matches the client text path exactly.
+  const userText = `${title ? `Name hint: ${title}\n\n` : ''}${rawText.slice(0, 9000)}`;
 
   try {
     const genAI = new GoogleGenerativeAI(key);
-    const model = genAI.getGenerativeModel({ model: process.env.GEMINI_MODEL || 'gemini-1.5-flash' });
-    const result = await model.generateContent(prompt);
+    const model = genAI.getGenerativeModel({
+      model: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
+      systemInstruction: SYSTEM_INSTRUCTION,
+      generationConfig: {
+        temperature: 0.1,
+        responseMimeType: 'application/json',
+        responseSchema: RECIPE_SCHEMA,
+      },
+    });
+    // Prepend kind-relevant few-shot turns, then the real source.
+    const contents = [
+      ...buildFewShotContents(type),
+      { role: 'user', parts: [{ text: userText }] },
+    ];
+    const result = await model.generateContent({ contents });
     const text = result.response.text().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
     const parsed = JSON.parse(text);
     if (parsed.error) return res.status(422).json({ ok: false, error: parsed.error });
+    if (parsed.isRecipe === false) return res.status(422).json({ ok: false, error: 'not-a-recipe' });
     return res.json({ ok: true, recipe: parsed });
+  } catch (err) {
+    return res.status(502).json({ ok: false, error: err.message });
+  }
+});
+
+// -----------------------------------------------------------------------------
+// ASR frontier scaffold (Phase 6) — OFF BY DEFAULT, provider-agnostic, env-gated.
+// -----------------------------------------------------------------------------
+// Transcribes video-only recipes (no captions) so the transcript can feed the
+// client's captionToRecipe. This route does NOTHING unless ASR_ENDPOINT is set.
+// Strategy: (1) try yt-dlp subtitles first (cheap, no media download); (2) ONLY
+// if no usable subs exist, download an audio-only stream, transcode with ffmpeg,
+// and POST to a Whisper-compatible endpoint at ASR_ENDPOINT. No key/URL is ever
+// hardcoded — both come from server env (ASR_ENDPOINT, optional ASR_API_KEY).
+function asrEnabled() {
+  return Boolean(process.env.ASR_ENDPOINT);
+}
+
+// Run yt-dlp to write subtitles only (no full download). Resolves with the
+// cleaned subtitle transcript if any English track was written, else ''.
+function runYtDlpSubtitles(url, timeoutMs = 70000) {
+  return new Promise((resolve) => {
+    const bin = process.env.YT_DLP_BIN || 'yt-dlp';
+    // --skip-download grabs metadata/subs without the media; auto-subs cover
+    // creator captions; --sub-lang en limits to English; --dump-json so we can
+    // locate the written caption track URL via the same pickCaptionUrl path.
+    const child = spawn(
+      bin,
+      [
+        '--write-subs',
+        '--write-auto-subs',
+        '--sub-lang', 'en',
+        '--skip-download',
+        '--dump-json',
+        '--no-warnings',
+        url,
+      ],
+      { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => {
+      child.kill();
+      resolve({ ok: false, error: 'yt-dlp-timeout' });
+    }, timeoutMs);
+    child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      resolve({ ok: false, error: err.message });
+    });
+    child.on('close', async (code) => {
+      clearTimeout(timer);
+      if (code !== 0 || !stdout.trim()) {
+        return resolve({ ok: false, error: stderr || `yt-dlp exited ${code}` });
+      }
+      let info;
+      try {
+        info = JSON.parse(stdout.trim().split('\n').at(-1));
+      } catch (err) {
+        return resolve({ ok: false, error: err.message });
+      }
+      const captionUrl = pickCaptionUrl(info);
+      if (!captionUrl) return resolve({ ok: true, transcript: '', info });
+      try {
+        const fetched = await fetchText(captionUrl, 20000);
+        return resolve({ ok: true, transcript: cleanSubtitle(fetched.text), info });
+      } catch {
+        return resolve({ ok: true, transcript: '', info });
+      }
+    });
+  });
+}
+
+app.post('/api/transcribe', async (req, res) => {
+  // Hard env gate: when ASR is not configured, return 501 and change nothing.
+  if (!asrEnabled()) {
+    return res.status(501).json({ ok: false, error: 'asr-disabled' });
+  }
+
+  const target = cleanUrl(req.body?.url);
+  const parsed = validHttpUrl(target);
+  if (!parsed) return res.status(400).json({ ok: false, error: 'invalid-url' });
+
+  // Step 1 — subtitles first (cheap path, no media download).
+  const subs = await runYtDlpSubtitles(parsed.href);
+  if (subs.ok && subs.transcript && subs.transcript.length > 50) {
+    return res.json({
+      ok: true,
+      transcript: subs.transcript,
+      sourceUrl: parsed.href,
+      extractedVia: 'yt-dlp-subtitles',
+    });
+  }
+
+  // Step 2 — no usable subtitles: fall back to audio download + ASR.
+  // SCAFFOLD: the audio→ffmpeg→Whisper-POST network path is intentionally a
+  // clearly-commented stub. It is wired only behind the ASR_ENDPOINT gate above
+  // and performs no work / makes no external calls until implemented.
+  try {
+    // TODO(asr): 1) yt-dlp -f bestaudio -x --audio-format <wav|mp3> to a temp file
+    //    (reuse spawn(bin, [...]) like runYtDlpJson; write to os.tmpdir()).
+    // TODO(asr): 2) Transcode/normalize with ffmpeg to 16kHz mono PCM/WAV
+    //    (spawn('ffmpeg', ['-i', inFile, '-ar', '16000', '-ac', '1', outFile])).
+    // TODO(asr): 3) POST the audio to the Whisper-compatible endpoint:
+    //    const endpoint = process.env.ASR_ENDPOINT;            // never hardcoded
+    //    const apiKey = process.env.ASR_API_KEY;               // optional, env-only
+    //    const form = new FormData();
+    //    form.append('file', new Blob([audioBuffer]), 'audio.wav');
+    //    form.append('model', process.env.ASR_MODEL || 'whisper-1');
+    //    const r = await fetch(endpoint, {
+    //      method: 'POST',
+    //      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+    //      body: form,
+    //    });
+    //    const { text } = await r.json();
+    // TODO(asr): 4) Clean up temp files, then return the transcript below.
+    return res.status(501).json({
+      ok: false,
+      error: 'asr-audio-path-not-implemented',
+      sourceUrl: parsed.href,
+    });
   } catch (err) {
     return res.status(502).json({ ok: false, error: err.message });
   }

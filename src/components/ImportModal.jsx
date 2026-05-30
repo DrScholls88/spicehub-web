@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   isSocialMediaUrl, getSocialPlatform,
   isInstagramUrl, isShortUrl, resolveShortUrl,
-  parseFromUrl, parseCaption,
+  parseFromUrl, importRecipeFromUrl, captionToRecipe, parseCaption,
   classifyWithConfidence, smartClassifyLines, normalizeAndDedupe,
   scoreExtractionConfidence,
   isWeakResult,
@@ -394,6 +394,12 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     setImporting(true);
     setImportProgress('Fetching recipe...');
 
+    // One AbortController per attempt. The parser owns the 45s global timeout;
+    // we hold the controller so Cancel / modal-close can abort in-flight work.
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const { signal } = controller;
+
     try {
       // 1. Resolve short URLs
       let resolvedUrl = trimmedUrl;
@@ -401,53 +407,89 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
         try { resolvedUrl = await resolveShortUrl(resolvedUrl); } catch {}
       }
 
-      // 2. Social media → direct to BrowserAssist (requires visual parsing)
-      if (isSocialMediaUrl(resolvedUrl)) {
+      // 2. Single unified entry point — the engine handles social vs. blog,
+      //    proxy fetch, JSON-LD parsing, Instagram phases, and the global timeout.
+      //    We branch purely on the documented return shape.
+      const result = await importRecipeFromUrl(resolvedUrl, (msg) => {
+        if (!signal.aborted && msg) setImportProgress(msg);
+      }, { type: itemType, signal });
+
+      // User cancelled while the engine was running — handleCancelImport already
+      // reset the UI; swallow whatever came back.
+      if (signal.aborted) return;
+
+      // 2a. Engine needs the in-app browser (social / visual parsing required).
+      if (result && result._needsBrowserAssist) {
         setImporting(false);
         setImportProgress('');
-        setBrowserAssistUrl(resolvedUrl);
+        setBrowserAssistUrl(result.url || resolvedUrl);
         setBrowserAssistMode('showing');
         setBrowserAssistSeed({
           ...(browserAssistSeed || {}),
           imageUrl: bestImage || undefined,
-          _source: 'instagram',
+          _source: result.type || (isSocialMediaUrl(resolvedUrl) ? 'instagram' : 'web'),
         });
         return;
       }
 
-      // 3. Synchronous, deterministic local parsing via CORS proxy (Paprika-style)
-      let html = await fetchHtmlViaProxy(resolvedUrl, 30000);
-      if (!html) {
-        throw new Error("Could not fetch page. The site may block proxies.");
-      }
-
-      setImportProgress('Parsing JSON-LD data...');
-      const result = parseHtml(html, resolvedUrl);
-
-      if (!result || isWeakResult(result)) {
-        // Fallback to visual parsing if JSON-LD extraction was weak or failed
+      // 2b. Engine reported a structured failure — pick copy from the reason.
+      if (result && result._error) {
         setImporting(false);
         setImportProgress('');
+        setError(errorCopyForReason(result.reason, resolvedUrl));
+        return;
+      }
+
+      // 2c. Nothing came back at all.
+      if (!result) {
+        setImporting(false);
+        setImportProgress('');
+        setError("We couldn't read a recipe from this link. Try pasting the recipe text instead, or open it in the in-app browser.");
+        // Offer the in-app browser as a recovery path for the entered URL.
         setBrowserAssistUrl(resolvedUrl);
-        setBrowserAssistSeed(result && !result._error ? result : null);
         setBrowserAssistMode('showing');
         return;
       }
 
-      // Populate Editor synchronously — tag with item type so preview shows
-      // the correct fields (glass/garnish for drinks, etc.)
-      setPreview([{ ...result, _type: itemType }]);
+      // 2d. Success — populate the editor, tagged with the item type so the
+      //     preview shows the right fields (glass/garnish for drinks, etc.).
+      setPreview([{ ...result, _type: result._type || itemType }]);
     } catch (e) {
-      setError('Import failed: ' + e.message);
-      // Fallback on error
+      // Aborts surface as exceptions in some fetch paths — treat as a clean cancel.
+      if (signal.aborted || e?.name === 'AbortError') {
+        setImporting(false);
+        setImportProgress('');
+        return;
+      }
+      setError('Import failed: ' + (e?.message || 'Unknown error'));
+      // Fallback to the in-app browser so the user can still pick the recipe.
       setImporting(false);
       setImportProgress('');
       setBrowserAssistUrl(trimmedUrl);
       setBrowserAssistMode('showing');
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null;
     }
-    
+
     setImporting(false);
     setImportProgress('');
+  };
+
+  // Map a parser `_error` reason code to inviting, actionable user-facing copy.
+  const errorCopyForReason = (reason, srcUrl) => {
+    switch (reason) {
+      case 'timeout':
+        return "This import is taking too long — the site may be slow or blocking us. Try the in-app browser, or paste the recipe text.";
+      case 'photo_unreadable':
+        return "Couldn't read the recipe in that image — try a clearer shot or paste the text.";
+      case 'blocked':
+      case 'proxy_blocked':
+        return "This site is blocking automatic imports. Open it in the in-app browser and tap to pick the recipe.";
+      case 'not_a_recipe':
+        return "We couldn't find a recipe on this page. Double-check the link, or paste the recipe text.";
+      default:
+        return "We couldn't read a recipe from this link. Try the in-app browser, or paste the recipe text instead.";
+    }
   };
 
   // ── Cancel an in-flight sync import ──────────────────────────────────────────
