@@ -628,3 +628,574 @@ button.ip-import-btn {
     opacity: 0.75;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   PHASE 5 — WIZARD SHELL & SINGLE-ACCENT DESIGN SYSTEM
+   ─── Token definitions override the old cyan/amber per-toggle colours. ─────
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Single warm-orange accent — replaces the old competing cyan/amber toggles */
+  --im-accent:        #e65100;
+  --im-accent-light:  #ff833a;
+  --im-accent-dim:    rgba(230,81,0,.12);
+  --im-accent-glow:   0 4px 14px rgba(230,81,0,.28);
+
+  /* Surface tokens */
+  --im-bg:            var(--bg-primary, #fff);
+  --im-surface:       var(--bg-secondary, #f7f5f2);
+  --im-border:        rgba(0,0,0,.09);
+  --im-radius-lg:     20px;
+  --im-radius:        14px;
+  --im-radius-sm:     10px;
+
+  /* Step rail */
+  --rail-dot-size:    26px;
+}
+
+/* ─── Wizard sheet layout ────────────────────────────────────────────────── */
+.wizard-sheet {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-height: 94dvh;
+}
+
+/* ─── Grab handle ────────────────────────────────────────────────────────── */
+.wizard-grab-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 0 4px;
+  cursor: grab;
+  -webkit-tap-highlight-color: transparent;
+  flex-shrink: 0;
+}
+.wizard-grab-bar {
+  width: 44px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--im-border);
+  transition: background 180ms var(--ease-out-strong);
+}
+.wizard-grab-handle:active .wizard-grab-bar {
+  background: var(--im-accent-light);
+}
+
+/* ─── Sticky header + step rail ──────────────────────────────────────────── */
+.wizard-header {
+  flex-shrink: 0;
+  padding: 0 16px 10px;
+  border-bottom: 1px solid var(--im-border);
+  background: var(--im-bg);
+}
+.wizard-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.wizard-title {
+  font-size: 17px;
+  font-weight: 700;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+.wizard-close-btn {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  background: var(--im-surface);
+  border: none;
+  font-size: 15px;
+  color: var(--text-secondary, #666);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 150ms var(--ease-out-strong), transform 100ms;
+}
+.wizard-close-btn:active { transform: scale(0.93); }
+
+/* Step rail */
+.wizard-step-rail {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-top: 2px;
+}
+.wizard-rail-node {
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+.wizard-rail-dot {
+  width: var(--rail-dot-size); height: var(--rail-dot-size);
+  border-radius: 50%;
+  border: 2px solid var(--im-border);
+  background: var(--im-surface);
+  color: var(--text-muted, #999);
+  font-size: 11px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 220ms var(--ease-out-strong),
+              border-color 220ms var(--ease-out-strong),
+              color 220ms var(--ease-out-strong);
+}
+.wizard-rail-dot.active,
+.wizard-rail-dot.done {
+  background: var(--im-accent);
+  border-color: var(--im-accent);
+  color: #fff;
+}
+.wizard-rail-dot:disabled { cursor: default; }
+.wizard-rail-label {
+  font-size: 10px; font-weight: 700;
+  color: var(--text-muted, #999);
+  margin-left: 5px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  flex-shrink: 0;
+  transition: color 220ms var(--ease-out-strong);
+}
+.wizard-rail-label.active { color: var(--im-accent); }
+.wizard-rail-bar {
+  flex: 1;
+  height: 2px;
+  background: var(--im-border);
+  margin: 0 8px;
+  border-radius: 2px;
+  transition: background 300ms var(--ease-out-strong);
+}
+.wizard-rail-bar.done { background: var(--im-accent); }
+
+/* ─── Wizard body (the scrollable middle) ────────────────────────────────── */
+.wizard-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+.wizard-body::-webkit-scrollbar { width: 0; }
+
+/* ─── Wizard footer (always-visible CTA bar) ─────────────────────────────── */
+.wizard-footer {
+  flex-shrink: 0;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--im-border);
+  background: var(--im-bg);
+}
+.wizard-btn-primary {
+  flex: 1;
+  padding: 14px 18px;
+  border-radius: 100px;
+  border: none;
+  background: var(--im-accent);
+  color: #fff;
+  font-weight: 800;
+  font-size: 15px;
+  cursor: pointer;
+  box-shadow: var(--im-accent-glow);
+  transition: transform 150ms var(--ease-out-strong), opacity 150ms;
+  min-height: 50px;
+}
+.wizard-btn-primary:active { transform: scale(0.97); }
+.wizard-btn-ghost {
+  padding: 14px 16px;
+  border-radius: 100px;
+  border: none;
+  background: var(--im-surface);
+  color: var(--text-secondary, #666);
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  min-height: 50px;
+  transition: background 150ms var(--ease-out-strong);
+}
+.wizard-btn-ghost:active { background: var(--im-border); }
+
+/* ─── Collapsed social preview card ─────────────────────────────────────── */
+.social-collapse-card {
+  margin: 10px 0 4px;
+  border: 1.5px solid var(--im-border);
+  border-radius: var(--im-radius);
+  overflow: hidden;
+  background: var(--im-bg);
+}
+.social-collapse-trigger {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 160ms var(--ease-out-strong);
+}
+.social-collapse-trigger:active { background: var(--im-surface); }
+.social-collapse-icon {
+  width: 48px; height: 48px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #f09433, #dc2743, #bc1888);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px;
+  flex-shrink: 0;
+}
+.social-collapse-meta { flex: 1; }
+.social-collapse-meta strong { display: block; font-size: 14px; font-weight: 700; }
+.social-collapse-meta span { font-size: 12px; color: var(--text-muted, #999); }
+.social-collapse-chev { font-size: 16px; color: var(--text-muted, #999); }
+
+/* ─── Review: Hero image with title overlay ──────────────────────────────── */
+.review-hero {
+  position: relative;
+  border-radius: var(--im-radius);
+  overflow: hidden;
+  height: 176px;
+  margin: 0 0 8px;
+  background: linear-gradient(135deg, #e8a560, #d2572b);
+}
+.review-hero-img {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.review-hero-grad {
+  position: absolute; inset: 0;
+  background: linear-gradient(to bottom, transparent 40%, rgba(0,0,0,.62));
+  pointer-events: none;
+}
+.review-conf-chip {
+  position: absolute;
+  top: 10px; right: 10px;
+  background: rgba(255,255,255,.94);
+  border-radius: 100px;
+  padding: 5px 11px;
+  font-size: 11px; font-weight: 800;
+  backdrop-filter: blur(4px);
+  animation: chipIn 280ms var(--ease-spring-light) both;
+}
+@keyframes chipIn {
+  from { opacity: 0; transform: scale(0.8) translateY(-4px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+.review-conf-chip.review-conf-high  { color: #2e7d32; }
+.review-conf-chip.review-conf-medium { color: #b26a00; }
+.review-conf-chip.review-conf-low   { color: #c62828; }
+.review-conf-inline {
+  position: static;
+  display: inline-flex;
+  margin-bottom: 6px;
+  background: var(--im-surface);
+  backdrop-filter: none;
+}
+.review-hero-title-wrap {
+  position: absolute; left: 12px; right: 48px; bottom: 10px;
+}
+.review-hero-title-input {
+  width: 100%;
+  background: rgba(255,255,255,.93);
+  border: none;
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-size: 15px; font-weight: 800;
+  color: #1a1a1a;
+  outline: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,.18);
+}
+.review-hero-autosort {
+  position: absolute; right: 10px; bottom: 10px;
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255,255,255,.9);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: transform 150ms var(--ease-out-strong);
+}
+.review-hero-autosort.sorting { color: #2e7d32; }
+.review-hero-autosort:active { transform: scale(0.92); }
+
+/* Flat title row (no image) */
+.review-title-flat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px 0 8px;
+}
+.review-title-flat .preview-title-input { flex: 1; min-width: 0; }
+.review-title-flat .btn-auto-sort { flex-shrink: 0; }
+
+/* ─── Accordion sections ─────────────────────────────────────────────────── */
+.review-accordion {
+  border: 1.5px solid var(--im-border);
+  border-radius: var(--im-radius);
+  margin: 0 0 10px;
+  overflow: hidden;
+  background: var(--im-bg);
+  transition: border-color 200ms var(--ease-out-strong);
+}
+.review-accordion.collapsed { }
+.review-acc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px 14px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 160ms var(--ease-out-strong);
+}
+.review-acc-head:active { background: var(--im-surface); }
+.review-acc-head-left {
+  display: flex; align-items: center; gap: 8px;
+}
+.review-acc-head-right {
+  display: flex; align-items: center; gap: 6px;
+}
+.review-acc-dot {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.review-acc-dot--green  { background: #43a047; }
+.review-acc-dot--amber  { background: #f59e0b; }
+.review-acc-title {
+  font-size: 14px; font-weight: 800;
+  color: var(--text-primary, #1a1a1a);
+}
+.review-acc-count {
+  background: var(--im-surface);
+  color: var(--text-secondary, #666);
+  border-radius: 100px;
+  font-size: 11px; font-weight: 800;
+  padding: 2px 9px;
+}
+.review-acc-sort {
+  padding: 4px 9px;
+  border-radius: 100px;
+  border: 1px solid var(--im-border);
+  background: var(--im-surface);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 140ms;
+}
+.review-acc-sort.sorting { background: var(--im-accent-dim); color: var(--im-accent); }
+.review-acc-chev {
+  font-size: 14px; color: var(--text-muted, #999);
+  transition: transform 220ms var(--ease-out-strong);
+}
+.review-accordion:not(.collapsed) .review-acc-chev { transform: rotate(0deg); }
+.review-acc-body {
+  border-top: 1px solid var(--im-border);
+  padding: 8px 0 4px;
+  max-height: 340px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.review-acc-body::-webkit-scrollbar { width: 0; }
+.review-caption-pre {
+  font-size: 12px; line-height: 1.55;
+  color: var(--text-secondary, #666);
+  white-space: pre-wrap;
+  font-family: ui-monospace, Menlo, monospace;
+  padding: 0 14px 8px;
+  margin: 0;
+}
+
+/* ─── Step 3: Save destination ───────────────────────────────────────────── */
+.wizard-save-step {
+  padding: 16px;
+}
+.save-summary-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1.5px solid var(--im-border);
+  border-radius: var(--im-radius);
+  background: var(--im-bg);
+  margin-bottom: 16px;
+}
+.save-summary-thumb {
+  width: 52px; height: 52px;
+  border-radius: 10px;
+  background-size: cover; background-position: center;
+  flex-shrink: 0;
+}
+.save-summary-thumb--empty {
+  background: linear-gradient(135deg, #e8a560, #d2572b);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px;
+}
+.save-summary-info { flex: 1; min-width: 0; }
+.save-summary-name {
+  display: block;
+  font-size: 15px; font-weight: 700;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.save-summary-meta {
+  display: block;
+  font-size: 12px; color: var(--text-muted, #999);
+  margin-top: 2px;
+}
+.save-summary-edit-btn {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  border: 1.5px solid var(--im-border);
+  background: var(--im-surface);
+  font-size: 16px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 150ms;
+}
+.save-summary-edit-btn:active { background: var(--im-border); }
+
+.save-dest-label {
+  font-size: 12px; font-weight: 700;
+  color: var(--text-secondary, #666);
+  text-transform: uppercase; letter-spacing: .06em;
+  margin: 0 0 10px;
+}
+.save-dest-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.save-dest-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 16px 10px;
+  border: 1.5px solid var(--im-border);
+  border-radius: var(--im-radius);
+  background: var(--im-bg);
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 180ms var(--ease-out-strong),
+              background 180ms var(--ease-out-strong),
+              transform 120ms var(--ease-out-strong);
+}
+.save-dest-card:active { transform: scale(0.96); }
+.save-dest-card.selected {
+  border-color: var(--im-accent);
+  background: var(--im-accent-dim);
+}
+.save-dest-icon { font-size: 26px; }
+.save-dest-name { font-size: 13px; font-weight: 700; }
+.save-dest-desc { font-size: 11px; color: var(--text-muted, #999); }
+
+/* ─── Single-accent: meal/drink type pills ────────────────────────────────
+   Replace the old competing cyan-for-meal / amber-for-drink colours
+   with a single warm-orange active state. ─────────────────────────────── */
+.item-type-toggle button[aria-pressed="true"] {
+  border-color: var(--im-accent) !important;
+  background: var(--im-accent-dim) !important;
+  font-weight: 700 !important;
+}
+
+/* ─── Progress line (replaces 4-dot stage list) ──────────────────────────── */
+.sync-import-progress {
+  margin: 10px 0;
+}
+.sync-import-stages {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 8px;
+}
+.sync-stage {
+  display: flex; align-items: center; gap: 6px;
+  flex: 1;
+  font-size: 11px; color: var(--text-muted, #999);
+  opacity: .5;
+  transition: opacity 240ms var(--ease-out-strong);
+}
+.sync-stage--active { opacity: 1; color: var(--im-accent); font-weight: 700; }
+.sync-stage--done   { opacity: .7; }
+.sync-stage-dot {
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 9px; font-weight: 800;
+  flex-shrink: 0;
+  transition: background 240ms var(--ease-out-strong);
+}
+.sync-stage--active .sync-stage-dot { background: var(--im-accent); border-color: var(--im-accent); color: #fff; }
+.sync-stage--done   .sync-stage-dot { background: #c8e6c9; border-color: #43a047; color: #43a047; }
+
+/* ─── Drink/meal type toggle — single accent  ────────────────────────────── */
+.item-type-pills {
+  display: flex; gap: 8px; margin-bottom: 12px;
+}
+.item-type-pills button {
+  flex: 1;
+  padding: 10px 12px;
+  border-radius: 100px;
+  border: 1.5px solid var(--im-border);
+  background: transparent;
+  font-size: 14px; font-weight: 600;
+  cursor: pointer;
+  transition: border-color 180ms, background 180ms, font-weight 180ms;
+  min-height: 44px;
+}
+.item-type-pills button.active-pill {
+  border-color: var(--im-accent);
+  background: var(--im-accent-dim);
+  font-weight: 700;
+}
+
+/* ─── Responsive: desktop two-pane review ─────────────────────────────────
+   At ≥720px the review step can split caption left / fields right. ─────── */
+@media (min-width: 720px) {
+  .wizard-sheet { max-height: 92dvh; }
+  .save-dest-grid { grid-template-columns: repeat(4, 1fr); }
+  .review-hero { height: 200px; }
+}
+
+
+/* ─── Error bar with recovery actions ────────────────────────────────────── */
+.error-bar--recovery {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px 14px;
+}
+.error-bar-msg {
+  font-size: 13px;
+  line-height: 1.4;
+}
+.error-bar-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  width: 100%;
+}
+.error-recovery-btn {
+  padding: 6px 12px;
+  border-radius: 100px;
+  border: 1.5px solid var(--im-accent);
+  background: var(--im-accent-dim);
+  color: var(--im-accent);
+  font-size: 12px; font-weight: 700;
+  cursor: pointer;
+  transition: background 150ms var(--ease-out-strong), transform 100ms;
+  white-space: nowrap;
+  min-height: 32px;
+}
+.error-recovery-btn:active {
+  transform: scale(0.96);
+  background: rgba(230,81,0,.22);
+}

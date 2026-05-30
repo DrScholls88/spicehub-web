@@ -57,7 +57,8 @@ VitePWA({
       includeAssets: ['icon-192.svg', 'icon-512.svg', 'icon-maskable.svg'],
       manifest: false, // keep your custom /public/manifest.json
       strategies: 'injectManifest',
-      swSrc: 'public/sw.js',
+      srcDir: 'src',
+      swSrc: 'sw.js',
       swDest: 'dist/sw.js',           // ← Changed: output to dist/ so Vercel serves it correctly
       injectManifest: {
         // Minimal & safe for Vite 7
