@@ -137,20 +137,52 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   const [touchDrag, setTouchDrag] = useState(null); // { field, index, recipeIdx, el, startY, currentY }
   const [autoSorting, setAutoSorting] = useState(false);
 
+  // ── Phase 5: Wizard step state ────────────────────────────────────────────
+  // step 1 = Source/Paste, step 2 = Review & Edit, step 3 = Save destination
+  const [wizardStep, setWizardStep] = useState(1);
+  const [collapsedSections, setCollapsedSections] = useState({
+    ingredients: false,
+    directions: false,
+    notes: true,
+    caption: true,
+  });
+  const [showSocialPreview, setShowSocialPreview] = useState(false);
+  const [saveDestination, setSaveDestination] = useState(null); // null = auto-detect
+  // Drag-to-dismiss touch state
+  const dragDismissRef = useRef({ startY: 0, currentY: 0, dragging: false });
+  const sheetRef = useRef(null);
+
   // ── Sync import progress ───────────────────────────────────────────────────
   const API_BASE = import.meta.env.VITE_API_BASE || '';
-  // Stage labels only — timing is now driven by real fetch events, not wall-clock.
-  // Stages advance as:
-  //   0 → immediately on request start
-  //   1 → after 700ms if still waiting (slow network / cold server)
-  //   2 → after 3500ms if still waiting (Gemini AI call in progress)
-  //   3 → immediately when the response body arrives (always event-driven)
+  // Stage labels — event-driven; wall-clock timers only trigger if real events don't.
   const STAGES = [
     { key: 'scraping',    label: 'Reading the recipe…'     },
     { key: 'fetching',    label: 'Extracting content…'     },
     { key: 'structuring', label: 'Structuring with AI…'    },
     { key: 'saving',      label: 'Almost done…'            },
   ];
+
+  // Map engine onProgress messages → human-friendly labels with ETA hints.
+  // Called from the onProgress callback before setImportProgress.
+  const friendlyProgress = useCallback((raw = '') => {
+    const msg = String(raw).toLowerCase();
+    if (msg.includes('apify'))               return 'Fetching caption via Apify… (~5s)';
+    if (msg.includes('oembed'))              return 'Trying oEmbed… (~2s)';
+    if (msg.includes('embed'))               return 'Parsing Instagram embed…';
+    if (msg.includes('caption captured') || msg.includes('apify: caption'))
+                                             return 'Caption captured ✔ — structuring…';
+    if (msg.includes('gemini') || msg.includes('structuring') || msg.includes('ai'))
+                                             return 'Structuring recipe with Gemini… (~8s)';
+    if (msg.includes('ocr') || msg.includes('reading text'))
+                                             return 'Reading text from image…';
+    if (msg.includes('transcrib'))           return 'Transcribing audio… (~15s)';
+    if (msg.includes('browser'))             return 'Fetching via browser agent…';
+    if (msg.includes('json-ld') || msg.includes('microdata'))
+                                             return 'Parsing structured recipe data…';
+    if (msg.includes('proxy') || msg.includes('fetch'))
+                                             return 'Fetching page…';
+    return raw; // fallback to raw message
+  }, []);
   const [syncPhase, setSyncPhase] = useState('idle'); // 'idle'|'running'|'success'|'failed'
   const [syncStageIdx, setSyncStageIdx] = useState(0);
   const [syncSuccessName, setSyncSuccessName] = useState('');
@@ -411,7 +443,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       //    proxy fetch, JSON-LD parsing, Instagram phases, and the global timeout.
       //    We branch purely on the documented return shape.
       const result = await importRecipeFromUrl(resolvedUrl, (msg) => {
-        if (!signal.aborted && msg) setImportProgress(msg);
+        if (!signal.aborted && msg) setImportProgress(friendlyProgress(msg));
       }, { type: itemType, signal });
 
       // User cancelled while the engine was running — handleCancelImport already
@@ -426,8 +458,12 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
         setBrowserAssistMode('showing');
         setBrowserAssistSeed({
           ...(browserAssistSeed || {}),
-          imageUrl: bestImage || undefined,
+          imageUrl: result.capturedImageUrl || bestImage || undefined,
+          capturedCaption: result.capturedCaption || undefined,
+          capturedTitle:   result.capturedTitle   || undefined,
           _source: result.type || (isSocialMediaUrl(resolvedUrl) ? 'instagram' : 'web'),
+          // Signal BrowserAssist that it can skip the full pipeline if caption is present
+          _skipPipelineIfCaption: !!result.capturedCaption,
         });
         return;
       }
@@ -436,7 +472,9 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       if (result && result._error) {
         setImporting(false);
         setImportProgress('');
-        setError(errorCopyForReason(result.reason, resolvedUrl));
+        const { msg, recovery } = errorCopyForReason(result.reason);
+        setError(msg);
+        setErrorRecovery(recovery);
         return;
       }
 
@@ -444,7 +482,8 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       if (!result) {
         setImporting(false);
         setImportProgress('');
-        setError("We couldn't read a recipe from this link. Try pasting the recipe text instead, or open it in the in-app browser.");
+        setError("We couldn't read a recipe from this link.");
+        setErrorRecovery('browser');
         // Offer the in-app browser as a recovery path for the entered URL.
         setBrowserAssistUrl(resolvedUrl);
         setBrowserAssistMode('showing');
@@ -476,21 +515,22 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
   };
 
   // Map a parser `_error` reason code to inviting, actionable user-facing copy.
-  const errorCopyForReason = (reason, srcUrl) => {
+  const errorCopyForReason = (reason) => {
     switch (reason) {
       case 'timeout':
-        return "This import is taking too long — the site may be slow or blocking us. Try the in-app browser, or paste the recipe text.";
+        return { msg: "Import timed out — the site may be slow or blocking us.", recovery: 'browser' };
       case 'photo_unreadable':
-        return "Couldn't read the recipe in that image — try a clearer shot or paste the text.";
+        return { msg: "Couldn't read the recipe from that image.", recovery: 'photo' };
       case 'blocked':
       case 'proxy_blocked':
-        return "This site is blocking automatic imports. Open it in the in-app browser and tap to pick the recipe.";
+        return { msg: "This site is blocking automatic imports.", recovery: 'browser' };
       case 'not_a_recipe':
-        return "We couldn't find a recipe on this page. Double-check the link, or paste the recipe text.";
+        return { msg: "We couldn't find a recipe on this page.", recovery: 'paste' };
       default:
-        return "We couldn't read a recipe from this link. Try the in-app browser, or paste the recipe text instead.";
+        return { msg: "We couldn't read a recipe from this link.", recovery: 'browser' };
     }
   };
+  const [errorRecovery, setErrorRecovery] = useState(null); // 'browser'|'photo'|'paste'|null
 
   // ── Cancel an in-flight sync import ──────────────────────────────────────────
   const handleCancelImport = useCallback(() => {
@@ -515,6 +555,8 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     setSyncPhase('idle');
     setSyncStageIdx(0);
     setError('');
+    setErrorRecovery(null);
+    setWizardStep(1);
     setImporting(false);
     setImportProgress('');
     onClose();
@@ -929,19 +971,112 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
     setDragOverField(null);
   };
 
+  // Auto-advance wizard when preview is populated or cleared
+  useEffect(() => {
+    if (preview && preview.length > 0 && wizardStep < 2) setWizardStep(2);
+    if (!preview && wizardStep > 1) setWizardStep(1);
+  }, [preview]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Drag-to-dismiss handlers ─────────────────────────────────────────────
+  const handleGrabTouchStart = useCallback((e) => {
+    dragDismissRef.current = { startY: e.touches[0].clientY, currentY: 0, dragging: true };
+  }, []);
+
+  const handleGrabTouchMove = useCallback((e) => {
+    if (!dragDismissRef.current.dragging) return;
+    const dy = e.touches[0].clientY - dragDismissRef.current.startY;
+    if (dy < 0) return; // only downward swipe
+    dragDismissRef.current.currentY = dy;
+    if (sheetRef.current) sheetRef.current.style.transform = `translateY(${Math.min(dy, 180)}px)`;
+  }, []);
+
+  const handleGrabTouchEnd = useCallback(() => {
+    if (!dragDismissRef.current.dragging) return;
+    const dy = dragDismissRef.current.currentY;
+    if (sheetRef.current) sheetRef.current.style.transform = '';
+    dragDismissRef.current = { startY: 0, currentY: 0, dragging: false };
+    if (dy > 80) handleClose();
+  }, [handleClose]);
+
+  const toggleSection = useCallback((key) => {
+    setCollapsedSections(prev => ({ ...prev, [key]: !prev[key] }));
+  }, []);
+
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
     <div className="modal-overlay" onClick={handleClose}>
-      <div className={`modal-content import-modal${preview ? ' has-preview-screen' : ''}`} onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2>{title}</h2>
-          <button className="btn-icon" onClick={handleClose}>✕</button>
+      <div
+        ref={sheetRef}
+        className={`modal-content import-modal wizard-sheet${preview ? ' has-preview-screen' : ''}${browserAssistMode === 'showing' ? ' browser-assist-open' : ''}`}
+        onClick={e => e.stopPropagation()}
+        style={{ transition: 'transform 0.25s cubic-bezier(0.32,0.72,0,1)' }}
+      >
+        {/* ── Grab handle — drag down to dismiss ───────────────────────────── */}
+        <div
+          className="wizard-grab-handle"
+          onTouchStart={handleGrabTouchStart}
+          onTouchMove={handleGrabTouchMove}
+          onTouchEnd={handleGrabTouchEnd}
+          aria-label="Drag down to close"
+          role="button"
+        >
+          <div className="wizard-grab-bar" />
+        </div>
+
+        {/* ── Sticky header with step rail ─────────────────────────────────── */}
+        <div className="wizard-header">
+          <div className="wizard-header-row">
+            <h2 className="wizard-title">
+              {wizardStep === 1 && (importing ? 'Importing…' : title)}
+              {wizardStep === 2 && 'Review & Edit'}
+              {wizardStep === 3 && 'Save Recipe'}
+            </h2>
+            <button className="btn-icon wizard-close-btn" onClick={handleClose} aria-label="Close">✕</button>
+          </div>
+          {/* Step rail */}
+          {browserAssistMode !== 'showing' && (
+            <div className="wizard-step-rail">
+              {[{n:1,label:'Source'},{n:2,label:'Review'},{n:3,label:'Save'}].map(({n,label},i) => (
+                <div key={n} className="wizard-rail-node">
+                  <button
+                    className={`wizard-rail-dot${wizardStep === n ? ' active' : ''}${wizardStep > n ? ' done' : ''}`}
+                    onClick={() => { if (n === 1 && preview) { setPreview(null); setWizardStep(1); } else if (n <= wizardStep) setWizardStep(n); }}
+                    aria-label={`Step ${n}: ${label}`}
+                    disabled={n > wizardStep}
+                  >
+                    {wizardStep > n ? '✓' : n}
+                  </button>
+                  <span className={`wizard-rail-label${wizardStep === n ? ' active' : ''}`}>{label}</span>
+                  {i < 2 && <div className={`wizard-rail-bar${wizardStep > n ? ' done' : ''}`} />}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {error && (
-          <div className="error-bar">
-            {error}
-            <button className="btn-icon small" onClick={() => setError('')} style={{ marginLeft: 'auto' }}>✕</button>
+          <div className="error-bar error-bar--recovery">
+            <span className="error-bar-msg">{error}</span>
+            <div className="error-bar-actions">
+              {errorRecovery === 'browser' && (
+                <button className="error-recovery-btn" onClick={() => {
+                  setError(''); setErrorRecovery(null);
+                  setBrowserAssistUrl(url || pasteLink);
+                  setBrowserAssistMode('showing');
+                }}>Try Browser Assist</button>
+              )}
+              {errorRecovery === 'photo' && (
+                <button className="error-recovery-btn" onClick={() => {
+                  setError(''); setErrorRecovery(null); setMode('image'); imageRef.current?.click();
+                }}>Retry with Photo</button>
+              )}
+              {(errorRecovery === 'paste' || errorRecovery === 'browser') && (
+                <button className="error-recovery-btn" onClick={() => {
+                  setError(''); setErrorRecovery(null); setMode('paste');
+                }}>Manual Entry</button>
+              )}
+              <button className="btn-icon small" onClick={() => { setError(''); setErrorRecovery(null); }} style={{ marginLeft: 4 }}>✕</button>
+            </div>
           </div>
         )}
 
@@ -985,110 +1120,166 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
               defaultVisualMode={isSocialMediaUrl(browserAssistUrl || '')}
             />
           </div>
-        ) : /* ── Preview screen (full detail + editable) ──────────────────────── */
-        preview ? (
-          <div className="import-preview ip-preview-screen" style={{ minHeight: 0 }}>
-            <div className="preview-header-bar">
-              <h3>
-                Preview — {preview.length} recipe{preview.length !== 1 ? 's' : ''} found
-                {preview.some(m => m._hasSubtitles) && (
-                  <span className="subtitle-badge" title="Recipe extracted from video subtitles">CC</span>
-                )}
-                {preview.some(m => m._extractedVia?.startsWith('yt-dlp')) && (
-                  <span className="extraction-badge" title="Extracted via video metadata">Video</span>
-                )}
-              </h3>
-              {preview.length === 1 && (
-                <>
-                  <button
-                    className={`btn-auto-sort ${autoSorting ? 'sorting' : ''}`}
-                    onClick={() => handleAutoSort(0)}
-                    disabled={autoSorting}
-                    title="Re-classify items into ingredients vs. directions"
-                  >
-                    {autoSorting ? '✓ Sorted!' : '⚡ Auto-Sort'}
-                  </button>
-                  {(() => {
-                    const recipe = preview[0];
-                    if (recipe._hybridUsed === true && recipe._hybridConfidence != null) {
-                      const pct = Math.round(recipe._hybridConfidence * 100);
-                      return (
-                        <span className="confidence-badge confidence-high" title={`Enhanced with Gemini: ${pct}%`}>
-                          ✦ Enhanced with Gemini &bull; {pct}%
+        ) : preview ? (
+          /* ── Preview screen (full detail + editable) ──────────────────────── */
+          wizardStep === 3 ? (
+          /* ── Step 3: Save destination ─────────────────────────────────── */
+          <>
+            <div className="wizard-body wizard-save-step">
+              {(() => {
+                const m = preview[0];
+                const destInfo = saveDestination || (previewLooksDrink ? 'bar' : 'library');
+                const conf = m?._confidence != null ? Math.round(m._confidence * 100) : scoreExtractionConfidence(m);
+                const ingCount = m?.ingredients?.length ?? 0;
+                const dirCount = m?.directions?.length ?? 0;
+                return (
+                  <>
+                    {/* Compact summary card */}
+                    <div className="save-summary-card">
+                      {m?.imageUrl ? (
+                        <div className="save-summary-thumb" style={{ backgroundImage: `url(${m.imageUrl})` }} />
+                      ) : (
+                        <div className="save-summary-thumb save-summary-thumb--empty">
+                          {previewLooksDrink ? '🍸' : '🍽️'}
+                        </div>
+                      )}
+                      <div className="save-summary-info">
+                        <strong className="save-summary-name">{m?.name || 'Imported Recipe'}</strong>
+                        <span className="save-summary-meta">
+                          {ingCount > 0 && `${ingCount} ingredient${ingCount !== 1 ? 's' : ''}`}
+                          {ingCount > 0 && dirCount > 0 && ' · '}
+                          {dirCount > 0 && `${dirCount} step${dirCount !== 1 ? 's' : ''}`}
+                          {conf > 0 && ` · ${conf >= 70 ? '✓' : conf >= 40 ? '◎' : '⚠'} ${conf}% match`}
                         </span>
-                      );
-                    } else if (recipe._hybridUsed === false && recipe._hybridConfidence != null) {
-                      const pct = Math.round(recipe._hybridConfidence * 100);
-                      const level = pct >= 75 ? 'high' : pct >= 50 ? 'medium' : 'low';
-                      return (
-                        <span className={`confidence-badge confidence-${level}`} title={`Visual Parse confidence: ${pct}%`}>
-                          ⚡ Visual Parse &bull; {pct}%
-                        </span>
-                      );
-                    } else {
-                      const conf = scoreExtractionConfidence(recipe);
-                      const level = conf >= 70 ? 'high' : conf >= 40 ? 'medium' : 'low';
-                      return (
-                        <span className={`confidence-badge confidence-${level}`} title={`Extraction confidence: ${conf}%`}>
-                          {conf >= 70 ? '✓ High' : conf >= 40 ? '✓ Good' : '⚠ Low'} match
-                        </span>
-                      );
-                    }
-                  })()}
-                </>
-              )}
+                      </div>
+                      <button
+                        className="save-summary-edit-btn"
+                        onClick={() => setWizardStep(2)}
+                        title="Go back and edit"
+                      >✎</button>
+                    </div>
+
+                    {/* Destination grid */}
+                    <p className="save-dest-label">Save to</p>
+                    <div className="save-dest-grid">
+                      {[
+                        { id: 'library', icon: previewLooksDrink ? '🍸' : '📚', label: previewLooksDrink ? 'The Bar' : 'Library', desc: 'Main recipe library' },
+                        { id: 'week',    icon: '📅', label: 'This Week', desc: 'Add to meal plan' },
+                        { id: 'grocery', icon: '🛒', label: 'Grocery',   desc: 'Add to grocery list' },
+                        { id: 'meals',   icon: '🍳', label: previewLooksDrink ? 'Meals' : 'The Bar', desc: previewLooksDrink ? 'Save as a meal instead' : 'Save to bar instead' },
+                      ].map(d => (
+                        <button
+                          key={d.id}
+                          className={`save-dest-card${destInfo === d.id ? ' selected' : ''}`}
+                          onClick={() => setSaveDestination(d.id)}
+                        >
+                          <span className="save-dest-icon">{d.icon}</span>
+                          <strong className="save-dest-name">{d.label}</strong>
+                          <span className="save-dest-desc">{d.desc}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                );
+              })()}
             </div>
+
+            {/* ── Step 3 wizard footer: Back + Save ─────────────────────────── */}
+            <div className="wizard-footer">
+              <button className="wizard-btn-ghost" onClick={() => setWizardStep(2)}>← Back</button>
+              <button
+                className="wizard-btn-primary"
+                onClick={() => {
+                  const dest = saveDestination || (previewLooksDrink ? 'drinks' : 'auto');
+                  confirmImport(dest);
+                }}
+              >
+                {previewLooksDrink ? '🍸 Save to Bar' : '✓ Save to Library'}
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="import-preview ip-preview-screen wizard-body" style={{ minHeight: 0 }}>
             <div className="preview-scroll-content" style={{ minHeight: 0 }}>
               <div className="preview-detail-list">
-                {preview.map((m, idx) => (
+                {preview.map((m, idx) => {
+                  return (
                   <div key={idx} className="preview-detail-card">
                   {m._isAddendum && (
                     <div className="addendum-badge">＋ {m._addendumLabel || 'Side / Sauce'}</div>
                   )}
-                  {/* Header: image + title */}
-                  <div className="preview-detail-header">
-                    {m.imageUrl ? (
-                      <img
-                        src={m.imageUrl}
-                        alt=""
-                        className="preview-detail-thumb"
-                        onError={e => {
-                          const attempt = parseInt(e.target.dataset.proxied || '0');
-                          const enc = encodeURIComponent(m.imageUrl);
-                          const proxies = [
-                            `https://images.weserv.nl/?url=${enc}&w=600&output=jpg&q=85`,
-                            `https://corsproxy.io/?url=${enc}`,
-                            `https://api.allorigins.win/raw?url=${enc}`,
-                          ];
-                          if (attempt < proxies.length) {
-                            e.target.dataset.proxied = String(attempt + 1);
-                            e.target.src = proxies[attempt];
-                          } else {
-                            e.target.style.display = 'none';
-                            e.target.nextElementSibling?.classList?.remove('hidden');
-                          }
-                        }}
-                      />
-                    ) : null}
-                    {!m.imageUrl && (
-                      <div className="preview-detail-no-img">🍽️</div>
-                    )}
-                    <div className="preview-detail-title-zone">
-                      <label className="preview-label">Recipe Name</label>
-                      <input
-                        type="text"
-                        className="preview-title-input"
-                        value={m.name}
-                        /* Auto-focus first card's title so keyboard is ready on preview mount */
-                        autoFocus={idx === 0}
-                        onChange={e => {
-                          const updated = [...preview];
-                          updated[idx] = { ...updated[idx], name: e.target.value };
-                          setPreview(updated);
-                        }}
-                      />
-                    </div>
-                  </div>
+
+                  {/* ── Hero image with title overlay ─────────────────────── */}
+                  {(() => {
+                    const conf = m._confidence != null ? Math.round(m._confidence * 100) : scoreExtractionConfidence(m);
+                    const confLevel = conf >= 70 ? 'high' : conf >= 40 ? 'medium' : 'low';
+                    const confLabel = conf >= 70 ? '✓ High confidence' : conf >= 40 ? '◎ Good match' : '⚠ Low confidence';
+                    return m.imageUrl ? (
+                      <div className="review-hero">
+                        <img
+                          src={m.imageUrl}
+                          alt=""
+                          className="review-hero-img"
+                          onError={e => {
+                            const attempt = parseInt(e.target.dataset.proxied || '0');
+                            const enc = encodeURIComponent(m.imageUrl);
+                            const proxies = [
+                              `https://images.weserv.nl/?url=${enc}&w=800&output=jpg&q=85`,
+                              `https://corsproxy.io/?url=${enc}`,
+                              `https://api.allorigins.win/raw?url=${enc}`,
+                            ];
+                            if (attempt < proxies.length) { e.target.dataset.proxied = String(attempt + 1); e.target.src = proxies[attempt]; }
+                            else e.target.style.display = 'none';
+                          }}
+                        />
+                        <div className="review-hero-grad" />
+                        <span className={`review-conf-chip review-conf-${confLevel}`}>{confLabel}</span>
+                        <div className="review-hero-title-wrap">
+                          <input
+                            type="text"
+                            className="review-hero-title-input"
+                            value={m.name}
+                            placeholder="Recipe name"
+                            onChange={e => {
+                              const updated = [...preview];
+                              updated[idx] = { ...updated[idx], name: e.target.value };
+                              setPreview(updated);
+                            }}
+                          />
+                        </div>
+                        {/* Auto-sort button in hero */}
+                        <button
+                          className={`review-hero-autosort${autoSorting ? ' sorting' : ''}`}
+                          onClick={() => handleAutoSort(idx)}
+                          disabled={autoSorting}
+                          title="Re-classify ingredients vs. steps"
+                        >{autoSorting ? '✓' : '⚡'}</button>
+                      </div>
+                    ) : (
+                      /* No image — flat title row */
+                      <div className="review-title-flat">
+                        <div className={`review-conf-chip review-conf-${confLevel} review-conf-inline`}>{confLabel}</div>
+                        <input
+                          type="text"
+                          className="preview-title-input"
+                          value={m.name}
+                          placeholder="Recipe name"
+                          autoFocus={idx === 0}
+                          onChange={e => {
+                            const updated = [...preview];
+                            updated[idx] = { ...updated[idx], name: e.target.value };
+                            setPreview(updated);
+                          }}
+                        />
+                        <button
+                          className={`btn-auto-sort${autoSorting ? ' sorting' : ''}`}
+                          onClick={() => handleAutoSort(idx)}
+                          disabled={autoSorting}
+                          title="Re-classify items"
+                        >{autoSorting ? '✓ Sorted!' : '⚡ Auto-Sort'}</button>
+                      </div>
+                    );
+                  })()}
 
                   {/* Carousel image picker — shown when multiple images were extracted */}
                   {m.imageUrls && m.imageUrls.length > 1 && (
@@ -1121,218 +1312,269 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                     </div>
                   )}
 
-                  {/* Ingredients (editable list with move buttons) */}
-                  <div
-                    className={`preview-detail-section ${dragOverField?.field === 'ingredients' && dragOverField?.recipeIdx === idx ? 'drop-active' : ''}`}
-                    data-field="ingredients"
-                    data-recipe-idx={idx}
-                    onDragOver={(e) => handleDragOver('ingredients', idx, e)}
-                    onDrop={(e) => handleDrop('ingredients', (m.ingredients || []).length, idx, e)}
-                    onDragLeave={() => setDragOverField(null)}
-                  >
-                    <label className="preview-label">
-                      <span className="preview-label-icon">🥕</span>
-                      Ingredients ({m.ingredients?.length ?? 0})
-                      <button
-                        className="preview-add-btn"
-                        onClick={() => {
-                          const updated = [...preview];
-                          updated[idx] = { ...updated[idx], ingredients: [...(updated[idx].ingredients || []), ''] };
-                          setPreview(updated);
-                        }}
-                      >+ Add</button>
-                    </label>
-                    <div className="preview-editable-list">
-                      {(m.ingredients || []).map((ing, ingIdx) => (
-                        <div
-                          key={ingIdx}
-                          className="preview-editable-row"
-                          draggable
-                          onDragStart={(e) => handleDragStart('ingredients', ingIdx, idx, e)}
-                          onDragOver={(e) => handleDragOver('ingredients', idx, e)}
-                          onDrop={(e) => handleDrop('ingredients', ingIdx, idx, e)}
-                          onDragEnd={handleDragEnd}
-                          style={{
-                            opacity: dragSource?.field === 'ingredients' && dragSource?.recipeIdx === idx && dragSource?.index === ingIdx ? 0.4 : 1
-                          }}
-                        >
-                          <span
-                            className="drag-handle"
-                            title="Drag to reorder"
-                            aria-label="Drag to reorder"
-                            role="button"
-                            onTouchStart={(e) => handleTouchDragStart(e, 'ingredients', ingIdx, idx)}
-                            onTouchMove={handleTouchDragMove}
-                            onTouchEnd={handleTouchDragEnd}
-                          />
-                          <input
-                            type="text"
-                            value={ing}
-                            placeholder="e.g. 2 cups flour"
-                            onChange={e => {
-                              const updated = [...preview];
-                              const ings = [...(updated[idx].ingredients || [])];
-                              ings[ingIdx] = e.target.value;
-                              updated[idx] = { ...updated[idx], ingredients: ings };
-                              setPreview(updated);
-                            }}
-                          />
-                          {(() => {
-                            const hint = getMisplacedHint(ing, 'ingredients');
-                            if (!hint) return null;
-                            return (
-                              <button
-                                className={`misplaced-hint misplaced-hint-${hint.confidence >= 80 ? 'high' : 'medium'}`}
-                                title={`${hint.reason} (${hint.confidence}% confidence)`}
-                                onClick={() => moveItemBetweenSections('ingredients', ingIdx, idx)}
-                              >{hint.label} ↓</button>
-                            );
-                          })()}
+                  {/* ── Original caption accordion ─────────────────────────── */}
+                  {(m.capturedCaption || m._rawCaption) && (
+                    <div className={`review-accordion${collapsedSections.caption ? ' collapsed' : ''}`}>
+                      <button className="review-acc-head" onClick={() => toggleSection('caption')}>
+                        <span className="review-acc-title">📄 Original caption</span>
+                        <span className="review-acc-chev">{collapsedSections.caption ? '▸' : '▾'}</span>
+                      </button>
+                      {!collapsedSections.caption && (
+                        <div className="review-acc-body">
+                          <pre className="review-caption-pre">{m.capturedCaption || m._rawCaption}</pre>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── Type toggle (Meal / Drink) ─────────────────────────── */}
+
+                  {/* ── Ingredients accordion ─────────────────────────────── */}
+                  <div className={`review-accordion${collapsedSections.ingredients ? ' collapsed' : ''}`}>
+                    <button className="review-acc-head" onClick={() => toggleSection('ingredients')}>
+                      <div className="review-acc-head-left">
+                        <span className="review-acc-dot review-acc-dot--green" />
+                        <span className="review-acc-title">Ingredients</span>
+                        <span className="review-acc-count">{m.ingredients?.length ?? 0}</span>
+                      </div>
+                      <div className="review-acc-head-right">
+                        <button className={`btn-auto-sort review-acc-sort${autoSorting ? ' sorting' : ''}`} onClick={(e) => { e.stopPropagation(); handleAutoSort(idx); }} disabled={autoSorting} title="Auto-sort">⚡</button>
+                        <span className="review-acc-chev">{collapsedSections.ingredients ? '▸' : '▾'}</span>
+                      </div>
+                    </button>
+                    {!collapsedSections.ingredients && (
+                      <div className="review-acc-body">
+                      {/* Ingredients (editable list with move buttons) */}
+                      <div
+                        className={`preview-detail-section ${dragOverField?.field === 'ingredients' && dragOverField?.recipeIdx === idx ? 'drop-active' : ''}`}
+                        data-field="ingredients"
+                        data-recipe-idx={idx}
+                        onDragOver={(e) => handleDragOver('ingredients', idx, e)}
+                        onDrop={(e) => handleDrop('ingredients', (m.ingredients || []).length, idx, e)}
+                        onDragLeave={() => setDragOverField(null)}
+                      >
+                        <label className="preview-label">
+                          <span className="preview-label-icon">🥕</span>
+                          Ingredients ({m.ingredients?.length ?? 0})
                           <button
-                            className="preview-move-btn"
-                            onClick={() => moveItemBetweenSections('ingredients', ingIdx, idx)}
-                            title="Move to Steps"
-                            aria-label="Move to Steps"
-                          >↓</button>
-                          <button
-                            className="preview-reorder-btn"
-                            onClick={() => reorderItem('ingredients', ingIdx, 'up', idx)}
-                            disabled={ingIdx === 0}
-                            title="Move ingredient up"
-                            aria-label="Move ingredient up"
-                          >↑</button>
-                          <button
-                            className="preview-reorder-btn"
-                            onClick={() => reorderItem('ingredients', ingIdx, 'down', idx)}
-                            disabled={ingIdx >= (m.ingredients?.length ?? 1) - 1}
-                            title="Move ingredient down"
-                            aria-label="Move ingredient down"
-                          >↓</button>
-                          <button
-                            className="preview-remove-btn"
+                            className="preview-add-btn"
                             onClick={() => {
                               const updated = [...preview];
-                              const ings = [...(updated[idx].ingredients || [])];
-                              ings.splice(ingIdx, 1);
-                              updated[idx] = { ...updated[idx], ingredients: ings };
+                              updated[idx] = { ...updated[idx], ingredients: [...(updated[idx].ingredients || []), ''] };
                               setPreview(updated);
                             }}
-                            title="Remove"
-                          >✕</button>
+                          >+ Add</button>
+                        </label>
+                        <div className="preview-editable-list">
+                          {(m.ingredients || []).map((ing, ingIdx) => (
+                            <div
+                              key={ingIdx}
+                              className="preview-editable-row"
+                              draggable
+                              onDragStart={(e) => handleDragStart('ingredients', ingIdx, idx, e)}
+                              onDragOver={(e) => handleDragOver('ingredients', idx, e)}
+                              onDrop={(e) => handleDrop('ingredients', ingIdx, idx, e)}
+                              onDragEnd={handleDragEnd}
+                              style={{
+                                opacity: dragSource?.field === 'ingredients' && dragSource?.recipeIdx === idx && dragSource?.index === ingIdx ? 0.4 : 1
+                              }}
+                            >
+                              <span
+                                className="drag-handle"
+                                title="Drag to reorder"
+                                aria-label="Drag to reorder"
+                                role="button"
+                                onTouchStart={(e) => handleTouchDragStart(e, 'ingredients', ingIdx, idx)}
+                                onTouchMove={handleTouchDragMove}
+                                onTouchEnd={handleTouchDragEnd}
+                              />
+                              <input
+                                type="text"
+                                value={ing}
+                                placeholder="e.g. 2 cups flour"
+                                onChange={e => {
+                                  const updated = [...preview];
+                                  const ings = [...(updated[idx].ingredients || [])];
+                                  ings[ingIdx] = e.target.value;
+                                  updated[idx] = { ...updated[idx], ingredients: ings };
+                                  setPreview(updated);
+                                }}
+                              />
+                              {(() => {
+                                const hint = getMisplacedHint(ing, 'ingredients');
+                                if (!hint) return null;
+                                return (
+                                  <button
+                                    className={`misplaced-hint misplaced-hint-${hint.confidence >= 80 ? 'high' : 'medium'}`}
+                                    title={`${hint.reason} (${hint.confidence}% confidence)`}
+                                    onClick={() => moveItemBetweenSections('ingredients', ingIdx, idx)}
+                                  >{hint.label} ↓</button>
+                                );
+                              })()}
+                              <button
+                                className="preview-move-btn"
+                                onClick={() => moveItemBetweenSections('ingredients', ingIdx, idx)}
+                                title="Move to Steps"
+                                aria-label="Move to Steps"
+                              >↓</button>
+                              <button
+                                className="preview-reorder-btn"
+                                onClick={() => reorderItem('ingredients', ingIdx, 'up', idx)}
+                                disabled={ingIdx === 0}
+                                title="Move ingredient up"
+                                aria-label="Move ingredient up"
+                              >↑</button>
+                              <button
+                                className="preview-reorder-btn"
+                                onClick={() => reorderItem('ingredients', ingIdx, 'down', idx)}
+                                disabled={ingIdx >= (m.ingredients?.length ?? 1) - 1}
+                                title="Move ingredient down"
+                                aria-label="Move ingredient down"
+                              >↓</button>
+                              <button
+                                className="preview-remove-btn"
+                                onClick={() => {
+                                  const updated = [...preview];
+                                  const ings = [...(updated[idx].ingredients || [])];
+                                  ings.splice(ingIdx, 1);
+                                  updated[idx] = { ...updated[idx], ingredients: ings };
+                                  setPreview(updated);
+                                }}
+                                title="Remove"
+                              >✕</button>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                    {(m.ingredients || []).length === 0 && (
-                      <div className="preview-empty-drop">⬇ Drop ingredients here · or tap <strong>+ Add</strong></div>
+                        {(m.ingredients || []).length === 0 && (
+                          <div className="preview-empty-drop">⬇ Drop ingredients here · or tap <strong>+ Add</strong></div>
+                        )}
+                      </div>
+                      </div>
                     )}
                   </div>
 
-                  {/* Directions (editable list with move buttons) */}
-                  <div
-                    className={`preview-detail-section ${dragOverField?.field === 'directions' && dragOverField?.recipeIdx === idx ? 'drop-active' : ''}`}
-                    data-field="directions"
-                    data-recipe-idx={idx}
-                    onDragOver={(e) => handleDragOver('directions', idx, e)}
-                    onDrop={(e) => handleDrop('directions', (m.directions || []).length, idx, e)}
-                    onDragLeave={() => setDragOverField(null)}
-                  >
-                    <label className="preview-label">
-                      <span className="preview-label-icon">📝</span>
-                      Steps ({m.directions?.length ?? 0})
-                      <button
-                        className="preview-add-btn"
-                        onClick={() => {
-                          const updated = [...preview];
-                          updated[idx] = { ...updated[idx], directions: [...(updated[idx].directions || []), ''] };
-                          setPreview(updated);
-                        }}
-                      >+ Add</button>
-                    </label>
-                    <div className="preview-editable-list">
-                      {(m.directions || []).map((step, stepIdx) => (
-                        <div
-                          key={stepIdx}
-                          className="preview-editable-row preview-step-row"
-                          draggable
-                          onDragStart={(e) => handleDragStart('directions', stepIdx, idx, e)}
-                          onDragOver={(e) => handleDragOver('directions', idx, e)}
-                          onDrop={(e) => handleDrop('directions', stepIdx, idx, e)}
-                          onDragEnd={handleDragEnd}
-                          style={{
-                            opacity: dragSource?.field === 'directions' && dragSource?.recipeIdx === idx && dragSource?.index === stepIdx ? 0.4 : 1
-                          }}
-                        >
-                          <span
-                            className="drag-handle"
-                            title="Drag to reorder"
-                            aria-label="Drag to reorder"
-                            role="button"
-                            onTouchStart={(e) => handleTouchDragStart(e, 'directions', stepIdx, idx)}
-                            onTouchMove={handleTouchDragMove}
-                            onTouchEnd={handleTouchDragEnd}
-                          />
-                          <span className="preview-step-num">{stepIdx + 1}</span>
-                          <textarea
-                            value={step}
-                            placeholder="Describe this step..."
-                            rows={2}
-                            onFocus={handleAutoExpand}
-                            onInput={handleAutoExpand}
-                            onChange={e => {
-                              const updated = [...preview];
-                              const dirs = [...(updated[idx].directions || [])];
-                              dirs[stepIdx] = e.target.value;
-                              updated[idx] = { ...updated[idx], directions: dirs };
-                              setPreview(updated);
-                            }}
-                          />
-                          {(() => {
-                            const hint = getMisplacedHint(step, 'directions');
-                            if (!hint) return null;
-                            return (
-                              <button
-                                className={`misplaced-hint misplaced-hint-${hint.confidence >= 80 ? 'high' : 'medium'}`}
-                                title={`${hint.reason} (${hint.confidence}% confidence)`}
-                                onClick={() => moveItemBetweenSections('directions', stepIdx, idx)}
-                              >{hint.label} ↑</button>
-                            );
-                          })()}
+                  {/* ── Directions accordion ──────────────────────────────── */}
+                  <div className={`review-accordion${collapsedSections.directions ? ' collapsed' : ''}`}>
+                    <button className="review-acc-head" onClick={() => toggleSection('directions')}>
+                      <div className="review-acc-head-left">
+                        <span className="review-acc-dot review-acc-dot--amber" />
+                        <span className="review-acc-title">Steps</span>
+                        <span className="review-acc-count">{m.directions?.length ?? 0}</span>
+                      </div>
+                      <span className="review-acc-chev">{collapsedSections.directions ? '▸' : '▾'}</span>
+                    </button>
+                    {!collapsedSections.directions && (
+                      <div className="review-acc-body">
+                      {/* Directions (editable list with move buttons) */}
+                      <div
+                        className={`preview-detail-section ${dragOverField?.field === 'directions' && dragOverField?.recipeIdx === idx ? 'drop-active' : ''}`}
+                        data-field="directions"
+                        data-recipe-idx={idx}
+                        onDragOver={(e) => handleDragOver('directions', idx, e)}
+                        onDrop={(e) => handleDrop('directions', (m.directions || []).length, idx, e)}
+                        onDragLeave={() => setDragOverField(null)}
+                      >
+                        <label className="preview-label">
+                          <span className="preview-label-icon">📝</span>
+                          Steps ({m.directions?.length ?? 0})
                           <button
-                            className="preview-move-btn"
-                            onClick={() => moveItemBetweenSections('directions', stepIdx, idx)}
-                            title="Move to Ingredients"
-                            aria-label="Move to Ingredients"
-                          >↑</button>
-                          <button
-                            className="preview-reorder-btn"
-                            onClick={() => reorderItem('directions', stepIdx, 'up', idx)}
-                            disabled={stepIdx === 0}
-                            title="Move step up"
-                            aria-label="Move step up"
-                          >↑</button>
-                          <button
-                            className="preview-reorder-btn"
-                            onClick={() => reorderItem('directions', stepIdx, 'down', idx)}
-                            disabled={stepIdx >= (m.directions?.length ?? 1) - 1}
-                            title="Move step down"
-                            aria-label="Move step down"
-                          >↓</button>
-                          <button
-                            className="preview-remove-btn"
+                            className="preview-add-btn"
                             onClick={() => {
                               const updated = [...preview];
-                              const dirs = [...(updated[idx].directions || [])];
-                              dirs.splice(stepIdx, 1);
-                              updated[idx] = { ...updated[idx], directions: dirs };
+                              updated[idx] = { ...updated[idx], directions: [...(updated[idx].directions || []), ''] };
                               setPreview(updated);
                             }}
-                            title="Remove"
-                          >✕</button>
+                          >+ Add</button>
+                        </label>
+                        <div className="preview-editable-list">
+                          {(m.directions || []).map((step, stepIdx) => (
+                            <div
+                              key={stepIdx}
+                              className="preview-editable-row preview-step-row"
+                              draggable
+                              onDragStart={(e) => handleDragStart('directions', stepIdx, idx, e)}
+                              onDragOver={(e) => handleDragOver('directions', idx, e)}
+                              onDrop={(e) => handleDrop('directions', stepIdx, idx, e)}
+                              onDragEnd={handleDragEnd}
+                              style={{
+                                opacity: dragSource?.field === 'directions' && dragSource?.recipeIdx === idx && dragSource?.index === stepIdx ? 0.4 : 1
+                              }}
+                            >
+                              <span
+                                className="drag-handle"
+                                title="Drag to reorder"
+                                aria-label="Drag to reorder"
+                                role="button"
+                                onTouchStart={(e) => handleTouchDragStart(e, 'directions', stepIdx, idx)}
+                                onTouchMove={handleTouchDragMove}
+                                onTouchEnd={handleTouchDragEnd}
+                              />
+                              <span className="preview-step-num">{stepIdx + 1}</span>
+                              <textarea
+                                value={step}
+                                placeholder="Describe this step..."
+                                rows={2}
+                                onFocus={handleAutoExpand}
+                                onInput={handleAutoExpand}
+                                onChange={e => {
+                                  const updated = [...preview];
+                                  const dirs = [...(updated[idx].directions || [])];
+                                  dirs[stepIdx] = e.target.value;
+                                  updated[idx] = { ...updated[idx], directions: dirs };
+                                  setPreview(updated);
+                                }}
+                              />
+                              {(() => {
+                                const hint = getMisplacedHint(step, 'directions');
+                                if (!hint) return null;
+                                return (
+                                  <button
+                                    className={`misplaced-hint misplaced-hint-${hint.confidence >= 80 ? 'high' : 'medium'}`}
+                                    title={`${hint.reason} (${hint.confidence}% confidence)`}
+                                    onClick={() => moveItemBetweenSections('directions', stepIdx, idx)}
+                                  >{hint.label} ↑</button>
+                                );
+                              })()}
+                              <button
+                                className="preview-move-btn"
+                                onClick={() => moveItemBetweenSections('directions', stepIdx, idx)}
+                                title="Move to Ingredients"
+                                aria-label="Move to Ingredients"
+                              >↑</button>
+                              <button
+                                className="preview-reorder-btn"
+                                onClick={() => reorderItem('directions', stepIdx, 'up', idx)}
+                                disabled={stepIdx === 0}
+                                title="Move step up"
+                                aria-label="Move step up"
+                              >↑</button>
+                              <button
+                                className="preview-reorder-btn"
+                                onClick={() => reorderItem('directions', stepIdx, 'down', idx)}
+                                disabled={stepIdx >= (m.directions?.length ?? 1) - 1}
+                                title="Move step down"
+                                aria-label="Move step down"
+                              >↓</button>
+                              <button
+                                className="preview-remove-btn"
+                                onClick={() => {
+                                  const updated = [...preview];
+                                  const dirs = [...(updated[idx].directions || [])];
+                                  dirs.splice(stepIdx, 1);
+                                  updated[idx] = { ...updated[idx], directions: dirs };
+                                  setPreview(updated);
+                                }}
+                                title="Remove"
+                              >✕</button>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                    {(m.directions || []).length === 0 && (
-                      <div className="preview-empty-drop">⬇ Drop steps here · or tap <strong>+ Add</strong></div>
+                        {(m.directions || []).length === 0 && (
+                          <div className="preview-empty-drop">⬇ Drop steps here · or tap <strong>+ Add</strong></div>
+                        )}
+                      </div>
+
+                      </div>
                     )}
                   </div>
 
@@ -1392,46 +1634,60 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                     </div>
                   )}
 
-                  {/* Notes — auto-expand on tap, drag items in, free-form extras */}
-                  <div
-                    className={`preview-detail-section preview-notes-section ${dragOverField?.field === 'notes' && dragOverField?.recipeIdx === idx ? 'drop-active' : ''}`}
-                    data-field="notes"
-                    data-recipe-idx={idx}
-                    onDragOver={(e) => handleDragOver('notes', idx, e)}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      if (!dragSource) return;
-                      const { field: srcField, index: srcIdx, recipeIdx: srcRecipeIdx } = dragSource;
-                      const updated = [...preview];
-                      const sourceItems = [...(updated[srcRecipeIdx][srcField] || [])];
-                      const [movedItem] = sourceItems.splice(srcIdx, 1);
-                      updated[srcRecipeIdx] = { ...updated[srcRecipeIdx], [srcField]: sourceItems };
-                      const currentNotes = updated[idx].notes || '';
-                      updated[idx] = { ...updated[idx], notes: currentNotes ? `${currentNotes}\n${movedItem}` : movedItem };
-                      setPreview(updated);
-                      setDragSource(null);
-                      setDragOverField(null);
-                    }}
-                    onDragLeave={() => setDragOverField(null)}
-                  >
-                    <label className="preview-label">
-                      <span className="preview-label-icon">📋</span>
-                      Notes
-                      <span className="preview-notes-hint">— tap to expand · drag items here</span>
-                    </label>
-                    <textarea
-                      className="preview-notes-textarea"
-                      value={m.notes || ''}
-                      placeholder="Extra info, chef's tips, variations, or anything that didn't fit above…"
-                      rows={1}
-                      onFocus={handleAutoExpand}
-                      onInput={handleAutoExpand}
-                      onChange={e => updateRecipeField(idx, 'notes', e.target.value)}
-                    />
+                  {/* ── Notes accordion ────────────────────────────────── */}
+                  <div className={`review-accordion${collapsedSections.notes ? ' collapsed' : ''}`}>
+                    <button className="review-acc-head" onClick={() => toggleSection('notes')}>
+                      <div className="review-acc-head-left">
+                        <span className="review-acc-title">📝 Notes</span>
+                      </div>
+                      <span className="review-acc-chev">{collapsedSections.notes ? '▸' : '▾'}</span>
+                    </button>
+                    {!collapsedSections.notes && (
+                      <div className="review-acc-body">
+                      {/* Notes — auto-expand on tap, drag items in, free-form extras */}
+                      <div
+                        className={`preview-detail-section preview-notes-section ${dragOverField?.field === 'notes' && dragOverField?.recipeIdx === idx ? 'drop-active' : ''}`}
+                        data-field="notes"
+                        data-recipe-idx={idx}
+                        onDragOver={(e) => handleDragOver('notes', idx, e)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          if (!dragSource) return;
+                          const { field: srcField, index: srcIdx, recipeIdx: srcRecipeIdx } = dragSource;
+                          const updated = [...preview];
+                          const sourceItems = [...(updated[srcRecipeIdx][srcField] || [])];
+                          const [movedItem] = sourceItems.splice(srcIdx, 1);
+                          updated[srcRecipeIdx] = { ...updated[srcRecipeIdx], [srcField]: sourceItems };
+                          const currentNotes = updated[idx].notes || '';
+                          updated[idx] = { ...updated[idx], notes: currentNotes ? `${currentNotes}\n${movedItem}` : movedItem };
+                          setPreview(updated);
+                          setDragSource(null);
+                          setDragOverField(null);
+                        }}
+                        onDragLeave={() => setDragOverField(null)}
+                      >
+                        <label className="preview-label">
+                          <span className="preview-label-icon">📋</span>
+                          Notes
+                          <span className="preview-notes-hint">— tap to expand · drag items here</span>
+                        </label>
+                        <textarea
+                          className="preview-notes-textarea"
+                          value={m.notes || ''}
+                          placeholder="Extra info, chef's tips, variations, or anything that didn't fit above…"
+                          rows={1}
+                          onFocus={handleAutoExpand}
+                          onInput={handleAutoExpand}
+                          onChange={e => updateRecipeField(idx, 'notes', e.target.value)}
+                        />
+                      </div>
+                      </div>
+                    )}
                   </div>
                 </div>
-              ))}
+              );
+            })}
             </div>{/* end preview-detail-list */}
 
             <div className="preview-addendum-bar">
@@ -1460,460 +1716,27 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
           </div>
           {/* end preview-scroll-content */}
 
-          <div className="ip-preview-footer">
-            <button className="btn-secondary ip-back-btn" onClick={() => {
-              setPreview(null);
-              setUrl('');
-              setImporting(false);
-              setImportProgress('');
-              setBrowserAssistMode('off');
-              setBrowserAssistUrl(null);
-              setSocialDetected(null);
-              setError('');
+        {/* ── Wizard footer: Back ← step 2 | Looks good → step 3 ─────────── */}
+        {wizardStep === 2 && (
+          <div className="wizard-footer">
+            <button className="wizard-btn-ghost" onClick={() => {
+              setPreview(null); setUrl(''); setImporting(false); setImportProgress('');
+              setBrowserAssistMode('off'); setBrowserAssistUrl(null); setSocialDetected(null); setError('');
+              setWizardStep(1);
             }}>← Back</button>
-
-            {/* ── Smart Action Bar ──────────────────────────────────────────
-                From a share: show all destinations so user can one-tap route.
-                Normal import: show Save + a secondary "Send to Bar/Meals" toggle.
-             ────────────────────────────────────────────────────────────────── */}
-            <div className="ip-smart-bar">
-              {sharedContent?.isShare ? (
-                /* Share context — full destination palette */
-                <>
-                  {/* Primary: the auto-detected likely-correct destination */}
-                  <button
-                    className={`ip-smart-btn ip-smart-primary ${previewLooksDrink ? 'ip-smart-btn--bar' : 'ip-smart-btn--meals'}`}
-                    onClick={() => confirmImport(previewLooksDrink ? 'drinks' : 'meals')}
-                    title={previewLooksDrink ? 'Save to The Bar' : 'Save to Meal Library'}
-                  >
-                    {previewLooksDrink ? '🍸 Save to Bar' : '✓ Save to Library'}
-                  </button>
-
-                  {/* Secondary: the other library destination */}
-                  <button
-                    className="ip-smart-btn ip-smart-secondary"
-                    onClick={() => confirmImport(previewLooksDrink ? 'meals' : 'drinks')}
-                    title={previewLooksDrink ? 'Save to Meals instead' : 'Save to The Bar instead'}
-                  >
-                    {previewLooksDrink ? '🍳 → Meals' : '🍸 → Bar'}
-                  </button>
-
-                  {/* Utility: add ingredients to grocery */}
-                  <button
-                    className="ip-smart-btn ip-smart-grocery"
-                    onClick={() => confirmImport('grocery')}
-                    title="Add ingredients to Grocery List"
-                  >
-                    🛒 Grocery
-                  </button>
-
-                  {/* Utility: save + slot into this week (meals only) */}
-                  {!previewLooksDrink && (
-                    <button
-                      className="ip-smart-btn ip-smart-week"
-                      onClick={() => confirmImport('week')}
-                      title="Save and add to this week's plan"
-                    >
-                      📅 This Week
-                    </button>
-                  )}
-                </>
-              ) : (
-                /* Normal import — simple Save + optional secondary routing */
-                <>
-                  <button
-                    className={`ip-smart-btn ip-smart-primary ${initialItemType === 'drink' ? 'ip-smart-btn--bar' : 'ip-smart-btn--meals'}`}
-                    onClick={() => confirmImport('auto')}
-                  >
-                    {initialItemType === 'drink' ? '🍸 Save to Bar' : '✓ Save to Library'}
-                  </button>
-                  {/* If it's a meal import but looks like a drink (or vice versa), offer the switch */}
-                  {initialItemType === 'meal' && previewLooksDrink && (
-                    <button
-                      className="ip-smart-btn ip-smart-secondary"
-                      onClick={() => confirmImport('drinks')}
-                      title="Looks like a drink — save to The Bar instead"
-                    >
-                      🍸 → Bar
-                    </button>
-                  )}
-                  {initialItemType === 'drink' && !previewLooksDrink && (
-                    <button
-                      className="ip-smart-btn ip-smart-secondary"
-                      onClick={() => confirmImport('meals')}
-                      title="Looks like a meal — save to Library instead"
-                    >
-                      🍳 → Meals
-                    </button>
-                  )}
-                </>
-              )}
-            </div>
+            <button className="wizard-btn-primary" onClick={() => setWizardStep(3)}>
+              Looks good →
+            </button>
           </div>
-        </div>/* end ip-preview-screen */
-        ) : (
-
-          <>
-            {/* ── Tab bar — 3 primary + overflow ───────────────────────────── */}
-            <div className="import-tabs">
-              <button
-                className={mode === 'url' ? 'active' : ''}
-                onClick={() => { setMode('url'); setSocialDetected(null); setError(''); }}
-              >
-                From URL
-              </button>
-              <button
-                className={mode === 'paste' ? 'active' : ''}
-                onClick={() => { setMode('paste'); setSocialDetected(null); setError(''); }}
-              >
-                Paste Text
-              </button>
-              <button
-                className={mode === 'image' ? 'active' : ''}
-                onClick={() => { setMode('image'); setError(''); }}
-              >
-                From Photo
-              </button>
-              {/* ⋯ overflow — reveals Spreadsheet and Paprika on demand */}
-              <button
-                className={['spreadsheet', 'paprika'].includes(mode) ? 'active import-tabs-more' : 'import-tabs-more'}
-                onClick={() => {
-                  const next = mode === 'spreadsheet' ? 'paprika' : 'spreadsheet';
-                  setMode(next);
-                  setSocialDetected(null);
-                  setError('');
-                }}
-                title="More import options (Spreadsheet, Paprika)"
-              >
-                {mode === 'spreadsheet' ? 'Spreadsheet' : mode === 'paprika' ? 'Paprika' : '⋯ More'}
-              </button>
-            </div>
-
-            {/* ── URL tab ─────────────────────────────────────────────────────── */}
-            {mode === 'url' && (
-              <div className="import-section">
-                {/* Drink / Meal type toggle — one tap overrides auto-detect */}
-                <div
-                  className="item-type-toggle"
-                  role="group"
-                  aria-label="Import type"
-                  style={{
-                    display: 'flex',
-                    gap: 8,
-                    marginBottom: 10,
-                    fontSize: 14,
-                    alignItems: 'center',
-                  }}
-                >
-                  <span style={{ opacity: 0.75 }}>Type:</span>
-                  <button
-                    type="button"
-                    onClick={() => { setItemType('meal'); setItemTypeUserOverride(true); }}
-                    aria-pressed={itemType === 'meal'}
-                    style={{
-                      padding: '8px 14px',
-                      borderRadius: 999,
-                      border: itemType === 'meal' ? '2px solid #0ea5e9' : '1px solid rgba(0,0,0,0.15)',
-                      background: itemType === 'meal' ? 'rgba(14,165,233,0.12)' : 'transparent',
-                      fontWeight: itemType === 'meal' ? 600 : 400,
-                      minHeight: 40,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    🍽️ Meal
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setItemType('drink'); setItemTypeUserOverride(true); }}
-                    aria-pressed={itemType === 'drink'}
-                    style={{
-                      padding: '8px 14px',
-                      borderRadius: 999,
-                      border: itemType === 'drink' ? '2px solid #f59e0b' : '1px solid rgba(0,0,0,0.15)',
-                      background: itemType === 'drink' ? 'rgba(245,158,11,0.14)' : 'transparent',
-                      fontWeight: itemType === 'drink' ? 600 : 400,
-                      minHeight: 40,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    🍹 Drink
-                  </button>
-                  {!itemTypeUserOverride && url.trim() && (
-                    <span style={{ marginLeft: 'auto', fontSize: 12, opacity: 0.65 }}>
-                      auto
-                    </span>
-                  )}
-                </div>
-                <input
-                  type="url"
-                  placeholder="Paste recipe URL — Instagram, TikTok, AllRecipes, etc."
-                  value={url}
-                  onChange={handleUrlChange}
-                  className="full-width"
-                  onKeyDown={e => e.key === 'Enter' && handleUrlImport()}
-                  autoFocus
-                />
-
-                {socialDetected && (
-                  <div className="social-detected-bar">
-                    <span className="social-badge">{socialDetected.platform}</span>
-                    <span>
-                      {socialDetected.platform === 'YouTube'
-                        ? 'SpiceHub will extract the description and subtitles automatically.'
-                        : 'Tap Import to extract the recipe automatically.'}
-                    </span>
-                  </div>
-                )}
-
-                {/* Live embed preview — renders the official IG/TikTok/YT/FB/X/Pinterest
-                    iframe instantly so the user sees the post within ~500ms while the
-                    scraper does its work in the background. */}
-                <SocialPreview url={url} />
-
-                {!socialDetected && (
-                  <p className="help-text">
-                    Paste any recipe URL — blogs, YouTube, Instagram, TikTok, and more.
-                    Shortened links (bit.ly, t.co, etc.) are auto-resolved.
-                    Paste multiple URLs to batch-import several recipes at once.
-                  </p>
-                )}
-
-                {/* Batch progress indicator */}
-                {batchProgress && (
-                  <div className="batch-progress">
-                    <div className="batch-progress-header">
-                      <span>Importing {batchProgress.current} of {batchProgress.total} recipes…</span>
-                    </div>
-                    <div className="batch-progress-bar">
-                      <div
-                        className="batch-progress-fill"
-                        style={{ width: `${(batchProgress.current / batchProgress.total) * 100}%` }}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Render warmup animation */}
-                {syncPhase === 'warmup' && (
-                  <div className="warmup-phase">
-                    <span className="warmup-label">Preparing your recipe…</span>
-                    <button className="sync-cancel-btn warmup-cancel-btn" onClick={handleCancelImport}>
-                      Cancel
-                    </button>
-                  </div>
-                )}
-
-                {/* Sync import progress */}
-                {syncPhase === 'running' && (
-                  <div className="sync-import-progress">
-                    <div className="sync-import-stages">
-                      {STAGES.map((stage, idx) => (
-                        <div
-                          key={stage.key}
-                          className={`sync-stage${idx < syncStageIdx ? ' sync-stage--done' : ''}${idx === syncStageIdx ? ' sync-stage--active' : ''}`}
-                        >
-                          <span className="sync-stage-dot">
-                            {idx < syncStageIdx ? '✓' : idx === syncStageIdx ? '●' : '○'}
-                          </span>
-                          <span className="sync-stage-label">{stage.label}</span>
-                        </div>
-                      ))}
-                    </div>
-                    <button className="sync-cancel-btn" onClick={handleCancelImport}>
-                      Cancel
-                    </button>
-                  </div>
-                )}
-
-                {/* Success flash */}
-                {syncPhase === 'success' && (
-                  <div className="sync-import-success">
-                    <span className="sync-success-check">✓</span>
-                    <span className="sync-success-label">
-                      {syncSuccessName ? `"${syncSuccessName}" saved!` : 'Recipe saved!'}
-                    </span>
-                  </div>
-                )}
-
-                <button
-                  className="btn-primary"
-                  onClick={handleUrlImport}
-                  disabled={importing || syncPhase === 'running' || syncPhase === 'warmup' || !url.trim()}
-                >
-                  {importing ? (
-                    <><span className="browser-spinner" /> {importProgress || 'Extracting recipe…'}</>
-                  ) : 'Import Recipe'}
-                </button>
-              </div>
-            )}
-
-            {/* ── Paste Text tab (Mealie-style fallback) ────────────────────── */}
-            {mode === 'paste' && (
-              <div className="import-section">
-                <div className="paste-import-banner">
-                  <div className="paste-import-icon">📋</div>
-                  <div>
-                    <strong>Paste Recipe Text</strong>
-                    <p className="help-text" style={{ marginTop: 4 }}>
-                      Copy the recipe caption from Instagram, TikTok, or any source and paste it below.
-                      SpiceHub will detect ingredients and directions automatically.
-                    </p>
-                  </div>
-                </div>
-
-                <textarea
-                  className="paste-textarea full-width"
-                  placeholder={"Paste recipe text here…\n\nExample:\nChicken Stir Fry\n\nIngredients:\n2 chicken breasts, diced\n1 tbsp soy sauce\n...\n\nDirections:\n1. Heat oil in a pan\n2. Cook chicken until golden\n..."}
-                  value={pasteText}
-                  onChange={e => setPasteText(e.target.value)}
-                  rows={10}
-                />
-
-                <input
-                  type="url"
-                  placeholder="Source URL (optional — for your reference)"
-                  value={pasteLink}
-                  onChange={e => setPasteLink(e.target.value)}
-                  className="full-width"
-                  style={{ marginTop: 8 }}
-                />
-
-                <button
-                  className="btn-primary"
-                  onClick={handlePasteImport}
-                  disabled={!pasteText.trim()}
-                  style={{ marginTop: 12 }}
-                >
-                  Parse Recipe
-                </button>
-
-                <p className="help-text" style={{ marginTop: 8 }}>
-                  Tip: Include section headers like "Ingredients:" and "Directions:" for best results.
-                  You can always edit the recipe after importing.
-                </p>
-              </div>
-            )}
-
-            {/* ── Image/Photo OCR tab ─────────────────────────────────────────── */}
-            {mode === 'image' && (
-              <div className="import-section">
-                <div className="image-import-banner">
-                  <div className="image-import-icon">📸</div>
-                  <div>
-                    <strong>Import from Photo</strong>
-                    <p className="help-text" style={{ marginTop: 4 }}>
-                      Take a photo of a recipe card, cookbook page, or screenshot. SpiceHub will read the text and extract the recipe.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Hidden file inputs */}
-                <input
-                  ref={imageRef}
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageUpload}
-                  className="file-input"
-                />
-                <input
-                  ref={cameraRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={handleImageUpload}
-                  className="file-input"
-                />
-
-                {importing ? (
-                  <div className="image-import-progress">
-                    <span className="browser-spinner large" />
-                    <p className="import-progress-text">{importProgress || 'Processing...'}</p>
-                  </div>
-                ) : (
-                  <div className="image-import-buttons">
-                    <button
-                      className="btn-primary"
-                      onClick={() => cameraRef.current?.click()}
-                    >
-                      Take Photo
-                    </button>
-                    <button
-                      className="btn-secondary"
-                      onClick={() => imageRef.current?.click()}
-                    >
-                      Choose from Gallery
-                    </button>
-                  </div>
-                )}
-
-                <p className="help-text" style={{ marginTop: 12 }}>
-                  Works with: recipe index cards, cookbook pages, screenshots of recipes, handwritten recipes (clear print works best).
-                </p>
-              </div>
-            )}
-
-            {/* ── Spreadsheet tab ──────────────────────────────────────────────── */}
-            {mode === 'spreadsheet' && (
-              <div className="import-section">
-                <p className="help-text">
-                  Upload a <strong>CSV</strong> or <strong>Excel</strong> file.
-                  Columns: <code>Name | Ingredients (;-separated) | Directions (;-separated) | Link | Image URL</code>
-                </p>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept=".csv,.tsv,.xlsx,.xls"
-                  onChange={handleFileUpload}
-                  className="file-input"
-                />
-                <button className="btn-secondary" onClick={() => fileRef.current?.click()} disabled={importing}>
-                  {importing ? 'Reading…' : 'Choose File (CSV / Excel)'}
-                </button>
-                <p className="help-text">First row is treated as a header and skipped.</p>
-              </div>
-            )}
-
-            {/* ── Paprika tab ───────────────────────────────────────────────────── */}
-            {mode === 'paprika' && (
-              <div className="import-section paprika-section">
-                <div className="paprika-banner">
-                  <span className="paprika-logo">🌶️</span>
-                  <div>
-                    <strong>Import from Paprika 3</strong>
-                    <p className="help-text" style={{ marginTop: 4 }}>
-                      In Paprika 3, go to <strong>Settings → Export</strong> and choose
-                      <em> Export All Recipes</em> to generate a <code>.paprikarecipes</code> file.
-                      Then choose that file here.
-                    </p>
-                  </div>
-                </div>
-                <input
-                  ref={paprikaRef}
-                  type="file"
-                  accept=".paprikarecipes"
-                  onChange={handlePaprikaUpload}
-                  className="file-input"
-                />
-                <button className="btn-primary paprika-btn" onClick={() => paprikaRef.current?.click()} disabled={importing}>
-                  {importing ? (
-                    <><span className="browser-spinner" /> Parsing Paprika file…</>
-                  ) : (
-                    'Choose .paprikarecipes File'
-                  )}
-                </button>
-                <p className="help-text">
-                  All recipes from the export will be previewed before import. Your existing library is not affected.
-                </p>
-              </div>
-            )}
-          </>
         )}
+      </div>
+    )) : null}
       </div>
     </div>
   );
 }
 
-// ── Image helpers ─────────────────────────────────────────────────────────────
+// ── Image helpers ─────────────────────────────────────────────────────────────────────────────
 
 function fileToDataUrl(file) {
   return new Promise((resolve, reject) => {
@@ -1924,14 +1747,6 @@ function fileToDataUrl(file) {
   });
 }
 
-/**
- * Preprocess image for better OCR quality:
- *   - Resize to optimal width (Tesseract works best around 2000-3000px wide)
- *   - Increase contrast
- *   - Convert to grayscale
- *   - Sharpen text edges
- * Returns a canvas element that Tesseract can accept.
- */
 async function preprocessImageForOCR(file) {
   return new Promise((resolve) => {
     const img = new Image();

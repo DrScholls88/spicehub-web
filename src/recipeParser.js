@@ -1059,28 +1059,38 @@ export async function structureWithAIClient(rawText, { title: hintTitle = '', im
   const prompt = _buildExtractionPrompt(rawText, { hintTitle, type });
 
   // Phase 2: shared SYSTEM_INSTRUCTION + JSON mode for reliable auto-sorting.
-  // responseSchema (RECIPE_SCHEMA) is gated behind an env flag so it can be
-  // verified against a live key before becoming the default — when off, Gemini
-  // still returns JSON in the legacy {ingredients, directions} shape the parser
-  // has always read, so there is zero regression risk.
+  // useResponseSchema=true requires VITE_GEMINI_RESPONSE_SCHEMA='true' AND enables:
+  //   - SYSTEM_INSTRUCTION (ingredientGroups schema format, isRecipe field, confidence)
+  //   - responseMimeType:'application/json' (strict JSON output)
+  //   - responseSchema: RECIPE_SCHEMA (enforced field structure)
+  //
+  // When the flag is OFF (default) we stay fully backward-compatible:
+  //   - NO systemInstruction (avoids the isRecipe===false guard and ingredientGroups
+  //     schema description conflicting with _buildExtractionPrompt's legacy format)
+  //   - NO responseMimeType (model returns JSON wrapped in prose fences as before)
+  //   - The existing prompt asks for {ingredients:[{name,amount}], directions:[...]}
+  //     which the parser below handles via the isStructuredShape=false path.
   const useResponseSchema = typeof import.meta !== 'undefined'
     && import.meta.env?.VITE_GEMINI_RESPONSE_SCHEMA === 'true';
-  const generationConfig = {
-    temperature: 0.1,
-    maxOutputTokens: 2048,
-    responseMimeType: 'application/json',
-    ...(useResponseSchema ? { responseSchema: RECIPE_SCHEMA } : {}),
-  };
+  const generationConfig = useResponseSchema
+    ? { temperature: 0.1, maxOutputTokens: 2048, responseMimeType: 'application/json', responseSchema: RECIPE_SCHEMA }
+    : { temperature: 0.1, maxOutputTokens: 2048 };
 
   try {
+    const requestBody = useResponseSchema
+      ? {
+          systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig,
+        }
+      : {
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig,
+        };
     const res = await fetch(GEMINI_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig,
-      }),
+      body: JSON.stringify(requestBody),
       signal: composeSignals(signal, AbortSignal.timeout(14000)),
     });
     if (!res.ok) return null;
@@ -1089,7 +1099,8 @@ export async function structureWithAIClient(rawText, { title: hintTitle = '', im
     if (!raw) return null;
     const jsonText = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
     const parsed = JSON.parse(jsonText);
-    if (parsed.error || parsed.isRecipe === false) return null;
+    // isRecipe guard only applies in schema mode — legacy prompt doesn't emit that field
+    if (parsed.error || (useResponseSchema && parsed.isRecipe === false)) return null;
 
     // Support BOTH the new RECIPE_SCHEMA shape (ingredientGroups + kind + course)
     // and the legacy flat {ingredients, directions} shape. thinFromStructured
@@ -2849,7 +2860,14 @@ export async function importRecipeFromUrl(url, onProgress, { type = 'meal', sign
 
     // Instagram all paths failed Ã¢â‚¬â€ route to BrowserAssist
     console.log('[SpiceHub] Instagram extraction failed Ã¢â‚¬â€ routing to BrowserAssist');
-    return { _needsBrowserAssist: true, url, type };
+    return {
+      _needsBrowserAssist: true,
+      url,
+      type,
+      capturedCaption:  instagramRecipe?.capturedCaption  || '',
+      capturedImageUrl: instagramRecipe?.capturedImageUrl || '',
+      capturedTitle:    instagramRecipe?.capturedTitle    || '',
+    };
   }
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ 2. Video/Social URLs: try Agent extraction, then yt-dlp, then CORS proxy Ã¢â€â‚¬Ã¢â€â‚¬
@@ -5055,7 +5073,7 @@ export function detectImportType(url = '', initialText = '') {
   // -- Keyword scan on URL path + accompanying text -------------------------
   const haystack = u + ' ' + t;
 
-  // Strong single-word signals — any one match is enough
+   // Strong single-word signals — any one match is enough
   const DRINK_STRONG = [
     'whiskey', 'whisky', 'bourbon', 'scotch', 'mezcal', 'tequila', 'vodka',
     'vermouth', 'campari', 'aperol', 'amaretto', 'kahlua', 'angostura',

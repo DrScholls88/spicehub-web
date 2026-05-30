@@ -259,6 +259,42 @@ const toggleDeepMode = () => {
         // Pipeline steps map to: Phase 0 = video subs, Phase 1 = embed,
         // Phase 2 = server browser assist, Phase 3 = Gemini structuring.
         if (isInsta) {
+          // If ImportModal already ran the pipeline and captured the caption,
+          // skip the redundant second Apify/embed run and go straight to structuring.
+          const seededCaption = seed?._skipPipelineIfCaption ? (seed?.capturedCaption || '') : '';
+          if (seededCaption && seededCaption.trim().length > 20) {
+            setPipelineMessage('Caption captured — structuring with AI...');
+            setPipelineSteps([
+              { label: 'Video subtitles', status: 'skipped',  message: 'Skipped' },
+              { label: 'Caption fetch',   status: 'done',     message: 'Pre-captured ✔' },
+              { label: 'AI browser',      status: 'skipped',  message: 'Skipped' },
+              { label: 'AI structuring',  status: 'running',  message: 'Structuring...' },
+            ]);
+            try {
+              const fastRecipe = await captionToRecipe(seededCaption, {
+                title: seed?.capturedTitle || '',
+                imageUrl: seed?.capturedImageUrl || seed?.imageUrl || '',
+                sourceUrl: url,
+                type,
+              });
+              if (!cancelled && fastRecipe && (fastRecipe.ingredients?.length || fastRecipe.directions?.length)) {
+                setAutoRecipe(cleanRecipe({
+                  ...fastRecipe,
+                  name: fastRecipe.name || seed?.capturedTitle || fastRecipe.name,
+                  imageUrl: seed?.capturedImageUrl || seed?.imageUrl || fastRecipe.imageUrl,
+                }));
+                setPhase('preview');
+                return;
+              }
+            } catch { /* fall through to full pipeline */ }
+            // Structuring failed — show pre-filled manual textarea
+            setManualText(seededCaption);
+            setPipelineMessage('AI structuring unavailable — tap "Parse Recipe" to use heuristics.');
+            setPipelineSteps(prev => prev.map((s, i) => i === 3 ? { ...s, status: 'failed', message: 'AI unavailable' } : s));
+            setPhase('manual');
+            return;
+          }
+
           // Initialise pipeline steps for display (Phase 0 and 2 are known-skipped)
           setPipelineSteps([
             { label: 'Video subtitles', status: 'pending', message: '' },
@@ -2178,6 +2214,7 @@ function extractFromRawHtml(html, sourceUrl) {
     }
   }
   if (!caption || caption.length < 30) return null;
+
   if (/^\d+[\s,]*(likes?|comments?|views?)/i.test(caption)) return null;
   if (/^[\d,.]+\s*(Likes?|Comments?)/i.test(caption)) return null;
   const parsed = parseCaption(caption);
