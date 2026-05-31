@@ -1730,7 +1730,362 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
           </div>
         )}
       </div>
-    )) : null}
+    )) : (
+          <div className="wizard-step1-body">
+            {/* ── Tab bar — 3 primary + overflow ───────────────────────────── */}
+            <div className="import-tabs">
+              <button
+                className={mode === 'url' ? 'active' : ''}
+                onClick={() => { setMode('url'); setSocialDetected(null); setError(''); }}
+              >
+                From URL
+              </button>
+              <button
+                className={mode === 'paste' ? 'active' : ''}
+                onClick={() => { setMode('paste'); setSocialDetected(null); setError(''); }}
+              >
+                Paste Text
+              </button>
+              <button
+                className={mode === 'image' ? 'active' : ''}
+                onClick={() => { setMode('image'); setError(''); }}
+              >
+                From Photo
+              </button>
+              {/* ⋯ overflow — reveals Spreadsheet and Paprika on demand */}
+              <button
+                className={['spreadsheet', 'paprika'].includes(mode) ? 'active import-tabs-more' : 'import-tabs-more'}
+                onClick={() => {
+                  const next = mode === 'spreadsheet' ? 'paprika' : 'spreadsheet';
+                  setMode(next);
+                  setSocialDetected(null);
+                  setError('');
+                }}
+                title="More import options (Spreadsheet, Paprika)"
+              >
+                {mode === 'spreadsheet' ? 'Spreadsheet' : mode === 'paprika' ? 'Paprika' : '⋯ More'}
+              </button>
+            </div>
+
+            {/* ── URL tab ─────────────────────────────────────────────────────── */}
+            {mode === 'url' && (
+              <div className="import-section">
+                {/* Drink / Meal type toggle — one tap overrides auto-detect */}
+                <div
+                  className="item-type-toggle"
+                  role="group"
+                  aria-label="Import type"
+                  style={{
+                    display: 'flex',
+                    gap: 8,
+                    marginBottom: 10,
+                    fontSize: 14,
+                    alignItems: 'center',
+                  }}
+                >
+                  <span style={{ opacity: 0.75 }}>Type:</span>
+                  <button
+                    type="button"
+                    onClick={() => { setItemType('meal'); setItemTypeUserOverride(true); }}
+                    aria-pressed={itemType === 'meal'}
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: 999,
+                      border: itemType === 'meal' ? '2px solid #0ea5e9' : '1px solid rgba(0,0,0,0.15)',
+                      background: itemType === 'meal' ? 'rgba(14,165,233,0.12)' : 'transparent',
+                      fontWeight: itemType === 'meal' ? 600 : 400,
+                      minHeight: 40,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    🍽️ Meal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setItemType('drink'); setItemTypeUserOverride(true); }}
+                    aria-pressed={itemType === 'drink'}
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: 999,
+                      border: itemType === 'drink' ? '2px solid #f59e0b' : '1px solid rgba(0,0,0,0.15)',
+                      background: itemType === 'drink' ? 'rgba(245,158,11,0.14)' : 'transparent',
+                      fontWeight: itemType === 'drink' ? 600 : 400,
+                      minHeight: 40,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    🍹 Drink
+                  </button>
+                  {!itemTypeUserOverride && url.trim() && (
+                    <span style={{ marginLeft: 'auto', fontSize: 12, opacity: 0.65 }}>
+                      auto
+                    </span>
+                  )}
+                </div>
+                <input
+                  type="url"
+                  placeholder="Paste recipe URL — Instagram, TikTok, AllRecipes, etc."
+                  value={url}
+                  onChange={handleUrlChange}
+                  className="full-width"
+                  onKeyDown={e => e.key === 'Enter' && handleUrlImport()}
+                  autoFocus
+                />
+
+                {socialDetected && (
+                  <div className="social-detected-bar">
+                    <span className="social-badge">{socialDetected.platform}</span>
+                    <span>
+                      {socialDetected.platform === 'YouTube'
+                        ? 'SpiceHub will extract the description and subtitles automatically.'
+                        : 'Tap Import to extract the recipe automatically.'}
+                    </span>
+                  </div>
+                )}
+
+                {/* Live embed preview — renders the official IG/TikTok/YT/FB/X/Pinterest
+                    iframe instantly so the user sees the post within ~500ms while the
+                    scraper does its work in the background. */}
+                <SocialPreview url={url} />
+
+                {!socialDetected && (
+                  <p className="help-text">
+                    Paste any recipe URL — blogs, YouTube, Instagram, TikTok, and more.
+                    Shortened links (bit.ly, t.co, etc.) are auto-resolved.
+                    Paste multiple URLs to batch-import several recipes at once.
+                  </p>
+                )}
+
+                {/* Batch progress indicator */}
+                {batchProgress && (
+                  <div className="batch-progress">
+                    <div className="batch-progress-header">
+                      <span>Importing {batchProgress.current} of {batchProgress.total} recipes…</span>
+                    </div>
+                    <div className="batch-progress-bar">
+                      <div
+                        className="batch-progress-fill"
+                        style={{ width: `${(batchProgress.current / batchProgress.total) * 100}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Render warmup animation */}
+                {syncPhase === 'warmup' && (
+                  <div className="warmup-phase">
+                    <span className="warmup-label">Preparing your recipe…</span>
+                    <button className="sync-cancel-btn warmup-cancel-btn" onClick={handleCancelImport}>
+                      Cancel
+                    </button>
+                  </div>
+                )}
+
+                {/* Sync import progress */}
+                {syncPhase === 'running' && (
+                  <div className="sync-import-progress">
+                    <div className="sync-import-stages">
+                      {STAGES.map((stage, idx) => (
+                        <div
+                          key={stage.key}
+                          className={`sync-stage${idx < syncStageIdx ? ' sync-stage--done' : ''}${idx === syncStageIdx ? ' sync-stage--active' : ''}`}
+                        >
+                          <span className="sync-stage-dot">
+                            {idx < syncStageIdx ? '✓' : idx === syncStageIdx ? '●' : '○'}
+                          </span>
+                          <span className="sync-stage-label">{stage.label}</span>
+                        </div>
+                      ))}
+                    </div>
+                    <button className="sync-cancel-btn" onClick={handleCancelImport}>
+                      Cancel
+                    </button>
+                  </div>
+                )}
+
+                {/* Success flash */}
+                {syncPhase === 'success' && (
+                  <div className="sync-import-success">
+                    <span className="sync-success-check">✓</span>
+                    <span className="sync-success-label">
+                      {syncSuccessName ? `"${syncSuccessName}" saved!` : 'Recipe saved!'}
+                    </span>
+                  </div>
+                )}
+
+                <button
+                  className="btn-primary"
+                  onClick={handleUrlImport}
+                  disabled={importing || syncPhase === 'running' || syncPhase === 'warmup' || !url.trim()}
+                >
+                  {importing ? (
+                    <><span className="browser-spinner" /> {importProgress || 'Extracting recipe…'}</>
+                  ) : 'Import Recipe'}
+                </button>
+              </div>
+            )}
+
+            {/* ── Paste Text tab (Mealie-style fallback) ────────────────────── */}
+            {mode === 'paste' && (
+              <div className="import-section">
+                <div className="paste-import-banner">
+                  <div className="paste-import-icon">📋</div>
+                  <div>
+                    <strong>Paste Recipe Text</strong>
+                    <p className="help-text" style={{ marginTop: 4 }}>
+                      Copy the recipe caption from Instagram, TikTok, or any source and paste it below.
+                      SpiceHub will detect ingredients and directions automatically.
+                    </p>
+                  </div>
+                </div>
+
+                <textarea
+                  className="paste-textarea full-width"
+                  placeholder={"Paste recipe text here…\n\nExample:\nChicken Stir Fry\n\nIngredients:\n2 chicken breasts, diced\n1 tbsp soy sauce\n...\n\nDirections:\n1. Heat oil in a pan\n2. Cook chicken until golden\n..."}
+                  value={pasteText}
+                  onChange={e => setPasteText(e.target.value)}
+                  rows={10}
+                />
+
+                <input
+                  type="url"
+                  placeholder="Source URL (optional — for your reference)"
+                  value={pasteLink}
+                  onChange={e => setPasteLink(e.target.value)}
+                  className="full-width"
+                  style={{ marginTop: 8 }}
+                />
+
+                <button
+                  className="btn-primary"
+                  onClick={handlePasteImport}
+                  disabled={!pasteText.trim()}
+                  style={{ marginTop: 12 }}
+                >
+                  Parse Recipe
+                </button>
+
+                <p className="help-text" style={{ marginTop: 8 }}>
+                  Tip: Include section headers like "Ingredients:" and "Directions:" for best results.
+                  You can always edit the recipe after importing.
+                </p>
+              </div>
+            )}
+
+            {/* ── Image/Photo OCR tab ─────────────────────────────────────────── */}
+            {mode === 'image' && (
+              <div className="import-section">
+                <div className="image-import-banner">
+                  <div className="image-import-icon">📸</div>
+                  <div>
+                    <strong>Import from Photo</strong>
+                    <p className="help-text" style={{ marginTop: 4 }}>
+                      Take a photo of a recipe card, cookbook page, or screenshot. SpiceHub will read the text and extract the recipe.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Hidden file inputs */}
+                <input
+                  ref={imageRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  className="file-input"
+                />
+                <input
+                  ref={cameraRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handleImageUpload}
+                  className="file-input"
+                />
+
+                {importing ? (
+                  <div className="image-import-progress">
+                    <span className="browser-spinner large" />
+                    <p className="import-progress-text">{importProgress || 'Processing...'}</p>
+                  </div>
+                ) : (
+                  <div className="image-import-buttons">
+                    <button
+                      className="btn-primary"
+                      onClick={() => cameraRef.current?.click()}
+                    >
+                      Take Photo
+                    </button>
+                    <button
+                      className="btn-secondary"
+                      onClick={() => imageRef.current?.click()}
+                    >
+                      Choose from Gallery
+                    </button>
+                  </div>
+                )}
+
+                <p className="help-text" style={{ marginTop: 12 }}>
+                  Works with: recipe index cards, cookbook pages, screenshots of recipes, handwritten recipes (clear print works best).
+                </p>
+              </div>
+            )}
+
+            {/* ── Spreadsheet tab ──────────────────────────────────────────────── */}
+            {mode === 'spreadsheet' && (
+              <div className="import-section">
+                <p className="help-text">
+                  Upload a <strong>CSV</strong> or <strong>Excel</strong> file.
+                  Columns: <code>Name | Ingredients (;-separated) | Directions (;-separated) | Link | Image URL</code>
+                </p>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept=".csv,.tsv,.xlsx,.xls"
+                  onChange={handleFileUpload}
+                  className="file-input"
+                />
+                <button className="btn-secondary" onClick={() => fileRef.current?.click()} disabled={importing}>
+                  {importing ? 'Reading…' : 'Choose File (CSV / Excel)'}
+                </button>
+                <p className="help-text">First row is treated as a header and skipped.</p>
+              </div>
+            )}
+
+            {/* ── Paprika tab ───────────────────────────────────────────────────── */}
+            {mode === 'paprika' && (
+              <div className="import-section paprika-section">
+                <div className="paprika-banner">
+                  <span className="paprika-logo">🌶️</span>
+                  <div>
+                    <strong>Import from Paprika 3</strong>
+                    <p className="help-text" style={{ marginTop: 4 }}>
+                      In Paprika 3, go to <strong>Settings → Export</strong> and choose
+                      <em> Export All Recipes</em> to generate a <code>.paprikarecipes</code> file.
+                      Then choose that file here.
+                    </p>
+                  </div>
+                </div>
+                <input
+                  ref={paprikaRef}
+                  type="file"
+                  accept=".paprikarecipes"
+                  onChange={handlePaprikaUpload}
+                  className="file-input"
+                />
+                <button className="btn-primary paprika-btn" onClick={() => paprikaRef.current?.click()} disabled={importing}>
+                  {importing ? (
+                    <><span className="browser-spinner" /> Parsing Paprika file…</>
+                  ) : (
+                    'Choose .paprikarecipes File'
+                  )}
+                </button>
+                <p className="help-text">
+                  All recipes from the export will be previewed before import. Your existing library is not affected.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
