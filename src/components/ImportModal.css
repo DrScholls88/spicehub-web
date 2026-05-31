@@ -1199,3 +1199,201 @@ button.ip-import-btn {
   transform: scale(0.96);
   background: rgba(230,81,0,.22);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   WIZARD LAYOUT OVERRIDE — fixes the modal-content base styles that fight
+   the flex wizard layout. Must come after all other modal-content rules.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* The modal-content base has overflow-y:auto and padding:20px.
+   The wizard sheet needs overflow:hidden and zero padding so wizard-body
+   can own scrolling and flex children can properly fill height. */
+.modal-content.wizard-sheet {
+  overflow:   hidden !important;
+  padding:    0 !important;
+  height:     92dvh;
+  max-height: 92dvh;
+  display:    flex;
+  flex-direction: column;
+}
+
+/* On very small phones, go full-screen */
+@media (max-height: 620px) {
+  .modal-content.wizard-sheet {
+    height:     100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+  }
+}
+
+/* Step 1 body — scrollable middle that fills remaining height */
+.wizard-step1-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 14px 16px 0;
+}
+.wizard-step1-body::-webkit-scrollbar { width: 0; }
+
+/* Step 1 Import button — pin it to the bottom of the body section
+   so it's always visible and doesn't get pushed off-screen by the social embed */
+.wizard-step1-body .btn-primary:last-child,
+.import-section > .btn-primary:last-of-type {
+  position: sticky;
+  bottom: 0;
+  width: 100%;
+  margin-top: 12px;
+  z-index: 2;
+}
+
+/* ── Segmented source tabs (step 1) ────────────────────────────────────── */
+/* Upgrade the existing import-tabs to match the mockup pill style */
+.import-tabs {
+  display: flex;
+  background: var(--im-surface, #f5f0e8);
+  border-radius: 100px;
+  padding: 4px;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+.import-tabs button {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+  padding: 9px 6px;
+  border-radius: 100px;
+  cursor: pointer;
+  transition: background 180ms cubic-bezier(0.23,1,0.32,1),
+              color 180ms cubic-bezier(0.23,1,0.32,1),
+              transform 100ms;
+  -webkit-tap-highlight-color: transparent;
+  white-space: nowrap;
+}
+.import-tabs button.active {
+  background: #fff;
+  color: var(--im-accent, #e65100);
+  box-shadow: 0 2px 8px rgba(0,0,0,.10);
+}
+.import-tabs button:active { transform: scale(0.95); }
+
+/* Hide the ⋯ overflow button in the segmented tab style */
+.import-tabs-more {
+  font-size: 16px !important;
+  padding: 6px 10px !important;
+  flex: 0 0 auto !important;
+}
+
+/* ── Type pills (Meal / Drink) — single accent ─────────────────────────── */
+.pillrow-type {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.pillrow-type button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 46px;
+  border-radius: 12px;
+  border: 1.5px solid var(--im-border, rgba(0,0,0,.09));
+  background: #fffdf9;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-secondary, #666);
+  cursor: pointer;
+  transition: border-color 180ms, background 180ms, color 180ms;
+}
+.pillrow-type button[aria-pressed="true"] {
+  border-color: var(--im-accent, #e65100);
+  background: rgba(230,81,0,.08);
+  color: #ac1900;
+}
+
+/* ── URL / text inputs ──────────────────────────────────────────────────── */
+.wizard-step1-body input[type="url"],
+.wizard-step1-body input[type="text"],
+.wizard-step1-body textarea {
+  width: 100%;
+  border: 1.5px solid var(--im-border, rgba(0,0,0,.09));
+  border-radius: 12px;
+  padding: 13px 14px;
+  font: inherit;
+  font-size: 15px;
+  background: #fffdf9;
+  transition: border-color 200ms cubic-bezier(0.23,1,0.32,1),
+              box-shadow  200ms cubic-bezier(0.23,1,0.32,1);
+}
+.wizard-step1-body input:focus,
+.wizard-step1-body textarea:focus {
+  outline: none;
+  border-color: var(--im-accent, #e65100);
+  box-shadow: 0 0 0 3px rgba(230,81,0,.12);
+}
+
+/* ── Import section padding cleanup ────────────────────────────────────── */
+.import-section {
+  padding: 0;
+}
+
+/* ── Progress line in step 1 (crossfading single line) ─────────────────── */
+.import-progress-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 0;
+  font-size: 13px;
+  color: var(--im-accent, #e65100);
+  font-weight: 600;
+  min-height: 40px;
+}
+.import-progress-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--im-accent, #e65100);
+  animation: pulseDot 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.7); }
+}
+
+/* ── Step 1 primary import button ─────────────────────────────────────── */
+.btn-primary.ip-import-btn,
+.import-section .btn-primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 15px 20px;
+  border-radius: 100px;
+  border: none;
+  background: var(--im-accent, #e65100);
+  color: #fff;
+  font-weight: 800;
+  font-size: 15px;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(230,81,0,.30);
+  transition: transform 150ms cubic-bezier(0.23,1,0.32,1),
+              box-shadow 150ms cubic-bezier(0.23,1,0.32,1);
+  min-height: 52px;
+  margin-top: 14px;
+}
+.btn-primary.ip-import-btn:active,
+.import-section .btn-primary:active {
+  transform: scale(0.97) translateY(1px);
+  box-shadow: 0 2px 8px rgba(230,81,0,.20);
+}
+.btn-primary.ip-import-btn:disabled,
+.import-section .btn-primary:disabled {
+  background: oklch(65% 0.05 40);
+  box-shadow: none;
+  cursor: not-allowed;
+}
