@@ -1186,7 +1186,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
 
             {/* ── Step 3 wizard footer: Back + Save ─────────────────────────── */}
             <div className="wizard-footer">
-              <button className="wizard-btn-ghost" onClick={() => setWizardStep(2)}>← Back</button>
+              <button className="wizard-btn-ghost" onClick={() => setWizardStep(2)}>{'←'} Back</button>
               <button
                 className="wizard-btn-primary"
                 onClick={() => {
@@ -1199,9 +1199,9 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
             </div>
           </>
         ) : (
-          <div className="import-preview ip-preview-screen wizard-body" style={{ minHeight: 0 }}>
-            <div className="preview-scroll-content" style={{ minHeight: 0 }}>
-              <div className="preview-detail-list">
+          <>
+          <div className="wizard-body wizard-review-step">
+            <div className="preview-detail-list">
                 {preview.map((m, idx) => {
                   return (
                   <div key={idx} className="preview-detail-card">
@@ -1714,7 +1714,7 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
               </button>
             </div>
           </div>
-          {/* end preview-scroll-content */}
+          {/* end wizard-review-step */}
 
         {/* ── Wizard footer: Back ← step 2 | Looks good → step 3 ─────────── */}
         {wizardStep === 2 && (
@@ -1723,13 +1723,13 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
               setPreview(null); setUrl(''); setImporting(false); setImportProgress('');
               setBrowserAssistMode('off'); setBrowserAssistUrl(null); setSocialDetected(null); setError('');
               setWizardStep(1);
-            }}>← Back</button>
+            }}>{'←'} Back</button>
             <button className="wizard-btn-primary" onClick={() => setWizardStep(3)}>
-              Looks good →
+              Looks good {'→'}
             </button>
           </div>
         )}
-      </div>
+      </>
     )) : (
           <div className="wizard-step1-body">
             {/* ── Tab bar — 3 primary + overflow ───────────────────────────── */}
@@ -1770,57 +1770,22 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
             {/* ── URL tab ─────────────────────────────────────────────────────── */}
             {mode === 'url' && (
               <div className="import-section">
-                {/* Drink / Meal type toggle — one tap overrides auto-detect */}
-                <div
-                  className="item-type-toggle"
-                  role="group"
-                  aria-label="Import type"
-                  style={{
-                    display: 'flex',
-                    gap: 8,
-                    marginBottom: 10,
-                    fontSize: 14,
-                    alignItems: 'center',
-                  }}
-                >
-                  <span style={{ opacity: 0.75 }}>Type:</span>
+                {/* Drink / Meal type toggle — single warm-orange accent */}
+                <div className="pillrow-type" role="group" aria-label="Import type">
                   <button
                     type="button"
                     onClick={() => { setItemType('meal'); setItemTypeUserOverride(true); }}
                     aria-pressed={itemType === 'meal'}
-                    style={{
-                      padding: '8px 14px',
-                      borderRadius: 999,
-                      border: itemType === 'meal' ? '2px solid #0ea5e9' : '1px solid rgba(0,0,0,0.15)',
-                      background: itemType === 'meal' ? 'rgba(14,165,233,0.12)' : 'transparent',
-                      fontWeight: itemType === 'meal' ? 600 : 400,
-                      minHeight: 40,
-                      cursor: 'pointer',
-                    }}
                   >
-                    🍽️ Meal
+                    {'🍽️'} Meal
                   </button>
                   <button
                     type="button"
                     onClick={() => { setItemType('drink'); setItemTypeUserOverride(true); }}
                     aria-pressed={itemType === 'drink'}
-                    style={{
-                      padding: '8px 14px',
-                      borderRadius: 999,
-                      border: itemType === 'drink' ? '2px solid #f59e0b' : '1px solid rgba(0,0,0,0.15)',
-                      background: itemType === 'drink' ? 'rgba(245,158,11,0.14)' : 'transparent',
-                      fontWeight: itemType === 'drink' ? 600 : 400,
-                      minHeight: 40,
-                      cursor: 'pointer',
-                    }}
                   >
-                    🍹 Drink
+                    {'🍹'} Drink
                   </button>
-                  {!itemTypeUserOverride && url.trim() && (
-                    <span style={{ marginLeft: 'auto', fontSize: 12, opacity: 0.65 }}>
-                      auto
-                    </span>
-                  )}
                 </div>
                 <input
                   type="url"
@@ -1843,10 +1808,25 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                   </div>
                 )}
 
-                {/* Live embed preview — renders the official IG/TikTok/YT/FB/X/Pinterest
-                    iframe instantly so the user sees the post within ~500ms while the
-                    scraper does its work in the background. */}
-                <SocialPreview url={url} />
+                {/* Collapsed social preview card — tap to expand embed.
+                    Keeps the Import button on-screen instead of pushing it off. */}
+                {socialDetected && url && (
+                  <div className="social-collapse-card">
+                    <button className="social-collapse-trigger" onClick={() => setShowSocialPreview(p => !p)}>
+                      <div className="social-collapse-icon">
+                        {socialDetected.platform === 'Instagram' ? '📷' :
+                         socialDetected.platform === 'TikTok' ? '🎵' :
+                         socialDetected.platform === 'YouTube' ? '▶' : '🔗'}
+                      </div>
+                      <div className="social-collapse-meta">
+                        <strong>{socialDetected.platform} post detected</strong>
+                        <span>{showSocialPreview ? 'Tap to hide preview' : 'Tap to preview'} {'▸'}</span>
+                      </div>
+                      <span className="social-collapse-chev">{showSocialPreview ? '▾' : '▸'}</span>
+                    </button>
+                    {showSocialPreview && <SocialPreview url={url} />}
+                  </div>
+                )}
 
                 {!socialDetected && (
                   <p className="help-text">
