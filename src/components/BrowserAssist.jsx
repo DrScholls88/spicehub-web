@@ -261,7 +261,7 @@ const toggleDeepMode = () => {
         if (isInsta) {
           // If ImportModal already ran the pipeline and captured the caption,
           // skip the redundant second Apify/embed run and go straight to structuring.
-          const seededCaption = seed?._skipPipelineIfCaption ? (seed?.capturedCaption || '') : '';
+          const seededCaption = seedRecipe?._skipPipelineIfCaption ? (seedRecipe?.capturedCaption || '') : '';
           if (seededCaption && seededCaption.trim().length > 20) {
             setPipelineMessage('Caption captured — structuring with AI...');
             setPipelineSteps([
@@ -272,16 +272,16 @@ const toggleDeepMode = () => {
             ]);
             try {
               const fastRecipe = await captionToRecipe(seededCaption, {
-                title: seed?.capturedTitle || '',
-                imageUrl: seed?.capturedImageUrl || seed?.imageUrl || '',
+                title: seedRecipe?.capturedTitle || '',
+                imageUrl: seedRecipe?.capturedImageUrl || seedRecipe?.imageUrl || '',
                 sourceUrl: url,
                 type,
               });
               if (!cancelled && fastRecipe && (fastRecipe.ingredients?.length || fastRecipe.directions?.length)) {
                 setAutoRecipe(cleanRecipe({
                   ...fastRecipe,
-                  name: fastRecipe.name || seed?.capturedTitle || fastRecipe.name,
-                  imageUrl: seed?.capturedImageUrl || seed?.imageUrl || fastRecipe.imageUrl,
+                  name: fastRecipe.name || seedRecipe?.capturedTitle || fastRecipe.name,
+                  imageUrl: seedRecipe?.capturedImageUrl || seedRecipe?.imageUrl || fastRecipe.imageUrl,
                 }));
                 setPhase('preview');
                 return;
@@ -1739,7 +1739,7 @@ const toggleDeepMode = () => {
                 ✅ Use Auto-Result
               </button>
             )}
-            <button className="btn-secondary" onClick={onFallbackToText} disabled={phase === 'extracting'}>â† Back</button>
+            <button className="btn-secondary" onClick={onFallbackToText} disabled={phase === 'extracting'}>← Back</button>
           </div>
         </div>
       )}
@@ -1748,12 +1748,12 @@ const toggleDeepMode = () => {
       {phase === 'error' && (
         <div className="browser-assist-error">
           <p className="error-text">{errorMsg}</p>
-          <button className="btn-primary" onClick={onFallbackToText}>â† Back to Import</button>
+          <button className="btn-primary" onClick={onFallbackToText}>← Back to Import</button>
         </div>
       )}
     </div>
   );
-}); // â† closes forwardRef(function BrowserAssist(...) {
+}); // ← closes forwardRef(function BrowserAssist(...) {
 
 export default BrowserAssist;
 
