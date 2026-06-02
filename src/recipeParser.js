@@ -4680,7 +4680,7 @@ export async function resolveShortUrl(url) {
  *   status: 'running' | 'done' | 'failed' | 'skipped' | 'pending'
  * @returns {Object} Structured recipe or { _needsManualCaption: true }
  */
-export async function importFromInstagram(url, onProgress = () => {}, { type = 'meal' } = {}) {
+export async function importFromInstagram(url, onProgress = () => {}, { type = 'meal', signal } = {}) {
   url = cleanUrl(url);
   const progress = (phase, status, msg) => onProgress(phase, status, msg);
 
@@ -5096,4 +5096,3 @@ export function detectImportType(url = '', initialText = '') {
   // Default fallback
   return 'meal';
 }
-
