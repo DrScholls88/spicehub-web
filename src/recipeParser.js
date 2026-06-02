@@ -386,8 +386,11 @@ export function cleanSocialCaption(text) {
   if (!text || typeof text !== 'string') return '';
   let t = text;
 
-  // 1. Strip trailing hashtag blocks (3+ hashtags at end of post)
-  t = t.replace(/(\n\s*)(#[\w.]+\s*){3,}[\s\S]*$/m, '');
+  // 1. Strip hashtag-only lines (3+ hashtags on one line).
+  //    OLD regex used [\s\S]*$ which ate everything AFTER the hashtags —
+  //    catastrophic when hashtags sit BEFORE the recipe section in IG captions.
+  //    New: only strip the hashtag line(s) themselves, not content that follows.
+  t = t.replace(/^[ \t]*(#[\w.]+[ \t]*){3,}$/gm, '');
 
   // 2. Strip engagement bait whole lines
   const BAIT_LINES = [
