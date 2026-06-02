@@ -439,9 +439,20 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
         try { resolvedUrl = await resolveShortUrl(resolvedUrl); } catch {}
       }
 
-      // 2. Single unified entry point — the engine handles social vs. blog,
-      //    proxy fetch, JSON-LD parsing, Instagram phases, and the global timeout.
-      //    We branch purely on the documented return shape.
+      // 2. Social media → direct to BrowserAssist (its own optimised pipeline).
+      //    This is the pattern from e792c8f/1682ed0 that worked reliably.
+      //    BrowserAssist runs importFromInstagram internally with live progress,
+      //    and falls to iframe on failure — no manual paste ever shown.
+      if (isSocialMediaUrl(resolvedUrl)) {
+        setImporting(false);
+        setImportProgress('');
+        setBrowserAssistUrl(resolvedUrl);
+        setBrowserAssistMode('showing');
+        return;
+      }
+
+      // 3. Non-social URLs — run through the unified engine (JSON-LD, CORS proxy,
+      //    server extraction, Gemini structuring, global 45s timeout).
       const result = await importRecipeFromUrl(resolvedUrl, (msg) => {
         if (!signal.aborted && msg) setImportProgress(friendlyProgress(msg));
       }, { type: itemType, signal });
@@ -450,21 +461,17 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       // reset the UI; swallow whatever came back.
       if (signal.aborted) return;
 
-      // 2a. Engine needs the in-app browser (social / visual parsing required).
+      // 3a. Engine needs the in-app browser (non-social fallback for weak results).
       if (result && result._needsBrowserAssist) {
         setImporting(false);
         setImportProgress('');
         setBrowserAssistUrl(result.url || resolvedUrl);
         setBrowserAssistMode('showing');
-        setBrowserAssistSeed({
-          ...(browserAssistSeed || {}),
+        setBrowserAssistSeed(result && !result._error ? {
           imageUrl: result.capturedImageUrl || bestImage || undefined,
-          capturedCaption: result.capturedCaption || undefined,
-          capturedTitle:   result.capturedTitle   || undefined,
-          _source: result.type || (isSocialMediaUrl(resolvedUrl) ? 'instagram' : 'web'),
-          // Signal BrowserAssist that it can skip the full pipeline if caption is present
-          _skipPipelineIfCaption: !!result.capturedCaption,
-        });
+          capturedTitle: result.capturedTitle || undefined,
+          _source: 'web',
+        } : null);
         return;
       }
 

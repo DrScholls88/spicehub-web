@@ -263,7 +263,7 @@ const toggleDeepMode = () => {
           // skip the redundant second Apify/embed run and go straight to structuring.
           const seededCaption = seedRecipe?._skipPipelineIfCaption ? (seedRecipe?.capturedCaption || '') : '';
           if (seededCaption && seededCaption.trim().length > 20) {
-            setPipelineMessage('Caption captured — structuring with AI...');
+            setPipelineMessage('Caption captured — structuring...');
             setPipelineSteps([
               { label: 'Video subtitles', status: 'skipped',  message: 'Skipped' },
               { label: 'Caption fetch',   status: 'done',     message: 'Pre-captured ✔' },
@@ -286,13 +286,13 @@ const toggleDeepMode = () => {
                 setPhase('preview');
                 return;
               }
-            } catch { /* fall through to full pipeline */ }
-            // Structuring failed — show pre-filled manual textarea
-            setManualText(seededCaption);
-            setPipelineMessage('AI structuring unavailable — tap "Parse Recipe" to use heuristics.');
-            setPipelineSteps(prev => prev.map((s, i) => i === 3 ? { ...s, status: 'failed', message: 'AI unavailable' } : s));
-            setPhase('manual');
-            return;
+            } catch { /* fall through to full pipeline below */ }
+            // Structuring failed — do NOT show manual paste.
+            // Fall through to the full importFromInstagram pipeline below,
+            // which will eventually show the iframe for manual aiming.
+            setPipelineSteps(prev => prev.map((s, i) => i === 3 ? { ...s, status: 'failed', message: 'Retrying...' } : s));
+            setPipelineMessage('Trying deeper extraction...');
+            // Don't return — let it fall through to the full pipeline
           }
 
           // Initialise pipeline steps for display (Phase 0 and 2 are known-skipped)
@@ -325,15 +325,10 @@ const toggleDeepMode = () => {
             return;
           }
 
-          // All phases exhausted — show manual paste fallback.
-          // If we DID capture a caption (embed worked but AI structuring failed),
-          // pre-fill the textarea so the user can parse with one click instead of
-          // re-pasting the whole post caption manually.
+          // All phases exhausted — never show manual paste.
+          // If we have a captured caption, try one last heuristic parse.
+          // Otherwise fall to error with a "Try a different URL" recovery.
           if (result?.capturedCaption && result.capturedCaption.trim().length > 20) {
-            setManualText(result.capturedCaption);
-            setPipelineMessage('Caption captured! AI structuring failed — tap "Parse Recipe" to retry.');
-            // Auto-trigger the heuristic parse immediately so user doesn't have
-            // to do anything — they'll see the preview or a helpful error.
             try {
               const autoParseRecipe = await captionToRecipe(result.capturedCaption, {
                 title: result.capturedTitle || '',
@@ -346,11 +341,11 @@ const toggleDeepMode = () => {
                 setPhase('preview');
                 return;
               }
-            } catch { /* heuristic parse failed — fall through to manual */ }
-          } else {
-            setPipelineMessage('Could not extract recipe — please paste the caption manually.');
+            } catch { /* heuristic parse also failed */ }
           }
-          setPhase('manual');
+          // Final fallback: show error with recovery action (back to import)
+          setErrorMsg('Could not extract this recipe automatically. Try a different URL or use Paste Text.');
+          setPhase('error');
           return;
         }
 
