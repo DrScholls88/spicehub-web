@@ -11,11 +11,11 @@ import {
   structureRecipeFromImage,
 } from '../recipeParser.js';
 import BrowserAssist from './BrowserAssist';
+import SafeMediaImage from './SafeMediaImage';
 import { normalizeInstagramUrl, fetchHtmlViaProxy, cleanUrl } from '../api.js';
 import db from '../db.js';
 import { shaHex } from '../shaHex.js';
 import {
-  InstagramEmbed,
   TikTokEmbed,
   YouTubeEmbed,
   FacebookEmbed,
@@ -56,7 +56,12 @@ function SocialPreview({ url }) {
   );
 
   if (host.includes('instagram.com')) {
-    return wrap(<InstagramEmbed url={url} width="100%" captioned />);
+    return wrap(
+      <div className="social-embed-static">
+        <strong>Instagram post detected</strong>
+        <span>Preview opens in the import browser after scanning.</span>
+      </div>
+    );
   }
   if (host.includes('tiktok.com')) {
     return wrap(<TikTokEmbed url={url} width="100%" />);
@@ -1144,7 +1149,12 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                     {/* Compact summary card */}
                     <div className="save-summary-card">
                       {m?.imageUrl ? (
-                        <div className="save-summary-thumb" style={{ backgroundImage: `url(${m.imageUrl})` }} />
+                        <SafeMediaImage
+                          src={m.imageUrl}
+                          alt=""
+                          className="save-summary-thumb"
+                          fallbackEmoji={previewLooksDrink ? '🍸' : '🍽️'}
+                        />
                       ) : (
                         <div className="save-summary-thumb save-summary-thumb--empty">
                           {previewLooksDrink ? '🍸' : '🍽️'}
@@ -1223,21 +1233,11 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
                     const confLabel = conf >= 70 ? '✓ High confidence' : conf >= 40 ? '◎ Good match' : '⚠ Low confidence';
                     return m.imageUrl ? (
                       <div className="review-hero">
-                        <img
+                        <SafeMediaImage
                           src={m.imageUrl}
+                          fallbackEmoji={previewLooksDrink ? '🍸' : '🍽️'}
                           alt=""
                           className="review-hero-img"
-                          onError={e => {
-                            const attempt = parseInt(e.target.dataset.proxied || '0');
-                            const enc = encodeURIComponent(m.imageUrl);
-                            const proxies = [
-                              `https://images.weserv.nl/?url=${enc}&w=800&output=jpg&q=85`,
-                              `https://corsproxy.io/?url=${enc}`,
-                              `https://api.allorigins.win/raw?url=${enc}`,
-                            ];
-                            if (attempt < proxies.length) { e.target.dataset.proxied = String(attempt + 1); e.target.src = proxies[attempt]; }
-                            else e.target.style.display = 'none';
-                          }}
                         />
                         <div className="review-hero-grad" />
                         <span className={`review-conf-chip review-conf-${confLevel}`}>{confLabel}</span>

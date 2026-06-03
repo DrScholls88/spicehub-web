@@ -90,6 +90,7 @@ export default function SafeMediaImage({ src, alt, style, fallbackEmoji = '🍳'
   if (hasError || !imgSrc) {
     return (
       <div
+        {...props}
         style={{
           ...style,
           display: 'flex',
@@ -192,6 +193,7 @@ function ProxiedImage({ src, originalSrc, alt, style, fallbackEmoji, onFinalErro
   if (failed || !dataUrl) {
     return (
       <div
+        {...props}
         style={{
           ...style,
           display: 'flex',

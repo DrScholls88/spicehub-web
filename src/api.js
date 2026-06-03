@@ -634,9 +634,9 @@ async function _blobToValidatedDataUrl(resp, { maxBytes = 2 * 1024 * 1024, minBy
 }
 
 /**
- * Generic image downloader — works for any host. Tries direct fetch first
- * (cheapest, may succeed for CORS-friendly hosts), then falls back through the
- * proxy cascade. Returns a base64 data URL on success, or `null` on failure.
+ * Generic image downloader — works for any host. For Instagram/Meta CDN URLs,
+ * skip browser direct fetch and start with the same-origin proxy/weserv path so
+ * Workbox and browser CORS never see the expiring raw URL.
  *
  * Use this for ephemeral CDN URLs that may 403/expire (Instagram, TikTok, FB, Pinterest).
  * For already-persistent images (recipe blog hero images, data URLs) prefer
@@ -654,25 +654,28 @@ export async function downloadImageAsDataUrl(imageUrl, opts = {}) {
   const { timeoutMs = 9000, maxBytes = 5 * 1024 * 1024, signal } = opts; // 5MB — Instagram images can be large
   if (signal?.aborted) return null;
   const cleanedImageUrl = cleanUrl(imageUrl);
+  const isInstaCdn = isInstagramCdnUrl(cleanedImageUrl) || /instagram|fbcdn|cdninstagram|scontent/i.test(cleanedImageUrl);
 
-  // Try direct fetch first (may succeed for CORS-friendly hosts). Follow
-  // redirects (CDN URLs often 30x to a signed edge); validate it's actually an
-  // image inside _blobToValidatedDataUrl (content-type + magic-byte sniff).
-  try {
-    const att = _attemptSignal(Math.round(timeoutMs / 2), signal);
-    let resp;
+  if (!isInstaCdn) {
+    // Try direct fetch first for CORS-friendly hosts. Instagram/Meta CDN is
+    // intentionally excluded because it produces noisy 403/CORS failures in
+    // production and is already handled by the proxy cascade below.
     try {
-      resp = await fetch(cleanedImageUrl, {
-        signal: att.signal,
-        headers: { 'Accept': 'image/*' },
-        redirect: 'follow',
-      });
-    } finally {
-      att.cleanup();
-    }
-    const dataUrl = await _blobToValidatedDataUrl(resp, { maxBytes });
-    if (dataUrl) return dataUrl;
-  } catch { if (signal?.aborted) return null; /* fall through to proxy */ }
+      const att = _attemptSignal(Math.round(timeoutMs / 2), signal);
+      let resp;
+      try {
+        resp = await fetch(cleanedImageUrl, {
+          signal: att.signal,
+          headers: { 'Accept': 'image/*' },
+          redirect: 'follow',
+        });
+      } finally {
+        att.cleanup();
+      }
+      const dataUrl = await _blobToValidatedDataUrl(resp, { maxBytes });
+      if (dataUrl) return dataUrl;
+    } catch { if (signal?.aborted) return null; /* fall through to proxy */ }
+  }
 
   if (signal?.aborted) return null;
 
@@ -697,7 +700,6 @@ export async function downloadImageAsDataUrl(imageUrl, opts = {}) {
 
   // weserv.nl — reliable image proxy that strips auth tokens and re-serves the image.
   // Particularly good for Instagram CDN URLs whose signed tokens have expired.
-  const isInstaCdn = /instagram|fbcdn|cdninstagram|scontent/i.test(cleanedImageUrl);
   if (isInstaCdn) {
     try {
       const weservUrl = `https://images.weserv.nl/?url=${encodeURIComponent(cleanedImageUrl)}&w=1200&output=jpg&q=85`;
