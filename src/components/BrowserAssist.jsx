@@ -22,6 +22,7 @@ import {
 import { fetchHtmlViaProxy, proxyImageUrl, cleanUrl } from '../api';
 import { queueRecipeImport } from '../db';
 import useOnlineStatus from '../hooks/useOnlineStatus';
+import SafeMediaImage from './SafeMediaImage';
 
 
 /**
@@ -1264,25 +1265,11 @@ const toggleDeepMode = () => {
       if (!displayImage) return null;
 
       return (
-        <img 
-          src={displayImage} 
-          alt="" 
-          className="preview-detail-thumb" 
-          onError={e => {
-            const attempt = parseInt(e.target.dataset.proxied || '0');
-            const enc = encodeURIComponent(displayImage);
-            const proxies = [
-              `https://images.weserv.nl/?url=${enc}&w=600&output=jpg&q=85`,
-              `https://corsproxy.io/?url=${enc}`,
-              `https://api.allorigins.win/raw?url=${enc}`,
-            ];
-            if (attempt < proxies.length) {
-              e.target.dataset.proxied = String(attempt + 1);
-              e.target.src = proxies[attempt];
-            } else {
-              e.target.style.display = 'none';
-            }
-          }} 
+        <SafeMediaImage
+          src={displayImage}
+          alt=""
+          className="preview-detail-thumb"
+          fallbackEmoji="🍽️"
         />
       );
     })()}

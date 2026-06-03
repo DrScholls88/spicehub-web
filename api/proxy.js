@@ -29,6 +29,19 @@ const USER_AGENTS = [
   'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
 ];
 
+function arrayBufferToBase64(buffer) {
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(buffer).toString('base64');
+  }
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
 function cleanUrl(input = '') {
   if (typeof input !== 'string') return '';
   let url = input.trim();
@@ -199,9 +212,9 @@ export default async function handler(req) {
           });
         }
       }
-      // Use Buffer.from for reliable base64 encoding in Node/Edge environments
-      // (Array.from + btoa can silently fail on large binary buffers)
-      const base64 = Buffer.from(bytes).toString('base64');
+      // Convert without spreading the full buffer. Node functions use Buffer;
+      // Edge falls back to chunked btoa to avoid call-stack overflows.
+      const base64 = arrayBufferToBase64(bytes);
       const dataUrl = `data:${contentType.split(';')[0]};base64,${base64}`;
       return new Response(JSON.stringify({ dataUrl }), {
         status: 200,
