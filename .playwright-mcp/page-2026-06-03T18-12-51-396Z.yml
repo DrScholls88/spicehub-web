@@ -1,0 +1,66 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - heading "SpiceHub" [level=1] [ref=e6]
+      - paragraph [ref=e7]:
+        - text: Meal Spinner
+        - generic [ref=e8]: v1.0.262
+    - generic [ref=e9]:
+      - button "🧊" [ref=e10] [cursor=pointer]
+      - button "📊" [ref=e11] [cursor=pointer]
+      - button "💾" [ref=e12] [cursor=pointer]
+      - button "⚙️" [ref=e13] [cursor=pointer]
+  - main [ref=e14]:
+    - generic [ref=e15]:
+      - generic [ref=e17]:
+        - heading "Good afternoon! 🌤️" [level=1] [ref=e18]
+        - paragraph [ref=e19]: Wed, June 3 • Ready to spin?
+        - button "Spin the Week 🎲" [ref=e21] [cursor=pointer]:
+          - text: Spin the Week
+          - generic [ref=e22]: 🎲
+      - generic [ref=e23]:
+        - generic [ref=e24]: Next 5 Days
+        - generic [ref=e25]:
+          - generic [ref=e26]: Nothing planned — let's spin!
+          - button "Spin the Wheel" [ref=e27] [cursor=pointer]
+      - generic [ref=e28]:
+        - button "🎲 The Rotation Set up your meals" [ref=e29] [cursor=pointer]:
+          - generic [ref=e31]: 🎲
+          - generic [ref=e32]: The Rotation
+          - generic [ref=e33]: Set up your meals
+        - button "📓 My Meals 0 recipes saved" [ref=e34] [cursor=pointer]:
+          - generic [ref=e36]: 📓
+          - generic [ref=e37]: My Meals
+          - generic [ref=e38]: 0 recipes saved
+        - button "🍸 Bar Shelf 0 drinks saved" [ref=e39] [cursor=pointer]:
+          - generic [ref=e41]: 🍸
+          - generic [ref=e42]: Bar Shelf
+          - generic [ref=e43]: 0 drinks saved
+        - button "🛒 Grocery List Build shopping list" [ref=e44] [cursor=pointer]:
+          - generic [ref=e46]: 🛒
+          - generic [ref=e47]: Grocery List
+          - generic [ref=e48]: Build shopping list
+        - button "🧊 Fridge Mode What can I make?" [ref=e49] [cursor=pointer]:
+          - generic [ref=e51]: 🧊
+          - generic [ref=e52]: Fridge Mode
+          - generic [ref=e53]: What can I make?
+        - button "📊 Stats Track your cooking" [ref=e54] [cursor=pointer]:
+          - generic [ref=e56]: 📊
+          - generic [ref=e57]: Stats
+          - generic [ref=e58]: Track your cooking
+  - navigation [ref=e59]:
+    - button "🏠 Home" [ref=e60] [cursor=pointer]:
+      - generic [ref=e61]: 🏠
+      - generic [ref=e62]: Home
+    - button "📅 Plan" [ref=e63] [cursor=pointer]:
+      - generic [ref=e64]: 📅
+      - generic [ref=e65]: Plan
+    - button "🍳 Meals" [ref=e66] [cursor=pointer]:
+      - generic [ref=e67]: 🍳
+      - generic [ref=e68]: Meals
+    - button "🍹 Bar" [ref=e69] [cursor=pointer]:
+      - generic [ref=e70]: 🍹
+      - generic [ref=e71]: Bar
+    - button "🛒 Shop" [ref=e72] [cursor=pointer]:
+      - generic [ref=e73]: 🛒
+      - generic [ref=e74]: Shop

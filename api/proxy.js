@@ -13,14 +13,7 @@ export const config = {
 };
 
 // Sites known to require special handling
-const INSTAGRAM_HOST = /instagram\.com|cdninstagram\.com|fbcdn\.net|scontent/i;
-// Broader social/video host set — these reject bot-like headers and benefit
-// from a realistic Referer so the origin treats us like an organic visitor.
-const SOCIAL_HOST = /instagram\.com|cdninstagram\.com|fbcdn\.net|scontent|tiktok\.com|facebook\.com|fb\.watch|pinterest\.|youtube\.com|youtu\.be/i;
-
-// Hard cap on HTML body we forward — protects the (memory-limited) edge function
-// from pathological pages and keeps responses bounded. 4MB is ample for HTML.
-const MAX_HTML_BYTES = 4 * 1024 * 1024;
+const INSTAGRAM_HOST = /instagram\.com/i;
 
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -28,19 +21,6 @@ const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0',
   'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
 ];
-
-function arrayBufferToBase64(buffer) {
-  if (typeof Buffer !== 'undefined') {
-    return Buffer.from(buffer).toString('base64');
-  }
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  const chunkSize = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-  return btoa(binary);
-}
 
 function cleanUrl(input = '') {
   if (typeof input !== 'string') return '';
@@ -60,7 +40,6 @@ function cleanUrl(input = '') {
  */
 function buildHeaders(targetUrl) {
   const isInsta = INSTAGRAM_HOST.test(targetUrl);
-  const isSocial = SOCIAL_HOST.test(targetUrl);
   // Rotate UA every ~15 minutes to break bot-wall fingerprinting
   const ua = USER_AGENTS[Math.floor(Date.now() / 900000) % USER_AGENTS.length];
 
@@ -81,15 +60,6 @@ function buildHeaders(targetUrl) {
 
   if (isInsta) {
     base['Referer'] = 'https://www.instagram.com/';
-    base['sec-ch-ua'] = '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"';
-    base['sec-ch-ua-mobile'] = '?0';
-    base['sec-ch-ua-platform'] = '"Windows"';
-  } else if (isSocial) {
-    // Other social/video hosts: a same-origin Referer makes the request look
-    // like an in-site navigation rather than a cold bot hit.
-    try {
-      base['Referer'] = `${new URL(targetUrl).origin}/`;
-    } catch { /* leave Referer unset on unparseable URLs */ }
     base['sec-ch-ua'] = '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"';
     base['sec-ch-ua-mobile'] = '?0';
     base['sec-ch-ua-platform'] = '"Windows"';
@@ -161,69 +131,31 @@ export default async function handler(req) {
       });
     }
     try {
-      const isInstaCdn = /instagram|fbcdn|cdninstagram|scontent/i.test(parsed.href);
-      // Use image-appropriate Sec-Fetch headers — Instagram CDN rejects document/navigate
-      const imageHeaders = {
-        ...buildHeaders(parsed.href),
-        Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-        // Override the document-fetch Sec-Fetch-* that buildHeaders adds
-        'Sec-Fetch-Dest': 'image',
-        'Sec-Fetch-Mode': 'no-cors',
-        'Sec-Fetch-Site': isInstaCdn ? 'cross-site' : 'same-site',
-        // Instagram CDN requires these to not block the request
-        ...(isInstaCdn && {
-          'Referer': 'https://www.instagram.com/',
-          'Origin': 'https://www.instagram.com',
-        }),
-      };
-      // Remove headers that browsers wouldn't send for img src requests
-      delete imageHeaders['Upgrade-Insecure-Requests'];
-      delete imageHeaders['Sec-Fetch-User'];
-
-      const resp = await fetch(parsed.href, { headers: imageHeaders });
+      const resp = await fetch(parsed.href, {
+        headers: {
+          ...buildHeaders(parsed.href),
+          Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        },
+      });
       if (!resp.ok) {
         return new Response(JSON.stringify({ error: 'Image fetch failed', status: resp.status }), {
           status: resp.status,
           headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         });
       }
-      let contentType = resp.headers.get('content-type') || 'image/jpeg';
+      const contentType = resp.headers.get('content-type') || 'image/jpeg';
       const bytes = await resp.arrayBuffer();
-      // Raise size cap to 5MB — Instagram carousel images can be large
-      if (bytes.byteLength < 100 || bytes.byteLength > 5 * 1024 * 1024) {
-        return new Response(JSON.stringify({ error: 'Image size rejected', bytes: bytes.byteLength }), {
+      if (bytes.byteLength < 100 || bytes.byteLength > 3 * 1024 * 1024) {
+        return new Response(JSON.stringify({ error: 'Image size rejected' }), {
           status: 422,
           headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         });
       }
-      // Magic-byte sniffing — some CDNs strip or mangle Content-Type
-      if (!contentType.startsWith('image/')) {
-        const head = new Uint8Array(bytes.slice(0, 4));
-        const isJpeg = head[0] === 0xFF && head[1] === 0xD8;
-        const isPng  = head[0] === 0x89 && head[1] === 0x50;
-        const isWebp = head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46;
-        if (isJpeg) contentType = 'image/jpeg';
-        else if (isPng) contentType = 'image/png';
-        else if (isWebp) contentType = 'image/webp';
-        else {
-          return new Response(JSON.stringify({ error: 'Not a recognized image format', head: Array.from(head) }), {
-            status: 422,
-            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-          });
-        }
-      }
-      // Convert without spreading the full buffer. Node functions use Buffer;
-      // Edge falls back to chunked btoa to avoid call-stack overflows.
-      const base64 = arrayBufferToBase64(bytes);
-      const dataUrl = `data:${contentType.split(';')[0]};base64,${base64}`;
+      const binary = Array.from(new Uint8Array(bytes), (b) => String.fromCharCode(b)).join('');
+      const dataUrl = `data:${contentType.split(';')[0]};base64,${btoa(binary)}`;
       return new Response(JSON.stringify({ dataUrl }), {
         status: 200,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-          // Cache aggressively — once we have the data URL, it's self-contained
-          'Cache-Control': 'public, max-age=86400, s-maxage=86400',
-        },
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
     } catch (e) {
       return new Response(JSON.stringify({ error: e.message }), {
