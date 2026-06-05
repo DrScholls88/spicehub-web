@@ -1,0 +1,57 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - generic [ref=e5]:
+      - heading "SpiceHub" [level=1] [ref=e6]
+      - paragraph [ref=e7]:
+        - text: Meal Spinner
+        - generic [ref=e8]: v1.0.262
+    - generic [ref=e9]:
+      - button "🧊" [ref=e10] [cursor=pointer]
+      - button "📊" [ref=e11] [cursor=pointer]
+      - button "💾" [ref=e12] [cursor=pointer]
+      - button "⚙️" [ref=e13] [cursor=pointer]
+  - generic [ref=e76]:
+    - generic [ref=e77]: Add SpiceHub to your home screen
+    - generic [ref=e78]:
+      - button "Install" [ref=e79] [cursor=pointer]
+      - button "Dismiss install banner" [ref=e80] [cursor=pointer]: ✕
+  - main [ref=e14]:
+    - generic [ref=e81]:
+      - textbox "Search meals..." [ref=e83]
+      - generic [ref=e85]:
+        - button "All" [ref=e86] [cursor=pointer]: All
+        - button "🔄 The Rotation" [ref=e88] [cursor=pointer]
+        - button "Dinners" [ref=e89] [cursor=pointer]
+        - button "Breakfasts" [ref=e90] [cursor=pointer]
+        - button "Lunches" [ref=e91] [cursor=pointer]
+        - button "Desserts" [ref=e92] [cursor=pointer]
+        - button "Sides" [ref=e93] [cursor=pointer]
+        - button "Tailgate" [ref=e94] [cursor=pointer]
+        - button "Snacks" [ref=e95] [cursor=pointer]
+      - generic [ref=e97]:
+        - generic [ref=e98]: 🍽️
+        - paragraph [ref=e99]: No meals yet. Add some recipes to get started!
+        - button "Import a Recipe" [ref=e100] [cursor=pointer]
+      - generic [ref=e101]:
+        - button "📥 Import" [ref=e102] [cursor=pointer]:
+          - generic [ref=e103]: 📥
+          - generic [ref=e104]: Import
+        - button "+" [ref=e105] [cursor=pointer]:
+          - generic [ref=e106]: +
+      - button "···" [ref=e107] [cursor=pointer]
+  - navigation [ref=e59]:
+    - button "🏠 Home" [ref=e60] [cursor=pointer]:
+      - generic [ref=e61]: 🏠
+      - generic [ref=e62]: Home
+    - button "📅 Plan" [ref=e63] [cursor=pointer]:
+      - generic [ref=e64]: 📅
+      - generic [ref=e65]: Plan
+    - button "🍳 Meals" [active] [ref=e66] [cursor=pointer]:
+      - generic [ref=e67]: 🍳
+      - generic [ref=e68]: Meals
+    - button "🍹 Bar" [ref=e69] [cursor=pointer]:
+      - generic [ref=e70]: 🍹
+      - generic [ref=e71]: Bar
+    - button "🛒 Shop" [ref=e72] [cursor=pointer]:
+      - generic [ref=e73]: 🛒
+      - generic [ref=e74]: Shop

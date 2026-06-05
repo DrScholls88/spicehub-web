@@ -22,7 +22,6 @@ import {
 import { fetchHtmlViaProxy, proxyImageUrl, cleanUrl } from '../api';
 import { queueRecipeImport } from '../db';
 import useOnlineStatus from '../hooks/useOnlineStatus';
-import SafeMediaImage from './SafeMediaImage';
 
 
 /**
@@ -260,42 +259,6 @@ const toggleDeepMode = () => {
         // Pipeline steps map to: Phase 0 = video subs, Phase 1 = embed,
         // Phase 2 = server browser assist, Phase 3 = Gemini structuring.
         if (isInsta) {
-          // If ImportModal already ran the pipeline and captured the caption,
-          // skip the redundant second Apify/embed run and go straight to structuring.
-          const seededCaption = seedRecipe?._skipPipelineIfCaption ? (seedRecipe?.capturedCaption || '') : '';
-          if (seededCaption && seededCaption.trim().length > 20) {
-            setPipelineMessage('Caption captured — structuring...');
-            setPipelineSteps([
-              { label: 'Video subtitles', status: 'skipped',  message: 'Skipped' },
-              { label: 'Caption fetch',   status: 'done',     message: 'Pre-captured ✔' },
-              { label: 'AI browser',      status: 'skipped',  message: 'Skipped' },
-              { label: 'AI structuring',  status: 'running',  message: 'Structuring...' },
-            ]);
-            try {
-              const fastRecipe = await captionToRecipe(seededCaption, {
-                title: seedRecipe?.capturedTitle || '',
-                imageUrl: seedRecipe?.capturedImageUrl || seedRecipe?.imageUrl || '',
-                sourceUrl: url,
-                type,
-              });
-              if (!cancelled && fastRecipe && (fastRecipe.ingredients?.length || fastRecipe.directions?.length)) {
-                setAutoRecipe(cleanRecipe({
-                  ...fastRecipe,
-                  name: fastRecipe.name || seedRecipe?.capturedTitle || fastRecipe.name,
-                  imageUrl: seedRecipe?.capturedImageUrl || seedRecipe?.imageUrl || fastRecipe.imageUrl,
-                }));
-                setPhase('preview');
-                return;
-              }
-            } catch { /* fall through to full pipeline below */ }
-            // Structuring failed — do NOT show manual paste.
-            // Fall through to the full importFromInstagram pipeline below,
-            // which will eventually show the iframe for manual aiming.
-            setPipelineSteps(prev => prev.map((s, i) => i === 3 ? { ...s, status: 'failed', message: 'Retrying...' } : s));
-            setPipelineMessage('Trying deeper extraction...');
-            // Don't return — let it fall through to the full pipeline
-          }
-
           // Initialise pipeline steps for display (Phase 0 and 2 are known-skipped)
           setPipelineSteps([
             { label: 'Video subtitles', status: 'pending', message: '' },
@@ -326,10 +289,15 @@ const toggleDeepMode = () => {
             return;
           }
 
-          // All phases exhausted — never show manual paste.
-          // If we have a captured caption, try one last heuristic parse.
-          // Otherwise fall to error with a "Try a different URL" recovery.
+          // All phases exhausted — show manual paste fallback.
+          // If we DID capture a caption (embed worked but AI structuring failed),
+          // pre-fill the textarea so the user can parse with one click instead of
+          // re-pasting the whole post caption manually.
           if (result?.capturedCaption && result.capturedCaption.trim().length > 20) {
+            setManualText(result.capturedCaption);
+            setPipelineMessage('Caption captured! AI structuring failed — tap "Parse Recipe" to retry.');
+            // Auto-trigger the heuristic parse immediately so user doesn't have
+            // to do anything — they'll see the preview or a helpful error.
             try {
               const autoParseRecipe = await captionToRecipe(result.capturedCaption, {
                 title: result.capturedTitle || '',
@@ -342,11 +310,11 @@ const toggleDeepMode = () => {
                 setPhase('preview');
                 return;
               }
-            } catch { /* heuristic parse also failed */ }
+            } catch { /* heuristic parse failed — fall through to manual */ }
+          } else {
+            setPipelineMessage('Could not extract recipe — please paste the caption manually.');
           }
-          // Final fallback: show error with recovery action (back to import)
-          setErrorMsg('Could not extract this recipe automatically. Try a different URL or use Paste Text.');
-          setPhase('error');
+          setPhase('manual');
           return;
         }
 
@@ -1161,7 +1129,7 @@ const toggleDeepMode = () => {
             <div>
               <h3>Paste the Caption</h3>
               <p>
-                Auto-extract couldnt read this {platform || 'social'} post.
+                Auto-extract couldn&apos;t read this {platform || 'social'} post.
                 Copy the caption from the app and paste it below — AI will structure it.
               </p>
             </div>
@@ -1258,32 +1226,40 @@ const toggleDeepMode = () => {
             </div>
           </div>
 
-<div className="browser-assist-preview-card">
-  <div className="preview-detail-header">
-    {(() => {
-      const displayImage = autoRecipe.imageUrl || autoRecipe.capturedImageUrl;
-      if (!displayImage) return null;
-
-      return (
-        <SafeMediaImage
-          src={displayImage}
-          alt=""
-          className="preview-detail-thumb"
-          fallbackEmoji="🍽️"
-        />
-      );
-    })()}
-
-    <div className="preview-detail-title-zone">
-      <label className="preview-label">Recipe Name</label>
-      <input 
-        type="text" 
-        className="preview-title-input" 
-        value={autoRecipe.name || ''} 
-        onChange={e => updatePreviewField('name', e.target.value)} 
-      />
-    </div>
-</div>
+          <div className="browser-assist-preview-card">
+            <div className="preview-detail-header">
+              {autoRecipe.imageUrl ? (
+                <img
+                  src={autoRecipe.imageUrl}
+                  alt=""
+                  className="preview-detail-thumb"
+                  onError={e => {
+                    const attempt = parseInt(e.target.dataset.proxied || '0');
+                    const enc = encodeURIComponent(autoRecipe.imageUrl);
+                    const proxies = [
+                      `https://images.weserv.nl/?url=${enc}&w=600&output=jpg&q=85`,
+                      `https://corsproxy.io/?url=${enc}`,
+                      `https://api.allorigins.win/raw?url=${enc}`,
+                    ];
+                    if (attempt < proxies.length) {
+                      e.target.dataset.proxied = String(attempt + 1);
+                      e.target.src = proxies[attempt];
+                    } else {
+                      e.target.style.display = 'none';
+                    }
+                  }}
+                />
+              ) : null}
+              <div className="preview-detail-title-zone">
+                <label className="preview-label">Recipe Name</label>
+                <input
+                  type="text"
+                  className="preview-title-input"
+                  value={autoRecipe.name || ''}
+                  onChange={e => updatePreviewField('name', e.target.value)}
+                />
+              </div>
+            </div>
 
             <div className="preview-detail-section">
               <label className="preview-label">
@@ -1721,7 +1697,7 @@ const toggleDeepMode = () => {
                 ✅ Use Auto-Result
               </button>
             )}
-            <button className="btn-secondary" onClick={onFallbackToText} disabled={phase === 'extracting'}>← Back</button>
+            <button className="btn-secondary" onClick={onFallbackToText} disabled={phase === 'extracting'}>â† Back</button>
           </div>
         </div>
       )}
@@ -1730,12 +1706,12 @@ const toggleDeepMode = () => {
       {phase === 'error' && (
         <div className="browser-assist-error">
           <p className="error-text">{errorMsg}</p>
-          <button className="btn-primary" onClick={onFallbackToText}>← Back to Import</button>
+          <button className="btn-primary" onClick={onFallbackToText}>â† Back to Import</button>
         </div>
       )}
     </div>
   );
-}); // ← closes forwardRef(function BrowserAssist(...) {
+}); // â† closes forwardRef(function BrowserAssist(...) {
 
 export default BrowserAssist;
 
@@ -2016,62 +1992,6 @@ function stripHtmlToText(html) {
     .trim();
 }
 
-/**
- * extractVisibleTextFromDoc — extract readable text from a live DOM document
- * (e.g., an iframe's contentDocument).  Safe to call on cross-origin docs
- * because all access is wrapped in try/catch.
- */
-function extractVisibleTextFromDoc(doc) {
-  if (!doc?.body) return '';
-  const SKIP = new Set(['SCRIPT','STYLE','NOSCRIPT','IFRAME','META','LINK','HEAD','SVG']);
-  const parts = [];
-  const walk = (node) => {
-    if (!node) return;
-    if (node.nodeType === 1 /* ELEMENT_NODE */) {
-      if (SKIP.has(node.tagName?.toUpperCase())) return;
-      // Skip visually hidden elements
-      try {
-        const st = node.ownerDocument?.defaultView?.getComputedStyle?.(node);
-        if (st && (st.display === 'none' || st.visibility === 'hidden' || st.opacity === '0')) return;
-      } catch {}
-      if (node.getAttribute?.('aria-hidden') === 'true' || node.hasAttribute?.('hidden')) return;
-      for (const child of node.childNodes) walk(child);
-    } else if (node.nodeType === 3 /* TEXT_NODE */) {
-      const t = node.textContent?.trim();
-      if (t) parts.push(t);
-    }
-  };
-  try { walk(doc.body); } catch { /* cross-origin safety — return what we have */ }
-  return parts.join(' ').replace(/\s{2,}/g, ' ').trim();
-}
-
-/**
- * extractImageUrlsFromDoc — extract candidate image URLs from a live DOM document.
- * Prioritises og:image meta tag, then large <img> tags.
- */
-function extractImageUrlsFromDoc(doc) {
-  if (!doc?.body) return [];
-  const urls = [];
-  const seen = new Set();
-  const add = (src) => {
-    if (src && src.startsWith('http') && isUsableImageUrl(src) && !seen.has(src)) {
-      urls.push(src);
-      seen.add(src);
-    }
-  };
-  try {
-    // og:image is the highest-fidelity signal
-    doc.querySelectorAll('meta[property="og:image"], meta[name="og:image"]').forEach(m => add(m.content));
-    // Large <img> tags sorted by rendered size (best available heuristic)
-    const imgs = [...doc.querySelectorAll('img[src]')];
-    imgs
-      .filter(img => (img.naturalWidth || 0) > 100 || !img.complete)
-      .sort((a, b) => (b.naturalWidth * b.naturalHeight) - (a.naturalWidth * a.naturalHeight))
-      .forEach(img => add(img.getAttribute('src')));
-  } catch { /* cross-origin safety */ }
-  return urls;
-}
-
 function isUsableImageUrl(u) {
   if (!u || !u.startsWith('http')) return false;
   if (/profile_pic|avatar|logo|icon|emoji|tracking|pixel|blank|1x1|spinner/i.test(u)) return false;
@@ -2196,7 +2116,6 @@ function extractFromRawHtml(html, sourceUrl) {
     }
   }
   if (!caption || caption.length < 30) return null;
-
   if (/^\d+[\s,]*(likes?|comments?|views?)/i.test(caption)) return null;
   if (/^[\d,.]+\s*(Likes?|Comments?)/i.test(caption)) return null;
   const parsed = parseCaption(caption);
