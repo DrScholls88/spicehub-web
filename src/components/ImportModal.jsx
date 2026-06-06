@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   isSocialMediaUrl, getSocialPlatform,
   isInstagramUrl, isShortUrl, resolveShortUrl,
-  parseFromUrl, parseCaption,
+  parseFromUrl, parseCaption, captionToRecipe,
   classifyWithConfidence, smartClassifyLines, normalizeAndDedupe,
   scoreExtractionConfidence,
   isWeakResult,
@@ -628,33 +628,38 @@ export default function ImportModal({ onImport, onClose, title = 'Import Recipe'
       // Clean OCR artifacts before parsing
       const cleanedText = cleanOcrText(ocrText);
 
-      // Parse the OCR text through the recipe caption parser
-      setImportProgress('Parsing recipe...');
-      const parsed = parseCaption(cleanedText);
+      // Route OCR text through captionToRecipe — uses the shared Gemini
+      // SYSTEM_INSTRUCTION + RECIPE_SCHEMA for structuring, with heuristic
+      // fallback. Same quality as caption/URL imports.
+      setImportProgress('Structuring recipe...');
+      const aiRecipe = await captionToRecipe(cleanedText, {
+        title: '',
+        imageUrl: imageDataUrl,
+        sourceUrl: '',
+        type: initialItemType || 'meal',
+      });
 
-      // Build recipe object — ALWAYS keep the original photo
-      const recipe = {
-        name: parsed.title || 'Recipe from Photo',
-        ingredients: parsed.ingredients.length > 0 ? parsed.ingredients : [],
-        directions: parsed.directions.length > 0 ? parsed.directions : [],
-        imageUrl: imageDataUrl, // Always store original photo
-        link: '',
-      };
-
-      // If the caption parser couldn't split into ingredients/directions,
-      // use improved heuristics that consider cooking verbs and measurements
-      if (recipe.ingredients.length === 0 && recipe.directions.length === 0) {
-        const lines = cleanedText.split('\n').map(l => l.trim()).filter(l => l.length > 2);
-        if (lines.length > 0) {
-          classifyOcrLines(lines, recipe);
-        }
-        // If still nothing, dump everything into directions
+      if (aiRecipe) {
+        aiRecipe.imageUrl = imageDataUrl;
+        aiRecipe._structuredVia = (aiRecipe._structuredVia || 'heuristic') + '+ocr';
+        setPreview([aiRecipe]);
+      } else {
+        // Final fallback: parseCaption heuristic (no AI available)
+        const parsed = parseCaption(cleanedText);
+        const recipe = {
+          name: parsed.title || 'Recipe from Photo',
+          ingredients: parsed.ingredients.length > 0 ? parsed.ingredients : [],
+          directions: parsed.directions.length > 0 ? parsed.directions : [],
+          imageUrl: imageDataUrl,
+          link: '',
+        };
+        // If heuristic also couldn't split, dump lines into directions
         if (recipe.ingredients.length === 0 && recipe.directions.length === 0) {
-          recipe.directions = lines.length > 0 ? lines : ['See photo for recipe details'];
+          const lines = cleanedText.split('\n').map(l => l.trim()).filter(l => l.length > 2);
+          recipe.directions = lines.length > 0 ? lines : [];
         }
+        setPreview([recipe]);
       }
-
-      setPreview([recipe]);
     } catch (err) {
       console.error('[SpiceHub] OCR error:', err);
       setError('Could not process image: ' + (err.message || 'Unknown error'));
@@ -1798,79 +1803,9 @@ function cleanOcrText(text) {
     .join('\n');
 }
 
-/**
- * Classify OCR lines into ingredients vs directions using cooking heuristics.
- * Much better than the naive "short = ingredient" approach.
- */
-function classifyOcrLines(lines, recipe) {
-  // Measurement units that strongly indicate ingredients
-  const UNIT_RE = /\b(cups?|tbsp|tsp|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|grams?|g\b|kg|ml|liters?|pinch|dash|cloves?|cans?|packages?|sticks?|slices?|bunch)\b/i;
-  // Fractions at start of line strongly indicate ingredients
-  const STARTS_WITH_NUM = /^[\d½¼¾⅓⅔⅛⅜⅝⅞]/;
-  // Cooking action verbs strongly indicate directions
-  const COOKING_VERB = /^(mix|stir|add|combine|pour|heat|cook|bake|fry|saut[eé]|chop|dice|mince|preheat|whisk|blend|fold|season|serve|place|put|set|bring|let|cover|remove|transfer|slice|cut|grill|roast|simmer|boil|drain|rinse|prepare|arrange|sprinkle|drizzle|toss|marinate|refrigerate|chill|melt|beat|cream|knead|roll|shape|spread|layer|garnish|start|begin|first|then|next|finally|broil|brush|coat|press|squeeze|wash|peel|trim|top|finish|reduce|brown|sear|steam|in a)\b/i;
-  // Numbered step at start
-  const STEP_NUM = /^\d+[.):\s-]\s*/;
-
-  let inIngredients = false;
-  let inDirections = false;
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    // Check for section headers
-    const lower = trimmed.toLowerCase();
-    if (/^ingredients?:?\s*$/i.test(lower) || lower === 'you will need' || lower === "what you'll need") {
-      inIngredients = true;
-      inDirections = false;
-      continue;
-    }
-    if (/^(directions?|instructions?|method|steps?|preparation):?\s*$/i.test(lower)) {
-      inIngredients = false;
-      inDirections = true;
-      continue;
-    }
-
-    // If we're in a detected section, use that
-    if (inIngredients) {
-      recipe.ingredients.push(trimmed);
-      continue;
-    }
-    if (inDirections) {
-      recipe.directions.push(trimmed);
-      continue;
-    }
-
-    // Heuristic classification
-    const hasUnit = UNIT_RE.test(trimmed);
-    const startsWithNum = STARTS_WITH_NUM.test(trimmed);
-    const hasCookingVerb = COOKING_VERB.test(trimmed);
-    const hasStepNum = STEP_NUM.test(trimmed);
-    const isShort = trimmed.length < 50;
-
-    // Strong ingredient signals
-    if ((startsWithNum && hasUnit) || (isShort && hasUnit && !hasCookingVerb)) {
-      recipe.ingredients.push(trimmed);
-    }
-    // Strong direction signals
-    else if (hasCookingVerb || hasStepNum || trimmed.length > 80) {
-      recipe.directions.push(trimmed);
-    }
-    // Moderate: starts with number + short = ingredient
-    else if (startsWithNum && isShort) {
-      recipe.ingredients.push(trimmed);
-    }
-    // Default: longer lines are more likely directions
-    else if (trimmed.length > 40) {
-      recipe.directions.push(trimmed);
-    }
-    // Short lines without clear signal — guess ingredient
-    else {
-      recipe.ingredients.push(trimmed);
-    }
-  }
-}
+// classifyOcrLines removed — OCR text now routes through captionToRecipe()
+// which uses the shared Gemini SYSTEM_INSTRUCTION + RECIPE_SCHEMA for
+// ingredient/direction classification. Same quality as caption/URL imports.
 
 // ── Paprika helpers ────────────────────────────────────────────────────────────
 
