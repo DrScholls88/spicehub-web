@@ -52,7 +52,7 @@ import useOnlineStatus from '../hooks/useOnlineStatus';
  * Ref (via forwardRef):
  *   triggerVisualScrape() â€” kick off visual scrape from parent without requiring a button click
  */
-const BrowserAssist = forwardRef(function BrowserAssist({ url, onRecipeExtracted, onFallbackToText, initialCapturedText = '', seedRecipe = null, type = 'meal', defaultVisualMode = false, onError, onBlocksSelected }, ref) {
+const BrowserAssist = forwardRef(function BrowserAssist({ url, onRecipeExtracted, onFallbackToText, initialCapturedText = '', seedRecipe = null, type = 'meal', defaultVisualMode = false, onError, onBlocksSelected, inline = false }, ref) {
   const API_BASE = import.meta.env.VITE_API_BASE || '';
   const { isOnline } = useOnlineStatus();
 
