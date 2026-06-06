@@ -2361,12 +2361,22 @@ async function structureRedditRecipe(redditData, onProgress) {
  *      or { _error: true, reason } on failure
  *      or null if completely failed
  */
-export async function parseFromUrl(url, onProgress, { type = 'meal' } = {}) {
+export async function parseFromUrl(url, onProgress, { type = 'meal', signal } = {}) {
   // Backwards compatibility alias
-  return await importRecipeFromUrl(url, onProgress, { type });
+  return await importRecipeFromUrl(url, onProgress, { type, signal });
 }
 
-export async function importRecipeFromUrl(url, onProgress, { type = 'meal' } = {}) {
+export async function importRecipeFromUrl(url, onProgress, { type = 'meal', signal } = {}) {
+  const TIMEOUT_MS = 45_000;
+  return Promise.race([
+    _importRecipeFromUrlInner(url, onProgress, { type, signal }),
+    new Promise(resolve => setTimeout(() => resolve({
+      _needsBrowserAssist: true, seed: null, capturedCaption: '', _timeoutReason: 'IMPORT_TIMEOUT',
+    }), TIMEOUT_MS)),
+  ]);
+}
+
+async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signal } = {}) {
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ 0. Reddit: zero-auth JSON endpoint (fastest non-Instagram path) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   // Reddit's .json trick gives structured post data with no scraping, no auth,
@@ -2414,7 +2424,7 @@ export async function importRecipeFromUrl(url, onProgress, { type = 'meal' } = {
     const instagramRecipe = await importFromInstagram(url, (phaseOrMsg, status, msg) => {
       if (!onProgress) return;
       onProgress(typeof msg === 'string' ? msg : String(phaseOrMsg || 'Importing Instagram post...'));
-    }, { type });
+    }, { type, signal });
     if (instagramRecipe && !instagramRecipe._needsManualCaption && !instagramRecipe._error) {
       return instagramRecipe;
     }
@@ -4222,7 +4232,7 @@ export async function resolveShortUrl(url) {
  *   status: 'running' | 'done' | 'failed' | 'skipped' | 'pending'
  * @returns {Object} Structured recipe or { _needsManualCaption: true }
  */
-export async function importFromInstagram(url, onProgress = () => {}, { type = 'meal' } = {}) {
+export async function importFromInstagram(url, onProgress = () => {}, { type = 'meal', signal } = {}) {
   url = cleanUrl(url);
   const progress = (phase, status, msg) => onProgress(phase, status, msg);
 
@@ -4290,68 +4300,47 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
     progress(0, 'skipped', 'Video subtitles unavailable');
   }
 
-  // ── Phase 0.25: Apify Instagram scraper — managed residential proxies ─────────
-  // Most reliable extraction source: returns full caption + fresh CDN image URL.
-  // Runs server-side via Vercel → Apify REST API. Falls through if APIFY_TOKEN not set.
+  // ── Phases 0.25/0.5/0.75: parallel cheap extraction ────────────────────
   if (!capturedCaption) {
-    progress(1, 'running', 'Trying Apify scraper…');
+    progress(1, 'running', 'Trying multiple extraction methods…');
+    const scMatch = url.match(/\/(p|reel|tv)\/([A-Za-z0-9_-]+)/);
+    const shortcode = scMatch?.[2];
+    const cheapPhases = [
+      (async () => {
+        const d = await fetchInstagramViaApify(url);
+        if (!d?.caption || d.caption.length <= 30) throw new Error('apify-weak');
+        return { src: 'apify', caption: cleanSocialCaption(d.caption), img: d.displayUrl || '', title: d.ownerFullName || d.ownerUsername || '' };
+      })(),
+      (async () => {
+        const oe = await fetchInstagramOEmbed(url);
+        if (!oe?.html) throw new Error('oembed-empty');
+        const m = oe.html.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
+        if (!m) throw new Error('oembed-no-cap');
+        const raw = m[1].replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').trim();
+        if (raw.length <= 30) throw new Error('oembed-weak');
+        return { src: 'oembed', caption: cleanSocialCaption(raw), img: '', title: '' };
+      })(),
+      ...(shortcode ? [(async () => {
+        const det = await fetchInstagramJsonDetails(shortcode);
+        const cap = det?.caption || await fetchInstagramJson(shortcode);
+        if (!cap || cap.length <= 30) throw new Error('json-weak');
+        return { src: 'ig-json', caption: cleanSocialCaption(cap), img: det?.imageUrl || '', title: det?.title || '' };
+      })()] : []),
+    ];
     try {
-      const apifyData = await fetchInstagramViaApify(url);
-      if (apifyData?.caption && apifyData.caption.length > 30) {
-        capturedCaption = cleanSocialCaption(apifyData.caption);
-        capturedTitle = apifyData.ownerFullName || apifyData.ownerUsername || capturedTitle;
-        // Apify displayUrl is a FRESH CDN URL with valid auth tokens — download immediately
-        if (apifyData.displayUrl) {
-          capturedImageUrl = apifyData.displayUrl;
-          // Eagerly persist the image before CDN token expires
-          try {
-            const persisted = await downloadImageAsDataUrl(apifyData.displayUrl, { timeoutMs: 15000 });
-            if (persisted) capturedImageUrl = persisted;
-          } catch { /* keep raw CDN URL as fallback */ }
+      const w = await Promise.any(cheapPhases);
+      capturedCaption = w.caption;
+      if (w.img && !capturedImageUrl) {
+        capturedImageUrl = w.img;
+        if (w.src === 'apify') {
+          try { const p = await downloadImageAsDataUrl(w.img, { timeoutMs: 15000 }); if (p) capturedImageUrl = p; } catch {}
         }
-        progress(1, 'done', `Apify: caption (${capturedCaption.length} chars) + image ✔`);
-        console.log('[importFromInstagram] Apify succeeded — skipping embed/browser phases');
-      } else {
-        progress(1, 'done', 'Apify: no caption — falling through');
       }
+      if (w.title && !capturedTitle) capturedTitle = w.title;
+      progress(1, 'done', w.src + ': caption (' + capturedCaption.length + ' chars)');
     } catch {
-      progress(1, 'done', 'Apify unavailable — using embed fallback');
+      progress(1, 'done', 'Quick extraction failed — trying embed…');
     }
-  }
-
-  // ── Phase 0.5: Instagram oEmbed API — fastest when FB_APP_TOKEN is configured ──
-  // Calls /api/proxy?mode=instagram-oembed on the Vercel edge function.
-  // Falls through silently if token not set (503) or oEmbed fails.
-  if (!capturedCaption) {
-    try {
-      const oembed = await fetchInstagramOEmbed(url);
-      // oEmbed thumbnail_url is commonly the creator avatar, not the food photo.
-      // The embed/server phases below are responsible for post-specific images.
-      if (oembed?.html) {
-        // oEmbed HTML contains the post caption inside a <p> tag
-        const capMatch = oembed.html.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
-        if (capMatch) {
-          const raw = capMatch[1].replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').trim();
-          if (raw.length > 30) capturedCaption = cleanSocialCaption(raw);
-        }
-      }
-    } catch { /* oEmbed not configured or failed */ }
-  }
-
-  // ── Phase 0.75: Instagram JSON endpoint (?__a=1&__d=dis) — often blocked but worth trying ──
-  {
-    try {
-      const scMatch = url.match(/\/(p|reel|tv)\/([A-Za-z0-9_-]+)/);
-      if (scMatch) {
-        const jsonDetails = await fetchInstagramJsonDetails(scMatch[2]);
-        const jsonCaption = jsonDetails?.caption || (!capturedCaption ? await fetchInstagramJson(scMatch[2]) : '');
-        if (!capturedCaption && jsonCaption && jsonCaption.length > 30) {
-          capturedCaption = cleanSocialCaption(jsonCaption);
-        }
-        if (!capturedImageUrl && jsonDetails?.imageUrl) capturedImageUrl = jsonDetails.imageUrl;
-        if (!capturedTitle && jsonDetails?.title) capturedTitle = jsonDetails.title;
-      }
-    } catch { /* JSON endpoint blocked */ }
   }
 
   // ── Phase 1: Instagram embed page (CORS proxy path — main workhorse) ────────
@@ -4550,6 +4539,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   // handing it back lets the user hit "Parse" without having to re-paste anything.
   return {
     _needsManualCaption: true,
+    _needsBrowserAssist: true,
     capturedCaption: capturedCaption || '',
     capturedImageUrl: capturedImageUrl || '',
     capturedTitle: capturedTitle || '',

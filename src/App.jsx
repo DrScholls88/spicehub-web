@@ -11,6 +11,7 @@ import GroceryList from './components/GroceryList';
 import MealDetail from './components/MealDetail';
 import AddEditMeal from './components/AddEditMeal';
 import ImportModal from './components/ImportModal';
+import ImportSheet from './components/ImportSheet';
 import FridgeMode from './components/FridgeMode';
 import CookMode from './components/CookMode';
 import MixMode from './components/MixMode';
@@ -802,14 +803,25 @@ useEffect(() => {
         />
       )}
       {showImportFor && (
-        <ImportModal
-          key={importModalKey}
-          onImport={handleImport}
-          onClose={() => { setShowImportFor(null); setSharedContent(null); }}
-          title={showImportFor === 'drinks' ? 'Import Drink' : 'Import Recipe'}
-          sharedContent={sharedContent}
-          initialItemType={showImportFor === 'drinks' ? 'drink' : 'meal'}
-        />
+        import.meta.env.VITE_USE_IMPORT_SHEET === 'true' ? (
+          <ImportSheet
+            key={importModalKey}
+            onImport={handleImport}
+            onClose={() => { setShowImportFor(null); setSharedContent(null); }}
+            title={showImportFor === 'drinks' ? 'Import Drink' : 'Import Recipe'}
+            sharedContent={sharedContent}
+            initialItemType={showImportFor === 'drinks' ? 'drink' : 'meal'}
+          />
+        ) : (
+          <ImportModal
+            key={importModalKey}
+            onImport={handleImport}
+            onClose={() => { setShowImportFor(null); setSharedContent(null); }}
+            title={showImportFor === 'drinks' ? 'Import Drink' : 'Import Recipe'}
+            sharedContent={sharedContent}
+            initialItemType={showImportFor === 'drinks' ? 'drink' : 'meal'}
+          />
+        )
       )}
 
       {/* ── New feature overlays ── */}

@@ -1,60 +1,57 @@
-Extension keyboard shortcuts loaded. Available shortcuts:
-VM1240 keyboard-shortcuts.js:215 - Alt+C: Toggle Copy Mode
-VM1240 keyboard-shortcuts.js:216 - Alt+A: Toggle Absolute Mode
-VM1240 keyboard-shortcuts.js:217 - Alt+O: Trigger OCR Mode
-scontent-msp1-1.cdninstagram.com/v/t51.29350-15/452633096_1403272011075597_2398284088503447884_n.jpg?stp=dst-jpg_e15&_nc_ht=scontent-msp1-1.cdninstagram.com&_nc_cat=109&_nc_ohc=jh-Cq79EC7sQ7kNvgHHkjNY&_nc_gid=59dfd7a8ac574f669336ba0acba70dea&edm=ANTKIIoBAAAA&ccb=7-5&oh=00_AYAUKnV5VL_G4mlEsiuHfqluMEceBnB8kzx_Le8eUknOEQ&oe=671D92AA&_nc_sid=d885a2:1  GET https://scontent-msp1-1.cdninstagram.com/v/t51.29350-15/452633096_1403272011075597_2398284088503447884_n.jpg?stp=dst-jpg_e15&_nc_ht=scontent-msp1-1.cdninstagram.com&_nc_cat=109&_nc_ohc=jh-Cq79EC7sQ7kNvgHHkjNY&_nc_gid=59dfd7a8ac574f669336ba0acba70dea&edm=ANTKIIoBAAAA&ccb=7-5&oh=00_AYAUKnV5VL_G4mlEsiuHfqluMEceBnB8kzx_Le8eUknOEQ&oe=671D92AA&_nc_sid=d885a2 403 (Forbidden)
-Image
-commitHostMount @ react-dom-client.production.js:8718
-commitLayoutEffectOnFiber @ react-dom-client.production.js:9079
-recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
-commitLayoutEffectOnFiber @ react-dom-client.production.js:9078
-recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
-commitLayoutEffectOnFiber @ react-dom-client.production.js:9078
-recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
-commitLayoutEffectOnFiber @ react-dom-client.production.js:9078
-recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
-commitLayoutEffectOnFiber @ react-dom-client.production.js:9014
-recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
-commitLayoutEffectOnFiber @ react-dom-client.production.js:9078
-recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
-commitLayoutEffectOnFiber @ react-dom-client.production.js:9014
-recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
-commitLayoutEffectOnFiber @ react-dom-client.production.js:9126
-recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
-commitLayoutEffectOnFiber @ react-dom-client.production.js:9014
-recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
-commitLayoutEffectOnFiber @ react-dom-client.production.js:9126
-recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
-commitLayoutEffectOnFiber @ react-dom-client.production.js:9050
-flushLayoutEffects @ react-dom-client.production.js:11660
-commitRoot @ react-dom-client.production.js:11520
-commitRootWhenReady @ react-dom-client.production.js:10920
-performWorkOnRoot @ react-dom-client.production.js:10826
-performSyncWorkOnRoot @ react-dom-client.production.js:12086
-flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
-processRootScheduleInMicrotask @ react-dom-client.production.js:11990
-(anonymous) @ react-dom-client.production.js:12095Understand this error
-4(index):1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was receivedUnderstand this error
-VM1245 keyboard-shortcuts.js:214 Extension keyboard shortcuts loaded. Available shortcuts:
-VM1245 keyboard-shortcuts.js:215 - Alt+C: Toggle Copy Mode
-VM1245 keyboard-shortcuts.js:216 - Alt+A: Toggle Absolute Mode
-VM1245 keyboard-shortcuts.js:217 - Alt+O: Trigger OCR Mode
-keyboard-shortcuts.js:214 Extension keyboard shortcuts loaded. Available shortcuts:
-keyboard-shortcuts.js:215 - Alt+C: Toggle Copy Mode
-keyboard-shortcuts.js:216 - Alt+A: Toggle Absolute Mode
-keyboard-shortcuts.js:217 - Alt+O: Trigger OCR Mode
+(index):1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was receivedUnderstand this error
+VM653 keyboard-shortcuts.js:214 Extension keyboard shortcuts loaded. Available shortcuts:
+VM653 keyboard-shortcuts.js:215 - Alt+C: Toggle Copy Mode
+VM653 keyboard-shortcuts.js:216 - Alt+A: Toggle Absolute Mode
+VM653 keyboard-shortcuts.js:217 - Alt+O: Trigger OCR Mode
+5[Violation] Permissions policy violation: unload is not allowed in this document.Understand this error
 content.js:555 Unable to check top-level optout: Failed to read a named property 'document' from 'Window': Blocked a frame with origin "https://www.instagram.com" from accessing a cross-origin frame.
 checkPageOptout @ content.js:555
 (anonymous) @ content.js:572
 await in (anonymous)
 (anonymous) @ content.js:648
 (anonymous) @ content.js:650Understand this warning
-5[Violation] Permissions policy violation: unload is not allowed in this document.Understand this error
-(index):1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was receivedUnderstand this error
-api.js:286 [fetchInstagramViaApify] ✅ Got caption (706 chars) + image: yes
-Access to fetch at 'https://scontent-lax3-2.cdninstagram.com/v/t51.71878-15/503573789_696259490032794_1280135573915595882_n.jpg?stp=dst-jpg_e15_tt6&_nc_ht=scontent-lax3-2.cdninstagram.com&_nc_cat=106&_nc_oc=Q6cZ2gGb-YcaC0EFh3kd0PAUejchmPCAQ-b5l9OsV3iGo83vUML05sN6D7nGlO93Q9mfwLs&_nc_ohc=IvWlKavsaKUQ7kNvwEXOT_m&_nc_gid=PYgGVKy8otQM3VDyQ6AYmA&edm=APs17CUBAAAA&ccb=7-5&oh=00_Af-wPjxTVmWc_AsKQbKqzcQfxaYtcsN_bEmn2hP_EAmjmw&oe=6A257781&_nc_sid=10d13b' from origin 'https://spicehub-web.vercel.app' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.Understand this error
-The FetchEvent for "https://scontent-lax3-2.cdninstagram.com/v/t51.71878-15/503573789_696259490032794_1280135573915595882_n.jpg?stp=dst-jpg_e15_tt6&_nc_ht=scontent-lax3-2.cdninstagram.com&_nc_cat=106&_nc_oc=Q6cZ2gGb-YcaC0EFh3kd0PAUejchmPCAQ-b5l9OsV3iGo83vUML05sN6D7nGlO93Q9mfwLs&_nc_ohc=IvWlKavsaKUQ7kNvwEXOT_m&_nc_gid=PYgGVKy8otQM3VDyQ6AYmA&edm=APs17CUBAAAA&ccb=7-5&oh=00_Af-wPjxTVmWc_AsKQbKqzcQfxaYtcsN_bEmn2hP_EAmjmw&oe=6A257781&_nc_sid=10d13b" resulted in a network error response: the promise was rejected.Understand this warning
-NetworkOnly.js:93 Uncaught (in promise) no-response: no-response :: [{"url":"https://scontent-lax3-2.cdninstagram.com/v/t51.71878-15/503573789_696259490032794_1280135573915595882_n.jpg?stp=dst-jpg_e15_tt6&_nc_ht=scontent-lax3-2.cdninstagram.com&_nc_cat=106&_nc_oc=Q6cZ2gGb-YcaC0EFh3kd0PAUejchmPCAQ-b5l9OsV3iGo83vUML05sN6D7nGlO93Q9mfwLs&_nc_ohc=IvWlKavsaKUQ7kNvwEXOT_m&_nc_gid=PYgGVKy8otQM3VDyQ6AYmA&edm=APs17CUBAAAA&ccb=7-5&oh=00_Af-wPjxTVmWc_AsKQbKqzcQfxaYtcsN_bEmn2hP_EAmjmw&oe=6A257781&_nc_sid=10d13b","error":{}}]
+api.js:248 [fetchInstagramViaApify] ✅ Got caption (792 chars) + image: yes
+Access to fetch at 'https://scontent-lga3-2.cdninstagram.com/v/t51.82787-15/538965216_18324404743229981_4702749379286094391_n.jpg?stp=dst-jpg_e15_fr_p1080x1080_tt6&_nc_ht=scontent-lga3-2.cdninstagram.com&_nc_cat=105&_nc_oc=Q6cZ2gHs0HssKi0NkugylgfkUo00VcDzbUGI10ZD2XNdgrv5by_yNlZjw2d-ZTt_RSW6v2A&_nc_ohc=PiilAGPo7xoQ7kNvwHOqh9z&_nc_gid=CabRaTv_ZiXHfFGg8i8zXQ&edm=APs17CUBAAAA&ccb=7-5&oh=00_Af8OYFr2i2ZrsKg6bThrmSywdSXGpNYHRwDch21X_6UxEA&oe=6A2A3A03&_nc_sid=10d13b' from origin 'https://spicehub-web.vercel.app' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.Understand this error
+The FetchEvent for "https://scontent-lga3-2.cdninstagram.com/v/t51.82787-15/538965216_18324404743229981_4702749379286094391_n.jpg?stp=dst-jpg_e15_fr_p1080x1080_tt6&_nc_ht=scontent-lga3-2.cdninstagram.com&_nc_cat=105&_nc_oc=Q6cZ2gHs0HssKi0NkugylgfkUo00VcDzbUGI10ZD2XNdgrv5by_yNlZjw2d-ZTt_RSW6v2A&_nc_ohc=PiilAGPo7xoQ7kNvwHOqh9z&_nc_gid=CabRaTv_ZiXHfFGg8i8zXQ&edm=APs17CUBAAAA&ccb=7-5&oh=00_Af8OYFr2i2ZrsKg6bThrmSywdSXGpNYHRwDch21X_6UxEA&oe=6A2A3A03&_nc_sid=10d13b" resulted in a network error response: the promise was rejected.Understand this warning
+api.js:622  GET https://scontent-lga3-2.cdninstagram.com/v/t51.82787-15/538965216_18324404743229981_4702749379286094391_n.jpg?stp=dst-jpg_e15_fr_p1080x1080_tt6&_nc_ht=scontent-lga3-2.cdninstagram.com&_nc_cat=105&_nc_oc=Q6cZ2gHs0HssKi0NkugylgfkUo00VcDzbUGI10ZD2XNdgrv5by_yNlZjw2d-ZTt_RSW6v2A&_nc_ohc=PiilAGPo7xoQ7kNvwHOqh9z&_nc_gid=CabRaTv_ZiXHfFGg8i8zXQ&edm=APs17CUBAAAA&ccb=7-5&oh=00_Af8OYFr2i2ZrsKg6bThrmSywdSXGpNYHRwDch21X_6UxEA&oe=6A2A3A03&_nc_sid=10d13b net::ERR_FAILED
+downloadImageAsDataUrl @ api.js:622
+importFromInstagram @ recipeParser.js:4308
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this error
+NetworkOnly.js:93 Uncaught (in promise) no-response: no-response :: [{"url":"https://scontent-lga3-2.cdninstagram.com/v/t51.82787-15/538965216_18324404743229981_4702749379286094391_n.jpg?stp=dst-jpg_e15_fr_p1080x1080_tt6&_nc_ht=scontent-lga3-2.cdninstagram.com&_nc_cat=105&_nc_oc=Q6cZ2gHs0HssKi0NkugylgfkUo00VcDzbUGI10ZD2XNdgrv5by_yNlZjw2d-ZTt_RSW6v2A&_nc_ohc=PiilAGPo7xoQ7kNvwHOqh9z&_nc_gid=CabRaTv_ZiXHfFGg8i8zXQ&edm=APs17CUBAAAA&ccb=7-5&oh=00_Af8OYFr2i2ZrsKg6bThrmSywdSXGpNYHRwDch21X_6UxEA&oe=6A2A3A03&_nc_sid=10d13b","error":{}}]
     at Pe._handle (NetworkOnly.js:93:19)
     at async Pe._getResponse (Strategy.js:144:24)
 _handle @ NetworkOnly.js:93
@@ -66,11 +63,11 @@ handle @ Strategy.js:96
 handleRequest @ Router.js:197
 (anonymous) @ Router.js:56
 network request
-downloadImageAsDataUrl @ api.js:665
-importFromInstagram @ recipeParser.js:4766
+downloadImageAsDataUrl @ api.js:622
+importFromInstagram @ recipeParser.js:4308
 await in importFromInstagram
-(anonymous) @ BrowserAssist.jsx:307
-(anonymous) @ BrowserAssist.jsx:422
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
 commitHookEffectListMount @ react-dom-client.production.js:8583
 commitPassiveMountOnFiber @ react-dom-client.production.js:10126
 recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
@@ -103,12 +100,21 @@ performSyncWorkOnRoot @ react-dom-client.production.js:12086
 flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
 processRootScheduleInMicrotask @ react-dom-client.production.js:11990
 (anonymous) @ react-dom-client.production.js:12095Understand this error
-api.js:665  GET https://scontent-lax3-2.cdninstagram.com/v/t51.71878-15/503573789_696259490032794_1280135573915595882_n.jpg?stp=dst-jpg_e15_tt6&_nc_ht=scontent-lax3-2.cdninstagram.com&_nc_cat=106&_nc_oc=Q6cZ2gGb-YcaC0EFh3kd0PAUejchmPCAQ-b5l9OsV3iGo83vUML05sN6D7nGlO93Q9mfwLs&_nc_ohc=IvWlKavsaKUQ7kNvwEXOT_m&_nc_gid=PYgGVKy8otQM3VDyQ6AYmA&edm=APs17CUBAAAA&ccb=7-5&oh=00_Af-wPjxTVmWc_AsKQbKqzcQfxaYtcsN_bEmn2hP_EAmjmw&oe=6A257781&_nc_sid=10d13b net::ERR_FAILED
-downloadImageAsDataUrl @ api.js:665
-importFromInstagram @ recipeParser.js:4766
+recipeParser.js:4313 [importFromInstagram] Apify succeeded — skipping embed/browser phases
+api.js:763 [fetchInstagramJsonDetails] Failed: Unexpected token '<', "<!DOCTYPE "... is not valid JSON
+recipeParser.js:1477 [instagram-embed] Trying embed pages for shortcode: DNtaNx_XpaY
+api.js:110 [fetchHtmlViaProxy] Target: https://www.instagram.com/p/DNtaNx_XpaY/embed/captioned
+api.js:137 [fetchHtmlViaProxy] Internal proxy returned empty/error, trying public proxies...
+3installHook.js:1 Proxy request failed: AbortError: signal is aborted without reason
+    at api.js:163:43
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1483
+importFromInstagram @ recipeParser.js:4361
 await in importFromInstagram
-(anonymous) @ BrowserAssist.jsx:307
-(anonymous) @ BrowserAssist.jsx:422
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
 commitHookEffectListMount @ react-dom-client.production.js:8583
 commitPassiveMountOnFiber @ react-dom-client.production.js:10126
 recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
@@ -141,6 +147,1250 @@ performSyncWorkOnRoot @ react-dom-client.production.js:12086
 flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
 processRootScheduleInMicrotask @ react-dom-client.production.js:11990
 (anonymous) @ react-dom-client.production.js:12095Understand this error
-recipeParser.js:4769 [importFromInstagram] Image persisted as data URL ✔
-recipeParser.js:4794 [importFromInstagram] Apify succeeded — skipping embed/browser phases
-api.js:846 [fetchInstagramJsonDetails] Failed: Unexpected token '<', "<!DOCTYPE "... is not valid JSON
+api.js:164  GET https://thingproxy.freeboard.io/fetch/https%3A%2F%2Fwww.instagram.com%2Fp%2FDNtaNx_XpaY%2Fembed%2Fcaptioned net::ERR_NAME_NOT_RESOLVED
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1483
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this error
+installHook.js:1 Proxy request failed: TypeError: Failed to fetch
+    at hs (api.js:164:26)
+    at async fC (recipeParser.js:1483:25)
+    at async pw (recipeParser.js:4361:25)
+    at async BrowserAssist.jsx:271:26
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1483
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this error
+api.js:164  GET https://corsproxy.io/?https%3A%2F%2Fwww.instagram.com%2Fp%2FDNtaNx_XpaY%2Fembed%2Fcaptioned 403 (Forbidden)
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1483
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this error
+installHook.js:1 [Proxy skip] corsproxy.io returned 403
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:174
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1483
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this warning
+(index):1 Access to fetch at 'https://proxy.cors.sh/https://www.instagram.com/p/DNtaNx_XpaY/embed/captioned' from origin 'https://spicehub-web.vercel.app' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource.Understand this error
+api.js:164  GET https://proxy.cors.sh/https://www.instagram.com/p/DNtaNx_XpaY/embed/captioned net::ERR_FAILED
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1483
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this error
+installHook.js:1 Proxy request failed: TypeError: Failed to fetch
+    at hs (api.js:164:26)
+    at async fC (recipeParser.js:1483:25)
+    at async pw (recipeParser.js:4361:25)
+    at async BrowserAssist.jsx:271:26
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1483
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this error
+api.js:164  GET https://cors.bridged.cc/https://www.instagram.com/p/DNtaNx_XpaY/embed/captioned net::ERR_NAME_NOT_RESOLVED
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1483
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this error
+installHook.js:1 Proxy request failed: TypeError: Failed to fetch
+    at hs (api.js:164:26)
+    at async fC (recipeParser.js:1483:25)
+    at async pw (recipeParser.js:4361:25)
+    at async BrowserAssist.jsx:271:26
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1483
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this error
+installHook.js:1 [fetchHtmlViaProxy] ❌ All proxies failed for: https://www.instagram.com/p/DNtaNx_XpaY/embed/captioned
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:212
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1483
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this warning
+api.js:110 [fetchHtmlViaProxy] Target: https://www.instagram.com/reel/DNtaNx_XpaY/embed/captioned
+api.js:137 [fetchHtmlViaProxy] Internal proxy returned empty/error, trying public proxies...
+3installHook.js:1 Proxy request failed: AbortError: signal is aborted without reason
+    at api.js:163:43
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1483
+await in extractInstagramEmbed
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this error
+api.js:164  GET https://thingproxy.freeboard.io/fetch/https%3A%2F%2Fwww.instagram.com%2Freel%2FDNtaNx_XpaY%2Fembed%2Fcaptioned net::ERR_NAME_NOT_RESOLVED
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1483
+await in extractInstagramEmbed
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this error
+installHook.js:1 Proxy request failed: TypeError: Failed to fetch
+    at hs (api.js:164:26)
+    at async fC (recipeParser.js:1483:25)
+    at async pw (recipeParser.js:4361:25)
+    at async BrowserAssist.jsx:271:26
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1483
+await in extractInstagramEmbed
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this error
+api.js:164  GET https://corsproxy.io/?https%3A%2F%2Fwww.instagram.com%2Freel%2FDNtaNx_XpaY%2Fembed%2Fcaptioned 403 (Forbidden)
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1483
+await in extractInstagramEmbed
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this error
+installHook.js:1 [Proxy skip] corsproxy.io returned 403
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:174
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1483
+await in extractInstagramEmbed
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this warning
+(index):1 Access to fetch at 'https://proxy.cors.sh/https://www.instagram.com/reel/DNtaNx_XpaY/embed/captioned' from origin 'https://spicehub-web.vercel.app' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource.Understand this error
+api.js:164  GET https://proxy.cors.sh/https://www.instagram.com/reel/DNtaNx_XpaY/embed/captioned net::ERR_FAILED
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1483
+await in extractInstagramEmbed
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this error
+installHook.js:1 Proxy request failed: TypeError: Failed to fetch
+    at hs (api.js:164:26)
+    at async fC (recipeParser.js:1483:25)
+    at async pw (recipeParser.js:4361:25)
+    at async BrowserAssist.jsx:271:26
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1483
+await in extractInstagramEmbed
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this error
+api.js:164  GET https://cors.bridged.cc/https://www.instagram.com/reel/DNtaNx_XpaY/embed/captioned net::ERR_NAME_NOT_RESOLVED
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1483
+await in extractInstagramEmbed
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this error
+installHook.js:1 Proxy request failed: TypeError: Failed to fetch
+    at hs (api.js:164:26)
+    at async fC (recipeParser.js:1483:25)
+    at async pw (recipeParser.js:4361:25)
+    at async BrowserAssist.jsx:271:26
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1483
+await in extractInstagramEmbed
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this error
+installHook.js:1 [fetchHtmlViaProxy] ❌ All proxies failed for: https://www.instagram.com/reel/DNtaNx_XpaY/embed/captioned
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:212
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1483
+await in extractInstagramEmbed
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this warning
+api.js:110 [fetchHtmlViaProxy] Target: https://www.instagram.com/p/DNtaNx_XpaY/embed/captioned
+api.js:137 [fetchHtmlViaProxy] Internal proxy returned empty/error, trying public proxies...
+3installHook.js:1 Proxy request failed: AbortError: signal is aborted without reason
+    at api.js:163:43
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1490
+await in extractInstagramEmbed
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this error
+api.js:164  GET https://thingproxy.freeboard.io/fetch/https%3A%2F%2Fwww.instagram.com%2Fp%2FDNtaNx_XpaY%2Fembed%2Fcaptioned net::ERR_NAME_NOT_RESOLVED
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1490
+await in extractInstagramEmbed
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this error
+installHook.js:1 Proxy request failed: TypeError: Failed to fetch
+    at hs (api.js:164:26)
+    at async fC (recipeParser.js:1490:23)
+    at async pw (recipeParser.js:4361:25)
+    at async BrowserAssist.jsx:271:26
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1490
+await in extractInstagramEmbed
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this error
+api.js:164  GET https://corsproxy.io/?https%3A%2F%2Fwww.instagram.com%2Fp%2FDNtaNx_XpaY%2Fembed%2Fcaptioned 403 (Forbidden)
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1490
+await in extractInstagramEmbed
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this error
+installHook.js:1 [Proxy skip] corsproxy.io returned 403
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:174
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1490
+await in extractInstagramEmbed
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this warning
+(index):1 Access to fetch at 'https://proxy.cors.sh/https://www.instagram.com/p/DNtaNx_XpaY/embed/captioned' from origin 'https://spicehub-web.vercel.app' has been blocked by CORS policy: Response to preflight request doesn't pass access control check: No 'Access-Control-Allow-Origin' header is present on the requested resource.Understand this error
+api.js:164  GET https://proxy.cors.sh/https://www.instagram.com/p/DNtaNx_XpaY/embed/captioned net::ERR_FAILED
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1490
+await in extractInstagramEmbed
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this error
+installHook.js:1 Proxy request failed: TypeError: Failed to fetch
+    at hs (api.js:164:26)
+    at async fC (recipeParser.js:1490:23)
+    at async pw (recipeParser.js:4361:25)
+    at async BrowserAssist.jsx:271:26
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1490
+await in extractInstagramEmbed
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this error
+api.js:164  GET https://cors.bridged.cc/https://www.instagram.com/p/DNtaNx_XpaY/embed/captioned net::ERR_NAME_NOT_RESOLVED
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1490
+await in extractInstagramEmbed
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this error
+installHook.js:1 Proxy request failed: TypeError: Failed to fetch
+    at hs (api.js:164:26)
+    at async fC (recipeParser.js:1490:23)
+    at async pw (recipeParser.js:4361:25)
+    at async BrowserAssist.jsx:271:26
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1490
+await in extractInstagramEmbed
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this error
+installHook.js:1 [fetchHtmlViaProxy] ❌ All proxies failed for: https://www.instagram.com/p/DNtaNx_XpaY/embed/captioned
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:212
+await in fetchHtmlViaProxy
+extractInstagramEmbed @ recipeParser.js:1490
+await in extractInstagramEmbed
+importFromInstagram @ recipeParser.js:4361
+await in importFromInstagram
+(anonymous) @ BrowserAssist.jsx:271
+(anonymous) @ BrowserAssist.jsx:391
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+flushPendingEffects @ react-dom-client.production.js:11739
+flushSpawnedWork @ react-dom-client.production.js:11718
+commitRoot @ react-dom-client.production.js:11521
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095Understand this warning
+recipeParser.js:1491 [instagram-embed] CORS proxy returned no data
+keyboard-shortcuts.js:214 Extension keyboard shortcuts loaded. Available shortcuts:
+keyboard-shortcuts.js:215 - Alt+C: Toggle Copy Mode
+keyboard-shortcuts.js:216 - Alt+A: Toggle Absolute Mode
+keyboard-shortcuts.js:217 - Alt+O: Trigger OCR Mode
