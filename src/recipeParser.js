@@ -12,6 +12,10 @@ import { getCachedImport, setCachedImport } from './db.js';
 import { isRedditUrl, isRedditPostUrl, tryRedditJson } from './scrapers/redditDiscovery.js';
 import { htmlToMarkdown, htmlLooksLikeRecipe } from './scrapers/markdownConverter.js';
 import { parseIngredient } from 'parse-ingredient';
+import {
+  SYSTEM_INSTRUCTION, RECIPE_SCHEMA, buildFewShotContents,
+  thinFromStructured, detectKindHeuristic,
+} from './recipeSchema.js';
 
 /**
  * looksLikeIngredientLine Ã¢â‚¬â€ uses parse-ingredient (battle-tested NLP for
@@ -526,8 +530,13 @@ ${rawText.slice(0, 7000)}
 
 
 /**
- * structureRecipeFromImage â€” uses Gemini 1.5 Flash multimodal vision to
- * extract a structured recipe directly from an image (photo, screenshot, etc.).
+ * structureRecipeFromImage — Transcript-first approach:
+ *   1. Gemini Vision faithfully TRANSCRIBES all text visible in the image
+ *   2. The transcript is routed through captionToRecipe() which uses the
+ *      shared SYSTEM_INSTRUCTION + RECIPE_SCHEMA for structuring
+ *
+ * This ensures photo imports get the exact same sorting rules, section handling,
+ * quantity splitting, and validation as caption/URL imports. One prompt to maintain.
  *
  * @param {string} imageDataUrl - Base64 data URL of the image
  * @param {object} options - { type: 'meal' | 'drink' }
@@ -541,30 +550,14 @@ export async function structureRecipeFromImage(imageDataUrl, { type = 'meal' } =
   if (!base64Data) return null;
 
   const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${clientKey}`;
-  
-  const isDrink = type === 'drink';
-  const prompt = `You are a recipe extraction expert. Analyze this image carefully and extract the recipe.
 
-If the image shows a ${isDrink ? 'cocktail/drink' : 'dish/meal'}, identify all visible text including the title, ingredients list, and cooking/mixing directions.
-If the image is a photo of food (not a recipe card), describe what you see and infer a likely recipe name and basic ingredients.
-If the image contains handwritten or printed recipe text, transcribe it accurately.
-
-Return ONLY valid JSON matching this exact schema:
-{
-  "title": "string - concise ${isDrink ? 'drink' : 'recipe'} name (2-6 words)",
-  "ingredients": [${isDrink ? '{ "name": "spirit/mixer/garnish", "amount": "e.g. 2 oz, 1 dash" }' : '"string - one ingredient with quantity per item"'}],
-  "directions": ["string - one clear ${isDrink ? 'mixing' : 'cooking'} step per item"],
-  "servings": "string or null",
-  ${isDrink ? '"glass": "string or null - e.g. coupe, rocks, highball",\n  "garnish": "string or null",' : '"cookTime": "string or null",'}
-  "notes": "string or null"
-}
-
-Rules:
-- Extract ALL ingredients and directions visible in the image
-- Each ingredient = one food/liquid item with its measurement
-- Each direction = one action step (verb-first)
-- NEVER put ingredients in directions[] or vice versa
-- If no recipe can be identified, return: { "error": "not a recipe" }`;
+  // Step 1: Vision TRANSCRIBES — does not structure. Faithful text extraction.
+  const transcribePrompt = `Transcribe ALL text visible in this image as faithfully as possible.
+Preserve line breaks, section headers (like “Ingredients:”, “For the sauce:”), bullet points,
+numbered steps, quantities, and measurements exactly as written.
+If the image shows a plated dish with no visible recipe text, describe the dish in detail:
+name what you see, estimate ingredients you can identify, and suggest likely preparation steps.
+If handwritten, do your best to read every word. Output plain text only — no JSON, no markdown.`;
 
   try {
     const res = await fetch(GEMINI_ENDPOINT, {
@@ -573,42 +566,35 @@ Rules:
       body: JSON.stringify({
         contents: [{
           parts: [
-            { inlineData: { mimeType: "image/jpeg", data: base64Data } },
-            { text: prompt }
-          ]
-        }]
+            { inlineData: { mimeType: 'image/jpeg', data: base64Data } },
+            { text: transcribePrompt },
+          ],
+        }],
+        generationConfig: { temperature: 0.1 },
       }),
-      signal: AbortSignal.timeout(20000), // Vision can take a bit longer
+      signal: AbortSignal.timeout(20000),
     });
 
     if (!res.ok) return null;
     const data = await res.json();
-    const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-    if (!raw) return null;
+    const transcript = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (!transcript || transcript.length < 15) return null;
 
-    const jsonText = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
-    const parsed = JSON.parse(jsonText);
-
-    // Normalize ingredients — Gemini may return strings or {name, amount} objects
-    const ingredients = Array.isArray(parsed.ingredients)
-      ? parsed.ingredients.map(ing => typeof ing === 'string' ? ing : [ing.amount, ing.name].filter(Boolean).join(' ').trim()).filter(Boolean)
-      : [];
-    const directions = Array.isArray(parsed.directions) ? parsed.directions.filter(Boolean) : [];
-
-    return {
-      name: parsed.title || 'Recipe from Photo',
-      ingredients,
-      directions,
-      ...buildStructuredFields(ingredients, directions),
-      servings: parsed.servings || null,
-      cookTime: parsed.cookTime || null,
-      notes: parsed.notes || null,
-      ...(isDrink ? { glass: parsed.glass || null, garnish: parsed.garnish || null, _type: 'drink' } : { _type: 'meal' }),
+    // Step 2: Route transcript through captionToRecipe — gets the good prompt,
+    // schema, few-shot exemplars, and thinFromStructured automatically.
+    const recipe = await captionToRecipe(transcript, {
+      title: '',
       imageUrl: imageDataUrl,
-      link: '',
-      _aiStructured: true,
-      _structuredVia: 'gemini-vision',
-    };
+      sourceUrl: '',
+      type,
+    });
+
+    if (recipe) {
+      recipe.imageUrl = imageDataUrl;
+      recipe._structuredVia = 'gemini-vision-transcript';
+      return recipe;
+    }
+    return null;
   } catch (err) {
     console.error('[SpiceHub] Gemini Vision error:', err);
     return null;
@@ -618,6 +604,70 @@ Rules:
 export async function structureWithAIClient(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal' } = {}) {
   const clientKey = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_GOOGLE_AI_KEY : null;
   if (!clientKey || !rawText || rawText.trim().length < 20) return null;
+
+  // Auto-detect drink vs meal from text content when type is still 'meal'
+  const kind = type === 'drink' ? 'drink' : detectKindHeuristic(rawText) === 'drink' ? 'drink' : 'meal';
+
+  const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${clientKey}`;
+
+  // Build request with native structured output (responseSchema) + shared system
+  // instruction + few-shot exemplars. Eliminates JSON.parse failures and ensures
+  // all paths use the same extraction rules from recipeSchema.js.
+  const fewShotTurns = buildFewShotContents(kind);
+  const userTurn = {
+    role: 'user',
+    parts: [{ text: hintTitle ? `Name hint: "${hintTitle}"\n\n${rawText.slice(0, 8000)}` : rawText.slice(0, 8000) }],
+  };
+
+  try {
+    const res = await fetch(GEMINI_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
+        contents: [...fewShotTurns, userTurn],
+        generationConfig: {
+          temperature: 0.1,
+          responseMimeType: 'application/json',
+          responseSchema: RECIPE_SCHEMA,
+        },
+      }),
+      signal: AbortSignal.timeout(14000),
+    });
+    if (!res.ok) {
+      // If structured output fails (older model, API issue), fall back to prose prompt
+      return _structureWithAIClientLegacy(rawText, { title: hintTitle, imageUrl, sourceUrl, type });
+    }
+    const data = await res.json();
+    const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (!raw) return null;
+
+    // With responseSchema the response is guaranteed valid JSON
+    const jsonText = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+    const structured = JSON.parse(jsonText);
+    if (!structured.isRecipe) return null;
+
+    // Flatten the rich structured output to SpiceHub's thin display shape
+    const thin = thinFromStructured(structured);
+    return {
+      name: thin.title || hintTitle || 'Imported Recipe',
+      ...thin,
+      ...buildStructuredFields(thin.ingredients, thin.directions),
+      imageUrl: imageUrl || '',
+      link: sourceUrl || '',
+      _aiStructured: true,
+      _structuredVia: 'gemini-client-schema',
+    };
+  } catch {
+    // Fall back to legacy prose prompt on any failure
+    return _structureWithAIClientLegacy(rawText, { title: hintTitle, imageUrl, sourceUrl, type });
+  }
+}
+
+/** Legacy prose-prompt fallback for when responseSchema isn't supported. */
+async function _structureWithAIClientLegacy(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal' } = {}) {
+  const clientKey = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_GOOGLE_AI_KEY : null;
+  if (!clientKey) return null;
 
   const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${clientKey}`;
   const prompt = _buildExtractionPrompt(rawText, { hintTitle, type });
@@ -639,8 +689,6 @@ export async function structureWithAIClient(rawText, { title: hintTitle = '', im
     const ingredients = Array.isArray(parsed.ingredients)
       ? parsed.ingredients.map(ing => typeof ing === 'string' ? ing : [ing.amount, ing.name].filter(Boolean).join(' ').trim()).filter(Boolean)
       : [];
-    // IMPORTANT: Leave empty arrays empty. Don't inject "See original postÃ¢â‚¬Â¦"
-    // placeholder strings Ã¢â‚¬â€ the UI decides how to present thin results.
     const _dirs = Array.isArray(parsed.directions) ? parsed.directions.filter(Boolean) : [];
     return {
       name: parsed.title || hintTitle || 'Imported Recipe',
@@ -650,17 +698,17 @@ export async function structureWithAIClient(rawText, { title: hintTitle = '', im
       servings: parsed.servings || null,
       cookTime: parsed.cookTime || null,
       notes: parsed.notes || null,
-      // Drink-specific fields survive as extras on the result; meal flow ignores them.
       ...(type === 'drink' ? { glass: parsed.glass || null, garnish: parsed.garnish || null, _type: 'drink' } : { _type: 'meal' }),
       imageUrl: imageUrl || '',
       link: sourceUrl || '',
       _aiStructured: true,
-      _structuredVia: 'gemini-client',
+      _structuredVia: 'gemini-client-legacy',
     };
   } catch {
     return null;
   }
 }
+
 
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ AI-powered structuring via server /api/structure-recipe (Gemini Flash) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 // Falls back to direct client call if VITE_GOOGLE_AI_KEY is configured.
@@ -695,14 +743,28 @@ export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl
     const data = await res.json();
     if (!data.ok || !data.recipe) return null;
     const r = data.recipe;
-    // Normalize ingredients Ã¢â‚¬â€ Gemini returns [{name, amount}], SpiceHub uses strings
+
+    // Server now returns the rich RECIPE_SCHEMA shape (ingredientGroups, etc.)
+    // Use thinFromStructured if it has the new shape, else legacy flat mapping
+    if (r.ingredientGroups) {
+      const thin = thinFromStructured(r);
+      return {
+        name: thin.title || hintTitle || 'Imported Recipe',
+        ...thin,
+        ...buildStructuredFields(thin.ingredients, thin.directions),
+        imageUrl: imageUrl || '',
+        link: sourceUrl || '',
+        _aiStructured: true,
+        _structuredVia: 'server-schema',
+      };
+    }
+    // Legacy flat response fallback
     const ingredients = Array.isArray(r.ingredients)
       ? r.ingredients.map(ing => {
         if (typeof ing === 'string') return ing;
         return [ing.amount, ing.name].filter(Boolean).join(' ').trim();
       }).filter(Boolean)
       : [];
-    // IMPORTANT: Empty arrays remain empty Ã¢â‚¬â€ never inject placeholder strings.
     const _serverDirs = Array.isArray(r.directions) ? r.directions.filter(Boolean) : [];
     return {
       name: r.title || hintTitle || 'Imported Recipe',
@@ -716,6 +778,7 @@ export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl
       imageUrl: imageUrl || '',
       link: sourceUrl || '',
       _aiStructured: true,
+      _structuredVia: 'server-legacy',
     };
   } catch {
     return null;
