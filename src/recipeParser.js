@@ -571,7 +571,7 @@ export async function structureRecipeFromImage(imageDataUrl, { type = 'meal' } =
   const base64Data = imageDataUrl.split(',')[1];
   if (!base64Data) return null;
 
-  const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${clientKey}`;
+  const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${clientKey}`;
 
   // Step 1: Vision TRANSCRIBES — does not structure. Faithful text extraction.
   const transcribePrompt = `Transcribe ALL text visible in this image as faithfully as possible.
@@ -630,7 +630,7 @@ export async function structureWithAIClient(rawText, { title: hintTitle = '', im
   // Auto-detect drink vs meal from text content when type is still 'meal'
   const kind = type === 'drink' ? 'drink' : detectKindHeuristic(rawText) === 'drink' ? 'drink' : 'meal';
 
-  const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${clientKey}`;
+  const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${clientKey}`;
 
   // Build request with native structured output (responseSchema) + shared system
   // instruction + few-shot exemplars. Eliminates JSON.parse failures and ensures
@@ -694,7 +694,7 @@ async function _structureWithAIClientLegacy(rawText, { title: hintTitle = '', im
   const clientKey = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_GOOGLE_AI_KEY : null;
   if (!clientKey) return null;
 
-  const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${clientKey}`;
+  const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${clientKey}`;
   const prompt = _buildExtractionPrompt(rawText, { hintTitle, type });
 
   try {
@@ -1869,7 +1869,7 @@ async function tryVideoExtraction(url, onProgress, { type = 'meal' } = {}) {
   try {
     if (onProgress) onProgress('Checking video subtitles...');
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 75000);
+    const timer = setTimeout(() => ctrl.abort(), 15000);
     const resp = await fetch(`${serverUrl}/api/extract-video`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1938,7 +1938,7 @@ async function extractInstagramAgent(url, onProgress, { type = 'meal' } = {}) {
   try {
     if (onProgress) onProgress('Trying server browser extraction...');
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 75000);
+    const timer = setTimeout(() => ctrl.abort(), 20000);
     const resp = await fetch(`${serverUrl}/api/extract-instagram-agent`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -4369,10 +4369,13 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   }
 
   // ── Phase 1: Instagram embed page (CORS proxy path — main workhorse) ────────
-  if (!videoRecipe) {
+  if (!videoRecipe && !capturedCaption) {
     progress(1, 'running', 'Fetching Instagram caption…');
     try {
-      const embedData = await extractInstagramEmbed(url);
+      const embedData = await Promise.race([
+          extractInstagramEmbed(url),
+          new Promise(resolve => setTimeout(() => resolve(null), 8000)),
+        ]);
       if (embedData?.rawPageText && !embedData?.caption) {
         // No clean caption but we have raw page text — save for Phase 3 Gemini fallback
         capturedRawPageText = embedData.rawPageText;
@@ -4491,7 +4494,15 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
       // Use OR: accept if EITHER ingredients OR directions is non-placeholder
       if (recipe && (!isPlaceholder(recipe.ingredients) || !isPlaceholder(recipe.directions))) {
         progress(3, 'done', 'Recipe structured successfully!');
-        const persistedImageUrl = await persistCapturedImage(capturedImageUrl || recipe.imageUrl || '');
+        const persistedImageUrl = capturedImageUrl || recipe.imageUrl || '';
+        // Async image persistence — don't block the recipe return
+        if (persistedImageUrl && !persistedImageUrl.startsWith('data:')) {
+          persistCapturedImage(persistedImageUrl).then(dataUrl => {
+            if (dataUrl && dataUrl !== persistedImageUrl) {
+              try { setCachedImport(url, { ...finalRecipe, imageUrl: dataUrl }); } catch {}
+            }
+          }).catch(() => {});
+        }
         const finalRecipe = {
           ...recipe,
           imageUrl: persistedImageUrl,
