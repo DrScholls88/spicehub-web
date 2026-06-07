@@ -213,128 +213,120 @@ export default function ImportSheet({
 
   // ── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="import-sheet-overlay" style={{
-      position: 'fixed', inset: 0, zIndex: 9999,
-      background: 'rgba(0,0,0,0.5)',
-      display: 'flex', flexDirection: 'column', justifyContent: 'flex-end',
-    }}>
-      <div className="import-sheet" style={{
-        background: 'var(--card-bg, #fff)',
-        borderRadius: '20px 20px 0 0',
-        maxHeight: '92vh',
-        overflowY: 'auto',
-        padding: '16px',
-        display: 'flex', flexDirection: 'column', gap: '12px',
-      }}>
+    <div className="import-sheet-overlay">
+      <div className="import-sheet">
+        {/* Grab handle */}
+        <div className="import-sheet-grab" />
+
         {/* Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h2 style={{ margin: 0, fontSize: '1.25rem' }}>{title}</h2>
+        <div className="import-sheet-header">
+          <h2>{title}</h2>
           <button
+            className="import-sheet-close"
             onClick={onClose}
             aria-label="Close"
-            style={{
-              background: 'none', border: 'none', fontSize: '1.5rem',
-              cursor: 'pointer', padding: '4px 8px', lineHeight: 1,
-            }}
           >
             &times;
           </button>
         </div>
 
-        {/* Error banner */}
-        {error && (
-          <div style={{
-            background: '#fee', color: '#c33', padding: '10px 14px',
-            borderRadius: 10, fontSize: '0.9rem',
-          }}>
-            {error}
-          </div>
-        )}
+        {/* Body */}
+        <div className="import-sheet-body">
+          {/* Error banner */}
+          {error && (
+            <div className="import-sheet-error">
+              <p>{error}</p>
+              <button onClick={() => setError('')}>Dismiss</button>
+            </div>
+          )}
 
-        {/* ImportInput — full or collapsed */}
-        <ImportInput
-          collapsed={phase !== 'input'}
-          onImport={handleUrlImport}
-          onPasteImport={handlePasteImport}
-          onPhotoImport={handlePhotoImport}
-          onReExpand={handleReExpand}
-          initialUrl={sharedContent?.url || ''}
-          initialType={initialItemType}
-          title={title}
-        />
-
-        {/* Loading phase */}
-        {phase === 'loading' && (
-          <div style={{
-            textAlign: 'center', padding: '32px 16px',
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px',
-          }}>
-            <div className="import-spinner" style={{
-              width: 40, height: 40,
-              border: '3px solid var(--border-color, #ddd)',
-              borderTopColor: 'var(--accent, #e67e22)',
-              borderRadius: '50%',
-              animation: 'spin 0.8s linear infinite',
-            }} />
-            <p style={{ margin: 0, color: 'var(--text-muted, #888)', fontSize: '0.95rem' }}>
-              {progressMsg}
-            </p>
-          </div>
-        )}
-
-        {/* Review phase */}
-        {phase === 'review' && recipe && (
-          <ImportReview
-            recipe={recipe}
-            onChange={setRecipe}
-            onSave={handleSave}
-            confidence={confidence}
+          {/* ImportInput — full or collapsed */}
+          <ImportInput
+            collapsed={phase !== 'input'}
+            onImport={handleUrlImport}
+            onPasteImport={handlePasteImport}
+            onPhotoImport={handlePhotoImport}
+            onReExpand={handleReExpand}
+            initialUrl={sharedContent?.url || ''}
+            initialType={initialItemType}
+            title={title}
           />
-        )}
 
-        {/* BrowserAssist inline phase */}
-        {phase === 'browserAssist' && (
-          <BrowserAssist
-            ref={browserAssistRef}
-            url={importUrl}
-            onRecipeExtracted={handleBrowserAssistRecipe}
-            onFallbackToText={handleBrowserAssistFallback}
-            initialCapturedText={capturedText}
-            seedRecipe={browserAssistSeed}
-            type={itemType}
-            inline={true}
-            onError={(err) => {
-              console.warn('[ImportSheet] BrowserAssist error:', err);
-              setError('Visual extraction failed. Try pasting the recipe text.');
-              setPhase('input');
-            }}
-          />
-        )}
+          {/* Loading phase */}
+          {phase === 'loading' && (
+            <div className="import-sheet-loading">
+              <div className="import-sheet-progress-bar">
+                <div className="import-sheet-progress-fill" />
+              </div>
+              <p className="import-sheet-progress-text">
+                {progressMsg}
+              </p>
+            </div>
+          )}
 
-        {/* Sticky footer close button */}
-        <div style={{
-          borderTop: '1px solid var(--border-color, #eee)',
-          paddingTop: '12px',
-          display: 'flex', justifyContent: 'center',
-        }}>
-          <button
-            onClick={onClose}
-            style={{
-              background: 'none', border: '1px solid var(--border-color, #ccc)',
-              borderRadius: 10, padding: '10px 32px',
-              fontSize: '1rem', cursor: 'pointer',
-              color: 'var(--text-color, #333)',
-            }}
-          >
-            Cancel
-          </button>
+          {/* Review phase */}
+          {phase === 'review' && recipe && (
+            <ImportReview
+              recipe={recipe}
+              onChange={setRecipe}
+              onSave={handleSave}
+              confidence={confidence}
+            />
+          )}
+
+          {/* BrowserAssist inline phase */}
+          {phase === 'browserAssist' && (
+            <BrowserAssist
+              ref={browserAssistRef}
+              url={importUrl}
+              onRecipeExtracted={handleBrowserAssistRecipe}
+              onFallbackToText={handleBrowserAssistFallback}
+              initialCapturedText={capturedText}
+              seedRecipe={browserAssistSeed}
+              type={itemType}
+              inline={true}
+              onError={(err) => {
+                console.warn('[ImportSheet] BrowserAssist error:', err);
+                setError('Visual extraction failed. Try pasting the recipe text.');
+                setPhase('input');
+              }}
+            />
+          )}
+        </div>
+
+        {/* Sticky footer */}
+        <div className="import-sheet-footer">
+          {phase === 'input' && (
+            <button
+              className="import-sheet-btn import-sheet-btn-primary"
+              onClick={() => {}}
+              disabled
+            >
+              Import recipe
+            </button>
+          )}
+          {phase === 'loading' && (
+            <button
+              className="import-sheet-btn import-sheet-btn-ghost"
+              onClick={() => {
+                if (abortRef.current) abortRef.current.abort();
+                setPhase('input');
+                setProgressMsg('');
+              }}
+            >
+              Cancel
+            </button>
+          )}
+          {phase === 'review' && (
+            <button
+              className="import-sheet-btn import-sheet-btn-primary"
+              onClick={() => handleSave(recipe)}
+            >
+              Save to library
+            </button>
+          )}
         </div>
       </div>
-
-      {/* Spin keyframe for loading spinner */}
-      <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
-      `}</style>
     </div>
   );
 }
