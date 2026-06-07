@@ -3,35 +3,20 @@ import { useState, useCallback } from 'react';
 /**
  * AccordionSection — collapsible section used within ImportReview.
  */
-function AccordionSection({ title, count, defaultOpen = false, children }) {
+function AccordionSection({ icon, title, count, defaultOpen = false, children }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div style={{
-      border: '1px solid var(--border-color, #e0e0e0)',
-      borderRadius: 12,
-      overflow: 'hidden',
-    }}>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        style={{
-          width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          padding: '10px 14px',
-          background: 'var(--bg-muted, #f8f8f8)',
-          border: 'none', cursor: 'pointer',
-          fontSize: '0.95rem', fontWeight: 600,
-          color: 'var(--text-color, #333)',
-        }}
-      >
-        <span>{title}{count != null ? ` (${count})` : ''}</span>
-        <span style={{
-          transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
-          transition: 'transform 0.2s', fontSize: '0.8rem',
-        }}>
-          &#9660;
+    <div className={`review-accordion${open ? ' open' : ' collapsed'}`}>
+      <div className="review-accordion-head" onClick={() => setOpen((v) => !v)}>
+        <span className="review-accordion-label">
+          {icon && <span className="review-accordion-icon">{icon}</span>}
+          {title}
+          {count != null && <span className="review-accordion-count">{count}</span>}
         </span>
-      </button>
+        <span className={`review-accordion-chevron${!open ? ' rotated' : ''}`}>&#9660;</span>
+      </div>
       {open && (
-        <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div className="review-accordion-body">
           {children}
         </div>
       )}
@@ -43,37 +28,23 @@ function AccordionSection({ title, count, defaultOpen = false, children }) {
  * ListItem — a single editable list row (ingredient or step).
  * Shows a drag handle, text input, and remove button.
  */
-function ListItem({ value, index, onChange, onRemove }) {
+function ListItem({ value, index, onChange, onRemove, stepNum }) {
   return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: '6px',
-    }}>
-      <span style={{
-        cursor: 'grab', fontSize: '1rem', opacity: 0.4, userSelect: 'none',
-        padding: '0 2px',
-      }}>
-        &#9776;
-      </span>
+    <div className="review-row">
+      {stepNum != null ? (
+        <span className="review-step-num">{stepNum}</span>
+      ) : (
+        <span className="review-row-handle">&#9776;</span>
+      )}
       <input
         type="text"
         value={value}
         onChange={(e) => onChange(index, e.target.value)}
-        style={{
-          flex: 1, padding: '7px 10px',
-          borderRadius: 8,
-          border: '1px solid var(--border-color, #ddd)',
-          fontSize: '0.9rem',
-          outline: 'none',
-        }}
       />
       <button
+        className="review-row-more"
         onClick={() => onRemove(index)}
         aria-label="Remove"
-        style={{
-          background: 'none', border: 'none', cursor: 'pointer',
-          fontSize: '1.1rem', color: 'var(--text-muted, #999)',
-          padding: '2px 6px', lineHeight: 1,
-        }}
       >
         &times;
       </button>
@@ -140,52 +111,36 @@ export default function ImportReview({ recipe, onChange, onSave, confidence }) {
 
   if (!recipe) return null;
 
+  const confLevel = confidence >= 0.7 ? 'high' : confidence >= 0.4 ? 'medium' : 'low';
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+    <div className="import-review">
       {/* Hero image + title + confidence */}
-      <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
-        {recipe.image && (
-          <img
-            src={recipe.image}
-            alt={recipe.title || 'Recipe'}
-            style={{
-              width: 80, height: 80, objectFit: 'cover',
-              borderRadius: 12, flexShrink: 0,
-            }}
-          />
+      <div
+        className="review-hero"
+        style={recipe.image ? { backgroundImage: `url(${recipe.image})` } : undefined}
+      >
+        {!recipe.image && <div className="review-hero-placeholder">🍽️</div>}
+        <div className="review-hero-gradient" />
+        {confidence != null && (
+          <span className={`review-confidence review-confidence-${confLevel}`}>
+            {confLabel} {Math.round(confidence * 100)}%
+          </span>
         )}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <div className="review-hero-title-wrap">
           <input
+            className="review-hero-title"
             type="text"
             value={recipe.title || ''}
             onChange={(e) => updateField('title', e.target.value)}
             placeholder="Recipe title"
-            style={{
-              fontSize: '1.1rem', fontWeight: 600,
-              border: '1px solid var(--border-color, #ddd)',
-              borderRadius: 8, padding: '8px 10px',
-              outline: 'none', width: '100%',
-            }}
           />
-          {confidence != null && (
-            <span style={{
-              display: 'inline-block',
-              padding: '2px 10px',
-              borderRadius: 12,
-              background: confColor + '20',
-              color: confColor,
-              fontSize: '0.75rem',
-              fontWeight: 600,
-              alignSelf: 'flex-start',
-            }}>
-              {confLabel} confidence ({Math.round(confidence * 100)}%)
-            </span>
-          )}
         </div>
       </div>
 
       {/* Ingredients */}
       <AccordionSection
+        icon="🥕"
         title="Ingredients"
         count={recipe.ingredients?.length || 0}
         defaultOpen={true}
@@ -200,12 +155,8 @@ export default function ImportReview({ recipe, onChange, onSave, confidence }) {
           />
         ))}
         <button
+          className="review-add-row"
           onClick={() => addListItem('ingredients')}
-          style={{
-            background: 'none', border: '1px dashed var(--border-color, #ccc)',
-            borderRadius: 8, padding: '6px', cursor: 'pointer',
-            fontSize: '0.85rem', color: 'var(--text-muted, #888)',
-          }}
         >
           + Add ingredient
         </button>
@@ -213,6 +164,7 @@ export default function ImportReview({ recipe, onChange, onSave, confidence }) {
 
       {/* Steps / Directions */}
       <AccordionSection
+        icon="📝"
         title="Steps"
         count={recipe.directions?.length || 0}
         defaultOpen={true}
@@ -222,17 +174,14 @@ export default function ImportReview({ recipe, onChange, onSave, confidence }) {
             key={i}
             value={item}
             index={i}
+            stepNum={i + 1}
             onChange={(idx, val) => updateListItem('directions', idx, val)}
             onRemove={(idx) => removeListItem('directions', idx)}
           />
         ))}
         <button
+          className="review-add-row"
           onClick={() => addListItem('directions')}
-          style={{
-            background: 'none', border: '1px dashed var(--border-color, #ccc)',
-            borderRadius: 8, padding: '6px', cursor: 'pointer',
-            fontSize: '0.85rem', color: 'var(--text-muted, #888)',
-          }}
         >
           + Add step
         </button>
@@ -240,115 +189,62 @@ export default function ImportReview({ recipe, onChange, onSave, confidence }) {
 
       {/* Drink-specific fields */}
       {isDrink && (
-        <AccordionSection title="Drink Details" defaultOpen={false}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <label style={{ fontSize: '0.85rem', color: 'var(--text-muted, #888)' }}>Glass</label>
+        <AccordionSection icon="🍸" title="Drink Details" defaultOpen={false}>
+          <div className="review-drink-fields">
+            <label>Glass</label>
             <input
               type="text"
               value={recipe.glass || ''}
               onChange={(e) => updateField('glass', e.target.value)}
               placeholder="e.g. Rocks, Coupe, Highball"
-              style={{
-                padding: '7px 10px', borderRadius: 8,
-                border: '1px solid var(--border-color, #ddd)',
-                fontSize: '0.9rem', outline: 'none',
-              }}
             />
-            <label style={{ fontSize: '0.85rem', color: 'var(--text-muted, #888)' }}>Garnish</label>
+            <label>Garnish</label>
             <input
               type="text"
               value={recipe.garnish || ''}
               onChange={(e) => updateField('garnish', e.target.value)}
               placeholder="e.g. Lemon twist, Cherry"
-              style={{
-                padding: '7px 10px', borderRadius: 8,
-                border: '1px solid var(--border-color, #ddd)',
-                fontSize: '0.9rem', outline: 'none',
-              }}
             />
-            <label style={{ fontSize: '0.85rem', color: 'var(--text-muted, #888)' }}>Technique</label>
+            <label>Technique</label>
             <input
               type="text"
               value={recipe.technique || ''}
               onChange={(e) => updateField('technique', e.target.value)}
               placeholder="e.g. Shaken, Stirred, Built"
-              style={{
-                padding: '7px 10px', borderRadius: 8,
-                border: '1px solid var(--border-color, #ddd)',
-                fontSize: '0.9rem', outline: 'none',
-              }}
             />
           </div>
         </AccordionSection>
       )}
 
       {/* Notes */}
-      <AccordionSection title="Notes" defaultOpen={false}>
+      <AccordionSection icon="📋" title="Notes" defaultOpen={false}>
         <textarea
+          className="review-notes"
           value={recipe.notes || ''}
           onChange={(e) => updateField('notes', e.target.value)}
           placeholder="Any notes about this recipe..."
           rows={3}
-          style={{
-            width: '100%', padding: '8px 10px',
-            borderRadius: 8,
-            border: '1px solid var(--border-color, #ddd)',
-            fontSize: '0.9rem', resize: 'vertical',
-            fontFamily: 'inherit', outline: 'none',
-          }}
         />
       </AccordionSection>
 
       {/* Save destination grid */}
-      <div>
-        <p style={{ margin: '0 0 8px', fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted, #888)' }}>
-          Save to:
-        </p>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+      <div className="review-destination">
+        <p className="review-destination-label">Save to</p>
+        <div className="review-destination-grid">
           {destinations.map((d) => (
             <button
               key={d.key}
+              className={`review-dest-card${destination === d.key ? ' active' : ''}`}
               onClick={() => setDestination(d.key)}
-              style={{
-                flex: '1 1 auto',
-                minWidth: 80,
-                padding: '8px 16px',
-                borderRadius: 10,
-                border: destination === d.key
-                  ? '2px solid var(--accent, #e67e22)'
-                  : '1px solid var(--border-color, #ccc)',
-                background: destination === d.key ? 'var(--accent, #e67e22)' + '18' : 'var(--card-bg, #fff)',
-                fontWeight: destination === d.key ? 600 : 400,
-                fontSize: '0.9rem',
-                cursor: 'pointer',
-                color: destination === d.key ? 'var(--accent, #e67e22)' : 'var(--text-color, #333)',
-                transition: 'all 0.15s',
-              }}
             >
-              {d.label}
+              <span className="review-dest-icon">
+                {d.key === 'library' ? '📚' : d.key === 'week' ? '📅' : d.key === 'grocery' ? '🛒' : '🍹'}
+              </span>
+              <span className="review-dest-label">{d.label}</span>
             </button>
           ))}
         </div>
       </div>
-
-      {/* Save button */}
-      <button
-        onClick={handleSave}
-        style={{
-          width: '100%',
-          padding: '12px',
-          borderRadius: 12,
-          border: 'none',
-          background: 'var(--accent, #e67e22)',
-          color: '#fff',
-          fontWeight: 700,
-          fontSize: '1.05rem',
-          cursor: 'pointer',
-          transition: 'opacity 0.15s',
-        }}
-      >
-        Save {isDrink ? 'Drink' : 'Recipe'}
-      </button>
     </div>
   );
 }

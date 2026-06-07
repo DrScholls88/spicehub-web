@@ -95,121 +95,65 @@ export default function ImportInput({
   if (collapsed) {
     return (
       <div
+        className="import-input-collapsed"
         onClick={onReExpand}
         role="button"
         tabIndex={0}
         onKeyDown={(e) => { if (e.key === 'Enter') onReExpand(); }}
-        style={{
-          display: 'flex', alignItems: 'center', gap: '8px',
-          background: 'var(--bg-muted, #f5f5f5)',
-          borderRadius: 10, padding: '8px 14px',
-          cursor: 'pointer', fontSize: '0.9rem',
-          color: 'var(--text-muted, #666)',
-          border: '1px solid var(--border-color, #e0e0e0)',
-        }}
       >
-        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span className="import-input-collapsed-dot" />
+        <span className="import-input-collapsed-url">
           {url || pasteText?.slice(0, 60) || 'Edit input'}
         </span>
-        <span style={{ fontSize: '1.1rem', opacity: 0.6 }}>&#9998;</span>
+        <span className="import-input-collapsed-edit">&#9998;</span>
       </div>
     );
   }
 
-  // ── Tab button helper ────────────────────────────────────────────────────
-  const TabBtn = ({ value, label }) => (
-    <button
-      onClick={() => setTab(value)}
-      style={{
-        flex: 1,
-        padding: '8px 0',
-        border: 'none',
-        borderBottom: tab === value ? '2px solid var(--accent, #e67e22)' : '2px solid transparent',
-        background: 'none',
-        fontWeight: tab === value ? 600 : 400,
-        fontSize: '0.9rem',
-        cursor: 'pointer',
-        color: tab === value ? 'var(--accent, #e67e22)' : 'var(--text-muted, #888)',
-        transition: 'all 0.15s ease',
-      }}
-    >
-      {label}
-    </button>
-  );
-
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+    <div className="import-input">
       {/* Segmented tabs */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color, #eee)' }}>
-        <TabBtn value="url" label="URL" />
-        <TabBtn value="paste" label="Paste Text" />
-        <TabBtn value="photo" label="Photo" />
+      <div className="import-input-tabs">
+        <button className={tab === 'url' ? 'active' : ''} onClick={() => setTab('url')}>URL</button>
+        <button className={tab === 'paste' ? 'active' : ''} onClick={() => setTab('paste')}>Paste Text</button>
+        <button className={tab === 'photo' ? 'active' : ''} onClick={() => setTab('photo')}>Photo</button>
       </div>
 
       {/* Meal / Drink toggle */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted, #888)' }}>Type:</span>
+      <div className="import-input-type-toggle">
         <button
-          onClick={toggleType}
-          style={{
-            padding: '4px 14px',
-            borderRadius: 20,
-            border: '1px solid var(--border-color, #ccc)',
-            background: itemType === 'drink' ? 'var(--accent-drink, #9b59b6)' : 'var(--accent, #e67e22)',
-            color: '#fff',
-            fontSize: '0.85rem',
-            fontWeight: 600,
-            cursor: 'pointer',
-            transition: 'background 0.2s',
-          }}
+          className={itemType === 'meal' ? 'active' : ''}
+          onClick={() => setItemType('meal')}
         >
-          {itemType === 'drink' ? 'Drink' : 'Meal'}
+          Meal
+        </button>
+        <button
+          className={itemType === 'drink' ? 'active' : ''}
+          onClick={() => setItemType('drink')}
+        >
+          Drink
         </button>
       </div>
 
       {/* URL tab */}
       {tab === 'url' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <input
-              type="url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              onKeyDown={handleUrlKeyDown}
-              placeholder="Paste recipe URL..."
-              autoFocus
-              style={{
-                flex: 1, padding: '10px 14px',
-                borderRadius: 10,
-                border: '1px solid var(--border-color, #ccc)',
-                fontSize: '1rem',
-                outline: 'none',
-              }}
-            />
-            <button
-              onClick={handleUrlSubmit}
-              disabled={!url.trim()}
-              style={{
-                padding: '10px 20px',
-                borderRadius: 10,
-                border: 'none',
-                background: url.trim() ? 'var(--accent, #e67e22)' : 'var(--bg-muted, #ddd)',
-                color: url.trim() ? '#fff' : '#999',
-                fontWeight: 600,
-                fontSize: '0.95rem',
-                cursor: url.trim() ? 'pointer' : 'default',
-                transition: 'background 0.2s',
-              }}
-            >
-              Import
-            </button>
-          </div>
+        <div>
+          <input
+            className="import-input-url"
+            type="url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            onKeyDown={handleUrlKeyDown}
+            placeholder="Paste recipe URL..."
+            autoFocus
+          />
           {socialDetected && (
-            <div style={{
-              fontSize: '0.8rem', color: 'var(--accent, #e67e22)',
-              padding: '2px 0',
-            }}>
-              Detected: {socialDetected}
+            <div className="import-input-social-card" onClick={handleUrlSubmit}>
+              <div className="import-input-social-icon" />
+              <div className="import-input-social-meta">
+                <strong>{socialDetected}</strong>
+                <small>Recipe detected — tap to import</small>
+              </div>
             </div>
           )}
         </div>
@@ -217,36 +161,18 @@ export default function ImportInput({
 
       {/* Paste Text tab */}
       {tab === 'paste' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div>
           <textarea
+            className="import-input-paste"
             value={pasteText}
             onChange={(e) => setPasteText(e.target.value)}
             placeholder="Paste recipe text, ingredients, or instructions..."
             rows={6}
-            style={{
-              width: '100%', padding: '10px 14px',
-              borderRadius: 10,
-              border: '1px solid var(--border-color, #ccc)',
-              fontSize: '0.95rem',
-              resize: 'vertical',
-              fontFamily: 'inherit',
-              outline: 'none',
-            }}
           />
           <button
+            className="import-input-paste-submit"
             onClick={handlePasteSubmit}
             disabled={!pasteText.trim()}
-            style={{
-              padding: '10px 20px',
-              borderRadius: 10,
-              border: 'none',
-              background: pasteText.trim() ? 'var(--accent, #e67e22)' : 'var(--bg-muted, #ddd)',
-              color: pasteText.trim() ? '#fff' : '#999',
-              fontWeight: 600,
-              fontSize: '0.95rem',
-              cursor: pasteText.trim() ? 'pointer' : 'default',
-              alignSelf: 'flex-end',
-            }}
           >
             Import Text
           </button>
@@ -255,38 +181,16 @@ export default function ImportInput({
 
       {/* Photo tab */}
       {tab === 'photo' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
-          <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-muted, #888)', textAlign: 'center' }}>
+        <div className="import-input-photo-section">
+          <button
+            className="import-input-photo-btn"
+            onClick={() => fileRef.current?.click()}
+          >
+            Choose File or Take Photo
+          </button>
+          <p className="import-input-photo-hint">
             Upload a photo of a recipe (cookbook page, index card, screenshot)
           </p>
-          <div style={{ display: 'flex', gap: '12px' }}>
-            <button
-              onClick={() => fileRef.current?.click()}
-              style={{
-                padding: '10px 24px',
-                borderRadius: 10,
-                border: '1px solid var(--border-color, #ccc)',
-                background: 'var(--card-bg, #fff)',
-                fontSize: '0.95rem',
-                cursor: 'pointer',
-              }}
-            >
-              Choose File
-            </button>
-            <button
-              onClick={() => cameraRef.current?.click()}
-              style={{
-                padding: '10px 24px',
-                borderRadius: 10,
-                border: '1px solid var(--border-color, #ccc)',
-                background: 'var(--card-bg, #fff)',
-                fontSize: '0.95rem',
-                cursor: 'pointer',
-              }}
-            >
-              Take Photo
-            </button>
-          </div>
           <input
             ref={fileRef}
             type="file"

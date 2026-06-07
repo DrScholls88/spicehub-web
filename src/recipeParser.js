@@ -433,6 +433,28 @@ export function parseManualCaption(captionText, sourceUrl) {
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Client-side Google AI (Gemini) Ã¢â‚¬â€ direct browser call Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 // Uses VITE_GOOGLE_AI_KEY if set. Runs in the browser without a backend hop,
 // giving faster results and working even when the backend server is cold/offline.
+/**
+ * Post-processing title cleaner — strips social chrome the AI sometimes leaves.
+ * "Sheet Pan Gnocchi! This Weeknight Win recipe is" → "Sheet Pan Gnocchi"
+ */
+function _cleanTitle(title = '') {
+  let t = String(title).trim();
+  // Strip trailing social patterns: "This Weeknight Win recipe is", "save this", "link in bio", etc.
+  t = t.replace(/[!.]\s*(this|these|the|my|our|a|an)\s+(weeknight|easy|quick|best|amazing|perfect|simple|delicious|favorite|favourite|ultimate)\b.*$/i, '');
+  // Strip trailing "recipe is/recipe that/recipe you" fragments
+  t = t.replace(/\s+recipe\s+(is|that|you|for|with|I|we)\b.*$/i, '');
+  // Strip trailing sentence fragments after the dish name (period/exclamation followed by promotional text)
+  t = t.replace(/[!.]\s+(save|follow|link|comment|share|try|tag|check|click|tap|dm|get the|grab the)\b.*$/i, '');
+  // Strip hashtags, @mentions, emojis
+  t = t.replace(/#\w+/g, '').replace(/@\w+/g, '');
+  t = t.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}\u{FE00}-\u{FEFF}]/gu, '');
+  // Clean up trailing punctuation and whitespace
+  t = t.replace(/[!.,;:\s]+$/, '').trim();
+  // Truncate to 60 chars at a word boundary
+  if (t.length > 60) t = t.substring(0, 60).replace(/\s\S+$/, '').trim();
+  return t || title.trim();
+}
+
 // The API key is bundled into the client build Ã¢â‚¬â€ acceptable for personal/family apps.
 /**
  * Build the Gemini system prompt. Meal vs drink prompts differ materially:
@@ -635,7 +657,7 @@ export async function structureWithAIClient(rawText, { title: hintTitle = '', im
       signal: AbortSignal.timeout(14000),
     });
     if (!res.ok) {
-      // If structured output fails (older model, API issue), fall back to prose prompt
+      console.warn('[SpiceHub] responseSchema rejected (HTTP', res.status, ') — falling back to legacy prompt');
       return _structureWithAIClientLegacy(rawText, { title: hintTitle, imageUrl, sourceUrl, type });
     }
     const data = await res.json();
@@ -647,10 +669,12 @@ export async function structureWithAIClient(rawText, { title: hintTitle = '', im
     const structured = JSON.parse(jsonText);
     if (!structured.isRecipe) return null;
 
+    console.log('[SpiceHub] Schema extraction OK — ingredientGroups:', structured.ingredientGroups?.length, 'directions:', structured.directions?.length, 'confidence:', structured.confidence);
+
     // Flatten the rich structured output to SpiceHub's thin display shape
     const thin = thinFromStructured(structured);
     return {
-      name: thin.title || hintTitle || 'Imported Recipe',
+      name: _cleanTitle(thin.title || hintTitle || 'Imported Recipe'),
       ...thin,
       ...buildStructuredFields(thin.ingredients, thin.directions),
       imageUrl: imageUrl || '',
@@ -658,7 +682,8 @@ export async function structureWithAIClient(rawText, { title: hintTitle = '', im
       _aiStructured: true,
       _structuredVia: 'gemini-client-schema',
     };
-  } catch {
+  } catch (err) {
+    console.warn('[SpiceHub] structureWithAIClient schema path error:', err?.message || err);
     // Fall back to legacy prose prompt on any failure
     return _structureWithAIClientLegacy(rawText, { title: hintTitle, imageUrl, sourceUrl, type });
   }
@@ -691,7 +716,7 @@ async function _structureWithAIClientLegacy(rawText, { title: hintTitle = '', im
       : [];
     const _dirs = Array.isArray(parsed.directions) ? parsed.directions.filter(Boolean) : [];
     return {
-      name: parsed.title || hintTitle || 'Imported Recipe',
+      name: _cleanTitle(parsed.title || hintTitle || 'Imported Recipe'),
       ingredients,
       directions: _dirs,
       ...buildStructuredFields(ingredients, _dirs),
