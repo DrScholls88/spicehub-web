@@ -312,6 +312,7 @@ export default function WeekView({
 
   // ── Spin selected days ──────────────────────────────────────────────────────
   const handleSpinSelected = useCallback(() => {
+    navigator.vibrate?.([50, 30, 50]);
     // Collect ALL selected dates (any week), sorted chronologically
     const sortedDates = Array.from(selectedDates)
       .map(key => dateFromKey(key))
@@ -726,7 +727,7 @@ export default function WeekView({
             </div>
           ) : (
             <>
-              <button onClick={onGenerate} style={PRIMARY_BTN}>
+              <button onClick={() => { navigator.vibrate?.([50, 30, 50]); onGenerate(); }} style={PRIMARY_BTN}>
                 🎰 Spin the Week{rotationCount > 0 ? ` (${rotationCount})` : ''}
               </button>
               <div style={{ display: 'flex', gap: 8 }}>

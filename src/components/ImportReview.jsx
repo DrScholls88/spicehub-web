@@ -28,9 +28,16 @@ function AccordionSection({ icon, title, count, defaultOpen = false, children })
  * ListItem — a single editable list row (ingredient or step).
  * Shows a drag handle, text input, and remove button.
  */
-function ListItem({ value, index, onChange, onRemove, stepNum }) {
+function ListItem({ value, index, onChange, onRemove, stepNum, onMoveUp, onMoveDown, isFirst, isLast, listName, onDragStart, onDragOver, onDrop, onDragEnd }) {
   return (
-    <div className="review-row">
+    <div
+      className="review-row"
+      draggable
+      onDragStart={(e) => onDragStart?.(listName, index, e)}
+      onDragOver={(e) => onDragOver?.(e)}
+      onDrop={(e) => onDrop?.(listName, index, e)}
+      onDragEnd={(e) => onDragEnd?.(e)}
+    >
       {stepNum != null ? (
         <span className="review-step-num">{stepNum}</span>
       ) : (
@@ -41,6 +48,20 @@ function ListItem({ value, index, onChange, onRemove, stepNum }) {
         value={value}
         onChange={(e) => onChange(index, e.target.value)}
       />
+      <button
+        className="review-row-reorder"
+        onClick={() => onMoveUp?.(index)}
+        disabled={isFirst}
+        aria-label="Move up"
+        title="Move up"
+      >&#9650;</button>
+      <button
+        className="review-row-reorder"
+        onClick={() => onMoveDown?.(index)}
+        disabled={isLast}
+        aria-label="Move down"
+        title="Move down"
+      >&#9660;</button>
       <button
         className="review-row-more"
         onClick={() => onRemove(index)}
@@ -87,6 +108,53 @@ export default function ImportReview({ recipe, onChange, onSave, confidence }) {
     const list = [...(recipe[field] || []), ''];
     onChange({ ...recipe, [field]: list });
   }, [recipe, onChange]);
+
+  // ── Reorder helpers ──────────────────────────────────────────────────────
+  const moveListItem = useCallback((field, index, direction) => {
+    const list = [...(recipe[field] || [])];
+    const newIdx = direction === 'up' ? index - 1 : index + 1;
+    if (newIdx < 0 || newIdx >= list.length) return;
+    [list[index], list[newIdx]] = [list[newIdx], list[index]];
+    onChange({ ...recipe, [field]: list });
+  }, [recipe, onChange]);
+
+  const [dragSrc, setDragSrc] = useState(null); // { listName, idx }
+
+  const handleDragStart = useCallback((listName, idx, e) => {
+    setDragSrc({ listName, idx });
+    e.dataTransfer.effectAllowed = 'move';
+    e.currentTarget.style.opacity = '0.45';
+  }, []);
+
+  const handleDragOver = useCallback((e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  }, []);
+
+  const handleDrop = useCallback((listName, dropIdx, e) => {
+    e.preventDefault();
+    if (!dragSrc) return;
+    if (dragSrc.listName === listName) {
+      // Same-list reorder
+      const list = [...(recipe[listName] || [])];
+      const [item] = list.splice(dragSrc.idx, 1);
+      list.splice(dropIdx, 0, item);
+      onChange({ ...recipe, [listName]: list });
+    } else {
+      // Cross-section move
+      const fromList = [...(recipe[dragSrc.listName] || [])];
+      const toList = [...(recipe[listName] || [])];
+      const [item] = fromList.splice(dragSrc.idx, 1);
+      toList.splice(dropIdx, 0, item);
+      onChange({ ...recipe, [dragSrc.listName]: fromList, [listName]: toList });
+    }
+    setDragSrc(null);
+  }, [dragSrc, recipe, onChange]);
+
+  const handleDragEnd = useCallback((e) => {
+    e.currentTarget.style.opacity = '';
+    setDragSrc(null);
+  }, []);
 
   // ── Confidence chip color ────────────────────────────────────────────────
   const confColor = confidence >= 0.7 ? '#27ae60' : confidence >= 0.4 ? '#f39c12' : '#e74c3c';
@@ -152,6 +220,15 @@ export default function ImportReview({ recipe, onChange, onSave, confidence }) {
             index={i}
             onChange={(idx, val) => updateListItem('ingredients', idx, val)}
             onRemove={(idx) => removeListItem('ingredients', idx)}
+            onMoveUp={(idx) => moveListItem('ingredients', idx, 'up')}
+            onMoveDown={(idx) => moveListItem('ingredients', idx, 'down')}
+            isFirst={i === 0}
+            isLast={i === (recipe.ingredients || []).length - 1}
+            listName="ingredients"
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+            onDragEnd={handleDragEnd}
           />
         ))}
         <button
@@ -177,6 +254,15 @@ export default function ImportReview({ recipe, onChange, onSave, confidence }) {
             stepNum={i + 1}
             onChange={(idx, val) => updateListItem('directions', idx, val)}
             onRemove={(idx) => removeListItem('directions', idx)}
+            onMoveUp={(idx) => moveListItem('directions', idx, 'up')}
+            onMoveDown={(idx) => moveListItem('directions', idx, 'down')}
+            isFirst={i === 0}
+            isLast={i === (recipe.directions || []).length - 1}
+            listName="directions"
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDrop={handleDrop}
+            onDragEnd={handleDragEnd}
           />
         ))}
         <button
