@@ -1,6 +1,21 @@
 import { useState, useRef, useCallback } from 'react';
 import db from '../db';
 
+function CopyLinkButton({ url }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }).catch(() => {});
+  };
+  return (
+    <button className="detail-source-copy" onClick={handleCopy}>
+      {copied ? '✓ Copied' : '📋 Copy'}
+    </button>
+  );
+}
+
 export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, onRate, onStartCook, onStartMix, onToggleRotation, isDrink = false, onPhotoUpdated }) {
   // ── Swipe-down-to-dismiss ──
   const sheetRef = useRef(null);
@@ -262,13 +277,36 @@ export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, o
           </div>
         )}
 
-        {meal.link && (
-          <div className="detail-section">
-            <a href={meal.link} target="_blank" rel="noopener noreferrer" className="recipe-link">
-              🔗 View Original Recipe
-            </a>
-          </div>
-        )}
+        {meal.link && (() => {
+          let domain = '';
+          try { domain = new URL(meal.link).hostname.replace(/^www\./, ''); } catch {}
+          return (
+            <div className="detail-section detail-source-section">
+              <h3>🔗 Source</h3>
+              <div className="detail-source-row">
+                {domain && <span className="detail-source-domain">{domain}</span>}
+                <a href={meal.link} target="_blank" rel="noopener noreferrer" className="detail-source-link">
+                  View Original
+                </a>
+                <CopyLinkButton url={meal.link} />
+                <button
+                  className="detail-source-reimport"
+                  onClick={() => {
+                    if (window.__spicehubTriggerImport) {
+                      window.__spicehubTriggerImport(meal.link);
+                      onClose();
+                    } else {
+                      navigator.clipboard.writeText(meal.link).catch(() => {});
+                      alert('Link copied — open Import to re-import this recipe.');
+                    }
+                  }}
+                >
+                  🔄 Re-import
+                </button>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Start Cooking / Start Mixing button */}
         {onStartCook && meal.directions && meal.directions.length > 0 && (

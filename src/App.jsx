@@ -322,6 +322,17 @@ useEffect(() => {
   return () => window.removeEventListener('spicehub:share-import', handler);
 }, []);
 
+// Re-import hook: allows MealDetail "Re-import" button to trigger import
+useEffect(() => {
+  window.__spicehubTriggerImport = (url) => {
+    const target = _looksLikeDrink(url, '', '') ? 'drinks' : 'meals';
+    setImportModalKey(k => k + 1);
+    setShowImportFor(target);
+    setSharedContent({ mode: 'url', url, title: '', text: '', isReimport: true });
+  };
+  return () => { delete window.__spicehubTriggerImport; };
+}, []);
+
   // ── Week plan ─────────────────────────────────────────────────────────────────
   const generateWeek = useCallback(() => {
     if (meals.length < 5) {

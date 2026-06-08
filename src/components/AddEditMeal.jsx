@@ -193,12 +193,48 @@ export default function AddEditMeal({
   const handleDragOver = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; };
   const handleDropOnRow = (listName, dropIdx, e) => {
     e.preventDefault();
-    if (!dragSrc || dragSrc.listName !== listName) return;
-    const setter = listName === 'ingredients' ? setIngredients : setDirections;
-    const list = listName === 'ingredients' ? [...ingredients] : [...directions];
-    const [item] = list.splice(dragSrc.idx, 1);
-    list.splice(dropIdx, 0, item);
-    setter(list);
+    if (!dragSrc) return;
+    if (dragSrc.listName === listName) {
+      // Same-list reorder
+      const setter = listName === 'ingredients' ? setIngredients : setDirections;
+      const list = listName === 'ingredients' ? [...ingredients] : [...directions];
+      const [item] = list.splice(dragSrc.idx, 1);
+      list.splice(dropIdx, 0, item);
+      setter(list);
+    } else {
+      // Cross-section drag-drop
+      const fromSetter = dragSrc.listName === 'ingredients' ? setIngredients : setDirections;
+      const toSetter = listName === 'ingredients' ? setIngredients : setDirections;
+      const fromList = dragSrc.listName === 'ingredients' ? [...ingredients] : [...directions];
+      const toList = listName === 'ingredients' ? [...ingredients] : [...directions];
+      const [item] = fromList.splice(dragSrc.idx, 1);
+      toList.splice(dropIdx, 0, item);
+      fromSetter(fromList);
+      toSetter(toList);
+    }
+    setDragSrc(null);
+  };
+  const handleDropOnSection = (listName, e) => {
+    e.preventDefault();
+    if (!dragSrc) return;
+    if (dragSrc.listName === listName) {
+      // Same-list: move to end
+      const setter = listName === 'ingredients' ? setIngredients : setDirections;
+      const list = listName === 'ingredients' ? [...ingredients] : [...directions];
+      const [item] = list.splice(dragSrc.idx, 1);
+      list.push(item);
+      setter(list);
+    } else {
+      // Cross-section: append to end of target
+      const fromSetter = dragSrc.listName === 'ingredients' ? setIngredients : setDirections;
+      const toSetter = listName === 'ingredients' ? setIngredients : setDirections;
+      const fromList = dragSrc.listName === 'ingredients' ? [...ingredients] : [...directions];
+      const toList = listName === 'ingredients' ? [...ingredients] : [...directions];
+      const [item] = fromList.splice(dragSrc.idx, 1);
+      toList.push(item);
+      fromSetter(fromList);
+      toSetter(toList);
+    }
     setDragSrc(null);
   };
   const handleDragEnd = (e) => {
@@ -306,8 +342,12 @@ export default function AddEditMeal({
             {imageUrl && <img src={imageUrl} alt="Preview" className="image-preview" onError={e => { e.target.style.display = 'none'; }} />}
           </div>
 
-          <div className="form-group">
-            <label>{ingredientLabel}</label>
+          <div
+            className={`form-group${dragSrc && dragSrc.listName === 'directions' ? ' drop-target-active' : ''}`}
+            onDragOver={handleDragOver}
+            onDrop={(e) => handleDropOnSection('ingredients', e)}
+          >
+            <label>{ingredientLabel}{dragSrc && dragSrc.listName === 'directions' && <span className="drop-hint">↓ Drop here</span>}</label>
             {ingredients.map((ing, i) => (
               <div
                 key={i}
@@ -339,12 +379,7 @@ export default function AddEditMeal({
                     title="Move down"
                     aria-label="Move ingredient down"
                   >↓</button>
-                  <button
-                    className="list-move-btn"
-                    onClick={() => moveToOtherList('ingredients', i)}
-                    title="Move to Directions"
-                    aria-label="Move to Directions"
-                  >→</button>
+                  {/* Cross-section movement is now drag-drop only */}
                   {ingredients.length > 1 && (
                     <button
                       className="btn-icon small danger"
@@ -358,8 +393,12 @@ export default function AddEditMeal({
             <button className="btn-small" onClick={() => addToList(setIngredients)}>+ Add Ingredient</button>
           </div>
 
-<div className="form-group">
-  <label>{directionsLabel}</label>
+<div
+  className={`form-group${dragSrc && dragSrc.listName === 'ingredients' ? ' drop-target-active' : ''}`}
+  onDragOver={handleDragOver}
+  onDrop={(e) => handleDropOnSection('directions', e)}
+>
+  <label>{directionsLabel}{dragSrc && dragSrc.listName === 'ingredients' && <span className="drop-hint">↓ Drop here</span>}</label>
   {directions.map((dir, i) => (
     <div
       key={i}
@@ -396,12 +435,7 @@ export default function AddEditMeal({
           title="Move step down"
           aria-label="Move step down"
         >↓</button>
-        <button
-          className="list-move-btn"
-          onClick={() => moveToOtherList('directions', i)}
-          title="Move to Ingredients"
-          aria-label="Move to Ingredients"
-        >←</button>
+        {/* Cross-section movement is now drag-drop only */}
         {directions.length > 1 && (
           <button
             className="btn-icon small danger"
