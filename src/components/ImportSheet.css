@@ -557,6 +557,61 @@
 }
 .review-confidence-high { color: var(--sh-conf-high); }
 .review-confidence-medium { color: var(--sh-conf-mid); }
+.review-confidence-review { color: var(--sh-conf-mid); background: rgba(255, 247, 230, 0.95); }
+
+/* ── Misplaced-ingredient flags (2026-06-09 CX review) ──────────────────── */
+.review-flag-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: #fff7e6;
+  border: 1px solid #f0d9a8;
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin: 8px 0;
+  font-size: 13px;
+  color: #7a5200;
+}
+.review-flag-banner button {
+  flex-shrink: 0;
+  background: var(--sh-accent);
+  color: #fff;
+  border: none;
+  border-radius: var(--sh-pill);
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  min-height: 36px;
+  cursor: pointer;
+}
+.review-flag-banner button:active { opacity: 0.85; }
+[data-theme="dark"] .review-flag-banner {
+  background: rgba(178, 106, 0, 0.15);
+  border-color: rgba(178, 106, 0, 0.4);
+  color: #e8b860;
+}
+[data-theme="dark"] .review-confidence-review { background: rgba(60, 45, 20, 0.92); }
+
+.review-flag-chip {
+  flex-shrink: 0;
+  background: #fff7e6;
+  border: 1px solid #f0d9a8;
+  color: #7a5200;
+  border-radius: var(--sh-pill);
+  padding: 4px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  min-height: 28px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.review-flag-chip:active { opacity: 0.85; }
+[data-theme="dark"] .review-flag-chip {
+  background: rgba(178, 106, 0, 0.15);
+  border-color: rgba(178, 106, 0, 0.4);
+  color: #e8b860;
+}
 
 .review-hero-title-wrap {
   position: absolute;
@@ -676,9 +731,19 @@
   font: inherit;
   font-size: 14px;
   color: var(--sh-text);
+  /* WCAG contrast: editable text must never resemble disabled placeholder
+     (2026-06-09 CX review). iOS Safari can wash out input text without this. */
+  -webkit-text-fill-color: var(--sh-text);
+  opacity: 1;
   padding: 6px 0;
   min-width: 0;
   resize: none;
+}
+.review-row input::placeholder,
+.review-row textarea::placeholder {
+  color: var(--sh-text-muted);
+  -webkit-text-fill-color: var(--sh-text-muted);
+  font-style: italic;
 }
 .review-row input:focus,
 .review-row textarea:focus {

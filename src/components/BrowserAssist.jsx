@@ -20,6 +20,7 @@ import {
   parseHtml
 } from '../recipeParser';
 import { fetchHtmlViaProxy, proxyImageUrl, cleanUrl } from '../api';
+import { humanizeImportStatus } from '../importCopy';
 import { queueRecipeImport } from '../db';
 import useOnlineStatus from '../hooks/useOnlineStatus';
 
@@ -261,22 +262,23 @@ const toggleDeepMode = () => {
         if (isInsta) {
           // Initialise pipeline steps for display (Phase 0 and 2 are known-skipped)
           setPipelineSteps([
-            { label: 'Video subtitles', status: 'pending', message: '' },
-            { label: 'Caption fetch',   status: 'pending',  message: '' },
-            { label: 'AI browser',      status: 'pending',  message: '' },
-            { label: 'AI structuring',  status: 'pending',  message: '' },
+            { label: 'Checking the video',     status: 'pending', message: '' },
+            { label: 'Grabbing the caption',   status: 'pending', message: '' },
+            { label: 'Reading the page',       status: 'pending', message: '' },
+            { label: 'Organizing the recipe',  status: 'pending', message: '' },
           ]);
-          setPipelineMessage('Scanning Instagram post...');
+          setPipelineMessage('Opening the post…');
 
           const result = await importFromInstagram(url,
             (phase, status, msg) => {
               if (cancelled) return;
+              const friendly = msg ? humanizeImportStatus(msg) : '';
               setPipelineSteps(prev => {
                 const next = [...prev];
-                if (next[phase]) next[phase] = { ...next[phase], status, message: msg || '' };
+                if (next[phase]) next[phase] = { ...next[phase], status, message: '' };
                 return next;
               });
-              if (msg) setPipelineMessage(msg);
+              if (friendly) setPipelineMessage(friendly);
             },
             { type }
           );
@@ -295,7 +297,7 @@ const toggleDeepMode = () => {
           // re-pasting the whole post caption manually.
           if (result?.capturedCaption && result.capturedCaption.trim().length > 20) {
             setManualText(result.capturedCaption);
-            setPipelineMessage('Caption captured! AI structuring failed — tap "Parse Recipe" to retry.');
+            setPipelineMessage('We grabbed the caption — tap "Parse with AI" to organize it.');
             // Auto-trigger the heuristic parse immediately so user doesn't have
             // to do anything — they'll see the preview or a helpful error.
             try {
@@ -312,7 +314,7 @@ const toggleDeepMode = () => {
               }
             } catch { /* heuristic parse failed — fall through to manual */ }
           } else {
-            setPipelineMessage('Could not extract recipe — please paste the caption manually.');
+            setPipelineMessage("We couldn't read this post — paste the caption below and we'll organize it.");
           }
           setPhase('manual');
           return;
@@ -1032,21 +1034,9 @@ const toggleDeepMode = () => {
                 </div>
               </div>
 
-              {/* Animated progress bar */}
-              <div className="ip-progress-track">
-                <div
-                  className="ip-progress-fill"
-                  style={{
-                    width: pipelineSteps.length === 0 ? '5%'
-                      : `${Math.max(5, Math.round(
-                          (pipelineSteps.filter(s => s.status === 'done' || s.status === 'skipped' || s.status === 'failed').length
-                            / pipelineSteps.length) * 100
-                        ))}%`,
-                  }}
-                />
-              </div>
-
-              {/* Step track */}
+              {/* Step track — single progress vector (checklist with animated
+                  active step). Horizontal bar removed per 2026-06-09 CX review:
+                  dual progress vectors force the eye to jump between them. */}
               <div className="ip-steps">
                 {pipelineSteps.map((step, i) => (
                   <div key={i} className={`ip-step ip-step--${step.status}`}>
