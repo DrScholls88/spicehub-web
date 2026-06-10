@@ -1792,116 +1792,7 @@ body {
   text-align: right;
 }
 
-/* Expand modal when BrowserAssist is active */
-.import-browser-assist {
-  padding: 0;
-  background: var(--card);
-  border-radius: var(--radius);
-  margin: -20px -20px -32px;
-  /* Stretch to fill modal edges */
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  /* allow flex shrink */
-}
-
-.import-browser-assist .browser-assist-container {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-}
-
-/* When BrowserAssist is showing, modal content needs flex layout */
-.modal-content:has(.import-browser-assist) {
-  display: flex;
-  flex-direction: column;
-}
-
-.import-tabs {
-  display: flex;
-  gap: 3px;
-  margin-bottom: 18px;
-  background: #f0ebe3;
-  border-radius: 12px;
-  padding: 4px;
-}
-
-/* Primary tabs (URL, Paste, Photo) fill available space equally */
-.import-tabs button {
-  flex: 1;
-  padding: 10px 6px;
-  border: none;
-  background: none;
-  border-radius: 9px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 0.18s var(--ease-spring), color 0.18s var(--ease-spring), box-shadow 0.18s var(--ease-spring);
-  color: var(--text-light);
-  white-space: nowrap;
-  min-width: 0;
-  -webkit-tap-highlight-color: transparent;
-}
-
-/* "⋯ More" button — fixed narrow width, doesn't compete with primary tabs */
-.import-tabs button.import-tabs-more {
-  flex: 0 0 auto;
-  padding: 10px 10px;
-  font-size: 12px;
-  font-weight: 600;
-  min-width: 52px;
-}
-
-.import-tabs button.active {
-  background: var(--card);
-  color: var(--primary);
-  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.1);
-}
-
-.import-tabs button:not(.active):active {
-  background: rgba(255, 255, 255, 0.4);
-}
-
-.file-input {
-  display: none;
-}
-
-.import-preview {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.preview-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 280px;
-  overflow-y: auto;
-}
-
-.preview-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 13px;
-  background: #fafafa;
-  border-radius: 8px;
-  gap: 10px;
-}
-
-.preview-item strong {
-  font-size: 14px;
-  flex: 1;
-}
-
-.preview-item span {
-  font-size: 12px;
-  color: var(--text-light);
-  flex-shrink: 0;
-}
+/* (Old ImportModal styles removed — Phase D cleanup. ImportSheet.css owns the import flow now.) */
 
 /* ── Grocery List ── */
 .grocery-list {
@@ -2361,8 +2252,6 @@ body {
     border-radius: 20px;
     max-height: 90vh;
   }
-
-  /* import-modal max-width consolidated into .modal-content.import-modal section below */
 
   .app-header h1 {
     font-size: 32px;
@@ -4490,77 +4379,7 @@ body {
   color: var(--text-light);
 }
 
-/* ── Image/Photo import section ── */
-/* ── Paste Text import tab ── */
-.paste-import-banner {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px 14px;
-  background: #e3f2fd;
-  border-radius: 10px;
-  border: 1px solid #90caf9;
-}
-
-.paste-import-icon {
-  font-size: 28px;
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
-.paste-textarea {
-  width: 100%;
-  padding: 12px;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  font-size: 14px;
-  font-family: inherit;
-  resize: vertical;
-  margin-top: 12px;
-  min-height: 150px;
-  line-height: 1.5;
-  transition: border-color 0.2s;
-}
-
-.paste-textarea:focus {
-  border-color: var(--primary);
-  outline: none;
-  box-shadow: 0 0 0 2px rgba(255, 152, 0, 0.15);
-}
-
-.paste-textarea::placeholder {
-  color: #aaa;
-  font-size: 13px;
-}
-
-.image-import-banner {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px 14px;
-  background: #e8f5e9;
-  border-radius: 10px;
-  border: 1px solid #a5d6a7;
-}
-
-.image-import-icon {
-  font-size: 28px;
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
-.image-import-buttons {
-  display: flex;
-  gap: 10px;
-  width: 100%;
-}
-
-.image-import-buttons .btn-primary,
-.image-import-buttons .btn-secondary {
-  flex: 1;
-  justify-content: center;
-}
-
+/* ── Image/photo import progress (used by AddEditMeal OCR) ── */
 .image-import-progress {
   display: flex;
   flex-direction: column;
@@ -4573,36 +4392,6 @@ body {
   font-size: 14px;
   color: var(--text-light);
   font-weight: 500;
-}
-
-/* ── Paprika import section ── */
-.paprika-section {
-  gap: 14px;
-}
-
-.paprika-banner {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px 14px;
-  background: #fff8e1;
-  border-radius: 10px;
-  border: 1px solid #ffe082;
-}
-
-.paprika-logo {
-  font-size: 28px;
-  flex-shrink: 0;
-  margin-top: 2px;
-}
-
-.paprika-btn {
-  background: #b71c1c !important;
-  box-shadow: 0 2px 6px rgba(183, 28, 28, 0.35) !important;
-}
-
-.paprika-btn:hover {
-  background: #7f0000 !important;
 }
 
 /* ── PWA Install Banner ── */
@@ -10609,29 +10398,6 @@ body {
   background: #3d1515;
   border-color: #5c2020;
   color: #ef9a9a;
-}
-
-/* ── Import tabs dark ── */
-[data-theme="dark"] .import-tabs {
-  background: #2a2218;
-}
-
-[data-theme="dark"] .import-tabs button {
-  color: var(--text-light);
-}
-
-[data-theme="dark"] .import-tabs button.active {
-  background: var(--card);
-  color: var(--primary);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
-}
-
-[data-theme="dark"] .preview-item {
-  background: #252525;
-}
-
-[data-theme="dark"] .import-browser-assist {
-  background: #1a1a1a;
 }
 
 [data-theme="dark"] .caption-input {
@@ -17207,40 +16973,6 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   100% { transform: scale(1)    rotate(0deg); opacity: 1; }
 }
 
-/* ── Preview screen: sticky-footer layout fix ─────────────────────────── */
-/*                                                                         */
-/* Strategy: give the modal a definite height (dvh) when preview is open  */
-/* so flex children have a concrete parent dimension to fill. Without      */
-/* a definite height, flex: 1 children have nothing to measure against     */
-/* and content overflows the viewport — burying the footer on mobile.      */
-
-.modal-content.has-preview-screen {
-  /* Use dvh to respect actual visible viewport — prevents footer clipping on mobile */
-  height: 92dvh;
-  max-height: 92dvh;
-  display: flex;
-  flex-direction: column;
-  /* Override base .modal-content padding — inner sections handle their own padding */
-  padding: 0 !important;
-  overflow: hidden;
-  overflow-x: hidden;
-}
-
-/* Modal header must not shrink when in flex column */
-.modal-content.has-preview-screen > .modal-header {
-  flex-shrink: 0;
-}
-
-/* Error bar if visible */
-.modal-content.has-preview-screen > .error-bar {
-  flex-shrink: 0;
-}
-
-/* BrowserAssist fallback header if visible */
-.modal-content.has-preview-screen > div:not(.import-preview):not(.modal-header):not(.error-bar) {
-  flex-shrink: 0;
-}
-
 .ip-preview-screen {
   display: flex;
   flex-direction: column;
@@ -18215,22 +17947,8 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
    Targets: small phones (≤480px), mid phones (≤640px), all touch devices
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* ── Global overflow guard for modal on mobile ──────────────────────────── */
-/* Prevents ANY child from causing horizontal scroll within the modal.      */
-.modal-content.import-modal {
-  overflow-x: hidden;
-  max-width: 100vw;
-}
-
 /* ── Preview screen on small phones ─────────────────────────────────────── */
 @media (max-width: 480px) {
-  /* Full-screen sheet on very small phones — use dvh to prevent footer clip */
-  .modal-content.has-preview-screen {
-    height: 100dvh;
-    max-height: 100dvh;
-    border-radius: 0;
-  }
-
   /* Tighten up preview header to save vertical space */
   .ip-preview-screen .preview-header-bar {
     padding: 2px 0 8px;
@@ -18311,14 +18029,6 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   }
 }
 
-/* ── Mid-size phones (481–640px): minor touch-up ────────────────────────── */
-@media (min-width: 481px) and (max-width: 640px) {
-  .modal-content.has-preview-screen {
-    height: 96dvh;
-    max-height: 96dvh;
-  }
-}
-
 /* ── Ensure drag handles are always large enough to grab on touch ─────────── */
 @media (hover: none) and (pointer: coarse) {
   /* Touch device: boost minimum target sizes */
@@ -18374,12 +18084,6 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 
 /* ── Landscape on phone: tighten vertical rhythm ────────────────────────── */
 @media (max-height: 500px) and (orientation: landscape) {
-  .modal-content.has-preview-screen {
-    height: 100dvh;
-    max-height: 100dvh;
-    border-radius: 0;
-  }
-
   .ip-preview-screen .preview-header-bar {
     display: none; /* hide "Preview — N recipes found" to save space */
   }
@@ -18400,17 +18104,6 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
    Strategy: override specific properties — no full rewrites that could break
    existing drag-drop logic.
    ═══════════════════════════════════════════════════════════════════════════ */
-
-/* ── Modal header: more compact when showing preview (save vertical space) ── */
-.modal-content.has-preview-screen .modal-header {
-  padding: 16px 20px 12px;  /* restore padding zeroed by has-preview-screen */
-  flex-shrink: 0;
-  margin-bottom: 0;
-}
-
-.modal-content.has-preview-screen .modal-header h2 {
-  font-size: 17px;
-}
 
 /* ── Preview card: cleaner, less border noise ────────────────────────────── */
 .preview-detail-card {
@@ -18734,24 +18427,6 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 /* ── URL import tab: cleaner, less cluttered ─────────────────────────────── */
 .import-section {
   padding-top: 4px;
-}
-
-/* ── Import tabs: cleaner spacing ───────────────────────────────────────── */
-.import-tabs {
-  margin-bottom: 16px;
-  gap: 4px;
-}
-
-.import-tabs button {
-  padding: 9px 14px;
-  font-size: 13px;
-  border-radius: 10px;
-  min-height: 40px;
-  font-weight: 500;
-}
-
-.import-tabs button.active {
-  font-weight: 700;
 }
 
 /* ── Social detected bar: slimmer ───────────────────────────────────────── */

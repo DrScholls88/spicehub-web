@@ -1,5 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { isSocialMediaUrl, getSocialPlatform, detectImportType } from '../recipeParser.js';
+
+// Spec §1: input area compresses to compact bar over 250ms, spring-like easing
+const COLLAPSE_TRANSITION = { duration: 0.25, ease: [0.32, 0.72, 0, 1] };
 
 /**
  * ImportInput — the input form for the Collapse & Reveal import flow.
@@ -91,27 +95,40 @@ export default function ImportInput({
     setItemType((prev) => (prev === 'meal' ? 'drink' : 'meal'));
   }, []);
 
-  // ── Collapsed status bar ─────────────────────────────────────────────────
-  if (collapsed) {
-    return (
-      <div
-        className="import-input-collapsed"
-        onClick={onReExpand}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => { if (e.key === 'Enter') onReExpand(); }}
-      >
-        <span className="import-input-collapsed-dot" />
-        <span className="import-input-collapsed-url">
-          {url || pasteText?.slice(0, 60) || 'Edit input'}
-        </span>
-        <span className="import-input-collapsed-edit">&#9998;</span>
-      </div>
-    );
-  }
-
+  // ── Collapsed bar ⇄ full form, cross-animated (AnimatePresence must stay
+  //    mounted across the switch, so both branches live in one ternary) ─────
   return (
-    <div className="import-input">
+    <AnimatePresence mode="wait" initial={false}>
+      {collapsed ? (
+        <motion.div
+          key="collapsed"
+          className="import-input-collapsed"
+          onClick={onReExpand}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === 'Enter') onReExpand(); }}
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={COLLAPSE_TRANSITION}
+          style={{ overflow: 'hidden' }}
+        >
+          <span className="import-input-collapsed-dot" />
+          <span className="import-input-collapsed-url">
+            {url || pasteText?.slice(0, 60) || 'Edit input'}
+          </span>
+          <span className="import-input-collapsed-edit">&#9998;</span>
+        </motion.div>
+      ) : (
+    <motion.div
+      key="expanded"
+      className="import-input"
+      initial={{ height: 0, opacity: 0 }}
+      animate={{ height: 'auto', opacity: 1 }}
+      exit={{ height: 0, opacity: 0 }}
+      transition={COLLAPSE_TRANSITION}
+      style={{ overflow: 'hidden' }}
+    >
       {/* Segmented tabs */}
       <div className="import-input-tabs">
         <button className={tab === 'url' ? 'active' : ''} onClick={() => setTab('url')}>URL</button>
@@ -208,6 +225,8 @@ export default function ImportInput({
           />
         </div>
       )}
-    </div>
+    </motion.div>
+      )}
+    </AnimatePresence>
   );
 }

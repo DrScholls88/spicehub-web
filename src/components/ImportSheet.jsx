@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import './ImportSheet.css';
 import {
   importRecipeFromUrl,
@@ -41,6 +42,9 @@ export default function ImportSheet({
 }) {
   // ── Phase state machine ──────────────────────────────────────────────────
   const [phase, setPhase] = useState('input'); // 'input' | 'loading' | 'review' | 'browserAssist'
+  // E.4: backgrounded — sheet collapses to a floating toast while the import
+  // keeps running (component stays mounted, so the in-flight promise survives)
+  const [backgrounded, setBackgrounded] = useState(false);
   const [recipe, setRecipe] = useState(null);
   const [confidence, setConfidence] = useState(null);
   const [error, setError] = useState('');
@@ -95,6 +99,10 @@ export default function ImportSheet({
 
       // Engine asks for browser-assist fallback
       if (result && result._needsBrowserAssist) {
+        if (result._emptyCaption) {
+          // E.3: no recipe text found — explain before the manual sheet
+          setError("We couldn't find recipe text in this post. Paste it below and we'll sort it for you.");
+        }
         setBrowserAssistSeed(result.seed || null);
         setCapturedText(result.capturedCaption || '');
         setImportUrl(url);
@@ -212,6 +220,38 @@ export default function ImportSheet({
     setProgressMsg('');
   }, []);
 
+  // ── E.4: gentle haptic when a backgrounded import becomes ready ──────────
+  useEffect(() => {
+    if (backgrounded && (phase === 'review' || phase === 'browserAssist')) {
+      try { navigator.vibrate?.(12); } catch { /* no haptics — fine */ }
+    }
+  }, [backgrounded, phase]);
+
+  // ── E.4: backgrounded — render only the floating status toast ────────────
+  if (backgrounded) {
+    return (
+      <motion.button
+        className={`import-sheet-toast${phase === 'review' ? ' ready' : ''}`}
+        onClick={() => setBackgrounded(false)}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
+        aria-live="polite"
+      >
+        {phase === 'loading' && (
+          <>
+            <span className="import-sheet-progress-dot" aria-hidden="true" />
+            <span>Importing recipe… tap to view</span>
+          </>
+        )}
+        {phase === 'review' && <span>✓ Recipe ready — tap to review</span>}
+        {(phase === 'input' || phase === 'browserAssist') && (
+          <span>Import needs your help — tap to continue</span>
+        )}
+      </motion.button>
+    );
+  }
+
   // ── Render ───────────────────────────────────────────────────────────────
   return (
     <div className="import-sheet-overlay">
@@ -234,12 +274,21 @@ export default function ImportSheet({
         {/* Body */}
         <div className="import-sheet-body">
           {/* Error banner */}
-          {error && (
-            <div className="import-sheet-error">
-              <p>{error}</p>
-              <button onClick={() => setError('')}>Dismiss</button>
-            </div>
-          )}
+          <AnimatePresence initial={false}>
+            {error && (
+              <motion.div
+                className="import-sheet-error"
+                initial={{ opacity: 0, height: 0, marginTop: 0, marginBottom: 0 }}
+                animate={{ opacity: 1, height: 'auto', marginTop: 8, marginBottom: 8 }}
+                exit={{ opacity: 0, height: 0, marginTop: 0, marginBottom: 0 }}
+                transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
+                style={{ overflow: 'hidden' }}
+              >
+                <p>{error}</p>
+                <button onClick={() => setError('')}>Dismiss</button>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* ImportInput — full or collapsed */}
           <ImportInput
@@ -253,46 +302,77 @@ export default function ImportSheet({
             title={title}
           />
 
-          {/* Loading phase */}
-          {phase === 'loading' && (
-            <div className="import-sheet-loading">
-              <div className="import-sheet-progress-bar">
-                <div className="import-sheet-progress-fill" />
-              </div>
-              <p className="import-sheet-progress-text">
-                {progressMsg}
-              </p>
-            </div>
-          )}
+          {/* Phase content — animated transitions (spec §1 collapse animation) */}
+          <AnimatePresence mode="wait" initial={false}>
+            {phase === 'loading' && (
+              <motion.div
+                key="loading"
+                className="import-sheet-loading"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.2, ease: [0.32, 0.72, 0, 1] }}
+              >
+                {/* Single progress vector: pulsing dot + humanized status line */}
+                <span className="import-sheet-progress-dot" aria-hidden="true" />
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.p
+                    key={progressMsg}
+                    className="import-sheet-progress-text"
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    transition={{ duration: 0.18 }}
+                  >
+                    {progressMsg}
+                  </motion.p>
+                </AnimatePresence>
+              </motion.div>
+            )}
 
-          {/* Review phase */}
-          {phase === 'review' && recipe && (
-            <ImportReview
-              recipe={recipe}
-              onChange={setRecipe}
-              onSave={handleSave}
-              confidence={confidence}
-            />
-          )}
+            {phase === 'review' && recipe && (
+              <motion.div
+                key="review"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.25, delay: 0.1, ease: [0.32, 0.72, 0, 1] }}
+              >
+                <ImportReview
+                  recipe={recipe}
+                  onChange={setRecipe}
+                  onSave={handleSave}
+                  confidence={confidence}
+                />
+              </motion.div>
+            )}
 
-          {/* BrowserAssist inline phase */}
-          {phase === 'browserAssist' && (
-            <BrowserAssist
-              ref={browserAssistRef}
-              url={importUrl}
-              onRecipeExtracted={handleBrowserAssistRecipe}
-              onFallbackToText={handleBrowserAssistFallback}
-              initialCapturedText={capturedText}
-              seedRecipe={browserAssistSeed}
-              type={itemType}
-              inline={true}
-              onError={(err) => {
-                console.warn('[ImportSheet] BrowserAssist error:', err);
-                setError('Visual extraction failed. Try pasting the recipe text.');
-                setPhase('input');
-              }}
-            />
-          )}
+            {phase === 'browserAssist' && (
+              <motion.div
+                key="browserAssist"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: 0.2, ease: [0.32, 0.72, 0, 1] }}
+              >
+                <BrowserAssist
+                  ref={browserAssistRef}
+                  url={importUrl}
+                  onRecipeExtracted={handleBrowserAssistRecipe}
+                  onFallbackToText={handleBrowserAssistFallback}
+                  initialCapturedText={capturedText}
+                  seedRecipe={browserAssistSeed}
+                  type={itemType}
+                  inline={true}
+                  onError={(err) => {
+                    console.warn('[ImportSheet] BrowserAssist error:', err);
+                    setError('Visual extraction failed. Try pasting the recipe text.');
+                    setPhase('input');
+                  }}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Sticky footer */}
@@ -307,16 +387,24 @@ export default function ImportSheet({
             </button>
           )}
           {phase === 'loading' && (
-            <button
-              className="import-sheet-btn import-sheet-btn-ghost"
-              onClick={() => {
-                if (abortRef.current) abortRef.current.abort();
-                setPhase('input');
-                setProgressMsg('');
-              }}
-            >
-              Cancel
-            </button>
+            <>
+              <button
+                className="import-sheet-btn import-sheet-btn-ghost"
+                onClick={() => {
+                  if (abortRef.current) abortRef.current.abort();
+                  setPhase('input');
+                  setProgressMsg('');
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className="import-sheet-btn import-sheet-btn-secondary"
+                onClick={() => setBackgrounded(true)}
+              >
+                Continue in background
+              </button>
+            </>
           )}
           {phase === 'review' && (
             <button
