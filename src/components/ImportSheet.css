@@ -191,6 +191,46 @@
 }
 .import-sheet-btn-ghost:hover { background: var(--sh-surface-hover); }
 
+.import-sheet-btn-secondary {
+  background: var(--sh-accent-bg-strong);
+  color: var(--sh-accent);
+}
+.import-sheet-btn-secondary:hover { background: var(--sh-accent-bg); }
+
+/* ── E.4: background-import floating toast ──────────────────────────────── */
+.import-sheet-toast {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(76px + env(safe-area-inset-bottom, 0px)); /* clears bottom nav */
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--sh-text);
+  background: var(--sh-bg);
+  border: 1px solid var(--sh-border);
+  border-radius: var(--sh-pill);
+  padding: 12px 20px;
+  min-height: 48px;
+  box-shadow: var(--sh-shadow-lg);
+  cursor: pointer;
+}
+.import-sheet-toast.ready {
+  color: #fff;
+  background: var(--sh-accent);
+  border-color: var(--sh-accent);
+  box-shadow: 0 6px 20px var(--sh-accent-shadow);
+}
+.import-sheet-toast .import-sheet-progress-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+}
+
 /* ── Loading state ──────────────────────────────────────────────────────── */
 .import-sheet-loading {
   display: flex;
@@ -201,26 +241,18 @@
   animation: sh-fade-in 200ms ease-out;
 }
 
-.import-sheet-progress-bar {
-  width: 100%;
-  height: 3px;
-  background: var(--sh-surface);
-  border-radius: 2px;
-  overflow: hidden;
-}
-
-.import-sheet-progress-fill {
-  height: 100%;
+/* Single progress vector (Phase E.2): pulsing dot + status line, no bar */
+.import-sheet-progress-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
   background: var(--sh-accent);
-  border-radius: 2px;
-  width: 60%;
-  animation: sh-progress-indeterminate 1.8s ease-in-out infinite;
+  animation: sh-dot-pulse 1.2s ease-in-out infinite;
 }
 
-@keyframes sh-progress-indeterminate {
-  0% { width: 5%; margin-left: 0; }
-  50% { width: 40%; margin-left: 30%; }
-  100% { width: 5%; margin-left: 95%; }
+@keyframes sh-dot-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 var(--sh-accent-shadow); }
+  50% { transform: scale(1.25); opacity: 0.75; box-shadow: 0 0 0 8px rgba(230, 81, 0, 0); }
 }
 
 .import-sheet-progress-text {
@@ -685,9 +717,84 @@
 .review-accordion-chevron {
   color: var(--sh-text-muted);
   font-size: 14px;
-  transition: transform 200ms var(--sh-spring);
+  display: inline-block;
+  /* rotation handled by framer-motion — no CSS transition to avoid fighting it */
 }
-.review-accordion-chevron.rotated { transform: rotate(-90deg); }
+
+/* ── F.6: sticky tab-basket hybrid ──────────────────────────────────────── */
+.review-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  gap: 4px;
+  padding: 6px 0 8px;
+  background: var(--sh-bg);
+  margin-top: 14px;
+}
+
+.review-tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--sh-text-secondary);
+  background: var(--sh-surface);
+  border: 1.5px solid transparent;
+  border-radius: var(--sh-radius-sm);
+  padding: 11px 8px;
+  min-height: 46px;
+  cursor: pointer;
+  transition: background 140ms, color 140ms, border-color 140ms;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.review-tab.active {
+  background: var(--sh-accent-bg-strong);
+  color: var(--sh-accent);
+}
+
+/* Drop target highlight while a row is dragged over the inactive tab */
+.review-tab.drag-over {
+  border-color: var(--sh-accent);
+  background: var(--sh-accent-bg-strong);
+  color: var(--sh-accent);
+}
+
+/* Amber hint on Steps tab when misplaced-ingredient flags exist */
+.review-tab.flagged:not(.active)::after {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sh-conf-mid);
+}
+
+.review-tab-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 11px;
+  background: var(--sh-bg);
+  color: var(--sh-text-secondary);
+}
+.review-tab.active .review-tab-count {
+  background: var(--sh-accent);
+  color: #fff;
+}
+
+.review-list {
+  padding-bottom: 4px;
+}
 
 .review-accordion-body {
   padding: 0 12px 10px;

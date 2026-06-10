@@ -1,4 +1,9 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+
+// Spring-like easing shared across review animations (spec §1)
+const SPRING_EASE = [0.32, 0.72, 0, 1];
+const ROW_LAYOUT_TRANSITION = { layout: { duration: 0.25, ease: SPRING_EASE } };
 
 /**
  * Misplaced-ingredient heuristic (2026-06-09 CX review):
@@ -32,13 +37,28 @@ function AccordionSection({ icon, title, count, defaultOpen = false, children })
           {title}
           {count != null && <span className="review-accordion-count">{count}</span>}
         </span>
-        <span className={`review-accordion-chevron${!open ? ' rotated' : ''}`}>&#9660;</span>
+        <motion.span
+          className="review-accordion-chevron"
+          animate={{ rotate: open ? 0 : -90 }}
+          transition={{ duration: 0.2, ease: SPRING_EASE }}
+        >&#9660;</motion.span>
       </div>
-      {open && (
-        <div className="review-accordion-body">
-          {children}
-        </div>
-      )}
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            key="body"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.28, ease: SPRING_EASE }}
+            style={{ overflow: 'hidden' }}
+          >
+            <div className="review-accordion-body">
+              {children}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
@@ -49,7 +69,12 @@ function AccordionSection({ icon, title, count, defaultOpen = false, children })
  */
 function ListItem({ value, index, onChange, onRemove, stepNum, onMoveUp, onMoveDown, isFirst, isLast, listName, onDragStart, onDragOver, onDrop, onDragEnd, flagged, onFlagAction }) {
   return (
-    <div
+    <motion.div
+      layout="position"
+      transition={ROW_LAYOUT_TRANSITION}
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, x: -28, height: 0, marginTop: 0, marginBottom: 0 }}
       className="review-row"
       draggable
       onDragStart={(e) => onDragStart?.(listName, index, e)}
@@ -97,7 +122,7 @@ function ListItem({ value, index, onChange, onRemove, stepNum, onMoveUp, onMoveD
           Ingredient? &#8593;
         </button>
       )}
-    </div>
+    </motion.div>
   );
 }
 
@@ -112,8 +137,30 @@ function ListItem({ value, index, onChange, onRemove, stepNum, onMoveUp, onMoveD
  */
 export default function ImportReview({ recipe, onChange, onSave, confidence }) {
   const [destination, setDestination] = useState('library'); // 'library' | 'week' | 'grocery' | 'bar'
+  // F.6: sticky tab-basket hybrid — one list visible at a time
+  const [activeTab, setActiveTab] = useState('ingredients'); // 'ingredients' | 'directions'
+  const [tabDragOver, setTabDragOver] = useState(null); // tab key being dragged over
 
   const isDrink = recipe?.type === 'drink' || recipe?.itemType === 'drink';
+
+  // ── Stable row IDs ───────────────────────────────────────────────────────
+  // Lists are plain strings, so index keys would defeat framer-motion layout
+  // animations (and content keys would remount inputs on every keystroke).
+  // We track a parallel array of opaque ids per list; every mutation below
+  // updates ids in lockstep so a row keeps its key as it moves.
+  const idCounterRef = useRef(0);
+  const rowIdsRef = useRef({ ingredients: [], directions: [] });
+  const nextRowId = useCallback(() => `row-${++idCounterRef.current}`, []);
+
+  // Render-time reconcile: external changes (new recipe object) get fresh ids
+  const syncRowIds = (field, len) => {
+    const arr = rowIdsRef.current[field];
+    while (arr.length < len) arr.push(nextRowId());
+    if (arr.length > len) arr.length = len;
+    return arr;
+  };
+  const ingredientIds = syncRowIds('ingredients', (recipe?.ingredients || []).length);
+  const directionIds = syncRowIds('directions', (recipe?.directions || []).length);
 
   // ── Field helpers ────────────────────────────────────────────────────────
   const updateField = useCallback((field, value) => {
@@ -129,13 +176,15 @@ export default function ImportReview({ recipe, onChange, onSave, confidence }) {
   const removeListItem = useCallback((field, index) => {
     const list = [...(recipe[field] || [])];
     list.splice(index, 1);
+    rowIdsRef.current[field].splice(index, 1);
     onChange({ ...recipe, [field]: list });
   }, [recipe, onChange]);
 
   const addListItem = useCallback((field) => {
     const list = [...(recipe[field] || []), ''];
+    rowIdsRef.current[field].push(nextRowId());
     onChange({ ...recipe, [field]: list });
-  }, [recipe, onChange]);
+  }, [recipe, onChange, nextRowId]);
 
   // ── Reorder helpers ──────────────────────────────────────────────────────
   const moveListItem = useCallback((field, index, direction) => {
@@ -143,6 +192,8 @@ export default function ImportReview({ recipe, onChange, onSave, confidence }) {
     const newIdx = direction === 'up' ? index - 1 : index + 1;
     if (newIdx < 0 || newIdx >= list.length) return;
     [list[index], list[newIdx]] = [list[newIdx], list[index]];
+    const ids = rowIdsRef.current[field];
+    [ids[index], ids[newIdx]] = [ids[newIdx], ids[index]];
     onChange({ ...recipe, [field]: list });
   }, [recipe, onChange]);
 
@@ -167,6 +218,9 @@ export default function ImportReview({ recipe, onChange, onSave, confidence }) {
       const list = [...(recipe[listName] || [])];
       const [item] = list.splice(dragSrc.idx, 1);
       list.splice(dropIdx, 0, item);
+      const ids = rowIdsRef.current[listName];
+      const [id] = ids.splice(dragSrc.idx, 1);
+      ids.splice(dropIdx, 0, id);
       onChange({ ...recipe, [listName]: list });
     } else {
       // Cross-section move
@@ -174,6 +228,8 @@ export default function ImportReview({ recipe, onChange, onSave, confidence }) {
       const toList = [...(recipe[listName] || [])];
       const [item] = fromList.splice(dragSrc.idx, 1);
       toList.splice(dropIdx, 0, item);
+      const [id] = rowIdsRef.current[dragSrc.listName].splice(dragSrc.idx, 1);
+      rowIdsRef.current[listName].splice(dropIdx, 0, id);
       onChange({ ...recipe, [dragSrc.listName]: fromList, [listName]: toList });
     }
     setDragSrc(null);
@@ -182,7 +238,24 @@ export default function ImportReview({ recipe, onChange, onSave, confidence }) {
   const handleDragEnd = useCallback((e) => {
     e.currentTarget.style.opacity = '';
     setDragSrc(null);
+    setTabDragOver(null);
   }, []);
+
+  // F.6: dropping a dragged row onto the other tab moves it to that list's end
+  const handleTabDrop = useCallback((targetList, e) => {
+    e.preventDefault();
+    setTabDragOver(null);
+    if (!dragSrc || dragSrc.listName === targetList) return;
+    const fromList = [...(recipe[dragSrc.listName] || [])];
+    const toList = [...(recipe[targetList] || [])];
+    const [item] = fromList.splice(dragSrc.idx, 1);
+    if (item == null) return;
+    toList.push(item);
+    const [id] = rowIdsRef.current[dragSrc.listName].splice(dragSrc.idx, 1);
+    rowIdsRef.current[targetList].push(id);
+    onChange({ ...recipe, [dragSrc.listName]: fromList, [targetList]: toList });
+    setDragSrc(null);
+  }, [dragSrc, recipe, onChange]);
 
   // ── Misplaced-ingredient flags (steps that look like ingredient lines) ───
   const flaggedSteps = useMemo(
@@ -197,13 +270,26 @@ export default function ImportReview({ recipe, onChange, onSave, confidence }) {
     const directions = [...(recipe.directions || [])];
     const [item] = directions.splice(index, 1);
     if (item == null) return;
+    const [id] = rowIdsRef.current.directions.splice(index, 1);
+    rowIdsRef.current.ingredients.push(id);
     onChange({ ...recipe, directions, ingredients: [...(recipe.ingredients || []), item] });
   }, [recipe, onChange]);
 
   const moveAllFlaggedToIngredients = useCallback(() => {
-    const directions = (recipe.directions || []).filter((l) => !looksMisplacedIngredient(l));
-    const moved = (recipe.directions || []).filter((l) => looksMisplacedIngredient(l));
+    const dirs = recipe.directions || [];
+    const dirIds = rowIdsRef.current.directions;
+    const directions = []; const moved = [];
+    const keepIds = []; const movedIds = [];
+    dirs.forEach((line, i) => {
+      if (looksMisplacedIngredient(line)) {
+        moved.push(line); movedIds.push(dirIds[i]);
+      } else {
+        directions.push(line); keepIds.push(dirIds[i]);
+      }
+    });
     if (!moved.length) return;
+    rowIdsRef.current.directions = keepIds;
+    rowIdsRef.current.ingredients = [...rowIdsRef.current.ingredients, ...movedIds];
     onChange({ ...recipe, directions, ingredients: [...(recipe.ingredients || []), ...moved] });
   }, [recipe, onChange]);
 
@@ -237,9 +323,12 @@ export default function ImportReview({ recipe, onChange, onSave, confidence }) {
   return (
     <div className="import-review">
       {/* Hero image + title + confidence */}
-      <div
+      <motion.div
         className="review-hero"
         style={recipe.image ? { backgroundImage: `url(${recipe.image})` } : undefined}
+        initial={{ opacity: 0, scale: 1.03 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.35, ease: SPRING_EASE }}
       >
         {!recipe.image && <div className="review-hero-placeholder">🍽️</div>}
         <div className="review-hero-gradient" />
@@ -257,88 +346,123 @@ export default function ImportReview({ recipe, onChange, onSave, confidence }) {
             placeholder="Recipe title"
           />
         </div>
+      </motion.div>
+
+      {/* F.6: sticky segmented tabs with live counters.
+          The inactive tab doubles as a drop zone for cross-section moves. */}
+      <div className="review-tabs">
+        {[
+          { key: 'ingredients', label: '🥕 Ingredients' },
+          { key: 'directions', label: '📝 Steps' },
+        ].map((t) => (
+          <button
+            key={t.key}
+            className={`review-tab${activeTab === t.key ? ' active' : ''}${tabDragOver === t.key ? ' drag-over' : ''}${t.key === 'directions' && hasFlags ? ' flagged' : ''}`}
+            onClick={() => setActiveTab(t.key)}
+            onDragOver={(e) => {
+              e.preventDefault();
+              if (dragSrc && dragSrc.listName !== t.key) setTabDragOver(t.key);
+            }}
+            onDragLeave={() => setTabDragOver((v) => (v === t.key ? null : v))}
+            onDrop={(e) => handleTabDrop(t.key, e)}
+          >
+            {t.label}
+            <motion.span
+              key={(recipe[t.key] || []).length}
+              className="review-tab-count"
+              initial={{ scale: 1.4, opacity: 0.5 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ duration: 0.2 }}
+            >
+              {(recipe[t.key] || []).length}
+            </motion.span>
+          </button>
+        ))}
       </div>
 
-      {/* Ingredients */}
-      <AccordionSection
-        icon="🥕"
-        title="Ingredients"
-        count={recipe.ingredients?.length || 0}
-        defaultOpen={true}
-      >
-        {(recipe.ingredients || []).map((item, i) => (
-          <ListItem
-            key={i}
-            value={item}
-            index={i}
-            onChange={(idx, val) => updateListItem('ingredients', idx, val)}
-            onRemove={(idx) => removeListItem('ingredients', idx)}
-            onMoveUp={(idx) => moveListItem('ingredients', idx, 'up')}
-            onMoveDown={(idx) => moveListItem('ingredients', idx, 'down')}
-            isFirst={i === 0}
-            isLast={i === (recipe.ingredients || []).length - 1}
-            listName="ingredients"
-            onDragStart={handleDragStart}
-            onDragOver={handleDragOver}
-            onDrop={handleDrop}
-            onDragEnd={handleDragEnd}
-          />
-        ))}
-        <button
-          className="review-add-row"
-          onClick={() => addListItem('ingredients')}
-        >
-          + Add ingredient
-        </button>
-      </AccordionSection>
-
-      {/* Steps / Directions */}
-      <AccordionSection
-        icon="📝"
-        title="Steps"
-        count={recipe.directions?.length || 0}
-        defaultOpen={true}
-      >
-        {hasFlags && (
-          <div className="review-flag-banner">
-            <span>
-              Looks like {flaggedSteps.length === 1
-                ? 'an ingredient slipped'
-                : `${flaggedSteps.length} ingredients slipped`} into the steps.
-            </span>
-            <button onClick={moveAllFlaggedToIngredients}>
-              Move {flaggedSteps.length === 1 ? 'it' : 'all'} to Ingredients
-            </button>
-          </div>
-        )}
-        {(recipe.directions || []).map((item, i) => (
-          <ListItem
-            key={i}
-            value={item}
-            index={i}
-            stepNum={i + 1}
-            onChange={(idx, val) => updateListItem('directions', idx, val)}
-            onRemove={(idx) => removeListItem('directions', idx)}
-            onMoveUp={(idx) => moveListItem('directions', idx, 'up')}
-            onMoveDown={(idx) => moveListItem('directions', idx, 'down')}
-            isFirst={i === 0}
-            isLast={i === (recipe.directions || []).length - 1}
-            listName="directions"
-            onDragStart={handleDragStart}
-            onDragOver={handleDragOver}
-            onDrop={handleDrop}
-            onDragEnd={handleDragEnd}
-            flagged={flaggedSteps.includes(i)}
-            onFlagAction={moveStepToIngredients}
-          />
-        ))}
-        <button
-          className="review-add-row"
-          onClick={() => addListItem('directions')}
-        >
-          + Add step
-        </button>
-      </AccordionSection>
+      {/* Active list */}
+      {activeTab === 'ingredients' ? (
+        <div className="review-list">
+          <AnimatePresence initial={false}>
+            {(recipe.ingredients || []).map((item, i) => (
+              <ListItem
+                key={ingredientIds[i]}
+                value={item}
+                index={i}
+                onChange={(idx, val) => updateListItem('ingredients', idx, val)}
+                onRemove={(idx) => removeListItem('ingredients', idx)}
+                onMoveUp={(idx) => moveListItem('ingredients', idx, 'up')}
+                onMoveDown={(idx) => moveListItem('ingredients', idx, 'down')}
+                isFirst={i === 0}
+                isLast={i === (recipe.ingredients || []).length - 1}
+                listName="ingredients"
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+                onDragEnd={handleDragEnd}
+              />
+            ))}
+          </AnimatePresence>
+          <button
+            className="review-add-row"
+            onClick={() => addListItem('ingredients')}
+          >
+            + Add ingredient
+          </button>
+        </div>
+      ) : (
+        <div className="review-list">
+          <AnimatePresence initial={false}>
+            {hasFlags && (
+              <motion.div
+                key="flag-banner"
+                className="review-flag-banner"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.25, ease: SPRING_EASE }}
+                style={{ overflow: 'hidden' }}
+              >
+                <span>
+                  Looks like {flaggedSteps.length === 1
+                    ? 'an ingredient slipped'
+                    : `${flaggedSteps.length} ingredients slipped`} into the steps.
+                </span>
+                <button onClick={moveAllFlaggedToIngredients}>
+                  Move {flaggedSteps.length === 1 ? 'it' : 'all'} to Ingredients
+                </button>
+              </motion.div>
+            )}
+            {(recipe.directions || []).map((item, i) => (
+              <ListItem
+                key={directionIds[i]}
+                value={item}
+                index={i}
+                stepNum={i + 1}
+                onChange={(idx, val) => updateListItem('directions', idx, val)}
+                onRemove={(idx) => removeListItem('directions', idx)}
+                onMoveUp={(idx) => moveListItem('directions', idx, 'up')}
+                onMoveDown={(idx) => moveListItem('directions', idx, 'down')}
+                isFirst={i === 0}
+                isLast={i === (recipe.directions || []).length - 1}
+                listName="directions"
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
+                onDragEnd={handleDragEnd}
+                flagged={flaggedSteps.includes(i)}
+                onFlagAction={moveStepToIngredients}
+              />
+            ))}
+          </AnimatePresence>
+          <button
+            className="review-add-row"
+            onClick={() => addListItem('directions')}
+          >
+            + Add step
+          </button>
+        </div>
+      )}
 
       {/* Drink-specific fields */}
       {isDrink && (
@@ -385,16 +509,18 @@ export default function ImportReview({ recipe, onChange, onSave, confidence }) {
         <p className="review-destination-label">Save to</p>
         <div className="review-destination-grid">
           {destinations.map((d) => (
-            <button
+            <motion.button
               key={d.key}
               className={`review-dest-card${destination === d.key ? ' active' : ''}`}
               onClick={() => setDestination(d.key)}
+              whileTap={{ scale: 0.95 }}
+              transition={{ duration: 0.1 }}
             >
               <span className="review-dest-icon">
                 {d.key === 'library' ? '📚' : d.key === 'week' ? '📅' : d.key === 'grocery' ? '🛒' : '🍹'}
               </span>
               <span className="review-dest-label">{d.label}</span>
-            </button>
+            </motion.button>
           ))}
         </div>
       </div>

@@ -147,6 +147,69 @@ export function resolveIngredientAlias(name = '') {
 }
 
 // -----------------------------------------------------------------------------
+// 3b. GROCERY DEPARTMENT CATEGORIES (Phase G — store-department taxonomy)
+// -----------------------------------------------------------------------------
+// The LLM classifies each ingredient at ingestion (RECIPE_SCHEMA item.category);
+// categorizeIngredient() is the keyword fallback for legacy/heuristic paths.
+export const GROCERY_CATEGORIES = [
+  'Produce', 'Meat & Seafood', 'Dairy', 'Pantry', 'Frozen', 'Bakery', 'Other',
+];
+
+const CATEGORY_KEYWORDS = {
+  'Produce': /\b(onion|garlic|scallion|shallot|tomato|potato|carrot|celery|pepper|chili|chile|jalapeno|jalapeño|spinach|kale|lettuce|arugula|cabbage|broccoli|cauliflower|zucchini|eggplant|cucumber|avocado|lemon|lime|orange|apple|banana|berr(?:y|ies)|strawberr|blueberr|mango|pineapple|grape|melon|peach|pear|plum|cherr|herb|cilantro|parsley|basil|mint|rosemary|thyme|dill|sage|ginger|mushroom|squash|pumpkin|corn|pea[s]?\b|green bean|asparagus|beet|radish|turnip|leek|fennel|sprout)/i,
+  'Meat & Seafood': /\b(chicken|beef|steak|pork|bacon|ham|sausage|turkey|lamb|veal|duck|ground (?:beef|turkey|pork|chicken)|brisket|rib[s]?\b|chorizo|prosciutto|salami|pepperoni|fish|salmon|tuna|cod|tilapia|halibut|trout|shrimp|prawn|crab|lobster|scallop|mussel|clam|oyster|anchov|sardine|calamari|squid)/i,
+  'Dairy': /\b(milk|cream|half[- ]and[- ]half|butter|cheese|cheddar|mozzarella|parmesan|feta|ricotta|cream cheese|yogurt|yoghurt|sour cream|egg[s]?\b|creme fraiche|crème fraîche|buttermilk|ghee|mascarpone|brie|gouda|provolone|queso)/i,
+  'Frozen': /\b(frozen|ice cream|sorbet|popsicle|puff pastry|phyllo|filo)/i,
+  'Bakery': /\b(bread|baguette|brioche|bun[s]?\b|roll[s]?\b|tortilla|pita|naan|croissant|bagel|english muffin|sourdough|ciabatta|focaccia)/i,
+  'Pantry': /\b(flour|sugar|salt|pepper(?:corn)?s?$|oil|olive oil|vegetable oil|vinegar|rice|pasta|noodle|quinoa|oat|cereal|bean[s]?\b|lentil|chickpea|stock|broth|sauce|soy sauce|fish sauce|honey|maple syrup|vanilla|baking (?:soda|powder)|yeast|cocoa|chocolate|spice|cumin|paprika|oregano|cinnamon|nutmeg|turmeric|curry|chili powder|cayenne|can(?:ned)?\b|jar|tomato paste|coconut milk|peanut butter|tahini|mustard|ketchup|mayo|nut[s]?\b|almond|walnut|pecan|cashew|seed[s]?\b|raisin|date[s]?\b|wine|whiskey|rum|vodka|gin|tequila|vermouth|bitters|liqueur|syrup|soda|tonic|juice)/i,
+};
+
+/**
+ * Keyword fallback categorizer — returns one of GROCERY_CATEGORIES. Order
+ * matters: Frozen beats Produce ("frozen peas"), proteins beat Pantry
+ * ("chicken stock" is Pantry though — stock/broth checked first).
+ */
+export function categorizeIngredient(name = '') {
+  const s = String(name).toLowerCase();
+  if (!s.trim()) return 'Other';
+  // Pantry liquids made FROM proteins/produce ("chicken stock", "tomato paste")
+  if (/\b(stock|broth|paste|powder|sauce|canned|can of|dried|juice)\b/.test(s) && CATEGORY_KEYWORDS['Pantry'].test(s)) return 'Pantry';
+  if (CATEGORY_KEYWORDS['Frozen'].test(s)) return 'Frozen';
+  if (CATEGORY_KEYWORDS['Meat & Seafood'].test(s)) return 'Meat & Seafood';
+  if (CATEGORY_KEYWORDS['Dairy'].test(s)) return 'Dairy';
+  if (CATEGORY_KEYWORDS['Bakery'].test(s)) return 'Bakery';
+  if (CATEGORY_KEYWORDS['Produce'].test(s)) return 'Produce';
+  if (CATEGORY_KEYWORDS['Pantry'].test(s)) return 'Pantry';
+  return 'Other';
+}
+
+// -----------------------------------------------------------------------------
+// 3c. INGESTION TRASH FILTER (Phase G — discard junk lines before save)
+// -----------------------------------------------------------------------------
+// Lines that slip through extraction but are never real ingredients:
+//   - standalone scaling strings: "1x", "2x 3x", "1x 2x 3x"
+//   - bare sub-section labels:    "Topping", "Toppings:", "Garnish:"
+//   - header remnants:            "Ingredients (serves 4)", "Ingredients:"
+//   - trailing-colon headers:     "For the sauce:", "Marinade:"
+const TRASH_SCALING_RE = /^\s*(?:\d+\s*[x×]\s*)+$/i;
+const TRASH_HEADER_RE = /^\s*ingredients?\s*(?:\(.*\))?\s*:?\s*$/i;
+const TRASH_BARE_LABEL_RE = /^\s*(?:toppings?|garnish(?:es)?|optional|for serving|to serve|notes?)\s*:?\s*$/i;
+const TRAILING_COLON_HEADER_RE = /^[^,.;]{1,40}:\s*$/;
+
+/** True if an extracted ingredient line is structural junk, not a real item. */
+export function isTrashIngredientLine(line = '') {
+  const s = String(line).trim();
+  if (!s) return true;
+  if (TRASH_SCALING_RE.test(s)) return true;
+  if (TRASH_HEADER_RE.test(s)) return true;
+  if (TRASH_BARE_LABEL_RE.test(s)) return true;
+  // Trailing-colon headers with no quantity ("For the sauce:") — but keep
+  // legit lines that happen to end in ":" AND start with a quantity.
+  if (TRAILING_COLON_HEADER_RE.test(s) && !/^\d/.test(s)) return true;
+  return false;
+}
+
+// -----------------------------------------------------------------------------
 // 4. CONTROLLED TAXONOMIES (for library filtering + AI classification)
 // -----------------------------------------------------------------------------
 export const COURSE = [
@@ -303,6 +366,7 @@ export const RECIPE_SCHEMA = {
                 unit: { type: 'string' },     // canonical unit or ""
                 name: { type: 'string' },     // "all-purpose flour"
                 prep: { type: 'string' },     // "minced", "to taste", ""
+                category: { type: 'string', enum: GROCERY_CATEGORIES }, // store department
               },
               required: ['name'],
             },
@@ -375,6 +439,17 @@ export const SYSTEM_INSTRUCTION = [
   "`dishType` to a short lowercase dish descriptor (e.g. \"pasta\", \"soup\", \"taco\"). Set",
   "`cuisine` when evident.",
   "",
+  "CATEGORY. Set each ingredient's `category` to its grocery-store department: Produce,",
+  "Meat & Seafood, Dairy, Pantry, Frozen, Bakery, or Other. Fresh vegetables/fruits/herbs ->",
+  "Produce; raw meat/fish -> Meat & Seafood; milk/cheese/eggs/butter -> Dairy; dry goods,",
+  "oils, spices, canned items, condiments, and alcohol -> Pantry; frozen items -> Frozen;",
+  "bread/tortillas -> Bakery. Derived products follow their shelf form: chicken STOCK is",
+  "Pantry, not Meat & Seafood.",
+  "",
+  "TRASH. NEVER emit as ingredients: scaling strings (\"1x 2x 3x\"), bare section labels",
+  "(\"Topping\", \"Garnish:\"), header remnants (\"Ingredients (serves 4)\"), or any line that is",
+  "only a label ending in a colon.",
+  "",
   "COMPLETENESS. Capture EVERY ingredient (including minor spices, oils, garnishes) and EVERY",
   "step in order; never summarize multiple steps into one.",
   "",
@@ -418,17 +493,17 @@ export const EXEMPLARS = {
           {
             section: 'sauce',
             items: [
-              { quantity: '1', unit: 'cup', name: 'heavy cream', prep: '' },
-              { quantity: '1/2', unit: 'cup', name: 'sun-dried tomatoes', prep: 'chopped' },
-              { quantity: '3', unit: 'clove', name: 'garlic', prep: 'minced' },
+              { quantity: '1', unit: 'cup', name: 'heavy cream', prep: '', category: 'Dairy' },
+              { quantity: '1/2', unit: 'cup', name: 'sun-dried tomatoes', prep: 'chopped', category: 'Pantry' },
+              { quantity: '3', unit: 'clove', name: 'garlic', prep: 'minced', category: 'Produce' },
             ],
           },
           {
             section: '',
             items: [
-              { quantity: '2', unit: 'cup', name: 'chicken breast', prep: 'diced' },
-              { quantity: '2', unit: 'cup', name: 'baby spinach', prep: '' },
-              { quantity: '', unit: '', name: 'salt and pepper', prep: 'to taste' },
+              { quantity: '2', unit: 'cup', name: 'chicken breast', prep: 'diced', category: 'Meat & Seafood' },
+              { quantity: '2', unit: 'cup', name: 'baby spinach', prep: '', category: 'Produce' },
+              { quantity: '', unit: '', name: 'salt and pepper', prep: 'to taste', category: 'Pantry' },
             ],
           },
         ],
@@ -462,9 +537,9 @@ export const EXEMPLARS = {
           {
             section: '',
             items: [
-              { quantity: '2', unit: 'oz', name: 'rye whiskey', prep: '' },
-              { quantity: '0.75', unit: 'oz', name: 'sweet vermouth', prep: '' },
-              { quantity: '2', unit: 'dash', name: 'Angostura bitters', prep: '' },
+              { quantity: '2', unit: 'oz', name: 'rye whiskey', prep: '', category: 'Pantry' },
+              { quantity: '0.75', unit: 'oz', name: 'sweet vermouth', prep: '', category: 'Pantry' },
+              { quantity: '2', unit: 'dash', name: 'Angostura bitters', prep: '', category: 'Pantry' },
             ],
           },
         ],
@@ -527,8 +602,33 @@ export function flattenIngredientGroups(groups = []) {
     for (const item of g.items || []) {
       let line = ingredientItemToString(item);
       if (!line) continue;
+      // Phase G ingestion trash filter — drop scaling strings / header remnants
+      if (isTrashIngredientLine(line)) continue;
       if (section) line = `${line} (${section})`;
       out.push(line);
+    }
+  }
+  return out;
+}
+
+/**
+ * Phase G: parallel category metadata for flattened ingredients. Returns
+ * [{ text, category }] in the same order/filtering as flattenIngredientGroups.
+ * category comes from the LLM when present, else the keyword fallback.
+ */
+export function ingredientMetaFromGroups(groups = []) {
+  const out = [];
+  for (const g of groups || []) {
+    const section = (g.section || '').trim();
+    for (const item of g.items || []) {
+      let line = ingredientItemToString(item);
+      if (!line) continue;
+      if (isTrashIngredientLine(line)) continue;
+      if (section) line = `${line} (${section})`;
+      const category = GROCERY_CATEGORIES.includes(item.category)
+        ? item.category
+        : categorizeIngredient(item.name || line);
+      out.push({ text: line, category });
     }
   }
   return out;
@@ -543,6 +643,8 @@ export function thinFromStructured(structured = {}) {
   const base = {
     title: (structured.title || '').trim(),
     ingredients: flattenIngredientGroups(structured.ingredientGroups),
+    // Phase G: department metadata for grocery routing (non-breaking sidecar)
+    _ingredientMeta: ingredientMetaFromGroups(structured.ingredientGroups),
     directions: Array.isArray(structured.directions) ? structured.directions.filter(Boolean) : [],
     notes: structured.notes || '',
     confidence: typeof structured.confidence === 'number' ? structured.confidence : null,
@@ -575,9 +677,10 @@ export default {
   UNIT_CANON, UNIT_LOOKUP, UNIT_ALIASES_ALL, canonicalizeUnit,
   normalizeFraction, wordToNumber,
   INGREDIENT_ALIASES, resolveIngredientAlias,
+  GROCERY_CATEGORIES, categorizeIngredient, isTrashIngredientLine,
   COURSE, DISH_TYPE, CUISINE, DIETARY_TAGS,
   SECTION_HEADERS, isSectionHeader, sectionLabelFrom,
   SPIRITS, LIQUEURS, COCKTAIL_ACTIONS, GLASSWARE, DRINK_METHODS, detectKindHeuristic,
   DISPLAY_SCHEMA, RECIPE_SCHEMA, SYSTEM_INSTRUCTION, EXEMPLARS, buildFewShotContents,
-  ingredientItemToString, flattenIngredientGroups, thinFromStructured,
+  ingredientItemToString, flattenIngredientGroups, ingredientMetaFromGroups, thinFromStructured,
 };

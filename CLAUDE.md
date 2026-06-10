@@ -11,6 +11,7 @@ Security-First Architecture: Zero tolerance for hardcoded secrets. Environment v
 Full Output Enforcement on modified files. Do not leave modified files truncated or with build breaking Syntax errors. Nun npm run build and ensure no errors before closing to git cmds.
 
 ## Preferred Tools & Workflow
+- This is a Windows PC not Linux, use only Windows based terminal commands to lookup.
 - Conventional Commit cmd provided for every change package. 
 - CLAUDE ONLY PROVIDES THE GIT COMMIT CMDS, DO NOT ATTEMPT TO COMMIT TO GIT, User will manually make the commits to ensure they go to the right place
 

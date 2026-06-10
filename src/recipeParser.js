@@ -14,7 +14,7 @@ import { htmlToMarkdown, htmlLooksLikeRecipe } from './scrapers/markdownConverte
 import { parseIngredient } from 'parse-ingredient';
 import {
   SYSTEM_INSTRUCTION, RECIPE_SCHEMA, buildFewShotContents,
-  thinFromStructured, detectKindHeuristic,
+  thinFromStructured, detectKindHeuristic, isTrashIngredientLine,
 } from './recipeSchema.js';
 
 /**
@@ -366,7 +366,7 @@ function isSocialCaptionProse(line) {
 function cleanStructuredSocialRecipe(recipe) {
   if (!recipe || typeof recipe !== 'object') return recipe;
   const ingredients = Array.isArray(recipe.ingredients)
-    ? recipe.ingredients.filter((line) => !isSocialCaptionProse(line))
+    ? recipe.ingredients.filter((line) => !isSocialCaptionProse(line) && !isTrashIngredientLine(line))
     : [];
   const directions = Array.isArray(recipe.directions)
     ? recipe.directions.filter((line) => !/^(would you|save this|follow|link in bio)/i.test(String(line || '').trim()))
@@ -4509,6 +4509,25 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
         if (extracted.length > 300) capturedRawPageText = extracted;
       }
     } catch { /* continue without it */ }
+  }
+
+  // ── Phase E.3: empty/junk-caption early exit (spec §6) ──────────────────────
+  // No subtitles, caption has no recipe signals, and no substantial page text:
+  // don't burn an AI run on junk — hand back the manual sheet immediately with
+  // whatever we captured pre-filled, flagged so the UI can explain why.
+  if (!(videoRecipe && hasRecipeContent(videoRecipe))
+      && isCaptionWeak(capturedCaption || '')
+      && !(capturedRawPageText && capturedRawPageText.trim().length >= 300)) {
+    progress(3, 'failed', 'No recipe text found in this post');
+    return {
+      _needsManualCaption: true,
+      _needsBrowserAssist: true,
+      _emptyCaption: true,
+      capturedCaption: capturedCaption || '',
+      capturedImageUrl: capturedImageUrl || '',
+      capturedTitle: capturedTitle || '',
+      sourceUrl: url,
+    };
   }
 
   const textForGemini = capturedCaption?.trim().length >= 20
