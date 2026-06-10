@@ -10,6 +10,7 @@ import {
   detectImportType,
 } from '../recipeParser.js';
 import { cleanUrl } from '../api.js';
+import { humanizeImportStatus } from '../importCopy.js';
 import db from '../db.js';
 import ImportInput from './ImportInput';
 import ImportReview from './ImportReview';
@@ -81,12 +82,12 @@ export default function ImportSheet({
     setItemType(type || initialItemType);
     setPhase('loading');
     setError('');
-    setProgressMsg('Starting import...');
+    setProgressMsg('Getting your recipe…');
 
     try {
       const result = await importRecipeFromUrl(
         url,
-        (msg) => setProgressMsg(msg),
+        (msg) => setProgressMsg(humanizeImportStatus(msg)),
         { type: type || initialItemType, signal: controller.signal },
       );
 
@@ -129,7 +130,7 @@ export default function ImportSheet({
     setItemType(type || initialItemType);
     setPhase('loading');
     setError('');
-    setProgressMsg('Structuring pasted text with AI...');
+    setProgressMsg('Sorting ingredients from instructions…');
 
     try {
       const result = await captionToRecipe(text, { type: type || initialItemType });
@@ -159,7 +160,7 @@ export default function ImportSheet({
     setItemType(type || initialItemType);
     setPhase('loading');
     setError('');
-    setProgressMsg('Analyzing photo...');
+    setProgressMsg('Reading your photo…');
 
     try {
       const result = await structureRecipeFromImage(imageDataUrl, { type: type || initialItemType });

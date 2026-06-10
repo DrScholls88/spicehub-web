@@ -437,7 +437,7 @@ export function parseManualCaption(captionText, sourceUrl) {
  * Post-processing title cleaner — strips social chrome the AI sometimes leaves.
  * "Sheet Pan Gnocchi! This Weeknight Win recipe is" → "Sheet Pan Gnocchi"
  */
-function _cleanTitle(title = '') {
+function _cleanTitle(title = '', ingredients = []) {
   let t = String(title).trim();
   // Strip trailing social patterns: "This Weeknight Win recipe is", "save this", "link in bio", etc.
   t = t.replace(/[!.]\s*(this|these|the|my|our|a|an)\s+(weeknight|easy|quick|best|amazing|perfect|simple|delicious|favorite|favourite|ultimate)\b.*$/i, '');
@@ -452,7 +452,39 @@ function _cleanTitle(title = '') {
   t = t.replace(/[!.,;:\s]+$/, '').trim();
   // Truncate to 60 chars at a word boundary
   if (t.length > 60) t = t.substring(0, 60).replace(/\s\S+$/, '').trim();
+  // Conversational-hook safeguard (2026-06-09 CX review): a social-media hook
+  // ("Let's take it back to another one of my favorite...") is not a title.
+  // If the cleaned title still reads conversational, derive one from the
+  // first ingredients instead.
+  if (_isConversationalTitle(t)) {
+    const derived = _titleFromIngredients(ingredients);
+    if (derived) return derived;
+  }
   return t || title.trim();
+}
+
+const _CONVO_TITLE_RE = /\b(let'?s|lets take|my favorite|my favourite|back to|recipe for you|you guys|i'?m so|i'?ve been|we'?re|this one is|who else|when you|if you|trust me|obsessed with|pov\b)\b/i;
+
+function _isConversationalTitle(t) {
+  if (!t) return false;
+  if (_CONVO_TITLE_RE.test(t)) return true;
+  return t.split(/\s+/).length > 8;
+}
+
+/** Build a concise fallback title from the first couple of ingredient names. */
+function _titleFromIngredients(ingredients = []) {
+  const names = ingredients.slice(0, 4).map((ing) => {
+    const raw = typeof ing === 'string' ? ing : (ing && ing.name) || '';
+    return raw
+      .replace(/^[\d\s/.,x-]+/, '')
+      .replace(/^(oz|g|kg|ml|l|cups?|tbsp|tsp|tablespoons?|teaspoons?|cloves?|cans?|packs?|packets?|blocks?|bricks?|bunch(?:es)?|lbs?|pounds?)\b\.?\s*(of\s+)?/i, '')
+      .replace(/[,(].*$/, '')
+      .trim();
+  }).filter((n) => n && n.length > 2);
+  if (!names.length) return '';
+  return names.slice(0, 2)
+    .map((n) => n.toLowerCase().replace(/(^|\s)\w/g, (c) => c.toUpperCase()))
+    .join(' & ');
 }
 
 // The API key is bundled into the client build Ã¢â‚¬â€ acceptable for personal/family apps.
@@ -674,7 +706,7 @@ export async function structureWithAIClient(rawText, { title: hintTitle = '', im
     // Flatten the rich structured output to SpiceHub's thin display shape
     const thin = thinFromStructured(structured);
     return {
-      name: _cleanTitle(thin.title || hintTitle || 'Imported Recipe'),
+      name: _cleanTitle(thin.title || hintTitle || 'Imported Recipe', thin.ingredients),
       ...thin,
       ...buildStructuredFields(thin.ingredients, thin.directions),
       imageUrl: imageUrl || '',
@@ -716,7 +748,7 @@ async function _structureWithAIClientLegacy(rawText, { title: hintTitle = '', im
       : [];
     const _dirs = Array.isArray(parsed.directions) ? parsed.directions.filter(Boolean) : [];
     return {
-      name: _cleanTitle(parsed.title || hintTitle || 'Imported Recipe'),
+      name: _cleanTitle(parsed.title || hintTitle || 'Imported Recipe', ingredients),
       ingredients,
       directions: _dirs,
       ...buildStructuredFields(ingredients, _dirs),

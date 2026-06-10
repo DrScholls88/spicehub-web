@@ -234,7 +234,39 @@ Progress callback signature: `onProgress(phaseIndex, status, message)`. The load
 
 ---
 
-## 6. What's NOT in scope
+## 6. Gemini CX feedback integration (added 2026-06-09)
+
+Three external CX analyses reviewed: loading screen, preview/validation screen, image-load post-mortem, grocery screen. Triage below.
+
+### Already addressed (verify, don't rebuild)
+- **Image CORS failures (fbcdn.net `net::ERR_FAILED`)** — SafeMediaImage 3-tier fallback + image persistence exist (api.js, sw.js, SafeMediaImage.jsx). Verify Apify-returned images persist to local storage so they survive Instagram URL token expiry.
+- **45s hard timeout + BrowserAssist pivot** — matches the "graceful timeout, pivot to assisted manual import" recommendation.
+- **Title chrome stripping** — `_cleanTitle` exists; needs the conversational-pattern hardening below.
+
+### Phase E: Loading-state CX (fold into Phase C work)
+1. **Humanized copy** — scrub dev jargon from progress messages. Map: "AI Browser: fetching page text" → "Reading the recipe…"; "AI structuring / deeper extraction" → "Separating ingredients from instructions…"; "Caption fetch: trying multiple methods" → "Grabbing the caption…". Keep raw stage names in console logs only.
+2. **Single progress vector** — one progress model, not bar + checklist. Single animated status line with current humanized step; no duplicated status text.
+3. **Subtitle/empty-caption early warning** — if no subtitles and caption < ~80 chars, prompt "We couldn't find recipe text — paste it manually?" before burning an AI run.
+4. **(Deferred) Background import** — close sheet on import, toast when ready. Larger architectural change; defer to follow-up alongside drag-to-dismiss.
+
+### Phase F: Review-state CX (fold into Phase C work)
+1. **Honest status badge** — badge driven by misplaced-line flags, not just extraction confidence. Any flagged rows → amber "Review needed", never green "High match" alongside visible flags.
+2. **Macro-correction banner** — when N rows in Steps look like ingredients, banner at top of Steps: "N ingredients slipped into the steps. [Move all]" — one tap instead of per-row taps. Port `detectMisplaced` heuristic from ImportModal into ImportReview.
+3. **Pre-route obvious quantities** — `[number] + [unit] + [noun]` without imperative verb routes to ingredients automatically during parse, not just flagged.
+4. **Title heuristic safeguard** — reject titles > 7 words or matching conversational patterns (`let's|my favorite|back to|recipe for you`); fall back to og:title metadata or first-ingredients-derived title.
+5. **Input contrast** — editable field text must not resemble disabled placeholder; meet WCAG AA contrast.
+6. **(Deferred) Sticky tab-basket hybrid** — segmented Ingredients/Steps tabs with live counters + fly-away animation. Strong concept; schedule after Phase D since it restructures ImportReview layout.
+
+### Phase G: Grocery screen restructure (separate track, ingestion hooks in import engine)
+Import-engine-side prerequisites (this plan):
+1. **Category in extraction schema** — add `category` key (Produce, Meat & Seafood, Dairy, Pantry, Frozen, Bakery, Other) to ingredient objects in recipeSchema.js responseSchema. LLM does classification for free at ingestion.
+2. **Ingestion trash filter** — blocklist regex during parse: standalone `1x 2x 3x` scaling strings, `Topping`, `Ingredients (serves…)`, trailing-colon headers — discard before save.
+
+Grocery-screen-side (separate spec/session): department accordions default view, auto-sort on load (kill manual Auto Sort button), meal-filter chip row, compact rows, ingredient aggregation/dedup (garlic + garlic crushed → one line).
+
+---
+
+## 7. What's NOT in scope
 
 - **Audio/video transcription (Phase 6)** — ASR scaffold exists on server but client integration deferred
 - **Two-pane desktop layout** — mentioned in mockup for ≥720px; defer to a follow-up

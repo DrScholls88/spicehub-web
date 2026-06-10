@@ -1,4 +1,23 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
+
+/**
+ * Misplaced-ingredient heuristic (2026-06-09 CX review):
+ * a "step" that starts with [number] + [unit] + [noun] and lacks an
+ * imperative cooking verb is almost certainly an ingredient line.
+ */
+const UNIT_RE = /^\s*\d[\d/.\s-]*\s*(x\s*)?(g|kg|oz|lbs?|ml|l|cups?|tbsp|tsp|tablespoons?|teaspoons?|cloves?|cans?|packs?|packets?|blocks?|bricks?|bunch(?:es)?|slices?|pieces?|sticks?|pinch(?:es)?|handfuls?|sprigs?|fillets?|stalks?|heads?|jars?|bottles?|dash(?:es)?)\b/i;
+const BARE_QTY_RE = /^\s*\d[\d/.\s-]*\s+(?:of\s+)?[a-z]/i;
+const TIME_TEMP_RE = /\b(min(?:ute)?s?|hours?|hrs?|sec(?:ond)?s?|degrees?|°|until|then|while|when)\b/i;
+const IMPERATIVE_RE = /^\s*(heat|add|mix|stir|combine|slice|chop|dice|boil|simmer|bake|preheat|cook|whisk|pour|serve|drain|season|toss|fry|saute|sauté|grill|roast|blend|marinate|garnish|remove|place|bring|reduce|let|cover|transfer|fold|knead|rest|chill|melt|cut|mince|press|squeeze|top|set|prepare|repeat|fill|shake|strain|muddle|rim|build|spread|sprinkle|layer|arrange|divide|enjoy)\b/i;
+
+export function looksMisplacedIngredient(line) {
+  if (!line || typeof line !== 'string') return false;
+  const s = line.trim();
+  if (s.length < 3 || s.length > 90) return false;
+  if (IMPERATIVE_RE.test(s)) return false;
+  if (UNIT_RE.test(s)) return true;
+  return BARE_QTY_RE.test(s) && !TIME_TEMP_RE.test(s);
+}
 
 /**
  * AccordionSection — collapsible section used within ImportReview.
@@ -28,7 +47,7 @@ function AccordionSection({ icon, title, count, defaultOpen = false, children })
  * ListItem — a single editable list row (ingredient or step).
  * Shows a drag handle, text input, and remove button.
  */
-function ListItem({ value, index, onChange, onRemove, stepNum, onMoveUp, onMoveDown, isFirst, isLast, listName, onDragStart, onDragOver, onDrop, onDragEnd }) {
+function ListItem({ value, index, onChange, onRemove, stepNum, onMoveUp, onMoveDown, isFirst, isLast, listName, onDragStart, onDragOver, onDrop, onDragEnd, flagged, onFlagAction }) {
   return (
     <div
       className="review-row"
@@ -69,6 +88,15 @@ function ListItem({ value, index, onChange, onRemove, stepNum, onMoveUp, onMoveD
       >
         &times;
       </button>
+      {flagged && (
+        <button
+          className="review-flag-chip"
+          onClick={() => onFlagAction?.(index)}
+          aria-label="Move to ingredients"
+        >
+          Ingredient? &#8593;
+        </button>
+      )}
     </div>
   );
 }
@@ -156,9 +184,33 @@ export default function ImportReview({ recipe, onChange, onSave, confidence }) {
     setDragSrc(null);
   }, []);
 
-  // ── Confidence chip color ────────────────────────────────────────────────
-  const confColor = confidence >= 0.7 ? '#27ae60' : confidence >= 0.4 ? '#f39c12' : '#e74c3c';
-  const confLabel = confidence >= 0.7 ? 'High' : confidence >= 0.4 ? 'Medium' : 'Low';
+  // ── Misplaced-ingredient flags (steps that look like ingredient lines) ───
+  const flaggedSteps = useMemo(
+    () => (recipe?.directions || []).reduce((acc, line, i) => {
+      if (looksMisplacedIngredient(line)) acc.push(i);
+      return acc;
+    }, []),
+    [recipe?.directions],
+  );
+
+  const moveStepToIngredients = useCallback((index) => {
+    const directions = [...(recipe.directions || [])];
+    const [item] = directions.splice(index, 1);
+    if (item == null) return;
+    onChange({ ...recipe, directions, ingredients: [...(recipe.ingredients || []), item] });
+  }, [recipe, onChange]);
+
+  const moveAllFlaggedToIngredients = useCallback(() => {
+    const directions = (recipe.directions || []).filter((l) => !looksMisplacedIngredient(l));
+    const moved = (recipe.directions || []).filter((l) => looksMisplacedIngredient(l));
+    if (!moved.length) return;
+    onChange({ ...recipe, directions, ingredients: [...(recipe.ingredients || []), ...moved] });
+  }, [recipe, onChange]);
+
+  // ── Confidence chip — honest badge: visible flags override raw score ─────
+  const hasFlags = flaggedSteps.length > 0;
+  const confLabel = hasFlags ? 'Review needed'
+    : confidence >= 0.7 ? 'High' : confidence >= 0.4 ? 'Medium' : 'Low';
 
   // ── Save destinations ────────────────────────────────────────────────────
   const destinations = isDrink
@@ -179,7 +231,8 @@ export default function ImportReview({ recipe, onChange, onSave, confidence }) {
 
   if (!recipe) return null;
 
-  const confLevel = confidence >= 0.7 ? 'high' : confidence >= 0.4 ? 'medium' : 'low';
+  const confLevel = hasFlags ? 'review'
+    : confidence >= 0.7 ? 'high' : confidence >= 0.4 ? 'medium' : 'low';
 
   return (
     <div className="import-review">
@@ -190,9 +243,9 @@ export default function ImportReview({ recipe, onChange, onSave, confidence }) {
       >
         {!recipe.image && <div className="review-hero-placeholder">🍽️</div>}
         <div className="review-hero-gradient" />
-        {confidence != null && (
+        {(confidence != null || hasFlags) && (
           <span className={`review-confidence review-confidence-${confLevel}`}>
-            {confLabel} {Math.round(confidence * 100)}%
+            {hasFlags ? '⚠ Review needed' : `${confLabel} ${Math.round(confidence * 100)}%`}
           </span>
         )}
         <div className="review-hero-title-wrap">
@@ -246,6 +299,18 @@ export default function ImportReview({ recipe, onChange, onSave, confidence }) {
         count={recipe.directions?.length || 0}
         defaultOpen={true}
       >
+        {hasFlags && (
+          <div className="review-flag-banner">
+            <span>
+              Looks like {flaggedSteps.length === 1
+                ? 'an ingredient slipped'
+                : `${flaggedSteps.length} ingredients slipped`} into the steps.
+            </span>
+            <button onClick={moveAllFlaggedToIngredients}>
+              Move {flaggedSteps.length === 1 ? 'it' : 'all'} to Ingredients
+            </button>
+          </div>
+        )}
         {(recipe.directions || []).map((item, i) => (
           <ListItem
             key={i}
@@ -263,6 +328,8 @@ export default function ImportReview({ recipe, onChange, onSave, confidence }) {
             onDragOver={handleDragOver}
             onDrop={handleDrop}
             onDragEnd={handleDragEnd}
+            flagged={flaggedSteps.includes(i)}
+            onFlagAction={moveStepToIngredients}
           />
         ))}
         <button
