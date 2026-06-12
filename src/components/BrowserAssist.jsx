@@ -1,4 +1,17 @@
 import React, { useState, useEffect, useRef, useImperativeHandle, forwardRef, useCallback, useMemo } from 'react';
+import {
+  WifiOff,
+  Clock,
+  CheckCircle2,
+  Check,
+  X as XIcon,
+  Download,
+  Shield,
+  Loader2,
+  Crosshair,
+  ArrowLeft,
+  ArrowRight as ArrowRightIcon,
+} from 'lucide-react';
 import { 
   extractRecipeFromDOM, 
   parseCaption, 
@@ -978,22 +991,28 @@ const toggleDeepMode = () => {
       {/* ——— Offline ——— */}
       {phase === 'offline' && (
         <div className="browser-assist-offline">
-          <div className="offline-icon">🔌</div>
+          <div className="offline-icon" style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+            <WifiOff size={48} strokeWidth={1.5} />
+          </div>
           <h3>Offline Mode</h3>
           <p>Cannot fetch recipe from the web while offline.</p>
           <p className="offline-help-text">
-            Go back and use "Paste Text" to manually add recipe content.
+            Go back and use &ldquo;Paste Text&rdquo; to manually add recipe content.
           </p>
-          <button className="btn-primary" onClick={onFallbackToText}>← Back to Import</button>
+          <button className="btn-primary" onClick={onFallbackToText} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <ArrowLeft size={16} strokeWidth={2} /> Back to Import
+          </button>
         </div>
       )}
 
       {/* ——— Queued ——— */}
       {phase === 'queued' && queuedRecipe && (
         <div className="browser-assist-queued">
-          <div className="queued-icon">⏳</div>
+          <div className="queued-icon" style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+            <Clock size={48} strokeWidth={1.5} />
+          </div>
           <h3>Recipe Queued</h3>
-          <p><strong>{queuedRecipe.name}</strong> will be imported when you're back online.</p>
+          <p><strong>{queuedRecipe.name}</strong> will be imported when you&rsquo;re back online.</p>
           <button className="btn-primary" onClick={() => onRecipeExtracted && onRecipeExtracted(queuedRecipe)}>Close</button>
         </div>
       )}
@@ -1309,16 +1328,20 @@ const toggleDeepMode = () => {
         <div className="browser-assist-ready">
           {bannerRecipe && phase !== 'extracting' && (
             <div className="browser-assist-auto-banner">
-              <span className="auto-banner-icon">✅</span>
+              <span className="auto-banner-icon" style={{ display: 'flex', alignItems: 'center' }}>
+                <CheckCircle2 size={22} strokeWidth={2} />
+              </span>
               <div className="auto-banner-text">
                 <strong>Recipe auto-detected!</strong>
                 <span>{bannerRecipe.name || 'Recipe found'} — {bannerRecipe.ingredients?.length || 0} ingredients</span>
               </div>
               <div className="auto-banner-actions">
                 <button className="btn-primary auto-banner-accept" onClick={() => { setAutoRecipe(bannerRecipe); setBannerRecipe(null); setPhase('preview'); }}>
-                  Review →
+                  Review <ArrowRightIcon size={14} style={{ display: 'inline', verticalAlign: 'middle' }} />
                 </button>
-                <button className="btn-icon auto-banner-dismiss" onClick={() => setBannerRecipe(null)} title="Dismiss">✖</button>
+                <button className="btn-icon auto-banner-dismiss" onClick={() => setBannerRecipe(null)} title="Dismiss" aria-label="Dismiss">
+                  <XIcon size={18} strokeWidth={2} />
+                </button>
               </div>
             </div>
           )}
@@ -1326,10 +1349,10 @@ const toggleDeepMode = () => {
           <div className="browser-assist-toolbar">
             <div className="browser-assist-toolbar-hint">
               {phase === 'extracting'
-                ? <span>⏳ {extractionProgress.message || 'Analyzing...'}</span>
+                ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Loader2 size={15} strokeWidth={2} style={{ animation: 'spin 1s linear infinite' }} /> {extractionProgress.message || 'Analyzing...'}</span>
                 : aimMode
-                  ? <span>🎯 <strong>Aim mode on</strong> — tap the {aimTarget === 'auto' ? 'ingredients or directions' : aimTarget} on the page</span>
-                  : <span>📜 Scroll · pinch to zoom · tap <strong>Download Recipe ↓</strong> or 🎯 Aim</span>
+                  ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Crosshair size={15} strokeWidth={2} /> <strong>Aim mode on</strong> — tap the {aimTarget === 'auto' ? 'ingredients or directions' : aimTarget} on the page</span>
+                  : <span>Scroll · pinch to zoom · tap <strong>Download Recipe</strong> or Aim</span>
               }
             </div>
             <div className="browser-assist-zoom-controls browser-assist-zoom-inline">
@@ -1344,7 +1367,7 @@ const toggleDeepMode = () => {
               onClick={handleClearClutter}
               disabled={clearingClutter || phase === 'extracting'}
             >
-              {clearingClutter ? '✓ Cleared!' : '🧹 Clear Clutter'}
+              {clearingClutter ? 'Cleared!' : 'Clear Clutter'}
             </button>
           </div>
 
@@ -1384,8 +1407,8 @@ const toggleDeepMode = () => {
               aria-label="Expand all truncated captions on the page"
             >
               {expandedCount != null
-                ? (expandedCount > 0 ? `✓ Expanded ${expandedCount}` : '✓ Already expanded')
-                : '⬇ Expand captions'}
+                ? (expandedCount > 0 ? `Expanded ${expandedCount}` : 'Already expanded')
+                : 'Expand captions'}
             </button>
 
             <button
@@ -1411,7 +1434,9 @@ const toggleDeepMode = () => {
               aria-pressed={aimMode}
               aria-label={aimMode ? 'Stop aiming the parser' : 'Start aiming the parser at specific parts of the page'}
             >
-              {aimMode ? '✖ Stop aim' : '🎯 Aim parser'}
+              {aimMode
+                ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><XIcon size={15} strokeWidth={2} /> Stop aim</span>
+                : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Crosshair size={15} strokeWidth={2} /> Aim parser</span>}
             </button>
 
             {/* Visual scrape mode toggle — Paprika-style layout detection */}
@@ -1437,7 +1462,7 @@ const toggleDeepMode = () => {
                 transition: 'all 0.15s ease',
               }}
             >
-              {visualScrapeRunning ? '⏳' : 'V'}
+              {visualScrapeRunning ? <Loader2 size={16} strokeWidth={2} style={{ animation: 'spin 1s linear infinite' }} /> : 'V'}
             </button>
 
             {/* Aim target segmented control — only shown when aim mode is active */}
@@ -1557,7 +1582,9 @@ const toggleDeepMode = () => {
                 animation: 'fadeInOut 1.6s ease-out forwards',
               }}
             >
-              ✓ {aimToast}
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                <Check size={14} strokeWidth={2.5} /> {aimToast}
+              </span>
             </div>
           )}
 
@@ -1602,7 +1629,9 @@ const toggleDeepMode = () => {
                   opacity: 0,
                 }}>
                   <div style={{ pointerEvents: 'auto', maxWidth: 400 }}>
-                    <div style={{ fontSize: 48, marginBottom: 16 }}>🛡️</div>
+                    <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+                      <Shield size={48} strokeWidth={1.5} />
+                    </div>
                     <h3 style={{ marginBottom: 12 }}>Site blocked direct view</h3>
                     <p style={{ color: '#666', fontSize: 14, marginBottom: 24 }}>
                       This recipe site prevents itself from being shown in other apps.
@@ -1680,11 +1709,13 @@ const toggleDeepMode = () => {
               onClick={visualScrapeMode ? runVisualScrape : handleExtraction}
               disabled={phase === 'extracting' || visualScrapeRunning}
             >
-              {phase === 'extracting' ? '⏳ AI Reading...' : '📥 Download Recipe'}
+              {phase === 'extracting'
+                ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Loader2 size={16} strokeWidth={2} style={{ animation: 'spin 1s linear infinite' }} /> AI Reading...</span>
+                : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Download size={16} strokeWidth={2} /> Download Recipe</span>}
             </button>
             {bannerRecipe && (
               <button className="btn-accent" onClick={() => { setAutoRecipe(bannerRecipe); setBannerRecipe(null); setPhase('preview'); }}>
-                ✅ Use Auto-Result
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><CheckCircle2 size={16} strokeWidth={2} /> Use Auto-Result</span>
               </button>
             )}
             <button className="btn-secondary" onClick={onFallbackToText} disabled={phase === 'extracting'}>â† Back</button>

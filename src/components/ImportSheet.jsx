@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
+import { X } from 'lucide-react';
 import './ImportSheet.css';
 import {
   importRecipeFromUrl,
@@ -16,6 +17,68 @@ import db from '../db.js';
 import ImportInput from './ImportInput';
 import ImportReview from './ImportReview';
 import BrowserAssist from './BrowserAssist';
+
+/**
+ * normalizeRecipeForReview — single contract adapter between the import
+ * engine's many return shapes and the ImportReview UI.
+ *
+ * The engine paths disagree on field names:
+ *   - Instagram/Apify, captionToRecipe and BrowserAssist paths return
+ *     `name` + `imageUrl` (the db shape); `title` may be missing or empty.
+ *   - The Gemini structured path (thinFromStructured) returns `title`,
+ *     `method` (drinks) and `_type`.
+ *   - ImportReview reads `title`, `image`, `technique`, and `type`/`itemType`.
+ * This maps everything onto one superset shape, keeping both aliases so the
+ * review UI AND the downstream save path (which keys off `name`/`imageUrl`)
+ * both work.
+ *
+ * @param {object|null} result        raw engine result
+ * @param {string}      fallbackType  'meal' | 'drink' when the result carries no type
+ */
+export function normalizeRecipeForReview(result, fallbackType = 'meal') {
+  if (!result) return null;
+  const title = (result.title || result.name || '').trim();
+  const image = result.image || result.imageUrl || result.capturedImageUrl || '';
+  const technique = result.technique || result.method || '';
+  const itemType =
+    result.itemType || result.type || result._type
+    || (result.kind === 'drink' ? 'drink' : '')
+    || fallbackType || 'meal';
+  return {
+    ...result,
+    title,
+    name: result.name || title,
+    image,
+    imageUrl: result.imageUrl || image,
+    ingredients: Array.isArray(result.ingredients) ? result.ingredients.filter(Boolean) : [],
+    directions: Array.isArray(result.directions) ? result.directions.filter(Boolean) : [],
+    notes: typeof result.notes === 'string' ? result.notes : '',
+    technique,
+    method: result.method || technique,
+    itemType,
+    type: result.type || itemType,
+  };
+}
+
+/**
+ * computeReviewConfidence — honest 0..1 value for the review badge.
+ * ImportReview treats `confidence` as 0..1 (it renders Math.round(c * 100)%),
+ * while scoreExtractionConfidence returns 0–100 — so the raw score must be
+ * rescaled. When the model self-rated its extraction (thinFromStructured
+ * passes `confidence` through as 0..1) we prefer that, blended with the
+ * structural heuristic as a sanity check so an overconfident model can't
+ * claim 95% on a two-line extraction (or a shy one bury a clean result).
+ */
+function computeReviewConfidence(recipe) {
+  if (!recipe) return 0;
+  const heuristic = scoreExtractionConfidence(recipe) / 100; // engine scores 0–100
+  const model =
+    typeof recipe.confidence === 'number' && recipe.confidence >= 0 && recipe.confidence <= 1
+      ? recipe.confidence
+      : null;
+  if (model == null) return heuristic;
+  return Math.max(0, Math.min(1, 0.6 * model + 0.4 * heuristic));
+}
 
 /**
  * ImportSheet — top-level orchestrator for the Collapse & Reveal import flow.
@@ -54,8 +117,94 @@ export default function ImportSheet({
   const [browserAssistSeed, setBrowserAssistSeed] = useState(null);
   const [capturedText, setCapturedText] = useState('');
 
+  // ── Input and review state lifted for single CTA ────────────────────────
+  const [url, setUrl] = useState(sharedContent?.url || '');
+  const [pasteText, setPasteText] = useState('');
+  const [activeTab, setActiveTab] = useState('url');
+  const [destination, setDestination] = useState('library');
+
+  // ── Modals & Banners state ──────────────────────────────────────────────
+  const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
+  const [confirmImport, setConfirmImport] = useState(null);
+  const [draftToResume, setDraftToResume] = useState(null);
+
+  // ── Loading state ────────────────────────────────────────────────────────
+  const [elapsedTime, setElapsedTime] = useState(0);
+  const [loadingImage, setLoadingImage] = useState('');
+  const [pipelineSteps, setPipelineSteps] = useState([]);
+
   const abortRef = useRef(null);
   const browserAssistRef = useRef(null);
+  const lastReviewRef = useRef(null);
+  const sheetRef = useRef(null);
+
+  // ── Save/Restore focus on mount/unmount ──────────────────────────────────
+  useEffect(() => {
+    const activeBefore = document.activeElement;
+    return () => {
+      if (activeBefore && typeof activeBefore.focus === 'function') {
+        activeBefore.focus();
+      }
+    };
+  }, []);
+
+  // ── Dialog focus trap ────────────────────────────────────────────────────
+  useEffect(() => {
+    if (backgrounded) return;
+    const handleFocusTrap = (e) => {
+      if (e.key !== 'Tab' || !sheetRef.current) return;
+      
+      const focusableElements = Array.from(
+        sheetRef.current.querySelectorAll(
+          'button, [href], input, select, textarea, [tabIndex]:not([tabIndex="-1"])'
+        )
+      ).filter((el) => {
+        return !el.disabled && el.offsetParent !== null;
+      });
+
+      if (focusableElements.length === 0) return;
+      const firstEl = focusableElements[0];
+      const lastEl = focusableElements[focusableElements.length - 1];
+
+      if (e.shiftKey) {
+        if (document.activeElement === firstEl) {
+          lastEl.focus();
+          e.preventDefault();
+        }
+      } else {
+        if (document.activeElement === lastEl) {
+          firstEl.focus();
+          e.preventDefault();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleFocusTrap);
+    return () => window.removeEventListener('keydown', handleFocusTrap);
+  }, [backgrounded]);
+
+  // ── Manage initial focus ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (backgrounded) return;
+    const focusTimer = setTimeout(() => {
+      if (!sheetRef.current) return;
+      const focusable = Array.from(
+        sheetRef.current.querySelectorAll(
+          'button, [href], input, select, textarea, [tabIndex]:not([tabIndex="-1"])'
+        )
+      ).filter((el) => !el.disabled && el.offsetParent !== null);
+      
+      if (focusable.length > 0) {
+        const closeBtn = focusable.find(el => el.classList.contains('import-sheet-close'));
+        if (closeBtn) {
+          closeBtn.focus();
+        } else {
+          focusable[0].focus();
+        }
+      }
+    }, 100);
+    return () => clearTimeout(focusTimer);
+  }, [backgrounded, phase]);
 
   // ── Abort any in-flight import on unmount ────────────────────────────────
   useEffect(() => {
@@ -72,52 +221,139 @@ export default function ImportSheet({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── URL Import ───────────────────────────────────────────────────────────
-  const handleUrlImport = useCallback(async (rawUrl, type) => {
-    const url = cleanUrl(rawUrl);
-    if (!url) return;
+  // ── Load persisted drafts on mount ───────────────────────────────────────
+  useEffect(() => {
+    db.importDrafts?.toArray().then(drafts => {
+      if (drafts && drafts.length > 0) {
+        const sorted = drafts.sort((a, b) => b.timestamp - a.timestamp);
+        setDraftToResume(sorted[0]);
+      }
+    }).catch(err => console.warn('[ImportSheet] Failed to load drafts:', err));
+  }, []);
 
-    // Abort previous attempt
+  // ── Auto-save draft on review changes ─────────────────────────────────────
+  useEffect(() => {
+    if (phase === 'review' && recipe) {
+      const key = importUrl || (activeTab === 'paste' ? 'pasted-text' : activeTab === 'photo' ? 'photo-import' : 'pasted-text');
+      db.importDrafts?.put({
+        url: key,
+        recipe,
+        confidence,
+        timestamp: Date.now()
+      }).catch(e => console.warn(e));
+    }
+  }, [recipe, confidence, phase, importUrl, activeTab]);
+
+  // ── Loading Timer ────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (phase !== 'loading') {
+      setElapsedTime(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setElapsedTime((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [phase]);
+
+  // ── Discard / Close Handling ─────────────────────────────────────────────
+  const handleCloseRequest = useCallback(() => {
+    if (phase === 'review') {
+      setShowDiscardConfirm(true);
+    } else {
+      onClose();
+    }
+  }, [phase, onClose]);
+
+  // ── Escape Key Scrim Handler ──────────────────────────────────────────────
+  useEffect(() => {
+    if (backgrounded) return;
+    const handleGlobalKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        handleCloseRequest();
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [backgrounded, handleCloseRequest]);
+
+  // ── Execute URL Import ───────────────────────────────────────────────────
+  const executeUrlImport = useCallback(async (rawUrl, type) => {
+    const cleanU = cleanUrl(rawUrl);
+    if (!cleanU) return;
+
     if (abortRef.current) abortRef.current.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
-    setImportUrl(url);
+    setImportUrl(cleanU);
     setItemType(type || initialItemType);
     setPhase('loading');
     setError('');
+    setLoadingImage('');
     setProgressMsg('Getting your recipe…');
+    if (isSocialMediaUrl(cleanU)) {
+      setPipelineSteps([
+        { label: 'Checking the video',     status: 'pending' },
+        { label: 'Grabbing the caption',   status: 'pending' },
+        { label: 'Reading the page',       status: 'pending' },
+        { label: 'Organizing the recipe',  status: 'pending' },
+      ]);
+    } else {
+      setPipelineSteps([]);
+    }
 
     try {
       const result = await importRecipeFromUrl(
-        url,
-        (msg) => setProgressMsg(humanizeImportStatus(msg)),
+        cleanU,
+        (msg, metadata) => {
+          if (controller.signal.aborted) return;
+          setProgressMsg(humanizeImportStatus(msg));
+          if (metadata) {
+            if (metadata.imageUrl) setLoadingImage(metadata.imageUrl);
+            setPipelineSteps(prev => {
+              if (prev.length === 0) return prev;
+              const next = [...prev];
+              let activeIndex = -1;
+              if (/subtitle|transcript|asr|audio/i.test(msg)) activeIndex = 0;
+              else if (/caption|embed|oembed|instagram|reel|tiktok/i.test(msg)) activeIndex = 1;
+              else if (/browser|server|yt-dlp|puppeteer|headless|proxy|fetching page|page text/i.test(msg)) activeIndex = 2;
+              else if (/structur|gemini|\bai\b|markdown|parse/i.test(msg)) activeIndex = 3;
+
+              if (activeIndex !== -1) {
+                for (let j = 0; j < activeIndex; j++) {
+                  if (next[j].status === 'pending' || next[j].status === 'running') next[j].status = 'done';
+                }
+                next[activeIndex].status = 'running';
+              }
+              return next;
+            });
+          }
+        },
         { type: type || initialItemType, signal: controller.signal },
       );
 
       if (controller.signal.aborted) return;
 
-      // Engine asks for browser-assist fallback
       if (result && result._needsBrowserAssist) {
         if (result._emptyCaption) {
-          // E.3: no recipe text found — explain before the manual sheet
           setError("We couldn't find recipe text in this post. Paste it below and we'll sort it for you.");
         }
         setBrowserAssistSeed(result.seed || null);
         setCapturedText(result.capturedCaption || '');
-        setImportUrl(url);
+        setImportUrl(cleanU);
         setPhase('browserAssist');
         return;
       }
 
-      // Success — move to review
-      if (result && (result.title || (result.ingredients && result.ingredients.length))) {
-        const conf = scoreExtractionConfidence(result);
-        setRecipe(result);
-        setConfidence(conf);
+      const normalized = normalizeRecipeForReview(result, type || initialItemType);
+      if (normalized && (normalized.title || normalized.ingredients.length)) {
+        setRecipe(normalized);
+        setConfidence(computeReviewConfidence(normalized));
         setPhase('review');
       } else {
-        setError('Could not extract a recipe from this URL.');
+        setError("We couldn't find a recipe at that link. Try pasting the recipe text instead?");
         setPhase('input');
       }
     } catch (err) {
@@ -128,8 +364,27 @@ export default function ImportSheet({
     }
   }, [initialItemType]);
 
-  // ── Paste Text Import ────────────────────────────────────────────────────
-  const handlePasteImport = useCallback(async (text, type) => {
+  const handleUrlImport = useCallback(async (rawUrl, type) => {
+    if (!navigator.onLine) {
+      setError("You're offline. We'll import this as soon as you're back — or paste the recipe text now.");
+      return;
+    }
+    if (phase === 'review' || lastReviewRef.current) {
+      setConfirmImport({
+        fn: () => {
+          lastReviewRef.current = null;
+          setConfirmImport(null);
+          executeUrlImport(rawUrl, type);
+        },
+        message: "This will replace the recipe you're reviewing."
+      });
+    } else {
+      executeUrlImport(rawUrl, type);
+    }
+  }, [phase, executeUrlImport]);
+
+  // ── Execute Paste Import ──────────────────────────────────────────────────
+  const executePasteImport = useCallback(async (text, type) => {
     if (!text || !text.trim()) return;
 
     if (abortRef.current) abortRef.current.abort();
@@ -138,17 +393,18 @@ export default function ImportSheet({
     setItemType(type || initialItemType);
     setPhase('loading');
     setError('');
+    setLoadingImage('');
     setProgressMsg('Sorting ingredients from instructions…');
 
     try {
       const result = await captionToRecipe(text, { type: type || initialItemType });
-      if (result && (result.title || (result.ingredients && result.ingredients.length))) {
-        const conf = scoreExtractionConfidence(result);
-        setRecipe(result);
-        setConfidence(conf);
+      const normalized = normalizeRecipeForReview(result, type || initialItemType);
+      if (normalized && (normalized.title || normalized.ingredients.length)) {
+        setRecipe(normalized);
+        setConfidence(computeReviewConfidence(normalized));
         setPhase('review');
       } else {
-        setError('Could not parse a recipe from the pasted text.');
+        setError("That text didn't look like a recipe to us. Add the ingredients or steps and try again.");
         setPhase('input');
       }
     } catch (err) {
@@ -158,8 +414,23 @@ export default function ImportSheet({
     }
   }, [initialItemType]);
 
-  // ── Photo Import ─────────────────────────────────────────────────────────
-  const handlePhotoImport = useCallback(async (imageDataUrl, type) => {
+  const handlePasteImport = useCallback(async (text, type) => {
+    if (phase === 'review' || lastReviewRef.current) {
+      setConfirmImport({
+        fn: () => {
+          lastReviewRef.current = null;
+          setConfirmImport(null);
+          executePasteImport(text, type);
+        },
+        message: "This will replace the recipe you're reviewing."
+      });
+    } else {
+      executePasteImport(text, type);
+    }
+  }, [phase, executePasteImport]);
+
+  // ── Execute Photo Import ──────────────────────────────────────────────────
+  const executePhotoImport = useCallback(async (imageDataUrl, type) => {
     if (!imageDataUrl) return;
 
     if (abortRef.current) abortRef.current.abort();
@@ -168,17 +439,18 @@ export default function ImportSheet({
     setItemType(type || initialItemType);
     setPhase('loading');
     setError('');
+    setLoadingImage('');
     setProgressMsg('Reading your photo…');
 
     try {
       const result = await structureRecipeFromImage(imageDataUrl, { type: type || initialItemType });
-      if (result && (result.title || (result.ingredients && result.ingredients.length))) {
-        const conf = scoreExtractionConfidence(result);
-        setRecipe(result);
-        setConfidence(conf);
+      const normalized = normalizeRecipeForReview(result, type || initialItemType);
+      if (normalized && (normalized.title || normalized.ingredients.length)) {
+        setRecipe(normalized);
+        setConfidence(computeReviewConfidence(normalized));
         setPhase('review');
       } else {
-        setError('Could not extract a recipe from this image.');
+        setError("We couldn't read a recipe in that photo. Try a brighter shot, or paste the text instead.");
         setPhase('input');
       }
     } catch (err) {
@@ -188,18 +460,33 @@ export default function ImportSheet({
     }
   }, [initialItemType]);
 
+  const handlePhotoImport = useCallback(async (imageDataUrl, type) => {
+    if (phase === 'review' || lastReviewRef.current) {
+      setConfirmImport({
+        fn: () => {
+          lastReviewRef.current = null;
+          setConfirmImport(null);
+          executePhotoImport(imageDataUrl, type);
+        },
+        message: "This will replace the recipe you're reviewing."
+      });
+    } else {
+      executePhotoImport(imageDataUrl, type);
+    }
+  }, [phase, executePhotoImport]);
+
   // ── BrowserAssist recipe callback ────────────────────────────────────────
   const handleBrowserAssistRecipe = useCallback((extractedRecipe) => {
-    if (extractedRecipe && (extractedRecipe.title || (extractedRecipe.ingredients && extractedRecipe.ingredients.length))) {
-      const conf = scoreExtractionConfidence(extractedRecipe);
-      setRecipe(extractedRecipe);
-      setConfidence(conf);
+    const normalized = normalizeRecipeForReview(extractedRecipe, itemType);
+    if (normalized && (normalized.title || normalized.ingredients.length)) {
+      setRecipe(normalized);
+      setConfidence(computeReviewConfidence(normalized));
       setPhase('review');
     } else {
       setError('Browser assist could not extract a recipe.');
       setPhase('input');
     }
-  }, []);
+  }, [itemType]);
 
   const handleBrowserAssistFallback = useCallback((fallbackText) => {
     setCapturedText(fallbackText || '');
@@ -209,16 +496,28 @@ export default function ImportSheet({
   // ── Save from review ─────────────────────────────────────────────────────
   const handleSave = useCallback((finalRecipe) => {
     if (!finalRecipe) return;
-    onImport([finalRecipe]);
-  }, [onImport]);
+    const out = {
+      ...finalRecipe,
+      name: (finalRecipe.title || '').trim() || finalRecipe.name || '',
+      imageUrl: finalRecipe.imageUrl || finalRecipe.image || '',
+      method: finalRecipe.technique || finalRecipe.method || '',
+    };
+    // Clear draft from IndexedDB
+    const key = importUrl || (activeTab === 'paste' ? 'pasted-text' : activeTab === 'photo' ? 'photo-import' : 'pasted-text');
+    db.importDrafts?.delete(key).catch(e => console.warn(e));
+    onImport([out], destination);
+  }, [onImport, importUrl, activeTab, destination]);
 
   // ── Re-expand input from collapsed state ─────────────────────────────────
   const handleReExpand = useCallback(() => {
+    if (phase === 'review') {
+      lastReviewRef.current = { recipe, confidence };
+    }
     if (abortRef.current) abortRef.current.abort();
     setPhase('input');
     setError('');
     setProgressMsg('');
-  }, []);
+  }, [phase, recipe, confidence]);
 
   // ── E.4: gentle haptic when a backgrounded import becomes ready ──────────
   useEffect(() => {
@@ -254,168 +553,452 @@ export default function ImportSheet({
 
   // ── Render ───────────────────────────────────────────────────────────────
   return (
-    <div className="import-sheet-overlay">
-      <div className="import-sheet">
-        {/* Grab handle */}
-        <div className="import-sheet-grab" />
+    <MotionConfig reducedMotion="user">
+      <div
+        className="import-sheet-overlay"
+        onClick={(e) => {
+          if (e.target === e.currentTarget) handleCloseRequest();
+        }}
+      >
+        <div
+          className="import-sheet"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="import-sheet-title"
+          ref={sheetRef}
+        >
+          {/* Grab handle */}
+          <div className="import-sheet-grab" />
 
-        {/* Header */}
-        <div className="import-sheet-header">
-          <h2>{title}</h2>
-          <button
-            className="import-sheet-close"
-            onClick={onClose}
-            aria-label="Close"
-          >
-            &times;
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="import-sheet-body">
-          {/* Error banner */}
-          <AnimatePresence initial={false}>
-            {error && (
-              <motion.div
-                className="import-sheet-error"
-                initial={{ opacity: 0, height: 0, marginTop: 0, marginBottom: 0 }}
-                animate={{ opacity: 1, height: 'auto', marginTop: 8, marginBottom: 8 }}
-                exit={{ opacity: 0, height: 0, marginTop: 0, marginBottom: 0 }}
-                transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
-                style={{ overflow: 'hidden' }}
-              >
-                <p>{error}</p>
-                <button onClick={() => setError('')}>Dismiss</button>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* ImportInput — full or collapsed */}
-          <ImportInput
-            collapsed={phase !== 'input'}
-            onImport={handleUrlImport}
-            onPasteImport={handlePasteImport}
-            onPhotoImport={handlePhotoImport}
-            onReExpand={handleReExpand}
-            initialUrl={sharedContent?.url || ''}
-            initialType={initialItemType}
-            title={title}
-          />
-
-          {/* Phase content — animated transitions (spec §1 collapse animation) */}
-          <AnimatePresence mode="wait" initial={false}>
-            {phase === 'loading' && (
-              <motion.div
-                key="loading"
-                className="import-sheet-loading"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.2, ease: [0.32, 0.72, 0, 1] }}
-              >
-                {/* Single progress vector: pulsing dot + humanized status line */}
-                <span className="import-sheet-progress-dot" aria-hidden="true" />
-                <AnimatePresence mode="wait" initial={false}>
-                  <motion.p
-                    key={progressMsg}
-                    className="import-sheet-progress-text"
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
-                    transition={{ duration: 0.18 }}
-                  >
-                    {progressMsg}
-                  </motion.p>
-                </AnimatePresence>
-              </motion.div>
-            )}
-
-            {phase === 'review' && recipe && (
-              <motion.div
-                key="review"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.25, delay: 0.1, ease: [0.32, 0.72, 0, 1] }}
-              >
-                <ImportReview
-                  recipe={recipe}
-                  onChange={setRecipe}
-                  onSave={handleSave}
-                  confidence={confidence}
-                />
-              </motion.div>
-            )}
-
-            {phase === 'browserAssist' && (
-              <motion.div
-                key="browserAssist"
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -4 }}
-                transition={{ duration: 0.2, ease: [0.32, 0.72, 0, 1] }}
-              >
-                <BrowserAssist
-                  ref={browserAssistRef}
-                  url={importUrl}
-                  onRecipeExtracted={handleBrowserAssistRecipe}
-                  onFallbackToText={handleBrowserAssistFallback}
-                  initialCapturedText={capturedText}
-                  seedRecipe={browserAssistSeed}
-                  type={itemType}
-                  inline={true}
-                  onError={(err) => {
-                    console.warn('[ImportSheet] BrowserAssist error:', err);
-                    setError('Visual extraction failed. Try pasting the recipe text.');
-                    setPhase('input');
-                  }}
-                />
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-
-        {/* Sticky footer */}
-        <div className="import-sheet-footer">
-          {phase === 'input' && (
+          {/* Header */}
+          <div className="import-sheet-header">
+            <h2 id="import-sheet-title">{title}</h2>
             <button
-              className="import-sheet-btn import-sheet-btn-primary"
-              onClick={() => {}}
-              disabled
+              className="import-sheet-close"
+              onClick={handleCloseRequest}
+              aria-label="Close"
             >
-              Import recipe
+              <X size={20} strokeWidth={2} />
             </button>
-          )}
-          {phase === 'loading' && (
-            <>
+          </div>
+
+          {/* Body */}
+          <div className="import-sheet-body">
+            {/* Resume last draft banner */}
+            {phase === 'input' && draftToResume && (
+              <div className="import-sheet-resume-card" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: 'var(--sh-accent-bg)', borderRadius: 'var(--sh-radius-sm)', border: '1.5px solid var(--sh-accent)', marginBottom: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className="resume-icon">✨</span>
+                  <div className="resume-content" style={{ display: 'flex', flexDirection: 'column' }}>
+                    <strong style={{ fontSize: 'var(--sh-fs-base)', color: 'var(--sh-text)' }}>Resume your last import?</strong>
+                    <span className="resume-sub" style={{ fontSize: 'var(--sh-fs-xs)', color: 'var(--sh-text-secondary)' }}>We saved your edits for "{draftToResume.recipe.title || 'Untitled Recipe'}"</span>
+                  </div>
+                </div>
+                <div className="resume-actions" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    className="import-sheet-btn import-sheet-btn-secondary"
+                    style={{ minHeight: 36, padding: '4px 12px', fontSize: 'var(--sh-fs-sm)', flex: '0 0 auto' }}
+                    onClick={() => {
+                      setRecipe(draftToResume.recipe);
+                      setConfidence(draftToResume.confidence);
+                      if (draftToResume.url && draftToResume.url !== 'pasted-text' && draftToResume.url !== 'photo-import') {
+                        setUrl(draftToResume.url);
+                        setImportUrl(draftToResume.url);
+                      } else if (draftToResume.url === 'pasted-text') {
+                        setPasteText(draftToResume.recipe.notes || '');
+                      }
+                      setPhase('review');
+                      setDraftToResume(null);
+                    }}
+                  >
+                    Resume
+                  </button>
+                  <button
+                    type="button"
+                    className="import-sheet-btn import-sheet-btn-ghost"
+                    style={{ minHeight: 36, padding: '4px 12px', fontSize: 'var(--sh-fs-sm)', flex: '0 0 auto' }}
+                    onClick={() => {
+                      db.importDrafts?.delete(draftToResume.url).catch(e => console.warn(e));
+                      setDraftToResume(null);
+                    }}
+                  >
+                    Dismiss
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Error banner */}
+            <AnimatePresence initial={false}>
+              {error && (
+                <motion.div
+                  className="import-sheet-error"
+                  initial={{ opacity: 0, height: 0, marginTop: 0, marginBottom: 0 }}
+                  animate={{ opacity: 1, height: 'auto', marginTop: 8, marginBottom: 8 }}
+                  exit={{ opacity: 0, height: 0, marginTop: 0, marginBottom: 0 }}
+                  transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
+                  style={{ overflow: 'hidden' }}
+                >
+                  <p>{error}</p>
+                  <div className="import-sheet-error-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+                    {importUrl && (
+                      <>
+                        <button
+                          type="button"
+                          className="import-sheet-btn import-sheet-btn-secondary"
+                          style={{ minHeight: 32, padding: '4px 12px', fontSize: 'var(--sh-fs-xs)', flex: '0 0 auto' }}
+                          onClick={() => handleUrlImport(importUrl, itemType)}
+                        >
+                          Retry
+                        </button>
+                        <button
+                          type="button"
+                          className="import-sheet-btn import-sheet-btn-ghost"
+                          style={{ minHeight: 32, padding: '4px 12px', fontSize: 'var(--sh-fs-xs)', flex: '0 0 auto' }}
+                          onClick={() => setPhase('browserAssist')}
+                        >
+                          Try in browser
+                        </button>
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      className="import-sheet-btn import-sheet-btn-ghost"
+                      style={{ minHeight: 32, padding: '4px 12px', fontSize: 'var(--sh-fs-xs)', flex: '0 0 auto' }}
+                      onClick={() => {
+                        setActiveTab('paste');
+                        setError('');
+                      }}
+                    >
+                      Paste instead
+                    </button>
+                    <button
+                      type="button"
+                      className="import-sheet-btn import-sheet-btn-ghost"
+                      style={{ minHeight: 32, padding: '4px 12px', fontSize: 'var(--sh-fs-xs)', flex: '0 0 auto', marginLeft: 'auto' }}
+                      onClick={() => setError('')}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* ImportInput — full or collapsed */}
+            <ImportInput
+              collapsed={phase !== 'input'}
+              activeTab={activeTab}
+              setActiveTab={setActiveTab}
+              url={url}
+              setUrl={setUrl}
+              pasteText={pasteText}
+              setPasteText={setPasteText}
+              itemType={itemType}
+              setItemType={setItemType}
+              onImport={handleUrlImport}
+              onPasteImport={handlePasteImport}
+              onPhotoImport={handlePhotoImport}
+              onReExpand={handleReExpand}
+              initialUrl={sharedContent?.url || ''}
+              initialType={initialItemType}
+              title={title}
+            />
+
+            {/* Back to review option (Fix 3) */}
+            {phase === 'input' && lastReviewRef.current && (
               <button
-                className="import-sheet-btn import-sheet-btn-ghost"
+                type="button"
+                className="import-sheet-back-to-review-btn"
                 onClick={() => {
-                  if (abortRef.current) abortRef.current.abort();
-                  setPhase('input');
-                  setProgressMsg('');
+                  const snapshot = lastReviewRef.current;
+                  if (snapshot) {
+                    setRecipe(snapshot.recipe);
+                    setConfidence(snapshot.confidence);
+                    setPhase('review');
+                  }
+                }}
+                style={{
+                  width: '100%',
+                  marginTop: 8,
+                  padding: '12px',
+                  borderRadius: 'var(--sh-pill)',
+                  background: 'var(--sh-surface)',
+                  color: 'var(--sh-accent-text)',
+                  border: '1px solid var(--sh-border)',
+                  fontSize: 'var(--sh-fs-sm)',
+                  fontWeight: 600,
+                  cursor: 'pointer'
                 }}
               >
-                Cancel
+                ← Back to review
               </button>
-              <button
-                className="import-sheet-btn import-sheet-btn-secondary"
-                onClick={() => setBackgrounded(true)}
-              >
-                Continue in background
-              </button>
-            </>
-          )}
-          {phase === 'review' && (
-            <button
-              className="import-sheet-btn import-sheet-btn-primary"
-              onClick={() => handleSave(recipe)}
-            >
-              Save to library
-            </button>
-          )}
+            )}
+
+            {/* Phase content — animated transitions (spec §1 collapse animation) */}
+            <AnimatePresence mode="popLayout" initial={false}>
+              {phase === 'loading' && (
+                <motion.div
+                  key="loading"
+                  className="import-sheet-loading-container"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  style={{ width: '100%' }}
+                >
+                  {/* Single progress vector: pulsing dot + humanized status line */}
+                  <div className="import-sheet-loading-status" style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center', padding: '12px 0' }}>
+                    <span className="import-sheet-progress-dot" aria-hidden="true" />
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      <AnimatePresence mode="popLayout" initial={false}>
+                        <motion.p
+                          key={progressMsg}
+                          className="import-sheet-progress-text"
+                          initial={{ opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -6 }}
+                          transition={{ duration: 0.18 }}
+                          style={{ margin: 0 }}
+                        >
+                          {progressMsg}
+                        </motion.p>
+                      </AnimatePresence>
+                      {elapsedTime >= 8 && (
+                        <span className="import-sheet-progress-subtext" style={{ fontSize: 'var(--sh-fs-xs)', color: 'var(--sh-text-muted)', marginTop: 2 }}>
+                          Still working — some sites are slow to share…
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {isSocialMediaUrl(importUrl) && pipelineSteps.length > 0 ? (
+                    /* Social: Adopt BrowserAssist steps checklist for shared social loading component (Fix 10) */
+                    <div className="ip-pipeline" style={{ margin: '12px 0', padding: 16, background: 'var(--sh-surface)', borderRadius: 'var(--sh-radius-sm)', border: '1px solid var(--sh-border-light)' }}>
+                      <div className="ip-steps" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        {pipelineSteps.map((step, i) => (
+                          <div key={i} className={`ip-step ip-step--${step.status}`} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <div className="ip-step-node" style={{ width: 18, height: 18, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: step.status === 'done' ? 'var(--sh-conf-high)' : step.status === 'running' ? 'var(--sh-accent)' : 'var(--sh-border)' }}>
+                              {step.status === 'done' && <span style={{ color: '#fff', fontSize: 10 }}>✓</span>}
+                              {step.status === 'running' && <span className="import-sheet-progress-dot" style={{ width: 6, height: 6, background: '#fff', animation: 'sh-dot-pulse 1s infinite' }} />}
+                              {step.status === 'pending' && <span style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--sh-text-muted)' }} />}
+                            </div>
+                            <span className="ip-step-label" style={{ fontSize: 'var(--sh-fs-sm)', fontWeight: step.status === 'running' ? 600 : 500, color: step.status === 'running' ? 'var(--sh-text)' : 'var(--sh-text-secondary)' }}>
+                              {step.label}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    /* Non-social / Blog: Shimmer skeleton of review layout (Fix 4) */
+                    <div className="import-sheet-skeleton" style={{ margin: '12px 0' }}>
+                      {/* Hero skeleton */}
+                      <div className="review-hero skeleton" style={{ height: 172, borderRadius: 'var(--sh-radius)', overflow: 'hidden', position: 'relative', background: 'var(--sh-surface)' }}>
+                        {loadingImage ? (
+                          <div className="review-hero-image" style={{ backgroundImage: `url(${loadingImage})`, width: '100%', height: '100%', backgroundSize: 'cover', backgroundPosition: 'center' }} />
+                        ) : (
+                          <div className="review-hero-placeholder shimmer" style={{ width: '100%', height: '100%' }} />
+                        )}
+                        <div className="review-hero-gradient" style={{ position: 'absolute', inset: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.4))' }} />
+                        <div className="review-hero-title-wrap" style={{ position: 'absolute', bottom: 10, left: 12, right: 12 }}>
+                          <div className="review-hero-title skeleton-title shimmer" style={{ height: 24, width: '60%', borderRadius: 4 }} />
+                        </div>
+                      </div>
+
+                      {/* Tab skeleton */}
+                      <div className="review-tabs skeleton" style={{ display: 'flex', gap: 4, marginTop: 14 }}>
+                        <div className="review-tab skeleton shimmer" style={{ flex: 1, height: 44, borderRadius: 'var(--sh-radius-sm)', background: 'var(--sh-surface)' }} />
+                        <div className="review-tab skeleton shimmer" style={{ flex: 1, height: 44, borderRadius: 'var(--sh-radius-sm)', background: 'var(--sh-surface)' }} />
+                      </div>
+
+                      {/* Rows skeleton */}
+                      <div className="review-list skeleton" style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {Array(5).fill(null).map((_, i) => (
+                          <div key={i} className="review-row skeleton" style={{ display: 'flex', alignItems: 'center', gap: 8, height: 44, borderBottom: '0.5px solid var(--sh-border-light)' }}>
+                            <div className="review-row-handle skeleton shimmer" style={{ width: 18, height: 18, borderRadius: '50%', background: 'var(--sh-surface)' }} />
+                            <div className="skeleton-line shimmer" style={{ height: 14, borderRadius: 4, background: 'var(--sh-surface)', width: `${85 - (i % 3) * 10}%` }} />
+                            <div className="review-row-more skeleton shimmer" style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--sh-surface)' }} />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Continue in background inline button */}
+                  {elapsedTime >= 25 && (
+                    <motion.button
+                      type="button"
+                      className="import-sheet-btn-in-body-background"
+                      onClick={() => setBackgrounded(true)}
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      style={{
+                        width: '100%',
+                        margin: '12px 0 0',
+                        padding: '12px',
+                        borderRadius: 'var(--sh-pill)',
+                        background: 'var(--sh-accent-bg-strong)',
+                        color: 'var(--sh-accent-text)',
+                        border: '1px solid var(--sh-accent)',
+                        fontSize: 'var(--sh-fs-base)',
+                        fontWeight: 700,
+                        cursor: 'pointer'
+                      }}
+                    >
+                      ⚡ Continue in background
+                  </motion.button>
+                  )}
+                </motion.div>
+              )}
+
+              {phase === 'review' && recipe && (
+                <motion.div
+                  key="review"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
+                >
+                  <ImportReview
+                    recipe={recipe}
+                    onChange={setRecipe}
+                    onSave={handleSave}
+                    confidence={confidence}
+                    destination={destination}
+                    setDestination={setDestination}
+                  />
+                </motion.div>
+              )}
+
+              {phase === 'browserAssist' && (
+                <motion.div
+                  key="browserAssist"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.2, ease: [0.32, 0.72, 0, 1] }}
+                >
+                  <BrowserAssist
+                    ref={browserAssistRef}
+                    url={importUrl}
+                    onRecipeExtracted={handleBrowserAssistRecipe}
+                    onFallbackToText={handleBrowserAssistFallback}
+                    initialCapturedText={capturedText}
+                    seedRecipe={browserAssistSeed}
+                    type={itemType}
+                    inline={true}
+                    onError={(err) => {
+                      console.warn('[ImportSheet] BrowserAssist error:', err);
+                      setError('That page wouldn\'t cooperate. Paste the recipe text and we\'ll sort it for you.');
+                      setPhase('input');
+                    }}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* Sticky footer */}
+          <div className="import-sheet-footer">
+            {showDiscardConfirm ? (
+              <div className="import-sheet-confirm-footer" style={{ display: 'flex', width: '100%', gap: 10, alignItems: 'center' }}>
+                <span className="confirm-text" style={{ marginRight: 'auto', fontWeight: 600, fontSize: 'var(--sh-fs-sm)', color: '#b91c1c' }}>Discard recipe?</span>
+                <button
+                  className="import-sheet-btn import-sheet-btn-ghost"
+                  style={{ flex: '0 0 auto', minHeight: 40, padding: '8px 16px' }}
+                  onClick={() => setShowDiscardConfirm(false)}
+                >
+                  Keep editing
+                </button>
+                <button
+                  className="import-sheet-btn import-sheet-btn-danger"
+                  style={{ flex: '0 0 auto', minHeight: 40, padding: '8px 16px', background: '#dc2626', color: '#fff' }}
+                  onClick={() => {
+                    setShowDiscardConfirm(false);
+                    const key = importUrl || (activeTab === 'paste' ? 'pasted-text' : activeTab === 'photo' ? 'photo-import' : 'pasted-text');
+                    db.importDrafts?.delete(key).catch(e => console.warn(e));
+                    onClose();
+                  }}
+                >
+                  Discard
+                </button>
+              </div>
+            ) : confirmImport ? (
+              <div className="import-sheet-confirm-footer" style={{ display: 'flex', width: '100%', gap: 10, alignItems: 'center' }}>
+                <span className="confirm-text" style={{ marginRight: 'auto', fontWeight: 600, fontSize: 'var(--sh-fs-sm)', color: '#b91c1c' }}>{confirmImport.message}</span>
+                <button
+                  className="import-sheet-btn import-sheet-btn-ghost"
+                  style={{ flex: '0 0 auto', minHeight: 40, padding: '8px 16px' }}
+                  onClick={() => setConfirmImport(null)}
+                >
+                  Keep review
+                </button>
+                <button
+                  className="import-sheet-btn import-sheet-btn-danger"
+                  style={{ flex: '0 0 auto', minHeight: 40, padding: '8px 16px', background: '#e65100', color: '#fff' }}
+                  onClick={() => {
+                    confirmImport.fn();
+                  }}
+                >
+                  Replace
+                </button>
+              </div>
+            ) : (
+              <>
+                {phase === 'input' && (
+                  <button
+                    className="import-sheet-btn import-sheet-btn-primary"
+                    onClick={() => {
+                      if (activeTab === 'url') {
+                        handleUrlImport(url, itemType);
+                      } else if (activeTab === 'paste') {
+                        handlePasteImport(pasteText, itemType);
+                      }
+                    }}
+                    disabled={
+                      (activeTab === 'url' && !url.trim()) ||
+                      (activeTab === 'paste' && !pasteText.trim()) ||
+                      activeTab === 'photo'
+                    }
+                  >
+                    Import {itemType === 'drink' ? 'drink' : 'recipe'}
+                  </button>
+                )}
+                {phase === 'loading' && (
+                  <>
+                    <button
+                      className="import-sheet-btn import-sheet-btn-ghost"
+                      onClick={() => {
+                        if (abortRef.current) abortRef.current.abort();
+                        setPhase('input');
+                        setProgressMsg('');
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="import-sheet-btn import-sheet-btn-secondary"
+                      onClick={() => setBackgrounded(true)}
+                    >
+                      Continue in background
+                    </button>
+                  </>
+                )}
+                {phase === 'review' && (
+                  <button
+                    className="import-sheet-btn import-sheet-btn-primary"
+                    onClick={() => handleSave(recipe)}
+                  >
+                    Save to {destination === 'library' ? 'Library' : destination === 'week' ? 'This Week' : destination === 'grocery' ? 'Grocery' : 'Bar'}
+                  </button>
+                )}
+              </>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </MotionConfig>
   );
 }
