@@ -69,6 +69,29 @@ function isValidImageUrl(url) {
   }
 }
 
+/**
+ * generateTitleFromIngredients — fallback title when the LLM/extraction didn't
+ * find a distinct recipe name. Builds a short "X & Y Bake"-style guess from the
+ * first couple of real ingredients so the title field is never blank.
+ */
+export function generateTitleFromIngredients(ingredients = [], type = 'meal') {
+  const items = (ingredients || [])
+    .map(i => (typeof i === 'string' ? i : i?.name || ''))
+    .map(s => structureIngredient(s).item || s)
+    .map(s => s.replace(/^[•\-\*]\s*/, '').replace(/\(.*?\)/g, '').trim())
+    .filter(s => s && s.length > 1 && s.length < 30 && !/^(salt|pepper|water|oil|to taste)$/i.test(s));
+
+  if (items.length === 0) return type === 'drink' ? 'Imported Drink' : 'Imported Recipe';
+
+  const titleCase = (s) => s.replace(/\b\w/g, c => c.toUpperCase());
+  const picks = items.slice(0, 2).map(titleCase);
+
+  if (picks.length === 1) {
+    return `${picks[0]} ${type === 'drink' ? '' : 'Bake'}`.trim();
+  }
+  return `${picks[0]} & ${picks[1]} ${type === 'drink' ? '' : 'Bake'}`.trim();
+}
+
 /** Returns true if `url` is a profile picture / avatar (not a food photo). */
 function isProfilePicUrl(url) {
   if (!url || typeof url !== 'string') return false;
@@ -4556,6 +4579,9 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
         }
         const finalRecipe = {
           ...recipe,
+          name: recipe.name && recipe.name.trim() && !/^(recipe|imported|untitled)$/i.test(recipe.name.trim())
+            ? recipe.name
+            : generateTitleFromIngredients(recipe.ingredients, type),
           imageUrl: persistedImageUrl,
           extractedVia: videoRecipe ? 'yt-dlp+ai' : 'caption-ai',
           sourceUrl: url,
