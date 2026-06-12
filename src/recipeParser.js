@@ -2501,9 +2501,9 @@ async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signa
     console.log('[SpiceHub] Instagram URL Ã¢â‚¬â€ trying embed extraction...');
     if (onProgress) onProgress('Trying Instagram embed extraction...');
 
-    const instagramRecipe = await importFromInstagram(url, (phaseOrMsg, status, msg) => {
+    const instagramRecipe = await importFromInstagram(url, (phaseOrMsg, status, msg, metadata) => {
       if (!onProgress) return;
-      onProgress(typeof msg === 'string' ? msg : String(phaseOrMsg || 'Importing Instagram post...'));
+      onProgress(typeof msg === 'string' ? msg : String(phaseOrMsg || 'Importing Instagram post...'), metadata);
     }, { type, signal });
     if (instagramRecipe && !instagramRecipe._needsManualCaption && !instagramRecipe._error) {
       return instagramRecipe;
@@ -4314,7 +4314,9 @@ export async function resolveShortUrl(url) {
  */
 export async function importFromInstagram(url, onProgress = () => {}, { type = 'meal', signal } = {}) {
   url = cleanUrl(url);
-  const progress = (phase, status, msg) => onProgress(phase, status, msg);
+  const progress = (phase, status, msg) => {
+    onProgress(phase, status, msg, { imageUrl: capturedImageUrl, title: capturedTitle });
+  };
 
   // ── Cache check: return early if we already have a fresh result ──────────────
   try {

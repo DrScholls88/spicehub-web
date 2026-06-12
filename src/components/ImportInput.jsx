@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Pencil, ArrowRight } from 'lucide-react';
 import { isSocialMediaUrl, getSocialPlatform, detectImportType } from '../recipeParser.js';
 
 // Spec §1: input area compresses to compact bar over 250ms, spring-like easing
@@ -16,6 +17,14 @@ const COLLAPSE_TRANSITION = { duration: 0.25, ease: [0.32, 0.72, 0, 1] };
  *
  * Props:
  *   collapsed        — boolean, whether to show collapsed status bar
+ *   activeTab        — controlled active tab ('url' | 'paste' | 'photo')
+ *   setActiveTab     — setter for active tab
+ *   url              — controlled url value
+ *   setUrl           — setter for url value
+ *   pasteText        — controlled pasteText value
+ *   setPasteText     — setter for pasteText value
+ *   itemType         — controlled itemType value ('meal' | 'drink')
+ *   setItemType      — setter for itemType value
  *   onImport(url, type)        — URL import callback
  *   onPasteImport(text, type)  — paste text import callback
  *   onPhotoImport(dataUrl, type) — photo import callback
@@ -26,6 +35,14 @@ const COLLAPSE_TRANSITION = { duration: 0.25, ease: [0.32, 0.72, 0, 1] };
  */
 export default function ImportInput({
   collapsed = false,
+  activeTab,
+  setActiveTab,
+  url,
+  setUrl,
+  pasteText,
+  setPasteText,
+  itemType,
+  setItemType,
   onImport,
   onPasteImport,
   onPhotoImport,
@@ -34,13 +51,14 @@ export default function ImportInput({
   initialType = 'meal',
   title = '',
 }) {
-  const [tab, setTab] = useState('url'); // 'url' | 'paste' | 'photo'
-  const [url, setUrl] = useState(initialUrl);
-  const [pasteText, setPasteText] = useState('');
-  const [itemType, setItemType] = useState(initialType);
-  const [socialDetected, setSocialDetected] = useState(null);
+  const tab = activeTab;
+  const setTab = setActiveTab;
+
   const fileRef = useRef(null);
   const cameraRef = useRef(null);
+
+  // Local state for social platform chip detection
+  const [socialDetected, setSocialDetected] = useState(null);
 
   // Detect social platform when URL changes
   useEffect(() => {
@@ -59,8 +77,7 @@ export default function ImportInput({
         setItemType(detected);
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url]);
+  }, [url, itemType, setItemType]);
 
   const handleUrlSubmit = useCallback(() => {
     if (url.trim()) {
@@ -75,12 +92,6 @@ export default function ImportInput({
     }
   }, [handleUrlSubmit]);
 
-  const handlePasteSubmit = useCallback(() => {
-    if (pasteText.trim()) {
-      onPasteImport(pasteText.trim(), itemType);
-    }
-  }, [pasteText, itemType, onPasteImport]);
-
   const handlePhotoChange = useCallback((e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -91,152 +102,145 @@ export default function ImportInput({
     reader.readAsDataURL(file);
   }, [itemType, onPhotoImport]);
 
-  const toggleType = useCallback(() => {
-    setItemType((prev) => (prev === 'meal' ? 'drink' : 'meal'));
-  }, []);
-
   // ── Collapsed bar ⇄ full form, cross-animated (AnimatePresence must stay
   //    mounted across the switch, so both branches live in one ternary) ─────
   return (
-    <AnimatePresence mode="wait" initial={false}>
-      {collapsed ? (
-        <motion.div
-          key="collapsed"
-          className="import-input-collapsed"
-          onClick={onReExpand}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => { if (e.key === 'Enter') onReExpand(); }}
-          initial={{ height: 0, opacity: 0 }}
-          animate={{ height: 'auto', opacity: 1 }}
-          exit={{ height: 0, opacity: 0 }}
-          transition={COLLAPSE_TRANSITION}
-          style={{ overflow: 'hidden' }}
-        >
-          <span className="import-input-collapsed-dot" />
-          <span className="import-input-collapsed-url">
-            {url || pasteText?.slice(0, 60) || 'Edit input'}
-          </span>
-          <span className="import-input-collapsed-edit">&#9998;</span>
-        </motion.div>
-      ) : (
-    <motion.div
-      key="expanded"
-      className="import-input"
-      initial={{ height: 0, opacity: 0 }}
-      animate={{ height: 'auto', opacity: 1 }}
-      exit={{ height: 0, opacity: 0 }}
-      transition={COLLAPSE_TRANSITION}
-      style={{ overflow: 'hidden' }}
-    >
-      {/* Segmented tabs */}
-      <div className="import-input-tabs">
-        <button className={tab === 'url' ? 'active' : ''} onClick={() => setTab('url')}>URL</button>
-        <button className={tab === 'paste' ? 'active' : ''} onClick={() => setTab('paste')}>Paste Text</button>
-        <button className={tab === 'photo' ? 'active' : ''} onClick={() => setTab('photo')}>Photo</button>
-      </div>
-
-      {/* Meal / Drink toggle */}
-      <div className="import-input-type-toggle">
-        <button
-          className={itemType === 'meal' ? 'active' : ''}
-          onClick={() => setItemType('meal')}
-        >
-          Meal
-        </button>
-        <button
-          className={itemType === 'drink' ? 'active' : ''}
-          onClick={() => setItemType('drink')}
-        >
-          Drink
-        </button>
-      </div>
-
-      {/* URL tab */}
-      {tab === 'url' && (
-        <div>
-          <div className="import-input-url-row">
-            <input
-              className="import-input-url"
-              type="url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              onKeyDown={handleUrlKeyDown}
-              placeholder="Paste recipe URL..."
-              autoFocus
-            />
-            <button
-              type="button"
-              className="import-input-url-submit"
-              onClick={handleUrlSubmit}
-              disabled={!url.trim()}
-            >
-              Import
-            </button>
-          </div>
-          {socialDetected && (
-            <div className="import-input-social-card" onClick={handleUrlSubmit}>
-              <div className="import-input-social-icon" />
-              <div className="import-input-social-meta">
-                <strong>{socialDetected}</strong>
-                <small>Recipe detected — tap to import</small>
-              </div>
+    <motion.div layout style={{ width: '100%' }}>
+      <AnimatePresence mode="wait" initial={false}>
+        {collapsed ? (
+          <motion.div
+            key="collapsed"
+            className="import-input-collapsed"
+            onClick={onReExpand}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === 'Enter') onReExpand(); }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={COLLAPSE_TRANSITION}
+          >
+            <span className="import-input-collapsed-dot" />
+            <span className="import-input-collapsed-url">
+              {url || pasteText?.slice(0, 60) || 'Edit input'}
+            </span>
+            <span className="import-input-collapsed-edit" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Pencil size={16} />
+            </span>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="expanded"
+            className="import-input"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={COLLAPSE_TRANSITION}
+          >
+            {/* Segmented tabs */}
+            <div className="import-input-tabs">
+              <button className={tab === 'url' ? 'active' : ''} onClick={() => setTab('url')}>URL</button>
+              <button className={tab === 'paste' ? 'active' : ''} onClick={() => setTab('paste')}>Paste Text</button>
+              <button className={tab === 'photo' ? 'active' : ''} onClick={() => setTab('photo')}>Photo</button>
             </div>
-          )}
-        </div>
-      )}
 
-      {/* Paste Text tab */}
-      {tab === 'paste' && (
-        <div>
-          <textarea
-            className="import-input-paste"
-            value={pasteText}
-            onChange={(e) => setPasteText(e.target.value)}
-            placeholder="Paste recipe text, ingredients, or instructions..."
-            rows={6}
-          />
-          <button
-            className="import-input-paste-submit"
-            onClick={handlePasteSubmit}
-            disabled={!pasteText.trim()}
-          >
-            Import Text
-          </button>
-        </div>
-      )}
+            {/* Meal / Drink toggle */}
+            <div className="import-input-type-toggle">
+              <button
+                className={itemType === 'meal' ? 'active' : ''}
+                onClick={() => setItemType('meal')}
+              >
+                Meal
+              </button>
+              <button
+                className={itemType === 'drink' ? 'active' : ''}
+                onClick={() => setItemType('drink')}
+              >
+                Drink
+              </button>
+            </div>
 
-      {/* Photo tab */}
-      {tab === 'photo' && (
-        <div className="import-input-photo-section">
-          <button
-            className="import-input-photo-btn"
-            onClick={() => fileRef.current?.click()}
-          >
-            Choose File or Take Photo
-          </button>
-          <p className="import-input-photo-hint">
-            Upload a photo of a recipe (cookbook page, index card, screenshot)
-          </p>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            onChange={handlePhotoChange}
-            style={{ display: 'none' }}
-          />
-          <input
-            ref={cameraRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            onChange={handlePhotoChange}
-            style={{ display: 'none' }}
-          />
-        </div>
-      )}
+            {/* URL tab */}
+            {tab === 'url' && (
+              <div>
+                <div className="import-input-url-row">
+                  <input
+                    className="import-input-url"
+                    type="url"
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    onKeyDown={handleUrlKeyDown}
+                    placeholder="Paste recipe URL..."
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    className="import-input-url-submit"
+                    onClick={handleUrlSubmit}
+                    disabled={!url.trim()}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    aria-label="Submit URL"
+                  >
+                    <ArrowRight size={20} />
+                  </button>
+                </div>
+                {socialDetected && (
+                  <div className="import-input-social-card" onClick={handleUrlSubmit}>
+                    <div className="import-input-social-icon" />
+                    <div className="import-input-social-meta">
+                      <strong>{socialDetected}</strong>
+                      <small>Recipe detected — tap to import</small>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Paste Text tab */}
+            {tab === 'paste' && (
+              <div>
+                <textarea
+                  className="import-input-paste"
+                  value={pasteText}
+                  onChange={(e) => setPasteText(e.target.value)}
+                  placeholder="Paste recipe text, ingredients, or instructions..."
+                  rows={6}
+                />
+              </div>
+            )}
+
+            {/* Photo tab */}
+            {tab === 'photo' && (
+              <div className="import-input-photo-section">
+                <button
+                  className="import-input-photo-btn"
+                  onClick={() => fileRef.current?.click()}
+                >
+                  Choose File or Take Photo
+                </button>
+                <p className="import-input-photo-hint">
+                  Upload a photo of a recipe (cookbook page, index card, screenshot)
+                </p>
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePhotoChange}
+                  style={{ display: 'none' }}
+                />
+                <input
+                  ref={cameraRef}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handlePhotoChange}
+                  style={{ display: 'none' }}
+                />
+              </div>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>
-      )}
-    </AnimatePresence>
   );
 }

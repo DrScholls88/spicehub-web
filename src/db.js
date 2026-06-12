@@ -67,6 +67,11 @@ db.version(11).stores({
   barInventory: 'ingredient',
 });
 
+// v12: Unified Import Engine — Draft Persistence
+db.version(12).stores({
+  importDrafts: 'url, timestamp',
+});
+
 export default db;
 
 // ── Bar Inventory helpers ─────────────────────────────────────────────────────
