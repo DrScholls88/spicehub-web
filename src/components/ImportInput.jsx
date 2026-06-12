@@ -155,15 +155,25 @@ export default function ImportInput({
       {/* URL tab */}
       {tab === 'url' && (
         <div>
-          <input
-            className="import-input-url"
-            type="url"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            onKeyDown={handleUrlKeyDown}
-            placeholder="Paste recipe URL..."
-            autoFocus
-          />
+          <div className="import-input-url-row">
+            <input
+              className="import-input-url"
+              type="url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              onKeyDown={handleUrlKeyDown}
+              placeholder="Paste recipe URL..."
+              autoFocus
+            />
+            <button
+              type="button"
+              className="import-input-url-submit"
+              onClick={handleUrlSubmit}
+              disabled={!url.trim()}
+            >
+              Import
+            </button>
+          </div>
           {socialDetected && (
             <div className="import-input-social-card" onClick={handleUrlSubmit}>
               <div className="import-input-social-icon" />

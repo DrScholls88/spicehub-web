@@ -15,7 +15,7 @@
 import { precacheAndRoute, cleanupOutdatedCaches, createHandlerBoundToURL } from 'workbox-precaching';
 import { clientsClaim } from 'workbox-core';
 import { NavigationRoute, registerRoute } from 'workbox-routing';
-import { NetworkFirst, CacheFirst, StaleWhileRevalidate, NetworkOnly } from 'workbox-strategies';
+import { NetworkFirst, CacheFirst, StaleWhileRevalidate } from 'workbox-strategies';
 import { ExpirationPlugin } from 'workbox-expiration';
 
 // ── Core: claim clients and activate immediately ────────────────────────────
@@ -37,15 +37,15 @@ const navigationRoute = new NavigationRoute(navHandler, {
 });
 registerRoute(navigationRoute);
 
-// ── Instagram / Meta CDN: NetworkOnly with silent failure ──────────────────
-// These URLs WILL 403 (they expire + block hotlinking from external domains).
-// We cannot and should not cache them. NetworkOnly + catch means broken images
-// fail silently instead of crashing the SW with "no-response".
-// SpiceHub now downloads images to base64 at import time to avoid this entirely.
-const igCdnMatcher = ({ url }) =>
-  /\.(cdninstagram\.com|fbcdn\.net|fbsbx\.com|fna\.fbcdn\.net)$/i.test(url.hostname);
-
-registerRoute(igCdnMatcher, new NetworkOnly());
+// ── Instagram / Meta CDN: do NOT register a route ──────────────────────────
+// These URLs WILL 403/CORS-fail (they expire + block hotlinking from external
+// domains). Registering ANY route (even NetworkOnly) causes Workbox to call
+// event.respondWith() on a fetch that rejects with no Response, which surfaces
+// as an uncaught "no-response" error in the console and can crash in-flight
+// import promises. By not registering a route at all, these requests bypass
+// the SW entirely and fail/succeed exactly as a normal page fetch would —
+// callers' own try/catch (e.g. downloadImageAsDataUrl) handle the rejection.
+// SpiceHub downloads images to base64 at import time to avoid this entirely.
 
 // ── CORS proxy calls: pass-through (no SW interception) ────────────────────
 // allorigins.win, corsproxy.io, codetabs.com, thingproxy — SW must NOT intercept.
