@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Pencil, ArrowRight } from 'lucide-react';
+import { Pencil, ArrowRight, Camera, FolderOpen } from 'lucide-react';
 import { isSocialMediaUrl, getSocialPlatform, detectImportType } from '../recipeParser.js';
 
 // Spec §1: input area compresses to compact bar over 250ms, spring-like easing
@@ -35,6 +35,7 @@ const COLLAPSE_TRANSITION = { duration: 0.25, ease: [0.32, 0.72, 0, 1] };
  */
 export default function ImportInput({
   collapsed = false,
+  status = 'idle',
   activeTab,
   setActiveTab,
   url,
@@ -120,7 +121,7 @@ export default function ImportInput({
             exit={{ opacity: 0 }}
             transition={COLLAPSE_TRANSITION}
           >
-            <span className="import-input-collapsed-dot" />
+            <span className={`import-input-collapsed-dot status-${status}`} />
             <span className="import-input-collapsed-url">
               {url || pasteText?.slice(0, 60) || 'Edit input'}
             </span>
@@ -212,12 +213,22 @@ export default function ImportInput({
             {/* Photo tab */}
             {tab === 'photo' && (
               <div className="import-input-photo-section">
-                <button
-                  className="import-input-photo-btn"
-                  onClick={() => fileRef.current?.click()}
-                >
-                  Choose File or Take Photo
-                </button>
+                <div className="import-input-photo-btn-row">
+                  <button
+                    className="import-input-photo-btn"
+                    onClick={() => cameraRef.current?.click()}
+                  >
+                    <Camera size={22} strokeWidth={2} />
+                    <span>Take Photo</span>
+                  </button>
+                  <button
+                    className="import-input-photo-btn"
+                    onClick={() => fileRef.current?.click()}
+                  >
+                    <FolderOpen size={22} strokeWidth={2} />
+                    <span>Choose File</span>
+                  </button>
+                </div>
                 <p className="import-input-photo-hint">
                   Upload a photo of a recipe (cookbook page, index card, screenshot)
                 </p>

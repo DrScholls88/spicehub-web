@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { motion, AnimatePresence, MotionConfig } from 'framer-motion';
-import { X } from 'lucide-react';
+import { motion, AnimatePresence, MotionConfig, useDragControls } from 'framer-motion';
+import { X, Sparkles, Check, ArrowLeft, Zap } from 'lucide-react';
 import './ImportSheet.css';
 import {
   importRecipeFromUrl,
@@ -138,6 +138,9 @@ export default function ImportSheet({
   const lastReviewRef = useRef(null);
   const sheetRef = useRef(null);
 
+  // ── Slide-down-to-dismiss drag handle ────────────────────────────────────
+  const sheetDragControls = useDragControls();
+
   // ── Save/Restore focus on mount/unmount ──────────────────────────────────
   useEffect(() => {
     const activeBefore = document.activeElement;
@@ -264,6 +267,13 @@ export default function ImportSheet({
       onClose();
     }
   }, [phase, onClose]);
+
+  // ── Slide-down-to-dismiss: drag release handler ──────────────────────────
+  const handleSheetDragEnd = useCallback((_e, info) => {
+    if (info.offset.y > 100 || info.velocity.y > 500) {
+      handleCloseRequest();
+    }
+  }, [handleCloseRequest]);
 
   // ── Escape Key Scrim Handler ──────────────────────────────────────────────
   useEffect(() => {
@@ -543,7 +553,12 @@ export default function ImportSheet({
             <span>Importing recipe… tap to view</span>
           </>
         )}
-        {phase === 'review' && <span>✓ Recipe ready — tap to review</span>}
+        {phase === 'review' && (
+          <>
+            <Check size={16} aria-hidden="true" />
+            <span>Recipe ready — tap to review</span>
+          </>
+        )}
         {(phase === 'input' || phase === 'browserAssist') && (
           <span>Import needs your help — tap to continue</span>
         )}
@@ -560,15 +575,25 @@ export default function ImportSheet({
           if (e.target === e.currentTarget) handleCloseRequest();
         }}
       >
-        <div
+        <motion.div
           className="import-sheet"
           role="dialog"
           aria-modal="true"
           aria-labelledby="import-sheet-title"
           ref={sheetRef}
+          drag="y"
+          dragListener={false}
+          dragControls={sheetDragControls}
+          dragConstraints={{ top: 0, bottom: 0 }}
+          dragElastic={{ top: 0, bottom: 0.5 }}
+          dragTransition={{ bounceStiffness: 600, bounceDamping: 30 }}
+          onDragEnd={handleSheetDragEnd}
         >
-          {/* Grab handle */}
-          <div className="import-sheet-grab" />
+          {/* Grab handle — drag-down to dismiss */}
+          <div
+            className="import-sheet-grab"
+            onPointerDown={(e) => sheetDragControls.start(e)}
+          />
 
           {/* Header */}
           <div className="import-sheet-header">
@@ -586,19 +611,18 @@ export default function ImportSheet({
           <div className="import-sheet-body">
             {/* Resume last draft banner */}
             {phase === 'input' && draftToResume && (
-              <div className="import-sheet-resume-card" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, background: 'var(--sh-accent-bg)', borderRadius: 'var(--sh-radius-sm)', border: '1.5px solid var(--sh-accent)', marginBottom: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span className="resume-icon">✨</span>
-                  <div className="resume-content" style={{ display: 'flex', flexDirection: 'column' }}>
-                    <strong style={{ fontSize: 'var(--sh-fs-base)', color: 'var(--sh-text)' }}>Resume your last import?</strong>
-                    <span className="resume-sub" style={{ fontSize: 'var(--sh-fs-xs)', color: 'var(--sh-text-secondary)' }}>We saved your edits for "{draftToResume.recipe.title || 'Untitled Recipe'}"</span>
+              <div className="import-sheet-resume-card">
+                <div className="resume-head">
+                  <span className="resume-icon"><Sparkles size={14} /></span>
+                  <div className="resume-content">
+                    <strong>Resume your last import?</strong>
+                    <span className="resume-sub">We saved your edits for "{draftToResume.recipe.title || 'Untitled Recipe'}"</span>
                   </div>
                 </div>
-                <div className="resume-actions" style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <div className="resume-actions">
                   <button
                     type="button"
                     className="import-sheet-btn import-sheet-btn-secondary"
-                    style={{ minHeight: 36, padding: '4px 12px', fontSize: 'var(--sh-fs-sm)', flex: '0 0 auto' }}
                     onClick={() => {
                       setRecipe(draftToResume.recipe);
                       setConfidence(draftToResume.confidence);
@@ -617,7 +641,6 @@ export default function ImportSheet({
                   <button
                     type="button"
                     className="import-sheet-btn import-sheet-btn-ghost"
-                    style={{ minHeight: 36, padding: '4px 12px', fontSize: 'var(--sh-fs-sm)', flex: '0 0 auto' }}
                     onClick={() => {
                       db.importDrafts?.delete(draftToResume.url).catch(e => console.warn(e));
                       setDraftToResume(null);
@@ -641,13 +664,12 @@ export default function ImportSheet({
                   style={{ overflow: 'hidden' }}
                 >
                   <p>{error}</p>
-                  <div className="import-sheet-error-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
+                  <div className="import-sheet-error-actions">
                     {importUrl && (
                       <>
                         <button
                           type="button"
                           className="import-sheet-btn import-sheet-btn-secondary"
-                          style={{ minHeight: 32, padding: '4px 12px', fontSize: 'var(--sh-fs-xs)', flex: '0 0 auto' }}
                           onClick={() => handleUrlImport(importUrl, itemType)}
                         >
                           Retry
@@ -655,7 +677,6 @@ export default function ImportSheet({
                         <button
                           type="button"
                           className="import-sheet-btn import-sheet-btn-ghost"
-                          style={{ minHeight: 32, padding: '4px 12px', fontSize: 'var(--sh-fs-xs)', flex: '0 0 auto' }}
                           onClick={() => setPhase('browserAssist')}
                         >
                           Try in browser
@@ -665,7 +686,6 @@ export default function ImportSheet({
                     <button
                       type="button"
                       className="import-sheet-btn import-sheet-btn-ghost"
-                      style={{ minHeight: 32, padding: '4px 12px', fontSize: 'var(--sh-fs-xs)', flex: '0 0 auto' }}
                       onClick={() => {
                         setActiveTab('paste');
                         setError('');
@@ -675,8 +695,7 @@ export default function ImportSheet({
                     </button>
                     <button
                       type="button"
-                      className="import-sheet-btn import-sheet-btn-ghost"
-                      style={{ minHeight: 32, padding: '4px 12px', fontSize: 'var(--sh-fs-xs)', flex: '0 0 auto', marginLeft: 'auto' }}
+                      className="import-sheet-btn import-sheet-btn-ghost import-sheet-btn-dismiss"
                       onClick={() => setError('')}
                     >
                       Dismiss
@@ -689,6 +708,7 @@ export default function ImportSheet({
             {/* ImportInput — full or collapsed */}
             <ImportInput
               collapsed={phase !== 'input'}
+              status={error ? 'error' : phase === 'loading' ? 'loading' : phase === 'review' ? 'ready' : 'idle'}
               activeTab={activeTab}
               setActiveTab={setActiveTab}
               url={url}
@@ -719,20 +739,8 @@ export default function ImportSheet({
                     setPhase('review');
                   }
                 }}
-                style={{
-                  width: '100%',
-                  marginTop: 8,
-                  padding: '12px',
-                  borderRadius: 'var(--sh-pill)',
-                  background: 'var(--sh-surface)',
-                  color: 'var(--sh-accent-text)',
-                  border: '1px solid var(--sh-border)',
-                  fontSize: 'var(--sh-fs-sm)',
-                  fontWeight: 600,
-                  cursor: 'pointer'
-                }}
               >
-                ← Back to review
+                <ArrowLeft size={16} /> Back to review
               </button>
             )}
 
@@ -746,12 +754,11 @@ export default function ImportSheet({
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.2 }}
-                  style={{ width: '100%' }}
                 >
                   {/* Single progress vector: pulsing dot + humanized status line */}
-                  <div className="import-sheet-loading-status" style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center', padding: '12px 0' }}>
+                  <div className="import-sheet-loading-status">
                     <span className="import-sheet-progress-dot" aria-hidden="true" />
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <div className="import-sheet-loading-status-text">
                       <AnimatePresence mode="popLayout" initial={false}>
                         <motion.p
                           key={progressMsg}
@@ -760,13 +767,12 @@ export default function ImportSheet({
                           animate={{ opacity: 1, y: 0 }}
                           exit={{ opacity: 0, y: -6 }}
                           transition={{ duration: 0.18 }}
-                          style={{ margin: 0 }}
                         >
                           {progressMsg}
                         </motion.p>
                       </AnimatePresence>
                       {elapsedTime >= 8 && (
-                        <span className="import-sheet-progress-subtext" style={{ fontSize: 'var(--sh-fs-xs)', color: 'var(--sh-text-muted)', marginTop: 2 }}>
+                        <span className="import-sheet-progress-subtext">
                           Still working — some sites are slow to share…
                         </span>
                       )}
@@ -775,16 +781,16 @@ export default function ImportSheet({
 
                   {isSocialMediaUrl(importUrl) && pipelineSteps.length > 0 ? (
                     /* Social: Adopt BrowserAssist steps checklist for shared social loading component (Fix 10) */
-                    <div className="ip-pipeline" style={{ margin: '12px 0', padding: 16, background: 'var(--sh-surface)', borderRadius: 'var(--sh-radius-sm)', border: '1px solid var(--sh-border-light)' }}>
-                      <div className="ip-steps" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div className="import-sheet-pipeline">
+                      <div className="import-sheet-steps">
                         {pipelineSteps.map((step, i) => (
-                          <div key={i} className={`ip-step ip-step--${step.status}`} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <div className="ip-step-node" style={{ width: 18, height: 18, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: step.status === 'done' ? 'var(--sh-conf-high)' : step.status === 'running' ? 'var(--sh-accent)' : 'var(--sh-border)' }}>
-                              {step.status === 'done' && <span style={{ color: '#fff', fontSize: 10 }}>✓</span>}
-                              {step.status === 'running' && <span className="import-sheet-progress-dot" style={{ width: 6, height: 6, background: '#fff', animation: 'sh-dot-pulse 1s infinite' }} />}
-                              {step.status === 'pending' && <span style={{ width: 4, height: 4, borderRadius: '50%', background: 'var(--sh-text-muted)' }} />}
+                          <div key={i} className={`import-sheet-step import-sheet-step--${step.status}`}>
+                            <div className="import-sheet-step-node">
+                              {step.status === 'done' && <Check size={12} className="import-sheet-step-check" aria-hidden="true" />}
+                              {step.status === 'running' && <span className="import-sheet-step-spinner" />}
+                              {step.status === 'pending' && <span className="import-sheet-step-dot" />}
                             </div>
-                            <span className="ip-step-label" style={{ fontSize: 'var(--sh-fs-sm)', fontWeight: step.status === 'running' ? 600 : 500, color: step.status === 'running' ? 'var(--sh-text)' : 'var(--sh-text-secondary)' }}>
+                            <span className="import-sheet-step-label">
                               {step.label}
                             </span>
                           </div>
@@ -793,33 +799,33 @@ export default function ImportSheet({
                     </div>
                   ) : (
                     /* Non-social / Blog: Shimmer skeleton of review layout (Fix 4) */
-                    <div className="import-sheet-skeleton" style={{ margin: '12px 0' }}>
+                    <div className="import-sheet-skeleton">
                       {/* Hero skeleton */}
-                      <div className="review-hero skeleton" style={{ height: 172, borderRadius: 'var(--sh-radius)', overflow: 'hidden', position: 'relative', background: 'var(--sh-surface)' }}>
+                      <div className="review-hero skeleton">
                         {loadingImage ? (
-                          <div className="review-hero-image" style={{ backgroundImage: `url(${loadingImage})`, width: '100%', height: '100%', backgroundSize: 'cover', backgroundPosition: 'center' }} />
+                          <div className="review-hero-image" style={{ backgroundImage: `url(${loadingImage})` }} />
                         ) : (
-                          <div className="review-hero-placeholder shimmer" style={{ width: '100%', height: '100%' }} />
+                          <div className="review-hero-placeholder shimmer" />
                         )}
-                        <div className="review-hero-gradient" style={{ position: 'absolute', inset: 0, background: 'linear-gradient(transparent, rgba(0,0,0,0.4))' }} />
-                        <div className="review-hero-title-wrap" style={{ position: 'absolute', bottom: 10, left: 12, right: 12 }}>
-                          <div className="review-hero-title skeleton-title shimmer" style={{ height: 24, width: '60%', borderRadius: 4 }} />
+                        <div className="review-hero-gradient" />
+                        <div className="review-hero-title-wrap skeleton">
+                          <div className="review-hero-title skeleton-title shimmer" />
                         </div>
                       </div>
 
                       {/* Tab skeleton */}
-                      <div className="review-tabs skeleton" style={{ display: 'flex', gap: 4, marginTop: 14 }}>
-                        <div className="review-tab skeleton shimmer" style={{ flex: 1, height: 44, borderRadius: 'var(--sh-radius-sm)', background: 'var(--sh-surface)' }} />
-                        <div className="review-tab skeleton shimmer" style={{ flex: 1, height: 44, borderRadius: 'var(--sh-radius-sm)', background: 'var(--sh-surface)' }} />
+                      <div className="review-tabs skeleton">
+                        <div className="review-tab skeleton shimmer" />
+                        <div className="review-tab skeleton shimmer" />
                       </div>
 
                       {/* Rows skeleton */}
-                      <div className="review-list skeleton" style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <div className="review-list skeleton">
                         {Array(5).fill(null).map((_, i) => (
-                          <div key={i} className="review-row skeleton" style={{ display: 'flex', alignItems: 'center', gap: 8, height: 44, borderBottom: '0.5px solid var(--sh-border-light)' }}>
-                            <div className="review-row-handle skeleton shimmer" style={{ width: 18, height: 18, borderRadius: '50%', background: 'var(--sh-surface)' }} />
-                            <div className="skeleton-line shimmer" style={{ height: 14, borderRadius: 4, background: 'var(--sh-surface)', width: `${85 - (i % 3) * 10}%` }} />
-                            <div className="review-row-more skeleton shimmer" style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--sh-surface)' }} />
+                          <div key={i} className="review-row skeleton">
+                            <div className="review-row-handle skeleton shimmer" />
+                            <div className="skeleton-line shimmer" style={{ width: `${85 - (i % 3) * 10}%` }} />
+                            <div className="review-row-more skeleton shimmer" />
                           </div>
                         ))}
                       </div>
@@ -834,20 +840,8 @@ export default function ImportSheet({
                       onClick={() => setBackgrounded(true)}
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
-                      style={{
-                        width: '100%',
-                        margin: '12px 0 0',
-                        padding: '12px',
-                        borderRadius: 'var(--sh-pill)',
-                        background: 'var(--sh-accent-bg-strong)',
-                        color: 'var(--sh-accent-text)',
-                        border: '1px solid var(--sh-accent)',
-                        fontSize: 'var(--sh-fs-base)',
-                        fontWeight: 700,
-                        cursor: 'pointer'
-                      }}
                     >
-                      ⚡ Continue in background
+                      <Zap size={16} /> Continue in background
                   </motion.button>
                   )}
                 </motion.div>
@@ -903,18 +897,16 @@ export default function ImportSheet({
           {/* Sticky footer */}
           <div className="import-sheet-footer">
             {showDiscardConfirm ? (
-              <div className="import-sheet-confirm-footer" style={{ display: 'flex', width: '100%', gap: 10, alignItems: 'center' }}>
-                <span className="confirm-text" style={{ marginRight: 'auto', fontWeight: 600, fontSize: 'var(--sh-fs-sm)', color: '#b91c1c' }}>Discard recipe?</span>
+              <div className="import-sheet-confirm-footer">
+                <span className="confirm-text">Discard recipe?</span>
                 <button
                   className="import-sheet-btn import-sheet-btn-ghost"
-                  style={{ flex: '0 0 auto', minHeight: 40, padding: '8px 16px' }}
                   onClick={() => setShowDiscardConfirm(false)}
                 >
                   Keep editing
                 </button>
                 <button
                   className="import-sheet-btn import-sheet-btn-danger"
-                  style={{ flex: '0 0 auto', minHeight: 40, padding: '8px 16px', background: '#dc2626', color: '#fff' }}
                   onClick={() => {
                     setShowDiscardConfirm(false);
                     const key = importUrl || (activeTab === 'paste' ? 'pasted-text' : activeTab === 'photo' ? 'photo-import' : 'pasted-text');
@@ -926,18 +918,16 @@ export default function ImportSheet({
                 </button>
               </div>
             ) : confirmImport ? (
-              <div className="import-sheet-confirm-footer" style={{ display: 'flex', width: '100%', gap: 10, alignItems: 'center' }}>
-                <span className="confirm-text" style={{ marginRight: 'auto', fontWeight: 600, fontSize: 'var(--sh-fs-sm)', color: '#b91c1c' }}>{confirmImport.message}</span>
+              <div className="import-sheet-confirm-footer">
+                <span className="confirm-text">{confirmImport.message}</span>
                 <button
                   className="import-sheet-btn import-sheet-btn-ghost"
-                  style={{ flex: '0 0 auto', minHeight: 40, padding: '8px 16px' }}
                   onClick={() => setConfirmImport(null)}
                 >
                   Keep review
                 </button>
                 <button
-                  className="import-sheet-btn import-sheet-btn-danger"
-                  style={{ flex: '0 0 auto', minHeight: 40, padding: '8px 16px', background: '#e65100', color: '#fff' }}
+                  className="import-sheet-btn import-sheet-btn-danger import-sheet-btn-replace"
                   onClick={() => {
                     confirmImport.fn();
                   }}
@@ -997,7 +987,7 @@ export default function ImportSheet({
               </>
             )}
           </div>
-        </div>
+        </motion.div>
       </div>
     </MotionConfig>
   );

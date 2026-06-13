@@ -376,7 +376,7 @@ const toggleDeepMode = () => {
             }
           } catch { /* fall through to AI */ }
 
-          setExtractionProgress({ step: 2, total: 3, message: '✨ AI analyzing full page...' });
+          setExtractionProgress({ step: 2, total: 3, message: 'AI analyzing full page...' });
           try {
             const aiRecipe = await structureWithAI(visibleText, { imageUrl: imageUrls[0] || '', sourceUrl: url });
             if (!cancelled && aiRecipe && hasRealContent(aiRecipe)) {
@@ -836,7 +836,7 @@ const toggleDeepMode = () => {
       }
 
       // Weak result — show overlays so user can aim at what the parser missed
-      setAimToast('Partial result — overlays highlight detected blocks; tap 🎯 to fill gaps');
+      setAimToast('Partial result — overlays highlight detected blocks; tap Aim parser to fill gaps');
       setTimeout(() => setAimToast(''), 4000);
     } catch (err) {
       console.warn('[BrowserAssist] Visual scrape failed, falling back:', err.message);
@@ -876,7 +876,7 @@ const toggleDeepMode = () => {
       const regexRecipe = rawHtml ? extractFromRawHtml(rawHtml, url) : null;
       const domRecipe = extractRecipeFromDOM(visibleText, imageUrls, url);
       const heuristicResult = pickBestRecipe(pickBestRecipe(browserApiResult, regexRecipe), domRecipe);
-      setExtractionProgress({ step: 2, total: 3, message: '✨ Google AI parsing text...' });
+      setExtractionProgress({ step: 2, total: 3, message: 'Google AI parsing text...' });
       let aiRecipe = null;
       try {
         aiRecipe = await captionToRecipe(visibleText.slice(0, 8000), { imageUrl: imageUrls[0] || '', sourceUrl: url, type });
@@ -1200,7 +1200,7 @@ const toggleDeepMode = () => {
               <div className="ip-tried-badges">
                 {pipelineSteps.map((step, i) => (
                   <span key={i} className={`ip-tried-badge ip-tried-badge--${step.status}`}>
-                    {step.status === 'done' ? '✓' : step.status === 'failed' ? '✗' : '—'} {step.label}
+                    {step.status === 'done' ? <Check size={11} style={{ verticalAlign: 'middle' }} /> : step.status === 'failed' ? <XIcon size={11} style={{ verticalAlign: 'middle' }} /> : '—'} {step.label}
                   </span>
                 ))}
               </div>
@@ -1284,7 +1284,7 @@ const toggleDeepMode = () => {
                       placeholder="e.g. 2 cups flour"
                       onChange={e => updatePreviewListItem('ingredients', i, e.target.value)}
                     />
-                    <button className="preview-remove-btn" onClick={() => removePreviewListItem('ingredients', i)} title="Remove">✖</button>
+                    <button className="preview-remove-btn" onClick={() => removePreviewListItem('ingredients', i)} title="Remove"><XIcon size={14} /></button>
                   </div>
                 ))}
               </div>
@@ -1305,7 +1305,7 @@ const toggleDeepMode = () => {
                       rows={2}
                       onChange={e => updatePreviewListItem('directions', i, e.target.value)}
                     />
-                    <button className="preview-remove-btn" onClick={() => removePreviewListItem('directions', i)} title="Remove">✖</button>
+                    <button className="preview-remove-btn" onClick={() => removePreviewListItem('directions', i)} title="Remove"><XIcon size={14} /></button>
                   </div>
                 ))}
               </div>
@@ -1534,7 +1534,7 @@ const toggleDeepMode = () => {
               >
                 <span>
                   {(aimRecipe.ingredients?.length || 0)} ing · {(aimRecipe.directions?.length || 0)} dir
-                  {aimRecipe.name ? ' · title ✓' : ''}
+                  {aimRecipe.name ? <> · title <Check size={12} style={{ verticalAlign: 'middle' }} /></> : ''}
                 </span>
                 <button
                   type="button"
@@ -1554,7 +1554,7 @@ const toggleDeepMode = () => {
                     fontWeight: 700,
                   }}
                 >
-                  ✖
+                  <XIcon size={14} />
                 </button>
               </div>
             )}
