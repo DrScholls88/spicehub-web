@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
+import { X, Lock, Star, BookOpen } from 'lucide-react';
 import MealSpinner from './MealSpinner';
 
 // ── MealImage helper ──────────────────────────────────────────────────────────
@@ -882,7 +883,7 @@ function DetailPanel({ show, activeDate, today, getMealForDate, onClose, onToggl
               </div>
               {isCurrent && (
                 <button onClick={() => onClearDay(dow)} style={{ ...DANGER_BTN, width: '100%' }}>
-                  ✕ Clear Day
+                  <X size={16} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Clear Day
                 </button>
               )}
             </div>
@@ -896,27 +897,60 @@ function DetailPanel({ show, activeDate, today, getMealForDate, onClose, onToggl
                 boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
               }}>
                 {meal.imageUrl && (
-                  <img src={meal.imageUrl} alt={meal.name}
-                    style={{ width: '100%', height: 160, objectFit: 'cover', display: 'block' }}
-                    onError={e => e.target.style.display = 'none'}
-                  />
+                  <div style={{ position: 'relative' }}>
+                    <img src={meal.imageUrl} alt={meal.name}
+                      style={{ width: '100%', height: 160, objectFit: 'cover', display: 'block' }}
+                      onError={e => e.target.style.display = 'none'}
+                    />
+                    {/* Dark-glass title chip overlaid on the hero photo for legibility */}
+                    <div style={{
+                      position: 'absolute', left: 10, right: 10, bottom: 10,
+                      display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+                      background: 'rgba(0,0,0,0.35)',
+                      backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+                      borderRadius: 'var(--sh-radius-sm)',
+                      padding: '8px 12px',
+                    }}>
+                      <h4 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: '#fff', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {meal.name}
+                      </h4>
+                      {meal._locked && (
+                        <span style={{
+                          background: 'rgba(255,255,255,0.18)', color: '#fff',
+                          borderRadius: 20, padding: '2px 8px', fontSize: 11, fontWeight: 700,
+                          flexShrink: 0, display: 'inline-flex', alignItems: 'center', gap: 3,
+                        }}><Lock size={11} style={{ verticalAlign: 'middle' }} /> Locked</span>
+                      )}
+                    </div>
+                  </div>
                 )}
                 <div style={{ padding: '12px 14px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <h4 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--text)', flex: 1 }}>
-                      {meal.name}
-                    </h4>
-                    {meal._locked && (
-                      <span style={{
-                        background: 'rgba(230,81,0,0.12)', color: 'var(--primary)',
-                        borderRadius: 20, padding: '2px 8px', fontSize: 11, fontWeight: 700,
-                      }}>🔒 Locked</span>
-                    )}
-                  </div>
-                  <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-light)' }}>
-                    {meal.ingredients?.length || 0} ingredients
-                    {meal.category ? ` · ${meal.category}` : ''}
-                    {meal.rating ? ` · ${'⭐'.repeat(meal.rating)}` : ''}
+                  {!meal.imageUrl && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <h4 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {meal.name}
+                      </h4>
+                      {meal._locked && (
+                        <span style={{
+                          background: 'rgba(230,81,0,0.12)', color: 'var(--primary)',
+                          borderRadius: 20, padding: '2px 8px', fontSize: 11, fontWeight: 700,
+                          display: 'inline-flex', alignItems: 'center', gap: 3,
+                        }}><Lock size={11} style={{ verticalAlign: 'middle' }} /> Locked</span>
+                      )}
+                    </div>
+                  )}
+                  <p style={{ margin: meal.imageUrl ? 0 : '4px 0 0', fontSize: 13, color: 'var(--text-light)', display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+                    <span>
+                      {meal.ingredients?.length || 0} ingredients
+                      {meal.category ? ` · ${meal.category}` : ''}
+                    </span>
+                    {meal.rating ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                        · {Array.from({ length: meal.rating }).map((_, i) => (
+                          <Star key={i} size={12} fill="currentColor" style={{ verticalAlign: 'middle' }} />
+                        ))}
+                      </span>
+                    ) : null}
                   </p>
                 </div>
               </div>
@@ -925,7 +959,7 @@ function DetailPanel({ show, activeDate, today, getMealForDate, onClose, onToggl
               {isCurrent && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   <button onClick={() => onViewDetail(meal)} style={OUTLINE_BTN}>
-                    📖 View Recipe
+                    <BookOpen size={16} style={{ verticalAlign: 'middle', marginRight: 4 }} /> View Recipe
                   </button>
                   <button
                     onClick={() => onToggleLock && onToggleLock(dow)}
@@ -959,7 +993,7 @@ function DetailPanel({ show, activeDate, today, getMealForDate, onClose, onToggl
               {!isCurrent && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <button onClick={() => onViewDetail(meal)} style={OUTLINE_BTN}>
-                    📖 View Recipe
+                    <BookOpen size={16} style={{ verticalAlign: 'middle', marginRight: 4 }} /> View Recipe
                   </button>
                   <button
                     onClick={() => { onOpenPicker(); }}
