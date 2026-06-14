@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
+import { motion, useDragControls } from 'framer-motion';
 import { parseFromUrl, isSocialMediaUrl, getSocialPlatform, parseCaption } from '../recipeParser';
 
 // Auto-expand a textarea to fit its content (call on mount + onChange)
@@ -244,9 +245,37 @@ export default function AddEditMeal({
   const addToList = (setter) => setter(prev => [...prev, '']);
   const removeFromList = (setter, idx) => setter(prev => prev.filter((_, i) => i !== idx));
 
+  // ── Drag-down-to-dismiss ──
+  const dragControls = useDragControls();
+
+  const handleSheetDragEnd = useCallback((_e, info) => {
+    if (info.offset.y > 100 || info.velocity.y > 500) {
+      onClose();
+    }
+  }, [onClose]);
+
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content edit-modal" onClick={e => e.stopPropagation()}>
+      <motion.div
+        className="modal-content edit-modal"
+        onClick={e => e.stopPropagation()}
+        drag="y"
+        dragListener={false}
+        dragControls={dragControls}
+        dragConstraints={{ top: 0, bottom: 0 }}
+        dragElastic={{ top: 0, bottom: 0.5 }}
+        dragTransition={{ bounceStiffness: 600, bounceDamping: 30 }}
+        onDragEnd={handleSheetDragEnd}
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
+      >
+        {/* ── Drag handle (visual indicator for drag-down-to-close) ── */}
+        <div
+          onPointerDown={(e) => dragControls.start(e)}
+          style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border)', margin: '10px auto 0', cursor: 'grab' }}
+        />
         <div className="modal-header">
           <h2>{title || (isEdit ? '✏️ Edit Meal' : '➕ Add New Meal')}</h2>
           <button className="btn-icon" onClick={onClose}>✕</button>
@@ -474,7 +503,7 @@ export default function AddEditMeal({
           <button className="btn-secondary" onClick={onClose}>Cancel</button>
           <button className="btn-primary" onClick={handleSave}>💾 {isEdit ? 'Save Changes' : 'Save'}</button>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { Martini } from 'lucide-react';
 import db from '../db';
 import { getBarInventory } from '../db';
 import SafeMediaImage from './SafeMediaImage';
@@ -431,13 +432,19 @@ export default function BarLibrary({
       {/* Tile gallery */}
       <div className="bl-gallery">
         {sorted.length === 0 ? (
-          <div className="bl-empty-state" style={{ gridColumn: '1 / -1' }}>
-            <div className="bl-empty-emoji">&#127865;</div>
-            <p className="bl-empty-text">
-              {search || category !== 'All' || quickFilter !== 'all'
-                ? 'No drinks match your search.'
-                : 'The bar is empty! Import cocktails from Instagram or add one manually.'}
-            </p>
+          <div className="bl-empty-state bl-empty-state-anim" style={{ gridColumn: '1 / -1' }}>
+            <div className="bl-empty-emoji"><Martini size={32} strokeWidth={1.75} /></div>
+            {search || category !== 'All' || quickFilter !== 'all' ? (
+              <>
+                <p className="bl-empty-text">No drinks match your search.</p>
+                <p className="bl-empty-hint">Try a different keyword or filter.</p>
+              </>
+            ) : (
+              <>
+                <p className="bl-empty-text">Your bar is empty</p>
+                <p className="bl-empty-hint">Import a cocktail from Instagram or add one manually to get pouring.</p>
+              </>
+            )}
             {!search && category === 'All' && quickFilter === 'all' && (
               <div className="bl-empty-actions">
                 <button className="bl-btn-primary" onClick={onImport}>Import from Instagram</button>

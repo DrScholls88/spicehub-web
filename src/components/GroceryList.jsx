@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import { ShoppingCart } from 'lucide-react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
 import { saveStoreMemory as dbSaveStoreMemory, getStoreMemory as dbGetStoreMemory, addToBarInventory } from '../db';
 
@@ -241,13 +242,19 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
   if (items.length === 0) {
     return (
       <div className="gl-container">
-        <div className="gl-empty-state">
-          <p>No grocery list yet.</p>
-          <p>Generate a week plan first, then tap "Grocery List" to build your shopping list.</p>
+        <motion.div
+          className="gl-empty-state"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
+        >
+          <div className="gl-empty-icon"><ShoppingCart size={32} strokeWidth={1.75} /></div>
+          <p className="gl-empty-title">Your list is empty</p>
+          <p className="gl-empty-hint">Generate a week plan, then tap "Grocery List" to build your shopping list.</p>
           {weekPlan.some(m => m && !m._special) && (
             <button className="btn-primary" onClick={onRebuild}>Build Grocery List</button>
           )}
-        </div>
+        </motion.div>
       </div>
     );
   }

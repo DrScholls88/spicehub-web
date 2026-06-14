@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { ChefHat } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { downloadMealsFile, importMealsFromJson, shareMealsFile } from '../sync';
 import { toggleRotation, bulkSetRotation } from '../db';
@@ -438,17 +439,28 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
       {/* ── Gallery grid ── */}
       <div className="ml-gallery">
         {filtered.length === 0 ? (
-          <div className="ml-empty-state">
-            <div className="ml-empty-icon">🍽️</div>
-            <p className="ml-empty-text">
-              {search || category !== 'All'
-                ? 'No meals match your search.'
-                : 'No meals yet. Add some recipes to get started!'}
-            </p>
+          <motion.div
+            className="ml-empty-state"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
+          >
+            <div className="ml-empty-icon"><ChefHat size={32} strokeWidth={1.75} /></div>
+            {search || category !== 'All' ? (
+              <>
+                <p className="ml-empty-text">No meals match your search.</p>
+                <p className="ml-empty-hint">Try a different keyword or category.</p>
+              </>
+            ) : (
+              <>
+                <p className="ml-empty-text">Your recipe box is empty</p>
+                <p className="ml-empty-hint">Import a recipe from Instagram to start your collection.</p>
+              </>
+            )}
             {!search && category === 'All' && (
               <button className="ml-empty-cta" onClick={onImport}>Import a Recipe</button>
             )}
-          </div>
+          </motion.div>
         ) : (
           <AnimatePresence mode="popLayout">
           {sorted.map((meal, idx) => (

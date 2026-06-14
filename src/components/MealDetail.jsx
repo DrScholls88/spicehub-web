@@ -1,4 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
+import { motion, useDragControls } from 'framer-motion';
+import { X, Share2, Copy, Check, Heart, Star, RefreshCw, Flame, UtensilsCrossed, Loader2, CheckCircle2, XCircle, Camera, ChefHat, Martini } from 'lucide-react';
 import db from '../db';
 
 function CopyLinkButton({ url }) {
@@ -10,63 +12,22 @@ function CopyLinkButton({ url }) {
     }).catch(() => {});
   };
   return (
-    <button className="detail-source-copy" onClick={handleCopy}>
-      {copied ? '✓ Copied' : '📋 Copy'}
+    <button className="detail-source-copy" onClick={handleCopy} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+      {copied ? <Check size={16} strokeWidth={1.75} /> : <Copy size={16} strokeWidth={1.75} />}
+      {copied ? 'Copied' : 'Copy'}
     </button>
   );
 }
 
 export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, onRate, onStartCook, onStartMix, onToggleRotation, isDrink = false, onPhotoUpdated }) {
-  // ── Swipe-down-to-dismiss ──
+  // ── Drag-down-to-dismiss ──
   const sheetRef = useRef(null);
-  const dragStartY = useRef(null);
-  const dragCurrentY = useRef(0);
-  const isDragging = useRef(false);
+  const dragControls = useDragControls();
 
-  const handleSwipeStart = useCallback((e) => {
-    if (e.touches.length !== 1) return;
-    const sheet = sheetRef.current;
-    if (!sheet) return;
-    // Only allow swipe dismiss if scrolled to top
-    if (sheet.scrollTop > 5) return;
-    dragStartY.current = e.touches[0].clientY;
-    dragCurrentY.current = 0;
-    isDragging.current = false;
-  }, []);
-
-  const handleSwipeMove = useCallback((e) => {
-    if (dragStartY.current === null) return;
-    const deltaY = e.touches[0].clientY - dragStartY.current;
-    if (deltaY < 0) { dragStartY.current = null; return; }
-    if (deltaY > 10) isDragging.current = true;
-    if (!isDragging.current) return;
-    dragCurrentY.current = deltaY;
-    const sheet = sheetRef.current;
-    if (sheet) {
-      const translate = deltaY < 120 ? deltaY : 120 + (deltaY - 120) * 0.3;
-      sheet.style.transition = 'none';
-      sheet.style.transform = `translateY(${translate}px)`;
+  const handleSheetDragEnd = useCallback((_e, info) => {
+    if (info.offset.y > 100 || info.velocity.y > 500) {
+      onClose();
     }
-  }, []);
-
-  const handleSwipeEnd = useCallback(() => {
-    if (dragStartY.current === null) return;
-    const deltaY = dragCurrentY.current;
-    const sheet = sheetRef.current;
-    if (isDragging.current && deltaY > 120) {
-      if (sheet) {
-        sheet.style.transition = 'transform 0.25s cubic-bezier(0.32,0.72,0,1)';
-        sheet.style.transform = 'translateY(100%)';
-      }
-      setTimeout(() => onClose(), 250);
-    } else if (sheet) {
-      sheet.style.transition = 'transform 0.25s cubic-bezier(0.32,0.72,0,1)';
-      sheet.style.transform = 'translateY(0)';
-      setTimeout(() => { if (sheet) sheet.style.transition = ''; }, 250);
-    }
-    dragStartY.current = null;
-    dragCurrentY.current = 0;
-    isDragging.current = false;
   }, [onClose]);
   const scaleOptions = [
     { value: 1.0, label: '1×' },
@@ -146,21 +107,33 @@ export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, o
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div
+      <motion.div
         ref={sheetRef}
         className="modal-content detail-modal modal-slide-up"
         onClick={e => e.stopPropagation()}
-        onTouchStart={handleSwipeStart}
-        onTouchMove={handleSwipeMove}
-        onTouchEnd={handleSwipeEnd}
+        drag="y"
+        dragListener={false}
+        dragControls={dragControls}
+        dragConstraints={{ top: 0, bottom: 0 }}
+        dragElastic={{ top: 0, bottom: 0.5 }}
+        dragTransition={{ bounceStiffness: 600, bounceDamping: 30 }}
+        onDragEnd={handleSheetDragEnd}
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
       >
-        {/* ── Swipe handle (visual indicator for drag-down-to-close) ── */}
-        <div className="detail-swipe-handle" aria-hidden="true" />
+        {/* ── Drag handle (visual indicator for drag-down-to-close) ── */}
+        <div
+          className="detail-swipe-handle"
+          aria-hidden="true"
+          onPointerDown={(e) => dragControls.start(e)}
+        />
         <div className="modal-header">
           <h2>{meal.name}</h2>
           <div className="modal-header-actions">
-            <button className="btn-icon" onClick={onShare} title="Share" aria-label="Share recipe">📤</button>
-            <button className="btn-icon" onClick={onClose} aria-label="Close">✕</button>
+            <button className="btn-icon" onClick={onShare} title="Share" aria-label="Share recipe"><Share2 size={18} strokeWidth={1.75} /></button>
+            <button className="btn-icon" onClick={onClose} aria-label="Close"><X size={18} strokeWidth={1.75} /></button>
           </div>
         </div>
 
@@ -174,7 +147,7 @@ export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, o
               onError={e => { e.target.style.display = 'none'; }}
             />
           ) : (
-            <div className="detail-image-placeholder">🍽️</div>
+            <div className="detail-image-placeholder"><UtensilsCrossed size={32} strokeWidth={1.75} /></div>
           )}
           {/* Re-import photo button — shown when there's a source URL to scrape */}
           {sourceUrl && (
@@ -184,8 +157,19 @@ export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, o
               disabled={photoState === 'loading'}
               title={localImageUrl ? 'Find a better photo' : 'Find a photo for this recipe'}
               aria-label="Re-import photo"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
             >
-              {photoState === 'loading' ? '⏳' : photoState === 'done' ? '✓ Photo updated' : photoState === 'none' ? '✗ No photo found' : localImageUrl ? '📸' : '📸 Find Photo'}
+              {photoState === 'loading' ? (
+                <Loader2 size={16} strokeWidth={1.75} style={{ animation: 'spin 0.8s linear infinite' }} />
+              ) : photoState === 'done' ? (
+                <><CheckCircle2 size={16} strokeWidth={1.75} /> Photo updated</>
+              ) : photoState === 'none' ? (
+                <><XCircle size={16} strokeWidth={1.75} /> No photo found</>
+              ) : localImageUrl ? (
+                <Camera size={16} strokeWidth={1.75} />
+              ) : (
+                <><Camera size={16} strokeWidth={1.75} /> Find Photo</>
+              )}
             </button>
           )}
         </div>
@@ -198,7 +182,12 @@ export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, o
               onClick={() => onToggleFavorite(meal)}
               title={meal.isFavorite ? 'Unfavorite' : 'Favorite'}
             >
-              {meal.isFavorite ? '❤️' : '🤍'}
+              <Heart
+                size={20}
+                strokeWidth={1.75}
+                fill={meal.isFavorite ? 'currentColor' : 'none'}
+                style={{ color: meal.isFavorite ? '#e53935' : 'inherit' }}
+              />
             </button>
           )}
           {onRate && (
@@ -210,7 +199,11 @@ export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, o
                   onClick={() => onRate(meal, star)}
                   title={`Rate ${star} stars`}
                 >
-                  ⭐
+                  <Star
+                    size={18}
+                    strokeWidth={1.75}
+                    fill={star <= (meal.rating || 0) ? 'currentColor' : 'none'}
+                  />
                 </button>
               ))}
             </div>
@@ -221,7 +214,7 @@ export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, o
               onClick={() => onToggleRotation(meal)}
               title={meal.inRotation ? 'Remove from The Rotation' : 'Add to The Rotation'}
             >
-              🔄 {meal.inRotation ? 'In Rotation' : 'Add to Rotation'}
+              <RefreshCw size={16} strokeWidth={1.75} /> {meal.inRotation ? 'In Rotation' : 'Add to Rotation'}
             </button>
           )}
           <div className="detail-meta">
@@ -230,7 +223,7 @@ export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, o
             )}
             {meal.cookCount ? (
               <span className="detail-cook-count" title="Times cooked">
-                🍳 {meal.cookCount}
+                <Flame size={14} strokeWidth={1.75} /> {meal.cookCount}
               </span>
             ) : null}
           </div>
@@ -300,8 +293,9 @@ export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, o
                       alert('Link copied — open Import to re-import this recipe.');
                     }
                   }}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
                 >
-                  🔄 Re-import
+                  <RefreshCw size={16} strokeWidth={1.75} /> Re-import
                 </button>
               </div>
             </div>
@@ -314,8 +308,9 @@ export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, o
             <button
               className="cook-mode-launch-btn"
               onClick={() => { onClose(); onStartCook(meal, scaleFactor); }}
+              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
             >
-              👨‍🍳 Start Cooking
+              <ChefHat size={18} strokeWidth={1.75} /> Start Cooking
             </button>
           </div>
         )}
@@ -324,12 +319,13 @@ export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, o
             <button
               className="cook-mode-launch-btn mix-mode-launch-btn"
               onClick={() => { onClose(); onStartMix(meal, scaleFactor); }}
+              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
             >
-              🍹 Start Mixing
+              <Martini size={18} strokeWidth={1.75} /> Start Mixing
             </button>
           </div>
         )}
-      </div>
+      </motion.div>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { Flame, ChefHat } from 'lucide-react';
 
 export default function MealStats({ meals, onClose, onViewDetail }) {
   const [hoveredWeek, setHoveredWeek] = useState(null);
@@ -231,9 +232,10 @@ export default function MealStats({ meals, onClose, onViewDetail }) {
                 </div>
               </>
             ) : (
-              <div className="ms-empty-state">
-                <p className="ms-empty-icon">🎯</p>
-                <p className="ms-empty-text">Start cooking to build your streak!</p>
+              <div className="ms-empty-state ms-empty-state-anim">
+                <div className="ms-empty-icon"><Flame size={28} strokeWidth={1.75} /></div>
+                <p className="ms-empty-text">No streak yet</p>
+                <p className="ms-empty-hint">Cook a planned meal to light up your first streak.</p>
               </div>
             )}
           </section>
@@ -409,9 +411,10 @@ export default function MealStats({ meals, onClose, onViewDetail }) {
 
           {/* ========== EMPTY STATE ========== */}
           {(!meals || meals.length === 0) && (
-            <div className="ms-empty-state-full">
-              <p className="ms-empty-icon">👨‍🍳</p>
-              <p className="ms-empty-text">No meals yet. Start building your recipe collection!</p>
+            <div className="ms-empty-state-full ms-empty-state-anim">
+              <div className="ms-empty-icon"><ChefHat size={28} strokeWidth={1.75} /></div>
+              <p className="ms-empty-text">No meals cooked yet</p>
+              <p className="ms-empty-hint">Start building your recipe collection and your stats will appear here.</p>
             </div>
           )}
         </div>
