@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import useSwipeDismiss from '../hooks/useSwipeDismiss';
+import { motion, useDragControls } from 'framer-motion';
 import { getBarInventory, addToBarInventory, removeFromBarInventory } from '../db';
 
 /**
@@ -8,7 +8,13 @@ import { getBarInventory, addToBarInventory, removeFromBarInventory } from '../d
  * Quest integration: missing ingredients show quest scroll icons.
  */
 export default function BarFridgeMode({ drinks, onViewDetail, onClose, onAddToGrocery }) {
-  const { sheetRef, handleTouchStart, handleTouchMove, handleTouchEnd } = useSwipeDismiss(onClose);
+  const dragControls = useDragControls();
+
+  const handleSheetDragEnd = useCallback((_e, info) => {
+    if (info.offset.y > 100 || info.velocity.y > 500) {
+      onClose();
+    }
+  }, [onClose]);
   const [inputValue, setInputValue] = useState('');
   const [shelfItems, setShelfItems] = useState([]);
   const [matchMode, setMatchMode] = useState('best'); // 'best' | 'strict'
@@ -111,9 +117,14 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose, onAddToGr
 
   return (
     <div className="bfm-overlay" onClick={onClose}>
-      <div className="bfm-sheet" ref={sheetRef} onClick={e => e.stopPropagation()}
-        onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
-        <div className="bfm-handle" />
+      <motion.div className="bfm-sheet" onClick={e => e.stopPropagation()}
+        drag="y" dragListener={false} dragControls={dragControls}
+        dragConstraints={{ top: 0, bottom: 0 }} dragElastic={{ top: 0, bottom: 0.5 }}
+        dragTransition={{ bounceStiffness: 600, bounceDamping: 30 }}
+        onDragEnd={handleSheetDragEnd}
+        initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+        transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}>
+        <div className="bfm-handle" aria-hidden="true" onPointerDown={(e) => dragControls.start(e)} />
 
         {/* Header */}
         <div className="bfm-header">
@@ -283,7 +294,7 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose, onAddToGr
             ))
           )}
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }

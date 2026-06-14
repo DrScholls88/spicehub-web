@@ -2228,6 +2228,14 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
   // ──────────────────────────────────────────────────────────────────────────
   // RENDER
   // ──────────────────────────────────────────────────────────────────────────
+  const bsEmptyContainerVariants = {
+    hidden: {},
+    visible: { transition: { staggerChildren: 0.12, delayChildren: 0.05 } },
+  };
+  const bsEmptyItemVariants = {
+    hidden: { opacity: 0, y: 12 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.32, 0.72, 0, 1] } },
+  };
   return (
     <div className="bs-overlay" onClick={onClose}>
       <div
@@ -2874,15 +2882,20 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
         )}
         {/* ── Empty state ── */}
         {filteredDrinks.length === 0 && drinks.length === 0 && (
-          <div className="bs-empty-bar">
-            <span className="bs-empty-neon"><NeonText text="OPEN" color="#4caf50" /></span>
-            <p className="bs-empty-msg">Your bar is empty! Add some drinks to stock the shelves.</p>
+          <motion.div
+            className="bs-empty-bar"
+            variants={bsEmptyContainerVariants}
+            initial="hidden"
+            animate="visible"
+          >
+            <motion.span className="bs-empty-neon" variants={bsEmptyItemVariants}><NeonText text="OPEN" color="#4caf50" /></motion.span>
+            <motion.p className="bs-empty-msg" variants={bsEmptyItemVariants}>The bar's open, but the shelves are bare. Pour in your first drink recipe to get this place pourin'.</motion.p>
             {onImport && (
-              <button className="bs-empty-import-btn" onClick={onImport}>
+              <motion.button className="bs-empty-import-btn" variants={bsEmptyItemVariants} onClick={onImport}>
                 Import your first drink
-              </button>
+              </motion.button>
             )}
-          </div>
+          </motion.div>
         )}
       </div>
     </div>

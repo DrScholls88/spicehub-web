@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { AnimatePresence } from 'framer-motion';
 import db, { importPaprikaMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getCookingLog, getWeekHistory, saveWeekToHistory, toggleRotation } from './db';
 import { PAPRIKA_MEALS } from './paprika_import_data';
 import { checkStorageQuota, checkAndRecommendCleanup } from './storageManager';
@@ -785,33 +786,42 @@ useEffect(() => {
       </nav>
 
       {/* ── Modals ── */}
-      {detailItem && (
-        <MealDetail
-          meal={detailItem}
-          onClose={() => setDetailItem(null)}
-          onShare={() => shareItem(detailItem)}
-          onToggleFavorite={isDrink(detailItem) ? null : toggleFavorite}
-          onToggleRotation={isDrink(detailItem) ? null : handleToggleRotation}
-          onRate={isDrink(detailItem) ? null : rateMeal}
-          onStartCook={isDrink(detailItem) ? null : startCookMode}
-          onStartMix={isDrink(detailItem) ? startMixMode : null}
-          isDrink={isDrink(detailItem)}
-        />
-      )}
-      {editMeal !== null && (
-        <AddEditMeal meal={editMeal} onSave={saveMeal} onClose={() => setEditMeal(null)} />
-      )}
-      {editDrink !== null && (
-        <AddEditMeal
-          meal={editDrink}
-          onSave={saveDrink}
-          onClose={() => setEditDrink(null)}
-          title={editDrink.id ? 'Edit Drink' : 'Add Drink'}
-          placeholder="🍹"
-          ingredientLabel="Ingredients"
-          directionsLabel="Instructions"
-        />
-      )}
+      <AnimatePresence>
+        {detailItem && (
+          <MealDetail
+            key="meal-detail"
+            meal={detailItem}
+            onClose={() => setDetailItem(null)}
+            onShare={() => shareItem(detailItem)}
+            onToggleFavorite={isDrink(detailItem) ? null : toggleFavorite}
+            onToggleRotation={isDrink(detailItem) ? null : handleToggleRotation}
+            onRate={isDrink(detailItem) ? null : rateMeal}
+            onStartCook={isDrink(detailItem) ? null : startCookMode}
+            onStartMix={isDrink(detailItem) ? startMixMode : null}
+            isDrink={isDrink(detailItem)}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {editMeal !== null && (
+          <AddEditMeal key="edit-meal" meal={editMeal} onSave={saveMeal} onClose={() => setEditMeal(null)} />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {editDrink !== null && (
+          <AddEditMeal
+            key="edit-drink"
+            meal={editDrink}
+            onSave={saveDrink}
+            onClose={() => setEditDrink(null)}
+            title={editDrink.id ? 'Edit Drink' : 'Add Drink'}
+            placeholder="🍹"
+            ingredientLabel="Ingredients"
+            directionsLabel="Instructions"
+          />
+        )}
+      </AnimatePresence>
+      {/* Note: onClose() must set state to null/false to unmount — AnimatePresence then plays each modal's exit={{ y: '100%' }} slide-down before removal */}
       {showImportFor && (
         <ImportSheet
           key={importModalKey}
@@ -824,13 +834,16 @@ useEffect(() => {
       )}
 
       {/* ── New feature overlays ── */}
-      {showFridge && (
-        <FridgeMode
-          meals={meals}
-          onViewDetail={(meal) => { setShowFridge(false); setDetailItem(meal); }}
-          onClose={() => setShowFridge(false)}
-        />
-      )}
+      <AnimatePresence>
+        {showFridge && (
+          <FridgeMode
+            key="fridge-mode"
+            meals={meals}
+            onViewDetail={(meal) => { setShowFridge(false); setDetailItem(meal); }}
+            onClose={() => setShowFridge(false)}
+          />
+        )}
+      </AnimatePresence>
       {showBarShelf && (
         <BarShelf
           drinks={drinks}
@@ -840,28 +853,37 @@ useEffect(() => {
           onAddToGrocery={handleAddToGrocery}
         />
       )}
-      {showBarFridge && (
-        <BarFridgeMode
-          drinks={drinks}
-          onViewDetail={(drink) => { setShowBarFridge(false); setDetailItem(drink); }}
-          onClose={() => setShowBarFridge(false)}
-          onAddToGrocery={handleAddToGrocery}
-        />
-      )}
-      {cookModeMeal && (
-        <CookMode
-          meal={cookModeMeal.meal}
-          scaleFactor={cookModeMeal.scaleFactor}
-          onClose={finishCookMode}
-        />
-      )}
-      {mixModeDrink && (
-        <MixMode
-          drink={mixModeDrink.drink}
-          scaleFactor={mixModeDrink.scaleFactor}
-          onClose={finishMixMode}
-        />
-      )}
+      <AnimatePresence>
+        {showBarFridge && (
+          <BarFridgeMode
+            key="bar-fridge-mode"
+            drinks={drinks}
+            onViewDetail={(drink) => { setShowBarFridge(false); setDetailItem(drink); }}
+            onClose={() => setShowBarFridge(false)}
+            onAddToGrocery={handleAddToGrocery}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {cookModeMeal && (
+          <CookMode
+            key="cook-mode"
+            meal={cookModeMeal.meal}
+            scaleFactor={cookModeMeal.scaleFactor}
+            onClose={finishCookMode}
+          />
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {mixModeDrink && (
+          <MixMode
+            key="mix-mode"
+            drink={mixModeDrink.drink}
+            scaleFactor={mixModeDrink.scaleFactor}
+            onClose={finishMixMode}
+          />
+        )}
+      </AnimatePresence>
 
       {showStats && (
         <MealStats

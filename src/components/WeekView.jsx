@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { X, Lock, Star, BookOpen } from 'lucide-react';
+import { X, Lock, Star, BookOpen, UtensilsCrossed } from 'lucide-react';
+import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import MealSpinner from './MealSpinner';
 
 // ── MealImage helper ──────────────────────────────────────────────────────────
@@ -88,6 +89,10 @@ const ANIMATIONS_CSS = `
   @keyframes wv-fadeIn {
     from { opacity: 0; transform: scale(0.96); }
     to   { opacity: 1; transform: scale(1); }
+  }
+  @keyframes wv-emptyRise {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
   }
   @keyframes wv-ripple {
     0%   { transform: scale(0); opacity: 0.6; }
@@ -778,7 +783,14 @@ export default function WeekView({
 // ── Detail Panel sub-component ────────────────────────────────────────────────
 function DetailPanel({ show, activeDate, today, getMealForDate, onClose, onToggleLock,
   onViewDetail, onRespin, onOpenPicker, onClearDay }) {
-  if (!show) return null;
+  const dragControls = useDragControls();
+
+  // ── Slide-down-to-dismiss: drag release handler ──────────────────────────
+  const handleSheetDragEnd = useCallback((_e, info) => {
+    if (info.offset.y > 100 || info.velocity.y > 500) {
+      onClose();
+    }
+  }, [onClose]);
 
   const { meal, isCurrent, dow } = getMealForDate(activeDate);
   const isToday     = activeDate.getFullYear() === today.getFullYear() &&
@@ -788,7 +800,9 @@ function DetailPanel({ show, activeDate, today, getMealForDate, onClose, onToggl
   const isSpecial   = meal && meal._special;
 
   return (
-    <>
+    <AnimatePresence>
+      {show && (
+      <>
       {/* Scrim */}
       <div
         onClick={onClose}
@@ -798,22 +812,37 @@ function DetailPanel({ show, activeDate, today, getMealForDate, onClose, onToggl
         }}
       />
       {/* Sheet */}
-      <div style={{
-        position: 'fixed', bottom: 0, left: 0, right: 0,
-        maxWidth: 600, margin: '0 auto',
-        background: 'var(--card)',
-        borderRadius: '20px 20px 0 0',
-        boxShadow: '0 -8px 40px rgba(0,0,0,0.18)',
-        zIndex: 260,
-        maxHeight: '72vh',
-        overflowY: 'auto',
-        animation: 'wv-slideUp 0.3s cubic-bezier(0.32,0.72,0,1) both',
-      }}>
+      <motion.div
+        drag="y"
+        dragListener={false}
+        dragControls={dragControls}
+        dragConstraints={{ top: 0, bottom: 0 }}
+        dragElastic={{ top: 0, bottom: 0.5 }}
+        dragTransition={{ bounceStiffness: 600, bounceDamping: 30 }}
+        onDragEnd={handleSheetDragEnd}
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
+        style={{
+          position: 'fixed', bottom: 0, left: 0, right: 0,
+          maxWidth: 600, margin: '0 auto',
+          background: 'var(--card)',
+          borderRadius: '20px 20px 0 0',
+          boxShadow: '0 -8px 40px rgba(0,0,0,0.18)',
+          zIndex: 260,
+          maxHeight: '72vh',
+          overflowY: 'auto',
+        }}>
         {/* Handle */}
-        <div style={{
-          width: 36, height: 4, borderRadius: 2, background: 'var(--border)',
-          margin: '10px auto 0',
-        }} />
+        <div
+          onPointerDown={(e) => dragControls.start(e)}
+          style={{
+            width: 36, height: 4, borderRadius: 2, background: 'var(--border)',
+            margin: '10px auto 0',
+            cursor: 'grab',
+          }}
+        />
 
         {/* Header */}
         <div style={{
@@ -857,13 +886,25 @@ function DetailPanel({ show, activeDate, today, getMealForDate, onClose, onToggl
           {!meal ? (
             /* Empty state */
             <div style={{
-              textAlign: 'center', padding: '24px 0',
-              animation: 'wv-fadeIn 0.25s ease both',
+              textAlign: 'center', padding: '28px 0',
+              animation: 'wv-emptyRise 0.4s var(--sh-spring, cubic-bezier(0.32, 0.72, 0, 1)) both',
             }}>
-              <div style={{ fontSize: 48, marginBottom: 12 }}>🍽️</div>
-              <p style={{ color: 'var(--text-light)', marginBottom: 16, fontSize: 15 }}>
-                {isPast ? 'Nothing was planned here.' : 'Nothing planned yet.'}
+              <div style={{
+                width: 56, height: 56, borderRadius: '50%',
+                background: 'var(--surface)', display: 'flex',
+                alignItems: 'center', justifyContent: 'center',
+                margin: '0 auto 14px',
+              }}>
+                <UtensilsCrossed size={26} color="var(--text-muted, var(--text-light))" strokeWidth={1.75} />
+              </div>
+              <p style={{ color: 'var(--text)', marginBottom: isPast ? 0 : 4, fontSize: 15, fontWeight: 600 }}>
+                {isPast ? 'Nothing was planned here' : 'No meal planned yet'}
               </p>
+              {!isPast && (
+                <p style={{ color: 'var(--text-muted, var(--text-light))', marginBottom: 16, fontSize: 13 }}>
+                  Pick a recipe to fill this spot on your week.
+                </p>
+              )}
               {!isPast && (
                 <button onClick={onOpenPicker} style={{ ...PRIMARY_BTN, width: '100%' }}>
                   + Add a Meal
@@ -1006,8 +1047,10 @@ function DetailPanel({ show, activeDate, today, getMealForDate, onClose, onToggl
             </div>
           )}
         </div>
-      </div>
-    </>
+      </motion.div>
+      </>
+      )}
+    </AnimatePresence>
   );
 }
 

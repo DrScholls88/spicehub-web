@@ -6,6 +6,12 @@ import { isSocialMediaUrl, getSocialPlatform, detectImportType } from '../recipe
 // Spec §1: input area compresses to compact bar over 250ms, spring-like easing
 const COLLAPSE_TRANSITION = { duration: 0.25, ease: [0.32, 0.72, 0, 1] };
 
+// Shared --sh-spring cubic-bezier for inline CSS transitions, so hover/press/focus
+// interactions on this component's interactive elements match the rest of the app.
+const SH_SPRING = 'cubic-bezier(0.32, 0.72, 0, 1)';
+const TAB_BUTTON_TRANSITION = `background ${SH_SPRING} 0.15s, color ${SH_SPRING} 0.15s, box-shadow ${SH_SPRING} 0.15s, transform ${SH_SPRING} 0.1s`;
+const TYPE_TOGGLE_TRANSITION = `background ${SH_SPRING} 0.15s, color ${SH_SPRING} 0.15s, border-color ${SH_SPRING} 0.15s, transform ${SH_SPRING} 0.1s`;
+
 /**
  * ImportInput — the input form for the Collapse & Reveal import flow.
  *
@@ -120,12 +126,23 @@ export default function ImportInput({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={COLLAPSE_TRANSITION}
+            style={{ minHeight: '44px', boxSizing: 'border-box' }}
           >
             <span className={`import-input-collapsed-dot status-${status}`} />
             <span className="import-input-collapsed-url">
               {url || pasteText?.slice(0, 60) || 'Edit input'}
             </span>
-            <span className="import-input-collapsed-edit" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span
+              className="import-input-collapsed-edit"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minWidth: '32px',
+                minHeight: '32px',
+                transition: `background ${SH_SPRING} 0.12s`,
+              }}
+            >
               <Pencil size={16} />
             </span>
           </motion.div>
@@ -140,9 +157,9 @@ export default function ImportInput({
           >
             {/* Segmented tabs */}
             <div className="import-input-tabs">
-              <button className={tab === 'url' ? 'active' : ''} onClick={() => setTab('url')}>URL</button>
-              <button className={tab === 'paste' ? 'active' : ''} onClick={() => setTab('paste')}>Paste Text</button>
-              <button className={tab === 'photo' ? 'active' : ''} onClick={() => setTab('photo')}>Photo</button>
+              <button className={tab === 'url' ? 'active' : ''} onClick={() => setTab('url')} style={{ transition: TAB_BUTTON_TRANSITION }}>URL</button>
+              <button className={tab === 'paste' ? 'active' : ''} onClick={() => setTab('paste')} style={{ transition: TAB_BUTTON_TRANSITION }}>Paste Text</button>
+              <button className={tab === 'photo' ? 'active' : ''} onClick={() => setTab('photo')} style={{ transition: TAB_BUTTON_TRANSITION }}>Photo</button>
             </div>
 
             {/* Meal / Drink toggle */}
@@ -150,12 +167,14 @@ export default function ImportInput({
               <button
                 className={itemType === 'meal' ? 'active' : ''}
                 onClick={() => setItemType('meal')}
+                style={{ transition: TYPE_TOGGLE_TRANSITION }}
               >
                 Meal
               </button>
               <button
                 className={itemType === 'drink' ? 'active' : ''}
                 onClick={() => setItemType('drink')}
+                style={{ transition: TYPE_TOGGLE_TRANSITION }}
               >
                 Drink
               </button>
@@ -179,7 +198,12 @@ export default function ImportInput({
                     className="import-input-url-submit"
                     onClick={handleUrlSubmit}
                     disabled={!url.trim()}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      transition: `opacity ${SH_SPRING} 0.15s, transform ${SH_SPRING} 0.1s`,
+                    }}
                     aria-label="Submit URL"
                   >
                     <ArrowRight size={20} />
@@ -217,6 +241,7 @@ export default function ImportInput({
                   <button
                     className="import-input-photo-btn"
                     onClick={() => cameraRef.current?.click()}
+                    style={{ transition: `background ${SH_SPRING} 0.12s, transform 0.12s ${SH_SPRING}` }}
                   >
                     <Camera size={22} strokeWidth={2} />
                     <span>Take Photo</span>
@@ -224,6 +249,7 @@ export default function ImportInput({
                   <button
                     className="import-input-photo-btn"
                     onClick={() => fileRef.current?.click()}
+                    style={{ transition: `background ${SH_SPRING} 0.12s, transform 0.12s ${SH_SPRING}` }}
                   >
                     <FolderOpen size={22} strokeWidth={2} />
                     <span>Choose File</span>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { motion, useDragControls } from 'framer-motion';
 
 /**
  * Cook Mode — full-screen, step-by-step kitchen walkthrough with timers.
@@ -13,6 +14,14 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
  *   • Step completion checkmarks
  */
 export default function CookMode({ meal, scaleFactor = 1.0, onClose }) {
+  const dragControls = useDragControls();
+
+  const handleSheetDragEnd = useCallback((_e, info) => {
+    if (info.offset.y > 100 || info.velocity.y > 500) {
+      onClose();
+    }
+  }, [onClose]);
+
   const [currentStep, setCurrentStep] = useState(-1); // -1 = ingredients overview
   const [completedSteps, setCompletedSteps] = useState(new Set());
   const [timer, setTimer] = useState(null); // { seconds, running, label }
@@ -189,11 +198,23 @@ export default function CookMode({ meal, scaleFactor = 1.0, onClose }) {
   };
 
   return (
-    <div
+    <motion.div
       className="cm-container"
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
+      drag="y" dragListener={false} dragControls={dragControls}
+      dragConstraints={{ top: 0, bottom: 0 }} dragElastic={{ top: 0, bottom: 0.5 }}
+      dragTransition={{ bounceStiffness: 600, bounceDamping: 30 }}
+      onDragEnd={handleSheetDragEnd}
+      initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+      transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
     >
+      <div
+        className="cm-drag-handle"
+        aria-hidden="true"
+        onPointerDown={(e) => dragControls.start(e)}
+        style={{ width: 36, height: 4, borderRadius: 2, background: 'var(--border)', margin: '8px auto', cursor: 'grab' }}
+      />
       {/* Progress bar */}
       <div className="cm-progress-bar">
         <div className="cm-progress-fill" style={{ width: `${progress}%` }} />
@@ -363,6 +384,6 @@ export default function CookMode({ meal, scaleFactor = 1.0, onClose }) {
           </button>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }

@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { Dices } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import SafeMediaImage from './SafeMediaImage.jsx';
 import './LandingPage.css';
@@ -141,15 +142,36 @@ const STYLES = {
     background: 'var(--surface)',
     border: '1.5px dashed var(--border)',
     borderRadius: 'var(--radius-sm)',
-    padding: '16px',
+    padding: '20px 16px',
     textAlign: 'center',
     marginBottom: '24px',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+  },
+  emptyStateIcon: {
+    width: '48px',
+    height: '48px',
+    borderRadius: '50%',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'var(--bg)',
+    color: 'var(--text-muted, var(--text-light))',
+    marginBottom: '10px',
   },
   emptyStateText: {
     fontSize: '14px',
-    fontWeight: '500',
+    fontWeight: '600',
     color: 'var(--text)',
-    marginBottom: '12px',
+    marginBottom: '4px',
+  },
+  emptyStateHint: {
+    fontSize: '13px',
+    color: 'var(--text-muted, var(--text-light))',
+    marginBottom: '14px',
+    lineHeight: 1.5,
+    maxWidth: '260px',
   },
   emptyStateButton: {
     display: 'inline-block',
@@ -671,8 +693,15 @@ export default function LandingPage({
             ))}
           </motion.div>
         ) : (
-          <div style={STYLES.emptyState}>
-            <div style={STYLES.emptyStateText}>Nothing planned — let's spin!</div>
+          <motion.div
+            style={STYLES.emptyState}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
+          >
+            <div style={STYLES.emptyStateIcon}><Dices size={22} strokeWidth={1.75} /></div>
+            <div style={STYLES.emptyStateText}>Nothing planned yet</div>
+            <div style={STYLES.emptyStateHint}>Spin the wheel to fill your week with meals.</div>
             <button
               onClick={onGenerate}
               onMouseEnter={() => setHoverEmptyButton(true)}
@@ -684,7 +713,7 @@ export default function LandingPage({
             >
               Spin the Wheel
             </button>
-          </div>
+          </motion.div>
         )}
       </div>
 

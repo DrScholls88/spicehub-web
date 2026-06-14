@@ -29,7 +29,9 @@
   --sh-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
   --sh-spring: cubic-bezier(0.32, 0.72, 0, 1);
   --sh-conf-high: #2e7d32;
+  --sh-conf-high-bg: #e8f5e9;
   --sh-conf-mid: #9a5b00;
+  --sh-conf-low: #c62828;
   --sh-accent-text: #c64500;
   --sh-danger: #dc2626;
   --sh-danger-dark: #b91c1c;
@@ -59,7 +61,10 @@
   --sh-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
   --sh-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
   --sh-accent-text: #ff9a5c;
+  --sh-conf-high: #66bb6a;
+  --sh-conf-high-bg: rgba(102, 187, 106, 0.15);
   --sh-conf-mid: #e0a040;
+  --sh-conf-low: #ef5350;
   --sh-danger: #f87171;
   --sh-danger-dark: #fca5a5;
   --sh-danger-bg: rgba(248, 113, 113, 0.12);

@@ -1,11 +1,17 @@
 import { useState, useMemo, useCallback } from 'react';
-import useSwipeDismiss from '../hooks/useSwipeDismiss';
+import { motion, useDragControls } from 'framer-motion';
 
 /**
  * "What's in My Fridge?" — type ingredients you have, see what you can make.
  */
 export default function FridgeMode({ meals, onViewDetail, onClose }) {
-  const { sheetRef, handleTouchStart, handleTouchMove, handleTouchEnd } = useSwipeDismiss(onClose);
+  const dragControls = useDragControls();
+
+  const handleSheetDragEnd = useCallback((_e, info) => {
+    if (info.offset.y > 100 || info.velocity.y > 500) {
+      onClose();
+    }
+  }, [onClose]);
   const [inputValue, setInputValue] = useState('');
   const [pantryItems, setPantryItems] = useState([]);
   const [matchMode, setMatchMode] = useState('best'); // 'best' | 'strict'
@@ -83,9 +89,14 @@ export default function FridgeMode({ meals, onViewDetail, onClose }) {
 
   return (
     <div className="fm-overlay" onClick={onClose}>
-      <div className="fm-sheet" ref={sheetRef} onClick={e => e.stopPropagation()}
-        onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
-        <div className="fm-handle" />
+      <motion.div className="fm-sheet" onClick={e => e.stopPropagation()}
+        drag="y" dragListener={false} dragControls={dragControls}
+        dragConstraints={{ top: 0, bottom: 0 }} dragElastic={{ top: 0, bottom: 0.5 }}
+        dragTransition={{ bounceStiffness: 600, bounceDamping: 30 }}
+        onDragEnd={handleSheetDragEnd}
+        initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
+        transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}>
+        <div className="fm-handle" aria-hidden="true" onPointerDown={(e) => dragControls.start(e)} />
 
         {/* Header */}
         <div className="fm-header">
@@ -231,7 +242,7 @@ export default function FridgeMode({ meals, onViewDetail, onClose }) {
             ))
           )}
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }
