@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence, MotionConfig, useDragControls } from 'framer-motion';
 import { X, Sparkles, Check, ArrowLeft, Zap } from 'lucide-react';
 import './ImportSheet.css';
+import { hapticTap } from '../haptics';
 import {
   importRecipeFromUrl,
   captionToRecipe,
@@ -102,6 +103,8 @@ export default function ImportSheet({
   title = 'Import Recipe',
   sharedContent = null,
   initialItemType = 'meal',
+  initialRecipe = null,
+  initialPhase = null,
 }) {
   // ── Phase state machine ──────────────────────────────────────────────────
   const [phase, setPhase] = useState('input'); // 'input' | 'loading' | 'review' | 'browserAssist'
@@ -220,6 +223,21 @@ export default function ImportSheet({
   useEffect(() => {
     if (sharedContent && sharedContent.url) {
       handleUrlImport(sharedContent.url, initialItemType);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ── Batch review: open directly into review with a pre-extracted recipe ──
+  // Used by BatchImportQueue when the user taps a "ready" row — skips
+  // re-extraction entirely and reuses the existing review/save UI.
+  useEffect(() => {
+    if (initialRecipe && initialPhase === 'review') {
+      const fallbackType = initialRecipe.itemType || initialRecipe.type || initialItemType;
+      const normalized = normalizeRecipeForReview(initialRecipe, fallbackType);
+      setRecipe(normalized);
+      setConfidence(computeReviewConfidence(normalized));
+      setItemType(normalized.itemType);
+      setPhase('review');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -979,7 +997,7 @@ export default function ImportSheet({
                 {phase === 'review' && (
                   <button
                     className="import-sheet-btn import-sheet-btn-primary"
-                    onClick={() => handleSave(recipe)}
+                    onClick={() => { hapticTap(); handleSave(recipe); }}
                   >
                     Save to {destination === 'library' ? 'Library' : destination === 'week' ? 'This Week' : destination === 'grocery' ? 'Grocery' : 'Bar'}
                   </button>

@@ -72,6 +72,11 @@ db.version(12).stores({
   importDrafts: 'url, timestamp',
 });
 
+// v13: Batch Import — multi-share queue (P12)
+db.version(13).stores({
+  batchQueue: '++id, status, createdAt',
+});
+
 export default db;
 
 // ── Bar Inventory helpers ─────────────────────────────────────────────────────
@@ -429,6 +434,62 @@ export async function clearQueueItem(id) {
 
 export async function clearCompletedImports() {
   await db.importQueue.where('status').equals('done').delete();
+}
+
+// ── Batch Import Queue helpers ────────────────────────────────────────────
+export async function addBatchQueueItems(urls) {
+  const now = Date.now();
+  const ids = [];
+  for (const url of urls) {
+    const id = await db.batchQueue.add({
+      url,
+      status: 'pending',
+      itemType: 'meal',
+      itemTypeUserOverride: false,
+      recipe: null,
+      error: null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    ids.push(id);
+  }
+  return ids;
+}
+
+export async function getBatchQueueItems() {
+  return db.batchQueue.orderBy('createdAt').toArray();
+}
+
+export async function getNextPendingBatchItem() {
+  return db.batchQueue.where('status').equals('pending').first();
+}
+
+export async function updateBatchQueueItem(id, changes) {
+  await db.batchQueue.update(id, { ...changes, updatedAt: Date.now() });
+}
+
+export async function setBatchItemType(id, itemType) {
+  await db.batchQueue.update(id, {
+    itemType,
+    itemTypeUserOverride: true,
+    updatedAt: Date.now(),
+  });
+}
+
+export async function deleteBatchQueueItem(id) {
+  await db.batchQueue.delete(id);
+}
+
+export async function clearFinishedBatchItems() {
+  await db.batchQueue.where('status').equals('saved').delete();
+}
+
+export async function recoverStuckBatchItems() {
+  const stuck = await db.batchQueue.where('status').equals('extracting').toArray();
+  for (const item of stuck) {
+    await db.batchQueue.update(item.id, { status: 'pending', updatedAt: Date.now() });
+  }
+  return stuck.length;
 }
 
 // ── Rotation helpers ─────────────────────────────────────────────────────────

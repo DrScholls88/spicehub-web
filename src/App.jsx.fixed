@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import db, { importPaprikaMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getCookingLog, getWeekHistory, saveWeekToHistory, toggleRotation, addBatchQueueItems, getBatchQueueItems, updateBatchQueueItem } from './db';
+import db, { importPaprikaMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getCookingLog, getWeekHistory, saveWeekToHistory, toggleRotation } from './db';
 import { PAPRIKA_MEALS } from './paprika_import_data';
 import { checkStorageQuota, checkAndRecommendCleanup } from './storageManager';
 import { initializeBackgroundSync } from './backgroundSync';
@@ -12,10 +12,6 @@ import GroceryList from './components/GroceryList';
 import MealDetail from './components/MealDetail';
 import AddEditMeal from './components/AddEditMeal';
 import ImportSheet from './components/ImportSheet';
-import BatchImportQueue, { BatchQueuePill } from './components/BatchImportQueue';
-import { startBatchImportEngine } from './batchImportEngine';
-import { extractMultipleUrls } from './recipeParser';
-import InstagramZipImport from './components/InstagramZipImport';
 import FridgeMode from './components/FridgeMode';
 import CookMode from './components/CookMode';
 import MixMode from './components/MixMode';
@@ -34,27 +30,6 @@ import useSwipeDismiss from './hooks/useSwipeDismiss';
 import './App.css';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-
-// ── I-8 Clipboard Sentinel: known recipe & social domains ─────────────────────
-const SENTINEL_DOMAINS = new Set([
-  'instagram.com', 'tiktok.com', 'youtube.com', 'youtu.be',
-  'allrecipes.com', 'seriouseats.com', 'bonappetit.com', 'epicurious.com',
-  'foodnetwork.com', 'tasty.co', 'delish.com', 'thepioneerwoman.com',
-  'budgetbytes.com', 'cookieandkate.com', 'halfbakedharvest.com',
-  'smittenkitchen.com', 'pinchofyum.com', 'minimalistbaker.com',
-  'food52.com', 'thekitchn.com', 'eatingwell.com', 'myrecipes.com',
-  'bettycrocker.com', 'tasteofhome.com', 'skinnytaste.com',
-  'recipetineats.com', 'natashaskitchen.com', 'cafedelites.com',
-  'gimmesomeoven.com', 'loveandlemons.com', 'ambitiouskitchen.com',
-  'themodernproper.com', 'iamafoodblog.com',
-]);
-
-function _isSentinelUrl(raw) {
-  try {
-    const hostname = new URL(raw).hostname.replace(/^www\./, '');
-    return [...SENTINEL_DOMAINS].some(d => hostname === d || hostname.endsWith('.' + d));
-  } catch { return false; }
-}
 
 // ── Date utilities (shared with week history logic) ───────────────────────────
 function getMondayOfWeek(date) {
@@ -112,22 +87,8 @@ export default function App() {
   const [showStorageManager, setShowStorageManager] = useState(false);
   const [storageWarning, setStorageWarning] = useState(null);
   const [sharedContent, setSharedContent] = useState(null); // { mode, url, text } from share-target
-  // ── Batch import (multi-share) state ────────────────────────────────────
-  const [showBatchQueue, setShowBatchQueue] = useState(false);
-  const [batchQueueCount, setBatchQueueCount] = useState(0);
-  const [batchReviewItem, setBatchReviewItem] = useState(null); // { item } opened in ImportSheet
   const [weekHistory, setWeekHistory] = useState([]); // past week plans
-  const [isSyncing, setIsSyncing] = useState(false);
-
-  // ── I-1 Instagram ZIP import ──────────────────────────────────────────────
-  const [showZipImport, setShowZipImport] = useState(false);
-
-  // ── I-8 Clipboard Sentinel state ───────────────────────────────────────────
-  const [clipboardSentinel, setClipboardSentinel] = useState(null); // { url } — recipe link prompt
-
-  // ── I-2 Post-share quick actions state ────────────────────────────────────
-  const [postImportActions, setPostImportActions] = useState(null); // { message, recipe }
-  const isShareImportRef = useRef(false); // set true when current import came from share-target
+  const [isSyncing, setIsSyncing] = useState(false)
 
   // ── Swipe-down-to-dismiss for inline bottom sheets ──────────────────────────
   const storageSwipe = useSwipeDismiss(() => setShowStorageManager(false));
@@ -148,105 +109,11 @@ export default function App() {
   useBackHandler(showStats, () => setShowStats(false), 'stats');
   useBackHandler(showStorageManager, () => setShowStorageManager(false), 'storage');
   useBackHandler(showSettings, () => setShowSettings(false), 'settings');
-  useBackHandler(showBatchQueue, () => setShowBatchQueue(false), 'batch-queue');
-  useBackHandler(!!batchReviewItem, () => setBatchReviewItem(null), 'batch-review');
-  useBackHandler(showZipImport, () => setShowZipImport(false), 'zip-import');
 
   const showToast = useCallback((message, type = 'success', duration = 2500) => {
     setToast({ message, type });
     setTimeout(() => setToast(null), duration);
   }, []);
-
-  // ── I-2 Post-share quick action auto-dismiss (8s) ─────────────────────────
-  useEffect(() => {
-    if (!postImportActions) return;
-    const t = setTimeout(() => setPostImportActions(null), 8000);
-    return () => clearTimeout(t);
-  }, [postImportActions]);
-
-  const handlePostAddToWeek = useCallback(() => {
-    if (!postImportActions?.recipe) return;
-    const recipe = postImportActions.recipe;
-    setWeekPlan(prev => {
-      const updated = [...prev];
-      const slot = updated.findIndex(d => !d);
-      if (slot !== -1) updated[slot] = recipe;
-      return updated;
-    });
-    showToast(`"${recipe.name}" added to this week 📅`);
-    setPostImportActions(null);
-    setTab('week');
-  }, [postImportActions, showToast]);
-
-  const handlePostAddToGrocery = useCallback(() => {
-    if (!postImportActions?.recipe) return;
-    const recipe = postImportActions.recipe;
-    const storeMemory = window._storeMemory || {};
-    setGroceryItems(prev => {
-      const existingKeys = new Set(prev.map(i => i.name.toLowerCase().trim()));
-      const newItems = (recipe.ingredients || [])
-        .filter(ing => ing && !existingKeys.has(ing.toLowerCase().trim()))
-        .map(ing => ({
-          name: ing,
-          checked: false,
-          store: storeMemory[ing.toLowerCase().trim()] || '',
-          tag: 'imported',
-        }));
-      return [...prev, ...newItems];
-    });
-    showToast(`Ingredients added to grocery list 🛒`);
-    setPostImportActions(null);
-    setTab('grocery');
-  }, [postImportActions, showToast]);
-
-  // ── I-8 Clipboard Sentinel ─────────────────────────────────────────────────
-  useEffect(() => {
-    if (!navigator?.clipboard?.readText) return; // API not available
-
-    async function checkClipboard() {
-      // Don't prompt while an import sheet is already open
-      if (showImportFor) return;
-      try {
-        const text = await navigator.clipboard.readText();
-        const trimmed = (text || '').trim();
-        if (!trimmed || !/^https?:\/\//i.test(trimmed)) return;
-        // Avoid re-prompting for URLs dismissed this session
-        const dismissed = JSON.parse(sessionStorage.getItem('sh_sentinel_v') || '[]');
-        if (dismissed.includes(trimmed)) return;
-        if (_isSentinelUrl(trimmed)) {
-          setClipboardSentinel({ url: trimmed });
-        }
-      } catch {
-        // Clipboard permission denied or API unavailable — silent fail
-      }
-    }
-
-    // Check on mount (user may have copied before opening app)
-    checkClipboard();
-
-    // Re-check whenever the tab regains visibility (user switched apps, copied a link, came back)
-    const handleVisible = () => {
-      if (document.visibilityState === 'visible') checkClipboard();
-    };
-    document.addEventListener('visibilitychange', handleVisible);
-    return () => document.removeEventListener('visibilitychange', handleVisible);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showImportFor]); // re-bind when import sheet opens/closes
-
-  const dismissSentinel = useCallback((url) => {
-    try {
-      const prev = JSON.parse(sessionStorage.getItem('sh_sentinel_v') || '[]');
-      sessionStorage.setItem('sh_sentinel_v', JSON.stringify([...prev, url]));
-    } catch {}
-    setClipboardSentinel(null);
-  }, []);
-
-  const handleSentinelImport = useCallback((url) => {
-    dismissSentinel(url);
-    setImportModalKey(k => k + 1);
-    setShowImportFor('meals');
-    setSharedContent({ mode: 'url', url, text: '', title: '', isShare: false });
-  }, [dismissSentinel]);
 
   // ── Data loaders ─────────────────────────────────────────────────────────────
   const loadMeals = useCallback(async () => {
@@ -282,22 +149,6 @@ export default function App() {
       })
       .catch(err => console.warn('Failed to check storage quota:', err));
   }, [loadMeals, loadDrinks]);
-
-  // ── Batch Import Engine bootstrap ────────────────────────────────────────
-  useEffect(() => {
-    startBatchImportEngine();
-
-    const refreshBatchCount = () => {
-      getBatchQueueItems().then(items => {
-        const count = items.filter(i => i.status === 'pending' || i.status === 'extracting' || i.status === 'ready').length;
-        setBatchQueueCount(count);
-      }).catch(() => {});
-    };
-    refreshBatchCount();
-
-    window.addEventListener('spicehub:batch-queue-updated', refreshBatchCount);
-    return () => window.removeEventListener('spicehub:batch-queue-updated', refreshBatchCount);
-  }, []);
 
   // Persist week plan whenever it changes (debounced)
   useEffect(() => {
@@ -438,34 +289,8 @@ useEffect(() => {
     const sharedUrl   = params.get('url')   || '';
     const sharedTitle = params.get('title') || '';
     const sharedText  = params.get('text')  || '';
-
-    const batchUrls = extractMultipleUrls(`${sharedUrl} ${sharedText}`);
-    if (batchUrls.length >= 2) {
-      addBatchQueueItems(batchUrls).then(() => {
-        setShowBatchQueue(true);
-        window.dispatchEvent(new CustomEvent('spicehub:batch-queue-updated'));
-      });
-      window.history.replaceState({}, '', window.location.pathname);
-      return;
-    }
-
     const target = _looksLikeDrink(sharedUrl, sharedTitle, sharedText) ? 'drinks' : 'meals';
     if (sharedUrl) {
-      // ── I-2: Offline share queue ─────────────────────────────────────────
-      // If device is offline when a URL is shared, queue it for later
-      // instead of silently failing inside ImportSheet.
-      if (!navigator.onLine) {
-        addBatchQueueItems([sharedUrl]).then(() => {
-          setBatchQueueCount(c => c + 1);
-          window.dispatchEvent(new CustomEvent('spicehub:batch-queue-updated'));
-          setToast({ message: "Queued! We'll import this when you're back online 📥", type: 'info' });
-          setTimeout(() => setToast(null), 4500);
-        }).catch(() => {});
-        window.history.replaceState({}, '', window.location.pathname);
-        return;
-      }
-      // ── I-2: Mark share-target for post-save quick actions ───────────────
-      isShareImportRef.current = target === 'meals';
       setImportModalKey(k => k + 1);
       setShowImportFor(target);
       setSharedContent({ mode: 'url', url: sharedUrl, title: sharedTitle, text: sharedText, isShare: true });
@@ -482,16 +307,6 @@ useEffect(() => {
   const handler = (e) => {
     const detail = e?.detail;
     if (!detail || (!detail.url && !detail.text)) return;
-
-    const batchUrls = extractMultipleUrls(`${detail.url || ''} ${detail.text || ''}`);
-    if (batchUrls.length >= 2) {
-      addBatchQueueItems(batchUrls).then(() => {
-        setShowBatchQueue(true);
-        window.dispatchEvent(new CustomEvent('spicehub:batch-queue-updated'));
-      });
-      return;
-    }
-
     const target = _looksLikeDrink(detail.url, detail.title, detail.text) ? 'drinks' : 'meals';
     setImportModalKey(k => k + 1);
     setShowImportFor(target);
@@ -697,26 +512,10 @@ useEffect(() => {
     if (navigator.vibrate) navigator.vibrate([30, 20, 30]);
   }, [showToast]);
 
-  // ── Batch import: open a 'ready' row directly into ImportSheet review ─────
-  const handleBatchReview = useCallback((item) => {
-    setBatchReviewItem(item);
-  }, []);
-
-  // ── Batch import: open a 'failed' row into ImportSheet for retry ──────────
-  const handleBatchRetry = useCallback((item) => {
-    setImportModalKey(k => k + 1);
-    setShowImportFor(item.itemType === 'drink' ? 'drinks' : 'meals');
-    setSharedContent({ mode: 'url', url: item.url, title: '', text: '', isShare: true });
-  }, []);
-
   // ── Import handler — routes to meals, drinks, grocery, or week ──────────────
   // destination overrides showImportFor and is set by the Smart Action Bar
   // in ImportModal when the user taps "→ Bar", "→ Grocery", or "→ This Week".
   const handleImport = useCallback(async (imported, destination) => {
-    // ── I-2: Capture and reset share-target flag before any state clears ────
-    const wasShareMeal = isShareImportRef.current;
-    isShareImportRef.current = false;
-
     const target = destination || showImportFor;
     setShowImportFor(null);
     setSharedContent(null);
@@ -794,28 +593,8 @@ useEffect(() => {
     const count = real.length;
     const noun = target === 'drinks' ? (count === 1 ? 'drink' : 'drinks') : (count === 1 ? 'recipe' : 'recipes');
     const name = count === 1 ? (real[0].name || 'Recipe') : `${count} ${noun}`;
-
-    // ── I-2: Post-save quick actions for single-recipe share-target imports ──
-    // Show an 8-second action strip with "Add to week" / "Add to grocery" instead
-    // of the plain toast, so the clip→plan loop requires zero extra steps.
-    if (wasShareMeal && target === 'meals' && real.length === 1) {
-      setPostImportActions({ message: `"${name}" saved`, recipe: real[0] });
-      return;
-    }
-
     showToast(`Added ${name} to ${target === 'drinks' ? 'The Bar 🍸' : 'your library'}`);
-  }, [showImportFor, loadMeals, loadDrinks, showToast, setGroceryItems, setWeekPlan, setTab, setPostImportActions]);
-
-  // ── Batch import: mark a batchQueue row 'saved' after ImportSheet save ────
-  const handleBatchReviewSave = useCallback(async (imported, destination) => {
-    const item = batchReviewItem;
-    setBatchReviewItem(null);
-    await handleImport(imported, destination);
-    if (item) {
-      await updateBatchQueueItem(item.id, { status: 'saved' });
-      window.dispatchEvent(new CustomEvent('spicehub:batch-queue-updated'));
-    }
-  }, [batchReviewItem, handleImport]);
+  }, [showImportFor, loadMeals, loadDrinks, showToast, setGroceryItems, setWeekPlan, setTab]);
 
   // ── Cook Mode ────────────────────────────────────────────────────────────────
   const startCookMode = useCallback((meal, scaleFactor = 1.0) => {
@@ -884,8 +663,6 @@ useEffect(() => {
         <div className="header-actions">
           <button className="hdr-btn" onClick={() => setShowFridge(true)} title="What's in My Fridge?">🧊</button>
           <button className="hdr-btn" onClick={() => setShowStats(true)} title="Meal Stats">📊</button>
-          {/* I-1: Instagram saved-posts bulk import */}
-          <button className="hdr-btn" onClick={() => setShowZipImport(true)} title="Import Instagram saved posts (ZIP)">📦</button>
           <button className="hdr-btn" onClick={() => setShowStorageManager(true)} title="Storage">💾</button>
           <button className="hdr-btn" onClick={() => setShowSettings(true)} title="Settings">⚙️</button>
         </div>
@@ -900,47 +677,6 @@ useEffect(() => {
               <button className="btn-icon small" onClick={handleDismissInstallBanner} aria-label="Dismiss install banner">✕</button>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* ── I-1 Instagram ZIP import modal ── */}
-      {showZipImport && (
-        <div className="igzip-modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setShowZipImport(false); }}>
-          <div className="igzip-modal" role="dialog" aria-modal="true" aria-label="Import Instagram saved posts">
-            <div className="igzip-modal-header">
-              <h2 className="igzip-modal-title">Import Instagram Saved Posts</h2>
-              <button
-                className="igzip-modal-close"
-                onClick={() => setShowZipImport(false)}
-                aria-label="Close"
-              >✕</button>
-            </div>
-            <InstagramZipImport
-              onDone={() => { setShowZipImport(false); setShowBatchQueue(true); }}
-              onToast={showToast}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* ── I-8 Clipboard Sentinel chip ── */}
-      {clipboardSentinel && !showImportFor && (
-        <div className="sentinel-chip" role="alert" aria-live="polite">
-          <span className="sentinel-chip-icon" aria-hidden="true">🔗</span>
-          <span className="sentinel-chip-text">Import the link you copied?</span>
-          <button
-            className="sentinel-chip-cta"
-            onClick={() => handleSentinelImport(clipboardSentinel.url)}
-          >
-            Import
-          </button>
-          <button
-            className="sentinel-chip-dismiss"
-            aria-label="Dismiss"
-            onClick={() => dismissSentinel(clipboardSentinel.url)}
-          >
-            ✕
-          </button>
         </div>
       )}
 
@@ -1206,47 +942,6 @@ useEffect(() => {
                 </button>
               </div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Batch Import Queue ── */}
-      {showBatchQueue && (
-        <BatchImportQueue
-          onReview={(item) => {
-            setShowBatchQueue(false);
-            setBatchReviewItem(item);
-            setShowImportFor('meals');
-          }}
-          onRetry={(item) => {
-            addBatchQueueItems([item.url]).then(() => {
-              window.dispatchEvent(new CustomEvent('spicehub:batch-queue-updated'));
-            });
-          }}
-          onClose={() => setShowBatchQueue(false)}
-        />
-      )}
-
-      {/* BatchQueuePill — floating re-entry when queue is running but panel is closed */}
-      {!showBatchQueue && batchQueueCount > 0 && (
-        <BatchQueuePill count={batchQueueCount} onClick={() => setShowBatchQueue(true)} />
-      )}
-
-      {/* SyncQueue — background sync status indicator */}
-      {isSyncing && <SyncQueue />}
-
-      {/* ── I-2 Post-share quick actions strip ── */}
-      {postImportActions && (
-        <div className="post-import-actions">
-          <p className="pia-message">{postImportActions.message}</p>
-          <div className="pia-btns">
-            <button className="pia-btn" onClick={handlePostAddToWeek}>
-              📅 Add to this week
-            </button>
-            <button className="pia-btn" onClick={handlePostAddToGrocery}>
-              🛒 Add to grocery
-            </button>
-            <button className="pia-close" onClick={() => setPostImportActions(null)} aria-label="Dismiss">✕</button>
           </div>
         </div>
       )}

@@ -30,7 +30,7 @@ export async function persistImage(url) {
     if (!contentType.startsWith('image/')) {
       // Sniff magic bytes — some CDNs strip Content-Type
       const bytes = await response.arrayBuffer();
-      if (bytes.byteLength < 100 || bytes.byteLength > 3 * 1024 * 1024) return url;
+      if (bytes.byteLength < 4 || bytes.byteLength >= 3 * 1024 * 1024) return url;
       const head = new Uint8Array(bytes.slice(0, 4));
       const isJpeg = head[0] === 0xFF && head[1] === 0xD8;
       const isPng = head[0] === 0x89 && head[1] === 0x50;
@@ -39,7 +39,7 @@ export async function persistImage(url) {
       return `data:${mime};base64,${Buffer.from(bytes).toString('base64')}`;
     }
     const bytes = await response.arrayBuffer();
-    if (bytes.byteLength < 100 || bytes.byteLength > 3 * 1024 * 1024) return url;
+    if (bytes.byteLength < 4 || bytes.byteLength >= 3 * 1024 * 1024) return url;
     return `data:${contentType.split(';')[0]};base64,${Buffer.from(bytes).toString('base64')}`;
   } catch {
     return url;

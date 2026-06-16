@@ -50,6 +50,10 @@ export default defineConfig({
     '__SPICEHUB_VERSION__': JSON.stringify(BUILD_VERSION),
     '__SPICEHUB_SERVER__': JSON.stringify(process.env.VITE_SERVER_URL || 'http://localhost:3001'),
   },
+  test: {
+    environment: 'node',
+    setupFiles: ['./src/__tests__/setup.js'],
+  },
   plugins: [
     react(),
 VitePWA({

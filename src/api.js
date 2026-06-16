@@ -615,18 +615,21 @@ export async function downloadImageAsDataUrl(imageUrl, opts = {}) {
   const { timeoutMs = 9000, maxBytes = 2 * 1024 * 1024 } = opts;
   const cleanedImageUrl = cleanUrl(imageUrl);
 
-  // Try direct fetch first (may succeed for CORS-friendly hosts)
-  try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs / 2);
-    const resp = await fetch(cleanedImageUrl, {
-      signal: ctrl.signal,
-      headers: { 'Accept': 'image/*' },
-    });
-    clearTimeout(timer);
-    const dataUrl = await _blobToValidatedDataUrl(resp, { maxBytes });
-    if (dataUrl) return dataUrl;
-  } catch { /* fall through to proxy */ }
+  // Skip direct fetch for Instagram/Meta CDN URLs — they require server-side headers
+  // and will 403 in browser context anyway. Go straight to the internal proxy.
+  if (!isInstagramCdnUrl(cleanedImageUrl)) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs / 2);
+      const resp = await fetch(cleanedImageUrl, {
+        signal: ctrl.signal,
+        headers: { 'Accept': 'image/*' },
+      });
+      clearTimeout(timer);
+      const dataUrl = await _blobToValidatedDataUrl(resp, { maxBytes });
+      if (dataUrl) return dataUrl;
+    } catch { /* fall through to proxy */ }
+  }
 
   // Same-origin serverless image fetcher can read CDN bytes without browser CORS.
   try {

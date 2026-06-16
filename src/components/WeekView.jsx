@@ -139,6 +139,16 @@ const ANIMATIONS_CSS = `
   }
 `;
 
+// ── Empty-state motion variants (stagger-reveal, mirrors FridgeMode's fm-empty pattern) ──
+const wvEmptyContainerVariants = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.12, delayChildren: 0.05 } },
+};
+const wvEmptyItemVariants = {
+  hidden: { opacity: 0, y: 12 },
+  visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.32, 0.72, 0, 1] } },
+};
+
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function WeekView({
   days, weekPlan, meals, specialDays,
@@ -884,33 +894,35 @@ function DetailPanel({ show, activeDate, today, getMealForDate, onClose, onToggl
         {/* Content */}
         <div style={{ padding: '0 16px 24px' }}>
           {!meal ? (
-            /* Empty state */
-            <div style={{
-              textAlign: 'center', padding: '28px 0',
-              animation: 'wv-emptyRise 0.4s var(--sh-spring, cubic-bezier(0.32, 0.72, 0, 1)) both',
-            }}>
-              <div style={{
-                width: 56, height: 56, borderRadius: '50%',
-                background: 'var(--surface)', display: 'flex',
-                alignItems: 'center', justifyContent: 'center',
-                margin: '0 auto 14px',
-              }}>
+            /* Empty state — stagger-reveal, matches FridgeMode's fm-empty pattern */
+            <motion.div
+              className="wv-empty-state"
+              variants={wvEmptyContainerVariants}
+              initial="hidden"
+              animate="visible"
+            >
+              <motion.div className="wv-empty-icon-wrap" variants={wvEmptyItemVariants}>
                 <UtensilsCrossed size={26} color="var(--text-muted, var(--text-light))" strokeWidth={1.75} />
-              </div>
-              <p style={{ color: 'var(--text)', marginBottom: isPast ? 0 : 4, fontSize: 15, fontWeight: 600 }}>
+              </motion.div>
+              <motion.p className="wv-empty-title" variants={wvEmptyItemVariants}>
                 {isPast ? 'Nothing was planned here' : 'No meal planned yet'}
-              </p>
+              </motion.p>
               {!isPast && (
-                <p style={{ color: 'var(--text-muted, var(--text-light))', marginBottom: 16, fontSize: 13 }}>
-                  Pick a recipe to fill this spot on your week.
-                </p>
+                <motion.p className="wv-empty-hint-text" variants={wvEmptyItemVariants}>
+                  Tap below to pick a recipe and fill this spot on your week.
+                </motion.p>
               )}
               {!isPast && (
-                <button onClick={onOpenPicker} style={{ ...PRIMARY_BTN, width: '100%' }}>
+                <motion.button
+                  className="wv-empty-cta"
+                  variants={wvEmptyItemVariants}
+                  onClick={onOpenPicker}
+                  style={{ ...PRIMARY_BTN, width: '100%' }}
+                >
                   + Add a Meal
-                </button>
+                </motion.button>
               )}
-            </div>
+            </motion.div>
           ) : isSpecial ? (
             /* Special day */
             <div style={{ animation: 'wv-fadeIn 0.25s ease both' }}>

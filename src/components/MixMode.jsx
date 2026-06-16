@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion, useDragControls } from 'framer-motion';
+import { X, CheckCircle2, Check, Pause, Play, Timer, Martini } from 'lucide-react';
 
 /**
  * Mix Mode — full-screen, step-by-step bartender walkthrough.
@@ -251,7 +252,9 @@ export default function MixMode({ drink, scaleFactor = 1.0, onClose }) {
 
       {/* Top nav */}
       <div className="mm-topbar">
-        <button className="mm-close-btn" onClick={onClose}>✕ Exit</button>
+        <button className="mm-close-btn" onClick={onClose} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <X size={18} strokeWidth={1.75} /> Exit
+        </button>
         <span className="mm-step-counter">
           {isIngredientView ? 'Ingredients' : `Step ${currentStep + 1} of ${totalSteps}`}
         </span>
@@ -287,7 +290,7 @@ export default function MixMode({ drink, scaleFactor = 1.0, onClose }) {
                   className={`mm-check-item ${checkedIngredients.has(i) ? 'checked' : ''}`}
                   onClick={() => toggleIngredient(i)}
                 >
-                  <span className="mm-checkbox">{checkedIngredients.has(i) ? '✓' : ''}</span>
+                  <span className="mm-checkbox">{checkedIngredients.has(i) ? <Check size={14} strokeWidth={1.75} /> : ''}</span>
                   <span className="mm-check-text">{scaleIngredient(ing, scaleFactor)}</span>
                 </li>
               ))}
@@ -316,7 +319,7 @@ export default function MixMode({ drink, scaleFactor = 1.0, onClose }) {
 
               <div className="mm-step-number">
                 Step {currentStep + 1}
-                {completedSteps.has(currentStep) && <span className="mm-step-check">✓</span>}
+                {completedSteps.has(currentStep) && <CheckCircle2 size={18} strokeWidth={1.75} className="mm-step-check" />}
               </div>
               <p className="mm-step-text">{drink.directions[currentStep]}</p>
 
@@ -326,7 +329,7 @@ export default function MixMode({ drink, scaleFactor = 1.0, onClose }) {
                   className="mm-timer-suggest"
                   onClick={() => startTimer(timerHint.seconds, `Step ${currentStep + 1}`)}
                 >
-                  ⏱️ Set {timerHint.label} timer
+                  <Timer size={16} strokeWidth={1.75} className="mm-timer-icon" /> Set {timerHint.label} timer
                 </button>
               )}
 
@@ -378,10 +381,12 @@ export default function MixMode({ drink, scaleFactor = 1.0, onClose }) {
           <div className="mm-timer-controls">
             {timer.seconds > 0 ? (
               <>
-                <button className="mm-timer-btn" onClick={toggleTimer}>
-                  {timer.running ? '⏸ Pause' : '▶ Resume'}
+                <button className="mm-timer-btn" onClick={toggleTimer} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  {timer.running ? <><Pause size={16} strokeWidth={1.75} /> Pause</> : <><Play size={16} strokeWidth={1.75} /> Resume</>}
                 </button>
-                <button className="mm-timer-btn mm-timer-clear" onClick={clearTimer}>✕</button>
+                <button className="mm-timer-btn mm-timer-clear" onClick={clearTimer}>
+                  <X size={16} strokeWidth={1.75} />
+                </button>
               </>
             ) : (
               <button className="mm-timer-btn mm-timer-dismiss" onClick={clearTimer}>
@@ -427,8 +432,8 @@ export default function MixMode({ drink, scaleFactor = 1.0, onClose }) {
             {allChecked ? "Let's Mix! →" : "Start Mixing →"}
           </button>
         ) : isLastStep ? (
-          <button className="mm-nav-btn mm-next mm-finish" onClick={onClose}>
-            🍹 Cheers!
+          <button className="mm-nav-btn mm-next mm-finish" onClick={onClose} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+            <Martini size={18} strokeWidth={1.75} /> Cheers!
           </button>
         ) : (
           <button className="mm-nav-btn mm-next" onClick={markComplete}>

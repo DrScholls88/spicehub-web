@@ -1,0 +1,337 @@
+/* ══════════════════════════════════════════════════════════════════════════════
+   I-1 ── InstagramZipImport modal styles
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Modal backdrop ── */
+.igzip-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 580;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: igzip-backdrop-in 0.28s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+@keyframes igzip-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Modal panel (slide-up sheet) ── */
+.igzip-modal {
+  width: 100%;
+  max-width: 560px;
+  max-height: 90dvh;
+  border-radius: 24px 24px 0 0;
+  background: var(--surface, #fff);
+  box-shadow: 0 -4px 48px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: igzip-sheet-up 0.32s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+@keyframes igzip-sheet-up {
+  from { transform: translateY(100%); }
+  to   { transform: translateY(0); }
+}
+
+/* ── Modal header ── */
+.igzip-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 20px 0;
+  flex-shrink: 0;
+}
+
+.igzip-modal-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary, #1a1a1a);
+  margin: 0;
+}
+
+.igzip-modal-close {
+  width: 32px; height: 32px;
+  display: flex; align-items: center; justify-content: center;
+  border: none;
+  background: rgba(0, 0, 0, 0.07);
+  border-radius: 50%;
+  font-size: 14px;
+  color: var(--text-secondary, #666);
+  cursor: pointer;
+  transition: background 0.18s;
+  flex-shrink: 0;
+}
+.igzip-modal-close:hover { background: rgba(0, 0, 0, 0.13); }
+
+/* ── Root wrapper (scrollable content) ── */
+.igzip-root {
+  padding: 16px 20px 28px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* ── Drop zone ── */
+.igzip-dropzone {
+  border: 2px dashed rgba(230, 81, 0, 0.30);
+  border-radius: 20px;
+  padding: 36px 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  background: rgba(230, 81, 0, 0.03);
+  transition: all 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+  text-align: center;
+  outline: none;
+}
+
+.igzip-dropzone:hover,
+.igzip-dropzone:focus-visible {
+  border-color: rgba(230, 81, 0, 0.55);
+  background: rgba(230, 81, 0, 0.07);
+}
+
+.igzip-drag-over {
+  border-color: var(--primary, #e65100) !important;
+  background: rgba(230, 81, 0, 0.10) !important;
+  transform: scale(1.01);
+}
+
+.igzip-drop-icon {
+  font-size: 44px;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+
+.igzip-drop-title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary, #1a1a1a);
+  margin: 0;
+}
+
+.igzip-drop-sub {
+  font-size: 13px;
+  color: var(--text-secondary, #666);
+  margin: 0;
+}
+
+.igzip-how {
+  margin-top: 12px;
+  padding: 10px 14px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 12px;
+  font-size: 12px;
+  color: var(--text-secondary, #777);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+}
+
+.igzip-how-label {
+  font-weight: 700;
+  color: var(--text-primary, #444);
+}
+
+/* ── Centered state (parsing / queuing / done / error) ── */
+.igzip-state-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 32px 0;
+  text-align: center;
+}
+
+.igzip-state-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary, #1a1a1a);
+  margin: 0;
+}
+
+/* ── Spinner ── */
+.igzip-spinner {
+  width: 40px; height: 40px;
+  border: 3px solid rgba(230, 81, 0, 0.15);
+  border-top-color: var(--primary, #e65100);
+  border-radius: 50%;
+  animation: igzip-spin 0.75s linear infinite;
+}
+
+@keyframes igzip-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Progress bar ── */
+.igzip-progress-track {
+  width: 100%;
+  max-width: 280px;
+  height: 6px;
+  background: rgba(230, 81, 0, 0.12);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.igzip-progress-fill {
+  height: 100%;
+  background: var(--primary, #e65100);
+  border-radius: 999px;
+  transition: width 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* ── Preview panel ── */
+.igzip-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.igzip-preview-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  background: rgba(76, 175, 80, 0.06);
+  border: 1.5px solid rgba(76, 175, 80, 0.20);
+  border-radius: 16px;
+}
+
+.igzip-preview-icon { font-size: 28px; flex-shrink: 0; }
+
+.igzip-preview-count {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary, #1a1a1a);
+  margin: 0 0 2px;
+}
+
+.igzip-preview-sub {
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+  margin: 0;
+}
+
+/* URL sample list */
+.igzip-url-sample {
+  list-style: none;
+  padding: 12px 14px;
+  margin: 0;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.igzip-url-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.igzip-url-dot {
+  color: var(--primary, #e65100);
+  font-weight: 900;
+  flex-shrink: 0;
+}
+
+.igzip-url-text {
+  font-size: 11px;
+  color: var(--text-secondary, #666);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.igzip-url-more {
+  font-size: 12px;
+  color: var(--text-secondary, #999);
+  font-style: italic;
+  padding-top: 2px;
+}
+
+/* Preview actions */
+.igzip-preview-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+/* ── Buttons ── */
+.igzip-btn-primary,
+.igzip-btn-secondary {
+  padding: 11px 22px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+  transition: all 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.igzip-btn-primary {
+  background: var(--primary, #e65100);
+  color: #fff;
+  box-shadow: 0 3px 12px rgba(230, 81, 0, 0.28);
+}
+.igzip-btn-primary:hover  { background: #bf360c; transform: scale(1.02); }
+.igzip-btn-primary:active { transform: scale(0.97); }
+
+.igzip-btn-secondary {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text-secondary, #555);
+}
+.igzip-btn-secondary:hover  { background: rgba(0, 0, 0, 0.10); }
+.igzip-btn-secondary:active { transform: scale(0.97); }
+
+/* ── Done state ── */
+.igzip-done .igzip-state-label { color: #388e3c; }
+.igzip-done-icon { font-size: 48px; line-height: 1; }
+.igzip-done-sub {
+  font-size: 13px; color: var(--text-secondary, #666); margin: -8px 0 0; max-width: 280px;
+}
+.igzip-done-actions { display: flex; gap: 10px; margin-top: 4px; }
+
+/* ── Error state ── */
+.igzip-error-icon { font-size: 40px; line-height: 1; }
+.igzip-error-msg {
+  font-size: 13px; color: #c62828; max-width: 300px;
+  white-space: pre-wrap; text-align: center; margin: -8px 0 0;
+}
+
+/* ── Dark mode ── */
+@media (prefers-color-scheme: dark) {
+  .igzip-modal { background: #1a1209; box-shadow: 0 -4px 48px rgba(0,0,0,0.55); }
+  .igzip-modal-title { color: #f5ede4; }
+  .igzip-modal-close { background: rgba(255,255,255,0.08); color: #aaa; }
+  .igzip-modal-close:hover { background: rgba(255,255,255,0.14); }
+
+  .igzip-dropzone { background: rgba(230,81,0,0.05); }
+  .igzip-dropzone:hover, .igzip-dropzone:focus-visible { background: rgba(230,81,0,0.09); }
+  .igzip-drop-title { color: #f5ede4; }
+  .igzip-how { background: rgba(255,255,255,0.05); color: #aaa; }
+  .igzip-how-label { color: #ccc; }
+
+  .igzip-state-label { color: #f5ede4; }
+  .igzip-preview-header { background: rgba(76,175,80,0.08); border-color: rgba(76,175,80,0.22); }
+  .igzip-preview-count { color: #f5ede4; }
+  .igzip-url-sample { background: rgba(255,255,255,0.04); }
+  .igzip-url-text { color: #999; }
+
+  .igzip-btn-secondary { background: rgba(255,255,255,0.08); color: #ccc; }
+  .igzip-btn-secondary:hover { background: rgba(255,255,255,0.14); }
+
+  .igzip-done-sub { color: #aaa; }
+  .igzip-error-msg { color: #ef9a9a; }
+}

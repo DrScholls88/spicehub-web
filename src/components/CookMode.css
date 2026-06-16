@@ -1,0 +1,194 @@
+/* ══════════════════════════════════════════════════════════════════════════════
+   A-2 ── CookMode Inline Timer Pills + Fullscreen Timer Overlay
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* Inline pill inside step text */
+.cm-timer-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px 2px 6px;
+  background: rgba(230, 81, 0, 0.10);
+  color: var(--primary, #e65100);
+  border: 1.5px solid rgba(230, 81, 0, 0.28);
+  border-radius: 999px;
+  font-size: 0.85em;
+  font-weight: 700;
+  cursor: pointer;
+  vertical-align: middle;
+  line-height: 1.6;
+  transition: all 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+  white-space: nowrap;
+}
+
+.cm-timer-pill:hover:not(:disabled) {
+  background: rgba(230, 81, 0, 0.18);
+  border-color: rgba(230, 81, 0, 0.50);
+  transform: scale(1.04);
+}
+
+.cm-timer-pill:active:not(:disabled) {
+  transform: scale(0.97);
+  transition-duration: 0.08s;
+}
+
+.cm-timer-pill-disabled { opacity: 0.45; cursor: default; }
+.cm-pill-icon { flex-shrink: 0; }
+
+/* Mini running-timer pill shown in step when fullscreen is dismissed */
+.cm-timer-running-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 6px 14px 6px 10px;
+  background: rgba(230, 81, 0, 0.08);
+  color: var(--primary, #e65100);
+  border: 1.5px solid rgba(230, 81, 0, 0.22);
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.cm-timer-running-pill:hover { background: rgba(230, 81, 0, 0.14); }
+
+/* Pulsing dot */
+.cm-timer-pulse {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--primary, #e65100);
+  animation: cm-pulse 1.4s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes cm-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.75); }
+}
+
+/* ── Fullscreen timer overlay ── */
+.cm-timer-fullscreen {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: rgba(255, 250, 246, 0.97);
+  backdrop-filter: blur(24px) saturate(1.6);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  border-radius: inherit;
+}
+
+@media (prefers-color-scheme: dark) {
+  .cm-timer-fullscreen { background: rgba(18, 12, 8, 0.97); }
+}
+
+.cm-tfs-close {
+  position: absolute;
+  top: 14px; left: 50%;
+  transform: translateX(-50%);
+  display: flex; align-items: center; justify-content: center;
+  width: 40px; height: 28px;
+  border: none;
+  background: rgba(0, 0, 0, 0.07);
+  border-radius: 999px;
+  color: var(--text-secondary, #666);
+  cursor: pointer;
+  transition: background 0.18s;
+}
+.cm-tfs-close:hover { background: rgba(0, 0, 0, 0.12); }
+
+.cm-tfs-label {
+  font-size: 16px; font-weight: 600;
+  color: var(--text-secondary, #666);
+  text-align: center; padding: 0 24px; margin-top: 24px;
+}
+
+.cm-tfs-ring-wrap {
+  position: relative;
+  width: 200px; height: 200px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+
+.cm-tfs-ring { width: 100%; height: 100%; overflow: visible; }
+.cm-ring-track { stroke: rgba(230, 81, 0, 0.12); }
+
+.cm-ring-fill {
+  stroke: var(--primary, #e65100);
+  transition: stroke-dashoffset 0.8s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.cm-ring-done { stroke: #4caf50; }
+
+.cm-tfs-time-wrap {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  pointer-events: none;
+}
+
+.cm-tfs-time {
+  font-size: 46px; font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text-primary, #1a1a1a);
+  font-variant-numeric: tabular-nums;
+  transition: color 0.3s; line-height: 1;
+}
+
+.cm-tfs-done { color: #4caf50; }
+
+.cm-tfs-urgent {
+  color: #e53935;
+  animation: cm-tfs-throb 0.6s ease-in-out infinite alternate;
+}
+
+@keyframes cm-tfs-throb {
+  from { transform: scale(1); }
+  to   { transform: scale(1.06); }
+}
+
+.cm-tfs-done-label {
+  font-size: 18px; font-weight: 700;
+  color: #4caf50; margin-top: 4px; letter-spacing: 0.04em;
+}
+
+.cm-tfs-controls {
+  display: flex; gap: 12px; align-items: center; margin-top: 4px;
+}
+
+.cm-tfs-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 12px 24px; border-radius: 999px;
+  font-size: 15px; font-weight: 700;
+  cursor: pointer; border: none;
+  transition: all 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.cm-tfs-pause {
+  background: var(--primary, #e65100); color: #fff;
+  box-shadow: 0 4px 16px rgba(230, 81, 0, 0.30);
+}
+.cm-tfs-pause:hover { background: #bf360c; transform: scale(1.03); }
+
+.cm-tfs-cancel {
+  background: rgba(0, 0, 0, 0.07); color: var(--text-secondary, #666);
+}
+.cm-tfs-cancel:hover { background: rgba(0, 0, 0, 0.12); }
+
+.cm-tfs-dismiss {
+  background: #4caf50; color: #fff;
+  font-size: 17px; padding: 14px 36px;
+  box-shadow: 0 4px 16px rgba(76, 175, 80, 0.30);
+}
+.cm-tfs-dismiss:hover { background: #388e3c; transform: scale(1.03); }
+.cm-tfs-dismiss:active { transform: scale(0.97); }
+
+.cm-tfs-step-ctx {
+  font-size: 12px; color: var(--text-secondary, #999);
+  text-align: center; margin-top: 4px;
+}
