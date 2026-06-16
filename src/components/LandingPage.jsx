@@ -374,6 +374,107 @@ const TILE_COLORS = {
   stats: '#e65100',
 };
 
+// ── Seasonal helpers ──────────────────────────────────────────────────────────
+function getSeasonInfo() {
+  const m = new Date().getMonth(); // 0-indexed
+  if (m >= 2 && m <= 4) return {
+    name: 'Spring', emoji: '🌸',
+    headline: 'Perfect for Spring',
+    keywords: ['spring', 'pea', 'asparagus', 'radish', 'artichoke', 'strawberry', 'lemon', 'salad', 'light', 'fresh', 'herb'],
+  };
+  if (m >= 5 && m <= 7) return {
+    name: 'Summer', emoji: '☀️',
+    headline: 'Summer Favorites',
+    keywords: ['summer', 'grill', 'grilled', 'bbq', 'barbecue', 'corn', 'tomato', 'zucchini', 'peach', 'watermelon', 'taco', 'burger', 'fresh', 'light', 'salad'],
+  };
+  if (m >= 8 && m <= 10) return {
+    name: 'Fall', emoji: '🍂',
+    headline: 'Cozy Fall Recipes',
+    keywords: ['fall', 'pumpkin', 'squash', 'apple', 'sweet potato', 'butternut', 'soup', 'stew', 'roast', 'harvest', 'cider', 'maple'],
+  };
+  return {
+    name: 'Winter', emoji: '❄️',
+    headline: 'Warm Winter Comfort',
+    keywords: ['winter', 'soup', 'stew', 'chili', 'braise', 'roast', 'hearty', 'comfort', 'pot roast', 'casserole', 'curry', 'warm', 'slow cooker'],
+  };
+}
+
+function getSeasonalMeals(meals, season) {
+  const kws = season.keywords;
+  const scored = meals.map(m => {
+    const haystack = [
+      m.name || '',
+      m.category || '',
+      m.cuisine || '',
+      m.dishType || '',
+      ...(m.tags || []),
+      ...(m.ingredients || []).slice(0, 8),
+    ].join(' ').toLowerCase();
+    const hits = kws.filter(k => haystack.includes(k)).length;
+    return { meal: m, hits };
+  })
+    .filter(x => x.hits > 0)
+    .sort((a, b) => b.hits - a.hits);
+  return scored.slice(0, 5).map(x => x.meal);
+}
+
+// ── SeasonalMealCard ──────────────────────────────────────────────────────────
+function SeasonalMealCard({ meal, onPress }) {
+  return (
+    <motion.button
+      whileHover={{ y: -3, boxShadow: '0 8px 20px rgba(0,0,0,0.12)' }}
+      whileTap={{ scale: 0.96 }}
+      onClick={onPress}
+      style={{
+        flexShrink: 0,
+        width: '140px',
+        background: 'var(--card)',
+        border: '1.5px solid var(--border)',
+        borderRadius: 'var(--radius)',
+        overflow: 'hidden',
+        cursor: 'pointer',
+        display: 'flex',
+        flexDirection: 'column',
+        textAlign: 'left',
+        padding: 0,
+        outline: 'none',
+      }}
+    >
+      {meal.imageUrl ? (
+        <SafeMediaImage
+          src={meal.imageUrl}
+          alt={meal.name || ''}
+          style={{ width: '100%', height: '90px', objectFit: 'cover', display: 'block' }}
+          fallbackEmoji="🍳"
+        />
+      ) : (
+        <div style={{ width: '100%', height: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface)', fontSize: '32px', flexShrink: 0 }}>
+          🍳
+        </div>
+      )}
+      <div style={{ padding: '8px 10px 10px' }}>
+        <div style={{
+          fontSize: '12px',
+          fontWeight: '700',
+          color: 'var(--text)',
+          lineHeight: '1.3',
+          display: '-webkit-box',
+          WebkitLineClamp: 2,
+          WebkitBoxOrient: 'vertical',
+          overflow: 'hidden',
+        }}>
+          {meal.name}
+        </div>
+        {meal.category && (
+          <div style={{ fontSize: '10px', color: 'var(--text-muted, var(--text-light))', marginTop: '3px', fontWeight: '500' }}>
+            {meal.category}
+          </div>
+        )}
+      </div>
+    </motion.button>
+  );
+}
+
 // ── DayPhotoCard ──────────────────────────────────────────────────────────────
 function DayPhotoCard({ date, meal, isToday, onClick }) {
   const [imgErr, setImgErr] = useState(false);
@@ -630,6 +731,10 @@ export default function LandingPage({
     },
   ], [rotationCount, meals.length, drinks.length, totalCooked, onNavigate, onOpenFridge, onOpenStats]);
 
+  // ── Seasonal picks ──────────────────────────────────────────────────────────
+  const seasonInfo = useMemo(() => getSeasonInfo(), []);
+  const seasonalMeals = useMemo(() => getSeasonalMeals(meals, seasonInfo), [meals, seasonInfo]);
+
   const getTileStyle = (tileId) => ({
     ...STYLES.tile,
     ...(hoveredTile === tileId && STYLES.tileHover),
@@ -771,6 +876,37 @@ export default function LandingPage({
             </div>
           )}
         </motion.button>
+      )}
+
+      {/* ── Seasonal Picks ── */}
+      {seasonalMeals.length >= 2 && (
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.45, ease: [0.32, 0.72, 0, 1], delay: 0.1 }}
+          style={{ marginBottom: '24px' }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+            <div style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text)' }}>
+              {seasonInfo.emoji} {seasonInfo.headline}
+            </div>
+            <button
+              onClick={() => onNavigate('library')}
+              style={{ fontSize: '12px', fontWeight: '600', color: 'var(--primary)', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0' }}
+            >
+              See all →
+            </button>
+          </div>
+          <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '8px', WebkitOverflowScrolling: 'touch' }}>
+            {seasonalMeals.map(meal => (
+              <SeasonalMealCard
+                key={meal.id || meal.name}
+                meal={meal}
+                onPress={() => onViewDetail(meal)}
+              />
+            ))}
+          </div>
+        </motion.div>
       )}
 
       {/* ── Day preview bottom sheet ── */}

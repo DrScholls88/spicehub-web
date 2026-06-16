@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { ChefHat } from 'lucide-react';
+import { ChefHat, UtensilsCrossed } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { downloadMealsFile, importMealsFromJson, shareMealsFile } from '../sync';
 import { toggleRotation, bulkSetRotation } from '../db';
 import db from '../db';
 import useBackHandler from '../hooks/useBackHandler';
 import SafeMediaImage from './SafeMediaImage';
+import { hapticLight, hapticSuccess } from '../haptics';
 
 // ── Date formatter: relative for recent, absolute for older ──────────────────
 function formatAddedDate(isoString) {
@@ -27,7 +28,11 @@ function formatAddedDate(isoString) {
 
 // Thin wrapper: maps SafeMediaImage into tile-image card usage
 function CardImage({ src, alt, className, phClass }) {
-  if (!src) return <div className={phClass}>🍽️</div>;
+  if (!src) return (
+    <div className={phClass} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <UtensilsCrossed size={28} strokeWidth={1.5} style={{ opacity: 0.35 }} />
+    </div>
+  );
   return (
     <SafeMediaImage
       src={src}
@@ -41,6 +46,16 @@ function CardImage({ src, alt, className, phClass }) {
 
 // Assignable category options (no 'All' or 'The Rotation' — those are filter views)
 const CATEGORY_OPTIONS = ['Dinners', 'Breakfasts', 'Lunches', 'Desserts', 'Sides', 'Tailgate', 'Snacks'];
+
+const CATEGORY_COLORS = {
+  Dinners:    '#e07b4f',
+  Breakfasts: '#f4c56a',
+  Lunches:    '#6dbf8d',
+  Desserts:   '#d479b8',
+  Sides:      '#7ab8e0',
+  Tailgate:   '#c97040',
+  Snacks:     '#9b8fe0',
+};
 
 export const MEAL_CATEGORIES = ['All', '🔄 The Rotation', ...CATEGORY_OPTIONS];
 
@@ -67,7 +82,18 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
 
   // ── Filtered + sorted meal list ────────────────────────────────────────────
   const filtered = meals.filter(m => {
-    const matchSearch = (m.name || '').toLowerCase().includes(search.toLowerCase());
+    // Parse positive and negative tokens
+    const tokens = search.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    const positiveTokens = tokens.filter(t => !t.startsWith('-'));
+    const negativeTokens = tokens.filter(t => t.startsWith('-')).map(t => t.slice(1));
+    const name = (m.name || '').toLowerCase();
+    const ingredients = Array.isArray(m.ingredients)
+      ? m.ingredients.join(' ').toLowerCase()
+      : (m.ingredients || '').toLowerCase();
+    const desc = (m.description || m.notes || '').toLowerCase();
+    const searchable = `${name} ${ingredients} ${desc}`;
+    const matchSearch = positiveTokens.every(t => searchable.includes(t))
+      && negativeTokens.every(t => !searchable.includes(t));
     let matchCat;
     if (category === 'All') matchCat = true;
     else if (category === '🔄 The Rotation') matchCat = !!m.inRotation;
@@ -146,6 +172,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
     touchStartPos.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
     longPressTimer.current = setTimeout(() => {
       longPressTimer.current = null;
+      hapticLight();
       setQuickPreview(meal);
     }, LONG_PRESS_MS);
   }, [selectMode]);
@@ -352,7 +379,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
       <div className="ml-search-zone">
         <input
           type="text"
-          placeholder="Search meals..."
+          placeholder="Search… (-exclude)"
           className="ml-search-input"
           value={search}
           onChange={e => setSearch(e.target.value)}
@@ -487,6 +514,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                 selectMode && selectedIds.has(meal.id) ? 'ml-tile-selected' : '',
                 meal.status === 'failed' ? 'ml-tile-failed' : '',
               ].filter(Boolean).join(' ')}
+              style={{ borderLeft: `3px solid ${CATEGORY_COLORS[meal.category || 'Dinners'] || '#ccc'}` }}
               onClick={() => handleTileClick(meal)}
               onTouchStart={e => selectMode ? handleLongPressSelect(meal, e) : handleTouchStart(meal, e)}
               onTouchMove={handleTouchMove}
@@ -495,7 +523,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
               onContextMenu={e => {
                 e.preventDefault();
                 if (selectMode) toggleSelect(meal.id);
-                else setQuickPreview(meal);
+                else { hapticLight(); setQuickPreview(meal); }
               }}
             >
               {/* Select checkbox overlay */}
@@ -523,7 +551,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                   <button
                     className="ml-tile-menu-btn"
                     aria-label="More options"
-                    onClick={e => { e.stopPropagation(); setQuickPreview(meal); }}
+                    onClick={e => { e.stopPropagation(); hapticLight(); setQuickPreview(meal); }}
                     onTouchEnd={e => e.stopPropagation()}
                   >
                     ⋯
@@ -683,7 +711,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
               <button onClick={() => { onShare?.(quickPreview); }}>
                 Share
               </button>
-              <button onClick={() => { handleToggleRotation(quickPreview); setQuickPreview(null); }}>
+              <button onClick={() => { hapticSuccess(); handleToggleRotation(quickPreview); setQuickPreview(null); }}>
                 {quickPreview.inRotation ? '🔄 Remove from Rotation' : '🔄 Add to Rotation'}
               </button>
               {onToggleFavorite && (

@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence, MotionConfig, useDragControls } from 'framer-motion';
 import { X, Sparkles, Check, ArrowLeft, Zap } from 'lucide-react';
 import './ImportSheet.css';
-import { hapticTap } from '../haptics';
+import { hapticTap, hapticSuccess, hapticError } from '../haptics';
 import {
   importRecipeFromUrl,
   captionToRecipe,
@@ -329,7 +329,11 @@ export default function ImportSheet({
         { label: 'Organizing the recipe',  status: 'pending' },
       ]);
     } else {
-      setPipelineSteps([]);
+      setPipelineSteps([
+        { label: 'Fetching recipe page',  status: 'pending' },
+        { label: 'Finding recipe data',   status: 'pending' },
+        { label: 'Structuring with AI',   status: 'pending' },
+      ]);
     }
 
     try {
@@ -344,10 +348,19 @@ export default function ImportSheet({
               if (prev.length === 0) return prev;
               const next = [...prev];
               let activeIndex = -1;
-              if (/subtitle|transcript|asr|audio/i.test(msg)) activeIndex = 0;
-              else if (/caption|embed|oembed|instagram|reel|tiktok/i.test(msg)) activeIndex = 1;
-              else if (/browser|server|yt-dlp|puppeteer|headless|proxy|fetching page|page text/i.test(msg)) activeIndex = 2;
-              else if (/structur|gemini|\bai\b|markdown|parse/i.test(msg)) activeIndex = 3;
+
+              if (prev.length === 4) {
+                // Social: Checking video / Grabbing caption / Reading page / Organizing recipe
+                if (/subtitle|transcript|asr|audio/i.test(msg)) activeIndex = 0;
+                else if (/caption|embed|oembed|instagram|reel|tiktok/i.test(msg)) activeIndex = 1;
+                else if (/browser|server|yt-dlp|puppeteer|headless|proxy|fetching page|page text/i.test(msg)) activeIndex = 2;
+                else if (/structur|gemini|\bai\b|markdown|parse/i.test(msg)) activeIndex = 3;
+              } else if (prev.length === 3) {
+                // Non-social: Fetching page / Finding recipe data / Structuring with AI
+                if (/fetch|http|request|scraping|crawl|loading|connecting/i.test(msg)) activeIndex = 0;
+                else if (/extract|schema|json.?ld|recipe|content|html|text|found/i.test(msg)) activeIndex = 1;
+                else if (/structur|gemini|\bai\b|markdown|parse|caption|organiz/i.test(msg)) activeIndex = 2;
+              }
 
               if (activeIndex !== -1) {
                 for (let j = 0; j < activeIndex; j++) {
@@ -366,6 +379,7 @@ export default function ImportSheet({
 
       if (result && result._needsBrowserAssist) {
         if (result._emptyCaption) {
+          hapticError();
           setError("We couldn't find recipe text in this post. Paste it below and we'll sort it for you.");
         }
         setBrowserAssistSeed(result.seed || null);
@@ -381,12 +395,14 @@ export default function ImportSheet({
         setConfidence(computeReviewConfidence(normalized));
         setPhase('review');
       } else {
+        hapticError();
         setError("We couldn't find a recipe at that link. Try pasting the recipe text instead?");
         setPhase('input');
       }
     } catch (err) {
       if (err.name === 'AbortError') return;
       console.error('[ImportSheet] URL import error:', err);
+      hapticError();
       setError(err.message || 'Import failed.');
       setPhase('input');
     }
@@ -394,6 +410,7 @@ export default function ImportSheet({
 
   const handleUrlImport = useCallback(async (rawUrl, type) => {
     if (!navigator.onLine) {
+      hapticError();
       setError("You're offline. We'll import this as soon as you're back — or paste the recipe text now.");
       return;
     }
@@ -420,6 +437,7 @@ export default function ImportSheet({
 
     setItemType(type || initialItemType);
     setPhase('loading');
+    setPipelineSteps([]);
     setError('');
     setLoadingImage('');
     setProgressMsg('Sorting ingredients from instructions…');
@@ -432,11 +450,13 @@ export default function ImportSheet({
         setConfidence(computeReviewConfidence(normalized));
         setPhase('review');
       } else {
+        hapticError();
         setError("That text didn't look like a recipe to us. Add the ingredients or steps and try again.");
         setPhase('input');
       }
     } catch (err) {
       console.error('[ImportSheet] Paste import error:', err);
+      hapticError();
       setError(err.message || 'Import failed.');
       setPhase('input');
     }
@@ -466,6 +486,7 @@ export default function ImportSheet({
 
     setItemType(type || initialItemType);
     setPhase('loading');
+    setPipelineSteps([]);
     setError('');
     setLoadingImage('');
     setProgressMsg('Reading your photo…');
@@ -478,11 +499,13 @@ export default function ImportSheet({
         setConfidence(computeReviewConfidence(normalized));
         setPhase('review');
       } else {
+        hapticError();
         setError("We couldn't read a recipe in that photo. Try a brighter shot, or paste the text instead.");
         setPhase('input');
       }
     } catch (err) {
       console.error('[ImportSheet] Photo import error:', err);
+      hapticError();
       setError(err.message || 'Import failed.');
       setPhase('input');
     }
@@ -511,6 +534,7 @@ export default function ImportSheet({
       setConfidence(computeReviewConfidence(normalized));
       setPhase('review');
     } else {
+      hapticError();
       setError('Browser assist could not extract a recipe.');
       setPhase('input');
     }
@@ -533,6 +557,7 @@ export default function ImportSheet({
     // Clear draft from IndexedDB
     const key = importUrl || (activeTab === 'paste' ? 'pasted-text' : activeTab === 'photo' ? 'photo-import' : 'pasted-text');
     db.importDrafts?.delete(key).catch(e => console.warn(e));
+    hapticSuccess();
     onImport([out], destination);
   }, [onImport, importUrl, activeTab, destination]);
 
@@ -797,7 +822,7 @@ export default function ImportSheet({
                     </div>
                   </div>
 
-                  {isSocialMediaUrl(importUrl) && pipelineSteps.length > 0 ? (
+                  {pipelineSteps.length > 0 ? (
                     /* Social: Adopt BrowserAssist steps checklist for shared social loading component (Fix 10) */
                     <div className="import-sheet-pipeline">
                       <div className="import-sheet-steps">
@@ -903,6 +928,7 @@ export default function ImportSheet({
                     inline={true}
                     onError={(err) => {
                       console.warn('[ImportSheet] BrowserAssist error:', err);
+                      hapticError();
                       setError('That page wouldn\'t cooperate. Paste the recipe text and we\'ll sort it for you.');
                       setPhase('input');
                     }}

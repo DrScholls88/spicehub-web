@@ -15,6 +15,7 @@ import ImportSheet from './components/ImportSheet';
 import BatchImportQueue, { BatchQueuePill } from './components/BatchImportQueue';
 import { startBatchImportEngine } from './batchImportEngine';
 import { extractMultipleUrls } from './recipeParser';
+import { categorizeIngredient } from './recipeSchema';
 import InstagramZipImport from './components/InstagramZipImport';
 import FridgeMode from './components/FridgeMode';
 import CookMode from './components/CookMode';
@@ -115,6 +116,7 @@ export default function App() {
   // ── Batch import (multi-share) state ────────────────────────────────────
   const [showBatchQueue, setShowBatchQueue] = useState(false);
   const [batchQueueCount, setBatchQueueCount] = useState(0);
+  const [batchReadyCount, setBatchReadyCount] = useState(0);
   const [batchReviewItem, setBatchReviewItem] = useState(null); // { item } opened in ImportSheet
   const [weekHistory, setWeekHistory] = useState([]); // past week plans
   const [isSyncing, setIsSyncing] = useState(false);
@@ -289,15 +291,34 @@ export default function App() {
 
     const refreshBatchCount = () => {
       getBatchQueueItems().then(items => {
-        const count = items.filter(i => i.status === 'pending' || i.status === 'extracting' || i.status === 'ready').length;
-        setBatchQueueCount(count);
+        const pending = items.filter(i => i.status === 'pending' || i.status === 'extracting').length;
+        const ready = items.filter(i => i.status === 'ready').length;
+        setBatchQueueCount(pending);
+        setBatchReadyCount(ready);
       }).catch(() => {});
     };
     refreshBatchCount();
 
+    const handleBatchComplete = (e) => {
+      const { readyCount = 0, failedCount = 0 } = e.detail || {};
+      let msg;
+      if (readyCount > 0) {
+        msg = `${readyCount} recipe${readyCount !== 1 ? 's' : ''} ready to review`;
+      } else if (failedCount > 0) {
+        msg = `Import finished — ${failedCount} failed`;
+      } else {
+        msg = 'Import complete';
+      }
+      showToast(msg, readyCount > 0 ? 'success' : 'info', 4000);
+    };
+
     window.addEventListener('spicehub:batch-queue-updated', refreshBatchCount);
-    return () => window.removeEventListener('spicehub:batch-queue-updated', refreshBatchCount);
-  }, []);
+    window.addEventListener('spicehub:batch-import-complete', handleBatchComplete);
+    return () => {
+      window.removeEventListener('spicehub:batch-queue-updated', refreshBatchCount);
+      window.removeEventListener('spicehub:batch-import-complete', handleBatchComplete);
+    };
+  }, [showToast]);
 
   // Persist week plan whenever it changes (debounced)
   useEffect(() => {
@@ -319,6 +340,17 @@ export default function App() {
 
   // Compute rotation meals
   const rotationMeals = useMemo(() => meals.filter(m => m.inRotation), [meals]);
+
+  // A-1 Smart auto-plan: IDs of meals used in the last 2 weeks so MealSpinner
+  // can de-prioritize them without excluding them entirely (graceful fallback).
+  const recentlyUsedIds = useMemo(() => {
+    const ids = new Set();
+    weekHistory.slice(-2).forEach(hw => {
+      (hw.meals || []).forEach(m => { if (m && m.id) ids.add(m.id); });
+    });
+    weekPlan.forEach(m => { if (m && m.id) ids.add(m.id); });
+    return ids;
+  }, [weekHistory, weekPlan]);
 
   // Persist grocery list whenever it changes
   useEffect(() => {
@@ -661,11 +693,17 @@ useEffect(() => {
     const storeMemory = window._storeMemory || {};
     weekPlan.forEach(meal => {
       if (!meal || meal._special) return;
+      // Build quick lookup: ingredient text (lowercase) → department category from LLM metadata
+      const metaMap = {};
+      (meal._ingredientMeta || []).forEach(m => {
+        if (m && m.text && m.category) metaMap[m.text.toLowerCase().trim()] = m.category;
+      });
       meal.ingredients.forEach(ing => {
         const key = ing.toLowerCase().trim();
         if (!items[key]) {
           const rememberedStore = storeMemory[key] || '';
-          items[key] = { name: ing, checked: false, store: rememberedStore };
+          const category = metaMap[key] || categorizeIngredient(ing);
+          items[key] = { name: ing, checked: false, store: rememberedStore, category };
         }
       });
     });
@@ -982,6 +1020,7 @@ useEffect(() => {
             onSpinnerComplete={handleSpinnerCompleteForDates}
             rotationMeals={rotationMeals}
             currentPlan={weekPlan}
+            recentlyUsedIds={recentlyUsedIds}
           />
         )}
         {tab === 'library' && (
@@ -1228,8 +1267,12 @@ useEffect(() => {
       )}
 
       {/* BatchQueuePill — floating re-entry when queue is running but panel is closed */}
-      {!showBatchQueue && batchQueueCount > 0 && (
-        <BatchQueuePill count={batchQueueCount} onClick={() => setShowBatchQueue(true)} />
+      {!showBatchQueue && (batchQueueCount > 0 || batchReadyCount > 0) && (
+        <BatchQueuePill
+          pendingCount={batchQueueCount}
+          readyCount={batchReadyCount}
+          onClick={() => setShowBatchQueue(true)}
+        />
       )}
 
       {/* SyncQueue — background sync status indicator */}

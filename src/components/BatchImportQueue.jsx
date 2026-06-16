@@ -86,10 +86,17 @@ export default function BatchImportQueue({ onReview, onRetry, onClose }) {
 
         <div className="biq-header">
           <div>
-            <h2 className="biq-title">Importing {items.length} recipe{items.length !== 1 ? 's' : ''}</h2>
+            <h2 className="biq-title">
+              {pendingCount === 0 && items.length > 0
+                ? 'Import complete'
+                : `Importing ${items.length} recipe${items.length !== 1 ? 's' : ''}`}
+            </h2>
             <p className="biq-subtitle">
-              {pendingCount > 0 ? `${pendingCount} in progress` : 'All done'}
-              {readyCount > 0 ? ` · ${readyCount} ready to review` : ''}
+              {pendingCount > 0
+                ? `${pendingCount} in progress`
+                : readyCount > 0
+                  ? `${readyCount} ready to review`
+                  : 'All done — tap to review or dismiss'}
             </p>
           </div>
           <button className="biq-close" onClick={onClose} aria-label="Close">
@@ -104,8 +111,14 @@ export default function BatchImportQueue({ onReview, onRetry, onClose }) {
               <p>No imports queued.</p>
             </div>
           ) : (
-            items.map(item => (
-              <div key={item.id} className={`biq-row biq-row-${item.status}`}>
+            items.map((item, i) => (
+              <motion.div
+                key={item.id}
+                className={`biq-row biq-row-${item.status}`}
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: i * 0.04, duration: 0.2, ease: [0.32, 0.72, 0, 1] }}
+              >
                 <div className="biq-row-main">
                   {item.status === 'extracting' && <Loader2 size={18} strokeWidth={1.75} className="biq-spin" />}
                   {item.status === 'ready' && <CheckCircle2 size={18} strokeWidth={1.75} className="biq-icon-ready" />}
@@ -148,7 +161,7 @@ export default function BatchImportQueue({ onReview, onRetry, onClose }) {
                     </button>
                   )}
                 </div>
-              </div>
+              </motion.div>
             ))
           )}
         </div>
@@ -168,19 +181,33 @@ export default function BatchImportQueue({ onReview, onRetry, onClose }) {
  * closed but pending/ready items remain. Positioned bottom-right, clear of
  * existing FABs (which anchor bottom-left / center).
  */
-export function BatchQueuePill({ count, onClick }) {
-  if (!count) return null;
+export function BatchQueuePill({ pendingCount = 0, readyCount = 0, onClick }) {
+  const total = pendingCount + readyCount;
+  if (!total) return null;
+
+  let icon, label;
+  if (readyCount > 0 && pendingCount === 0) {
+    icon = <CheckCircle2 size={16} strokeWidth={1.75} className="biq-icon-ready" />;
+    label = `${readyCount} ready to review`;
+  } else if (readyCount > 0) {
+    icon = <CheckCircle2 size={16} strokeWidth={1.75} className="biq-icon-ready" />;
+    label = `${readyCount} ready · ${pendingCount} importing`;
+  } else {
+    icon = <Loader2 size={16} strokeWidth={1.75} className="biq-spin" />;
+    label = `${pendingCount} importing`;
+  }
+
   return (
     <motion.button
-      className="biq-pill"
+      className={`biq-pill${readyCount > 0 ? ' biq-pill-ready' : ''}`}
       onClick={onClick}
       initial={{ opacity: 0, y: 16, scale: 0.9 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 16, scale: 0.9 }}
       transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
     >
-      <Loader2 size={16} strokeWidth={1.75} className="biq-spin" />
-      <span>{count} importing</span>
+      {icon}
+      <span>{label}</span>
     </motion.button>
   );
 }

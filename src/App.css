@@ -19204,6 +19204,14 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   cursor: pointer;
 }
 .biq-pill:active { transform: scale(0.96); }
+.biq-pill-ready {
+  background: var(--success, #22c55e);
+  color: #fff;
+}
+.biq-pill-ready:hover {
+  background: var(--success, #22c55e);
+  filter: brightness(1.08);
+}
 
 @media (max-width: 768px) {
   .biq-row {
@@ -19906,6 +19914,14 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   cursor: pointer;
 }
 .biq-pill:active { transform: scale(0.96); }
+.biq-pill-ready {
+  background: var(--success, #22c55e);
+  color: #fff;
+}
+.biq-pill-ready:hover {
+  background: var(--success, #22c55e);
+  filter: brightness(1.08);
+}
 
 @media (max-width: 768px) {
   .biq-row {
