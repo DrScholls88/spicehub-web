@@ -95,6 +95,7 @@ export default function MealSpinner({
   onClose,
   selectedDayIndices,
   slotDates,
+  recentlyUsedIds = null,  // Set<id> — meals to de-prioritize (used in last 2 weeks)
 }) {
   // Inject CSS once
   useEffect(()=>{
@@ -120,21 +121,27 @@ export default function MealSpinner({
   const usingRotation = !!(rotationMeals && rotationMeals.length>=5);
   const minNeeded = Math.max(1, Math.min(5, numSlots));
 
-  // Build picks array[numSlots] — preserves locked meals from currentPlan
+  // Build picks array[numSlots] — preserves locked meals, de-prioritizes recently used
   const buildPicks = useCallback(()=>{
     const shuffled = [...pool].sort(()=>Math.random()-.5);
+    // Partition: fresh meals come first, recently-used only when fresh pool is exhausted
+    const recent = recentlyUsedIds instanceof Set ? recentlyUsedIds : null;
+    const fresh = recent ? shuffled.filter(m => !recent.has(m.id)) : shuffled;
+    const used  = recent ? shuffled.filter(m =>  recent.has(m.id)) : [];
+    const ordered = [...fresh, ...used];
+
     const picks = [];
     let pi = 0;
     activeDayIndices.forEach(dayIdx=>{
       if(dayIdx<7 && currentPlan?.[dayIdx]?._locked) {
         picks.push(currentPlan[dayIdx]);
       } else {
-        picks.push(shuffled[pi%shuffled.length]);
+        picks.push(ordered[pi % ordered.length]);
         pi++;
       }
     });
     return picks;
-  },[pool,currentPlan,activeDayIndices]);
+  },[pool, currentPlan, activeDayIndices, recentlyUsedIds]);
 
   const startSpin = useCallback(()=>{
     if(pool.length<minNeeded) return;

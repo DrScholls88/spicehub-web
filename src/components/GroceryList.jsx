@@ -2,6 +2,17 @@ import { useState, useMemo, useCallback } from 'react';
 import { ShoppingCart, Search, X as XIcon } from 'lucide-react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
 import { saveStoreMemory as dbSaveStoreMemory, getStoreMemory as dbGetStoreMemory, addToBarInventory } from '../db';
+import { GROCERY_CATEGORIES, categorizeIngredient } from '../recipeSchema';
+
+const DEPT_EMOJI = {
+  'Produce':        '🥦',
+  'Meat & Seafood': '🥩',
+  'Dairy':          '🥛',
+  'Pantry':         '🫙',
+  'Frozen':         '🧊',
+  'Bakery':         '🍞',
+  'Other':          '🛒',
+};
 
 const STORES = [
   { id: 'target',     name: 'Target',       color: '#cc0000', logo: 'https://www.google.com/s2/favicons?domain=target.com&sz=32' },
@@ -14,6 +25,77 @@ const STORES = [
 
 const PANTRY_ID = '__pantry__';
 const PANTRY_STORE = { id: PANTRY_ID, name: 'In Pantry', color: '#4caf50', logo: '' };
+
+// ── Quantity aggregation helpers ─────────────────────────────────────────────
+const UNIT_CANONICAL = {
+  cup: 'cup', cups: 'cup',
+  tablespoon: 'tablespoon', tablespoons: 'tablespoon',
+  tbsp: 'tablespoon', tbs: 'tablespoon', 'tbsp.': 'tablespoon',
+  teaspoon: 'teaspoon', teaspoons: 'teaspoon', tsp: 'teaspoon', 'tsp.': 'teaspoon',
+  ounce: 'oz', ounces: 'oz', oz: 'oz',
+  pound: 'lb', pounds: 'lb', lb: 'lb', lbs: 'lb',
+  gram: 'g', grams: 'g', g: 'g',
+  kilogram: 'kg', kilograms: 'kg', kg: 'kg',
+  ml: 'ml', milliliter: 'ml', milliliters: 'ml',
+  liter: 'L', liters: 'L',
+  pinch: 'pinch', pinches: 'pinch',
+  clove: 'clove', cloves: 'clove',
+  slice: 'slice', slices: 'slice',
+  can: 'can', cans: 'can',
+  bag: 'bag', bags: 'bag',
+  bunch: 'bunch', bunches: 'bunch',
+  package: 'package', packages: 'package', pkg: 'package',
+  head: 'head', heads: 'head',
+  stalk: 'stalk', stalks: 'stalk',
+  sprig: 'sprig', sprigs: 'sprig',
+  piece: 'piece', pieces: 'piece',
+  scoop: 'scoop', scoops: 'scoop',
+};
+
+const UNIT_DISPLAY = {
+  cup: 'cups', tablespoon: 'tbsp', teaspoon: 'tsp',
+  oz: 'oz', lb: 'lb', g: 'g', kg: 'kg', ml: 'ml', L: 'L',
+  pinch: 'pinch', clove: 'cloves', slice: 'slices', can: 'cans',
+  bag: 'bags', bunch: 'bunches', package: 'packages',
+  head: 'heads', stalk: 'stalks', sprig: 'sprigs', piece: 'pieces', scoop: 'scoops',
+};
+
+function parseAmount(str) {
+  const s = str.trim()
+    .replace('½','1/2').replace('¼','1/4').replace('¾','3/4')
+    .replace('⅓','1/3').replace('⅔','2/3')
+    .replace('⅛','1/8').replace('⅜','3/8').replace('⅝','5/8').replace('⅞','7/8');
+  const mixed = s.match(/^(\d+)\s+(\d+)\/(\d+)$/);
+  if (mixed) return parseInt(mixed[1]) + parseInt(mixed[2]) / parseInt(mixed[3]);
+  const frac = s.match(/^(\d+)\/(\d+)$/);
+  if (frac) return parseInt(frac[1]) / parseInt(frac[2]);
+  const n = parseFloat(s);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function formatAmount(n) {
+  if (n === Math.round(n)) return String(n);
+  const whole = Math.floor(n);
+  const frac = n - whole;
+  const VULGAR = [[1/8,'⅛'],[1/4,'¼'],[1/3,'⅓'],[3/8,'⅜'],[1/2,'½'],[5/8,'⅝'],[2/3,'⅔'],[3/4,'¾'],[7/8,'⅞']];
+  for (const [v, sym] of VULGAR) {
+    if (Math.abs(frac - v) < 0.04) return whole > 0 ? `${whole}${sym}` : sym;
+  }
+  return n.toFixed(1).replace(/\.0$/, '');
+}
+
+function parseIngredient(rawName) {
+  const m = rawName.trim().match(/^([\d\s/½¼¾⅓⅔⅛⅜⅝⅞.]+?)\s+([a-z]+\.?)\s+(.+)$/i);
+  if (!m) return null;
+  const amount = parseAmount(m[1].trim());
+  if (!amount) return null;
+  const unitRaw = m[2].trim().toLowerCase().replace(/\.$/, '');
+  const canonical = UNIT_CANONICAL[unitRaw];
+  if (!canonical) return null;
+  const ingredient = m[3].trim();
+  if (!ingredient) return null;
+  return { amount, unit: canonical, ingredient };
+}
 
 async function rememberStore(ingredientName, storeId) {
   const key = ingredientName.toLowerCase().trim();
@@ -61,18 +143,49 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
     if (viewMode === 'detailed') return itemList.map(i => ({...i, indices: [i._idx], names: [i.name]}));
     const map = new Map();
     itemList.forEach(item => {
-      const key = item.name.toLowerCase().trim();
+      const parsed = parseIngredient(item.name);
+      const key = parsed
+        ? `qty::${parsed.unit}::${parsed.ingredient.toLowerCase()}`
+        : `raw::${item.name.toLowerCase().trim()}`;
       if (!map.has(key)) {
-        map.set(key, { ...item, indices: [item._idx], names: [item.name], quantity: 1, allChecked: item.checked });
+        map.set(key, {
+          ...item,
+          indices: [item._idx],
+          names: [item.name],
+          quantity: 1,
+          allChecked: item.checked,
+          _parsed: parsed,
+          _totalAmount: parsed ? parsed.amount : null,
+          _ingredientBase: parsed ? parsed.ingredient : null,
+        });
       } else {
         const existing = map.get(key);
         existing.indices.push(item._idx);
         existing.names.push(item.name);
         existing.quantity += 1;
         existing.allChecked = existing.allChecked && item.checked;
+        if (parsed && existing._totalAmount !== null) {
+          existing._totalAmount += parsed.amount;
+        }
       }
     });
-    return Array.from(map.values()).map(g => ({ ...g, checked: g.allChecked, _idx: g.indices[0], isConsolidated: g.quantity > 1 }));
+    return Array.from(map.values()).map(g => {
+      let name = g.name;
+      let showBadge = g.quantity > 1;
+      if (g._parsed && g._totalAmount !== null && g.quantity > 1) {
+        const unitDisp = UNIT_DISPLAY[g._parsed.unit] || g._parsed.unit;
+        name = `${formatAmount(g._totalAmount)} ${unitDisp} ${g._ingredientBase}`;
+        showBadge = false;
+      }
+      return {
+        ...g,
+        name,
+        checked: g.allChecked,
+        _idx: g.indices[0],
+        isConsolidated: g.quantity > 1,
+        quantity: showBadge ? g.quantity : 1,
+      };
+    });
   }, [viewMode]);
 
   // ── Item actions ────────────────────────────────────────────────────────────
@@ -319,8 +432,8 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
         >
           {batchMode ? '✕ Done' : '⟂ Batch'}
         </button>
-        <button className="gl-btn-auto-sort" onClick={() => setViewMode(v => v === 'simple' ? 'detailed' : 'simple')}>
-          {viewMode === 'simple' ? '≣ Detailed' : '≡ Simple'}
+        <button className="gl-btn-auto-sort" onClick={() => setViewMode(v => v === 'simple' ? 'detailed' : v === 'detailed' ? 'department' : 'simple')}>
+          {viewMode === 'simple' ? '≣ Detailed' : viewMode === 'detailed' ? '🏪 Dept' : '≡ Simple'}
         </button>
         {rawUnsorted.length > 0 && !batchMode && (
           <button className="gl-btn-auto-sort" onClick={autoAssignFromMemory}>
@@ -461,64 +574,106 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
           </motion.div>
         )}
 
-        {/* ── Unsorted section ── */}
-        {unsortedList.length > 0 && (
-          <motion.div layout initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="gl-section" onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, 'unsorted')}>
-            <div className="gl-section-header">
-              <div className="gl-section-title">Unsorted</div>
-              <span className="gl-section-count">{rawUnsorted.length}</span>
-            </div>
-            {unsortedList.map(item => (
-              <GroceryItem
-                key={item._idx}
-                item={item}
-                batchMode={batchMode}
-                isSelected={item.indices.every(idx => selectedItems.has(idx))} // True only if all underlying selected
-                onToggleCheck={() => toggleCheck(item.indices)}
-                onToggleSelect={() => toggleSelect(item.indices)}
-                onSetStore={(storeId) => setStore(item.indices, item.names, storeId)}
-                onMarkPantry={() => markAsPantry(item.indices, item.names)}
-                onRemove={() => removeItem(item.indices)}
-                onDragStart={(e) => handleDragStart(e, item.indices, item.names)}
-                stores={STORES}
-              />
-            ))}
-          </motion.div>
-        )}
+        {/* ── Department view (store mode) OR store-by-store view ── */}
+        {viewMode === 'department' ? (
+          // Group ALL non-pantry, non-quest active items by grocery department
+          GROCERY_CATEGORIES
+            .map(cat => ({
+              cat,
+              items: consolidateItems(
+                filteredItems.filter(i => {
+                  if (i.store === PANTRY_ID || i.tag === 'bar-quest') return false;
+                  const c = i.category || categorizeIngredient(i.name);
+                  return c === cat;
+                })
+              ),
+            }))
+            .filter(g => g.items.length > 0)
+            .map(({ cat, items: dItems }) => (
+              <motion.div layout initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} key={cat} className="gl-section">
+                <div className="gl-section-header">
+                  <div className="gl-section-title">{DEPT_EMOJI[cat]} {cat}</div>
+                  <span className="gl-section-count">{dItems.reduce((a, i) => a + (i.quantity || 1), 0)}</span>
+                </div>
+                {dItems.map(item => (
+                  <GroceryItem
+                    key={item._idx}
+                    item={item}
+                    batchMode={batchMode}
+                    isSelected={item.indices.every(idx => selectedItems.has(idx))}
+                    onToggleCheck={() => toggleCheck(item.indices)}
+                    onToggleSelect={() => toggleSelect(item.indices)}
+                    onSetStore={(storeId) => setStore(item.indices, item.names, storeId)}
+                    onMarkPantry={() => markAsPantry(item.indices, item.names)}
+                    onRemove={() => removeItem(item.indices)}
+                    onDragStart={(e) => handleDragStart(e, item.indices, item.names)}
+                    stores={STORES}
+                  />
+                ))}
+              </motion.div>
+            ))
+        ) : (
+          <>
+            {/* ── Unsorted section ── */}
+            {unsortedList.length > 0 && (
+              <motion.div layout initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="gl-section" onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, 'unsorted')}>
+                <div className="gl-section-header">
+                  <div className="gl-section-title">Unsorted</div>
+                  <span className="gl-section-count">{rawUnsorted.length}</span>
+                </div>
+                {unsortedList.map(item => (
+                  <GroceryItem
+                    key={item._idx}
+                    item={item}
+                    batchMode={batchMode}
+                    isSelected={item.indices.every(idx => selectedItems.has(idx))}
+                    onToggleCheck={() => toggleCheck(item.indices)}
+                    onToggleSelect={() => toggleSelect(item.indices)}
+                    onSetStore={(storeId) => setStore(item.indices, item.names, storeId)}
+                    onMarkPantry={() => markAsPantry(item.indices, item.names)}
+                    onRemove={() => removeItem(item.indices)}
+                    onDragStart={(e) => handleDragStart(e, item.indices, item.names)}
+                    stores={STORES}
+                  />
+                ))}
+              </motion.div>
+            )}
 
-        {/* ── Store sections ── */}
-        {byStore.map(group => (
-          <motion.div layout initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} key={group.id} className="gl-section" onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, group.id)}>
-            <div className="gl-section-header">
-              <div className="gl-section-title" style={{ borderLeftColor: group.color }}>
-                <StoreLogo store={group} size={20} />
-                {group.name}
-              </div>
-              <div className="gl-section-right">
-                <span className="gl-section-count">{group.items.reduce((acc, i) => acc + i.quantity, 0)}</span>
-                <button className="gl-btn-keep-section" onClick={() => sendStoreToKeep(group.id)}>
-                  <KeepIcon size={16} />
-                </button>
-              </div>
-            </div>
-            {group.items.map(item => (
-              <GroceryItem
-                key={item._idx}
-                item={item}
-                batchMode={batchMode}
-                isSelected={item.indices.every(idx => selectedItems.has(idx))}
-                onToggleCheck={() => toggleCheck(item.indices)}
-                onToggleSelect={() => toggleSelect(item.indices)}
-                onSetStore={(storeId) => setStore(item.indices, item.names, storeId)}
-                onMarkPantry={() => markAsPantry(item.indices, item.names)}
-                onRemove={() => removeItem(item.indices)}
-                onDragStart={(e) => handleDragStart(e, item.indices, item.names)}
-                stores={STORES}
-                isAssigned
-              />
+            {/* ── Store sections ── */}
+            {byStore.map(group => (
+              <motion.div layout initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} key={group.id} className="gl-section" onDragOver={handleDragOver} onDrop={(e) => handleDrop(e, group.id)}>
+                <div className="gl-section-header">
+                  <div className="gl-section-title" style={{ borderLeftColor: group.color }}>
+                    <StoreLogo store={group} size={20} />
+                    {group.name}
+                  </div>
+                  <div className="gl-section-right">
+                    <span className="gl-section-count">{group.items.reduce((acc, i) => acc + i.quantity, 0)}</span>
+                    <button className="gl-btn-keep-section" onClick={() => sendStoreToKeep(group.id)}>
+                      <KeepIcon size={16} />
+                    </button>
+                  </div>
+                </div>
+                {group.items.map(item => (
+                  <GroceryItem
+                    key={item._idx}
+                    item={item}
+                    batchMode={batchMode}
+                    isSelected={item.indices.every(idx => selectedItems.has(idx))}
+                    onToggleCheck={() => toggleCheck(item.indices)}
+                    onToggleSelect={() => toggleSelect(item.indices)}
+                    onSetStore={(storeId) => setStore(item.indices, item.names, storeId)}
+                    onMarkPantry={() => markAsPantry(item.indices, item.names)}
+                    onRemove={() => removeItem(item.indices)}
+                    onDragStart={(e) => handleDragStart(e, item.indices, item.names)}
+                    stores={STORES}
+                    isAssigned
+                  />
+                ))}
+              </motion.div>
             ))}
-          </motion.div>
-        ))}
+          </>
+        )}
 
         {/* ── Pantry section ── */}
         {pantryList.length > 0 && (

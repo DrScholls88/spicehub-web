@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Pencil, ArrowRight, Camera, FolderOpen } from 'lucide-react';
+import { Pencil, ArrowRight, Camera, FolderOpen, X as XIcon } from 'lucide-react';
 import { isSocialMediaUrl, getSocialPlatform, detectImportType } from '../recipeParser.js';
+import { hapticLight } from '../haptics';
 
 // Spec §1: input area compresses to compact bar over 250ms, spring-like easing
 const COLLAPSE_TRANSITION = { duration: 0.25, ease: [0.32, 0.72, 0, 1] };
@@ -166,14 +167,14 @@ export default function ImportInput({
             <div className="import-input-type-toggle">
               <button
                 className={itemType === 'meal' ? 'active' : ''}
-                onClick={() => setItemType('meal')}
+                onClick={() => { hapticLight(); setItemType('meal'); }}
                 style={{ transition: TYPE_TOGGLE_TRANSITION }}
               >
                 Meal
               </button>
               <button
                 className={itemType === 'drink' ? 'active' : ''}
-                onClick={() => setItemType('drink')}
+                onClick={() => { hapticLight(); setItemType('drink'); }}
                 style={{ transition: TYPE_TOGGLE_TRANSITION }}
               >
                 Drink
@@ -193,6 +194,37 @@ export default function ImportInput({
                     placeholder="Paste recipe URL..."
                     autoFocus
                   />
+                  <AnimatePresence>
+                    {url.trim().length > 0 && (
+                      <motion.button
+                        key="url-clear"
+                        type="button"
+                        className="import-input-url-clear"
+                        onClick={() => setUrl('')}
+                        aria-label="Clear URL"
+                        initial={{ opacity: 0, scale: 0.7 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.7 }}
+                        transition={{ duration: 0.15, ease: [0.32, 0.72, 0, 1] }}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                          width: '32px',
+                          height: '32px',
+                          borderRadius: '50%',
+                          border: 'none',
+                          background: 'var(--surface-2, var(--border))',
+                          color: 'var(--text-muted)',
+                          cursor: 'pointer',
+                          padding: 0,
+                        }}
+                      >
+                        <XIcon size={14} strokeWidth={2} />
+                      </motion.button>
+                    )}
+                  </AnimatePresence>
                   <button
                     type="button"
                     className="import-input-url-submit"
@@ -228,7 +260,7 @@ export default function ImportInput({
                   className="import-input-paste"
                   value={pasteText}
                   onChange={(e) => setPasteText(e.target.value)}
-                  placeholder="Paste recipe text, ingredients, or instructions..."
+                  placeholder="e.g. 2 cups flour, 1 tsp salt… or paste a full recipe with ingredients and directions"
                   rows={6}
                 />
               </div>

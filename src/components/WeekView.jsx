@@ -164,6 +164,7 @@ export default function WeekView({
   onSpinnerComplete,
   rotationMeals,
   currentPlan,
+  recentlyUsedIds = null,  // Set<id> — passed through to MealSpinner
 }) {
   // ── Core state ──────────────────────────────────────────────────────────────
   const today = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
@@ -700,6 +701,7 @@ export default function WeekView({
               setSpinnerSelectedIndices(null);
               setSpinnerTargetDates(null);
             }}
+            recentlyUsedIds={recentlyUsedIds}
             selectedDayIndices={spinnerSelectedIndices}
             slotDates={spinnerSlotDates}
           />

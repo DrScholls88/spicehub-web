@@ -7,6 +7,7 @@ import db, {
   getNextPendingBatchItem,
   updateBatchQueueItem,
   recoverStuckBatchItems,
+  getBatchQueueItems,
 } from './db';
 import { importRecipeFromUrl, detectImportType } from './recipeParser';
 
@@ -37,9 +38,15 @@ async function processOne(item) {
       const finalType = item.itemTypeUserOverride
         ? item.itemType
         : (result.itemType || result.type || detectedType || 'meal');
+      // Ensure confidence is always a number so biq-confidence badges always render.
+      // Gemini-scored results already have it; Apify-only extractions may not.
+      const normalizedRecipe = {
+        ...result,
+        confidence: typeof result.confidence === 'number' ? result.confidence : 0.5,
+      };
       await updateBatchQueueItem(item.id, {
         status: 'ready',
-        recipe: result,
+        recipe: normalizedRecipe,
         itemType: finalType,
       });
     } else {
@@ -70,6 +77,29 @@ export async function runBatchImportEngine() {
       const next = await getNextPendingBatchItem();
       if (!next) break;
       await processOne(next);
+    }
+
+    // ── Drain detection ──────────────────────────────────────────────────
+    // After the loop exits naturally (no more pending), check if the queue
+    // has items and ALL of them are now in terminal states. If so, fire a
+    // completion event so the UI can notify the user.
+    if (typeof window !== 'undefined') {
+      try {
+        const allItems = await getBatchQueueItems();
+        if (allItems.length > 0) {
+          const hasActive = allItems.some(i => i.status === 'pending' || i.status === 'extracting');
+          if (!hasActive) {
+            const readyCount  = allItems.filter(i => i.status === 'ready').length;
+            const failedCount = allItems.filter(i => i.status === 'failed').length;
+            const savedCount  = allItems.filter(i => i.status === 'saved').length;
+            window.dispatchEvent(new CustomEvent('spicehub:batch-import-complete', {
+              detail: { readyCount, failedCount, savedCount, total: allItems.length },
+            }));
+          }
+        }
+      } catch (e) {
+        console.warn('[batchImportEngine] drain-check failed:', e);
+      }
     }
   } finally {
     running = false;
