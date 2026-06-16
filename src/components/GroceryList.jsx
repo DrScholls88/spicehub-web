@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
-import { ShoppingCart } from 'lucide-react';
+import { ShoppingCart, Search, X as XIcon } from 'lucide-react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
 import { saveStoreMemory as dbSaveStoreMemory, getStoreMemory as dbGetStoreMemory, addToBarInventory } from '../db';
 
@@ -41,12 +41,21 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
   const [selectedItems, setSelectedItems] = useState(new Set());
   const [batchStoreOverlayOpen, setBatchStoreOverlayOpen] = useState(false);
   const [confettiBurst, setConfettiBurst] = useState(0); // incremented to rekey confetti
+  const [searchQuery, setSearchQuery] = useState('');
 
   // View modes
   const [viewMode, setViewMode] = useState('simple'); // 'simple' | 'detailed'
 
   // Drag State
   const [draggedItems, setDraggedItems] = useState(null);
+
+  const filteredItems = useMemo(() => {
+    if (!searchQuery.trim()) return items.map((item, i) => ({ ...item, _idx: i }));
+    const q = searchQuery.toLowerCase();
+    return items
+      .map((item, i) => ({ ...item, _idx: i }))
+      .filter(item => item.name.toLowerCase().includes(q));
+  }, [items, searchQuery]);
 
   const consolidateItems = useCallback((itemList) => {
     if (viewMode === 'detailed') return itemList.map(i => ({...i, indices: [i._idx], names: [i.name]}));
@@ -221,10 +230,10 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
     setConfettiBurst(prev => prev + 1);
   }, [setItems, onToast]);
 
-  // Group views
-  const rawQuest = items.map((item, i) => ({ ...item, _idx: i })).filter(i => i.tag === 'bar-quest' && i.store !== PANTRY_ID && !i.checked);
-  const rawUnsorted = items.map((item, i) => ({ ...item, _idx: i })).filter(i => !i.store && i.tag !== 'bar-quest');
-  const rawPantry = items.map((item, i) => ({ ...item, _idx: i })).filter(i => i.store === PANTRY_ID);
+  // Group views — use filteredItems so search/filter narrows all sections
+  const rawQuest = filteredItems.filter(i => i.tag === 'bar-quest' && i.store !== PANTRY_ID && !i.checked);
+  const rawUnsorted = filteredItems.filter(i => !i.store && i.tag !== 'bar-quest');
+  const rawPantry = filteredItems.filter(i => i.store === PANTRY_ID);
 
   const questList = rawQuest; // quest items are already unique — no consolidation needed
   const unsortedList = consolidateItems(rawUnsorted);
@@ -232,7 +241,7 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
   
   const byStore = STORES.map(s => ({
     ...s,
-    items: consolidateItems(items.map((item, idx) => ({ ...item, _idx: idx })).filter(i => i.store === s.id)),
+    items: consolidateItems(filteredItems.filter(i => i.store === s.id)),
   })).filter(g => g.items.length > 0);
 
   const activeItems = items.filter(i => i.store !== PANTRY_ID);
@@ -319,6 +328,25 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
           </button>
         )}
       </div>
+
+      {/* ── Search filter ── */}
+      {items.length > 0 && (
+        <div className="gl-search-wrap">
+          <Search size={16} strokeWidth={1.75} className="gl-search-icon" />
+          <input
+            className="gl-search-input"
+            type="search"
+            placeholder="Search groceries…"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
+          {searchQuery && (
+            <button className="gl-search-clear" onClick={() => setSearchQuery('')} aria-label="Clear search">
+              <XIcon size={14} strokeWidth={2} />
+            </button>
+          )}
+        </div>
+      )}
 
       {/* ── Batch mode sticky toolbar ── */}
       {batchMode && (

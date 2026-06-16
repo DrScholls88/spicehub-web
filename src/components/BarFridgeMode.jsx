@@ -115,6 +115,15 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose, onAddToGr
   const perfectMatches = scoredDrinks.filter(s => s.missing === 0).length;
   const closeMatches = scoredDrinks.filter(s => s.missing > 0 && s.missing <= 2).length;
 
+  const bfmEmptyContainerVariants = {
+    hidden: {},
+    visible: { transition: { staggerChildren: 0.12, delayChildren: 0.05 } },
+  };
+  const bfmEmptyItemVariants = {
+    hidden: { opacity: 0, y: 12 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.32, 0.72, 0, 1] } },
+  };
+
   return (
     <div className="bfm-overlay" onClick={onClose}>
       <motion.div className="bfm-sheet" onClick={e => e.stopPropagation()}
@@ -226,18 +235,18 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose, onAddToGr
         {/* Results */}
         <div className="bfm-results">
           {shelfItems.length === 0 ? (
-            <div className="bfm-empty">
-              <span className="bfm-empty-icon">🥃</span>
-              <p>Add spirits from your bar to see what cocktails you can mix!</p>
-              <p style={{ fontSize: '12px', color: '#888', marginTop: 8 }}>
+            <motion.div className="bfm-empty" variants={bfmEmptyContainerVariants} initial="hidden" animate="visible">
+              <motion.span className="bfm-empty-icon" variants={bfmEmptyItemVariants}>🥃</motion.span>
+              <motion.p variants={bfmEmptyItemVariants}>Add spirits from your bar to see what cocktails you can mix!</motion.p>
+              <motion.p variants={bfmEmptyItemVariants} style={{ fontSize: '12px', color: '#888', marginTop: 8 }}>
                 Your inventory is saved automatically between sessions.
-              </p>
-            </div>
+              </motion.p>
+            </motion.div>
           ) : filteredResults.length === 0 ? (
-            <div className="bfm-empty">
-              <span className="bfm-empty-icon">😔</span>
-              <p>No cocktails match your bottles. Try adding more spirits or mixers!</p>
-            </div>
+            <motion.div className="bfm-empty" variants={bfmEmptyContainerVariants} initial="hidden" animate="visible">
+              <motion.span className="bfm-empty-icon" variants={bfmEmptyItemVariants}>😔</motion.span>
+              <motion.p variants={bfmEmptyItemVariants}>No cocktails match your bottles. Try adding more spirits or mixers!</motion.p>
+            </motion.div>
           ) : (
             filteredResults.map(({ drink, score, matched, total, missing, missingIngredients }) => (
               <div

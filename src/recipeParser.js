@@ -181,6 +181,27 @@ export function getSocialPlatform(url) {
   } catch { return 'Social Media'; }
 }
 
+// Scan free-form shared text for 2+ recognizable social-media URLs
+// (Instagram "Send to" with multiple posts selected bundles several URLs,
+// usually newline- or space-separated, into one EXTRA_TEXT string).
+// Returns a deduped array of validated URLs - callers check `.length >= 2`
+// to decide whether to route to the batch-import flow.
+export function extractMultipleUrls(text) {
+  if (!text || typeof text !== 'string') return [];
+  const candidates = text.split(/\s+/).map(s => s.trim()).filter(Boolean);
+  const seen = new Set();
+  const urls = [];
+  for (const candidate of candidates) {
+    // Strip trailing punctuation commonly appended in shared captions/messages
+    const cleaned = candidate.replace(/[).,;]+$/, '');
+    if (!isSocialMediaUrl(cleaned)) continue;
+    if (seen.has(cleaned)) continue;
+    seen.add(cleaned);
+    urls.push(cleaned);
+  }
+  return urls;
+}
+
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Mealie-inspired image selection: pick the best/largest from candidates Ã¢â€â‚¬Ã¢â€â‚¬
 // JSON-LD `image` can be: a string, an array of strings, an ImageObject,
 // an array of ImageObjects, or nested combinations.

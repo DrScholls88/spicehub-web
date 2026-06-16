@@ -87,6 +87,15 @@ export default function FridgeMode({ meals, onViewDetail, onClose }) {
   const perfectMatches = scoredMeals.filter(s => s.missing === 0).length;
   const closeMatches = scoredMeals.filter(s => s.missing > 0 && s.missing <= 3).length;
 
+  const fmEmptyContainerVariants = {
+    hidden: {},
+    visible: { transition: { staggerChildren: 0.12, delayChildren: 0.05 } },
+  };
+  const fmEmptyItemVariants = {
+    hidden: { opacity: 0, y: 12 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.32, 0.72, 0, 1] } },
+  };
+
   return (
     <div className="fm-overlay" onClick={onClose}>
       <motion.div className="fm-sheet" onClick={e => e.stopPropagation()}
@@ -196,15 +205,15 @@ export default function FridgeMode({ meals, onViewDetail, onClose }) {
         {/* Results list */}
         <div className="fm-results">
           {pantryItems.length === 0 ? (
-            <div className="fm-empty">
-              <span className="fm-empty-icon">🔍</span>
-              <p>Add some ingredients above to see what you can make!</p>
-            </div>
+            <motion.div className="fm-empty" variants={fmEmptyContainerVariants} initial="hidden" animate="visible">
+              <motion.span className="fm-empty-icon" variants={fmEmptyItemVariants}>🔍</motion.span>
+              <motion.p variants={fmEmptyItemVariants}>Add some ingredients above to see what you can make!</motion.p>
+            </motion.div>
           ) : filteredResults.length === 0 ? (
-            <div className="fm-empty">
-              <span className="fm-empty-icon">😔</span>
-              <p>No recipes match your ingredients. Try adding more items!</p>
-            </div>
+            <motion.div className="fm-empty" variants={fmEmptyContainerVariants} initial="hidden" animate="visible">
+              <motion.span className="fm-empty-icon" variants={fmEmptyItemVariants}>😔</motion.span>
+              <motion.p variants={fmEmptyItemVariants}>No recipes match your ingredients. Try adding more items!</motion.p>
+            </motion.div>
           ) : (
             filteredResults.map(({ meal, score, matched, total, missing, missingIngredients }) => (
               <div
