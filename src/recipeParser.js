@@ -699,6 +699,299 @@ If handwritten, do your best to read every word. Output plain text only — no J
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// DETERMINISTIC POST-PROCESSING — model-agnostic safety net
+// ─────────────────────────────────────────────────────────────────────────────
+// Runs after ANY LLM (Gemini schema/legacy, Grok, server) and before the recipe
+// reaches the UI/db. Enforces the INGREDIENT-vs-DIRECTION rules from
+// SYSTEM_INSTRUCTION deterministically, so quality no longer depends solely on
+// the model getting it right. Pure + testable. Reuses the regexes/classifiers
+// already defined in this module (COOKING_VERBS_RE, SPOKEN_DIRECTION_RE,
+// STEP_NUM_RE, looksLikeIngredient, looksLikeDirection) and isTrashIngredientLine
+// from recipeSchema.js.
+
+// Strict numbered-step detector. Unlike STEP_NUM_RE (/^\d+[.):\s-]/, which also
+// matches a digit+space and would grab quantity-first ingredients like
+// "2 cups flour"), this requires a digit followed by a period or paren, so it
+// only fires on real numbered instructions ("1. Preheat", "2) Mix").
+const NUMBERED_STEP_RE = /^\d{1,3}[.)]\s+\S/;
+
+function reclassifyIngredientsAndDirections(ingredients = [], directions = []) {
+  const moved = [];
+  const filtered = [];
+  const toText = (x) => (typeof x === 'string' ? x : (x && x.text) || '').trim();
+
+  let ing = ingredients.map(toText).filter(Boolean);
+  let dir = directions.map(toText).filter(Boolean);
+
+  // Pass 1 — directions hiding in the ingredient list.
+  const keepIng = [];
+  for (const line of ing) {
+    if (isTrashIngredientLine(line)) {
+      filtered.push({ from: 'ingredients', line, reason: 'trash' });
+      continue;
+    }
+    if (NUMBERED_STEP_RE.test(line)) {
+      dir.push(line);
+      moved.push({ from: 'ingredients', to: 'directions', line, reason: 'numbered-step' });
+      continue;
+    }
+    const strongDir = COOKING_VERBS_RE.test(line) || SPOKEN_DIRECTION_RE.test(line);
+    const strongIng = looksLikeIngredient(line) && !strongDir;
+    if (strongDir && !strongIng) {
+      dir.push(line);
+      moved.push({ from: 'ingredients', to: 'directions', line, reason: 'action-verb' });
+      continue;
+    }
+    keepIng.push(line);
+  }
+  ing = keepIng;
+
+  // Pass 2 — pure quantity+food lines hiding in the directions list (rarer).
+  const keepDir = [];
+  for (const line of dir) {
+    const strongIng = looksLikeIngredient(line);
+    // Use strict direction signals here too — looksLikeDirection/STEP_NUM_RE would
+    // falsely flag "3 eggs" as a direction (digit+space) and block the rescue.
+    const strongDir = COOKING_VERBS_RE.test(line) || SPOKEN_DIRECTION_RE.test(line) || NUMBERED_STEP_RE.test(line);
+    if (strongIng && !strongDir) {
+      ing.push(line);
+      moved.push({ from: 'directions', to: 'ingredients', line, reason: 'pure-quantity-food' });
+      continue;
+    }
+    keepDir.push(line);
+  }
+  dir = keepDir;
+
+  // Final defensive trash sweep on ingredients.
+  const finalIng = ing.filter((line) => {
+    if (isTrashIngredientLine(line)) {
+      filtered.push({ from: 'ingredients', line, reason: 'final-trash' });
+      return false;
+    }
+    return true;
+  });
+
+  // Dedupe within each list, preserving order (case-insensitive).
+  const dedupe = (arr) => {
+    const seen = new Set();
+    return arr.filter((l) => {
+      const k = l.toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  };
+
+  return {
+    ingredients: dedupe(finalIng),
+    directions: dedupe(dir),
+    moved,
+    filtered,
+    movedCount: moved.length,
+    filteredCount: filtered.length,
+  };
+}
+
+/**
+ * enforceDeterministicRules(thin) → sanitized thin + `_postProcessAudit`.
+ * Operates on the thin display shape ({ title|name, ingredients[], directions[],
+ * confidence, needsReview, ... }). Non-breaking: unknown fields pass through.
+ */
+export function enforceDeterministicRules(input = {}) {
+  const reclass = reclassifyIngredientsAndDirections(
+    Array.isArray(input.ingredients) ? input.ingredients : [],
+    Array.isArray(input.directions) ? input.directions : [],
+  );
+
+  const confidenceAdjustment = reclass.movedCount > 0
+    ? -0.05 * Math.min(reclass.movedCount, 4)
+    : 0;
+
+  const originalTitle = input.title || input.name || '';
+  const cleanedTitle = _cleanTitle(originalTitle, reclass.ingredients);
+
+  const audit = {
+    engine: input._structuredVia || 'unknown',
+    movedCount: reclass.movedCount,
+    filteredCount: reclass.filteredCount,
+    moved: reclass.moved,
+    filtered: reclass.filtered,
+    titleCleaned: cleanedTitle !== originalTitle,
+    confidenceAdjustment,
+  };
+
+  const confidence = typeof input.confidence === 'number'
+    ? Math.max(0, Math.min(1, input.confidence + confidenceAdjustment))
+    : (input.confidence ?? null);
+
+  return {
+    ...input,
+    title: cleanedTitle,
+    ingredients: reclass.ingredients,
+    directions: reclass.directions,
+    confidence,
+    needsReview: input.needsReview || reclass.movedCount > 2,
+    _postProcessAudit: audit,
+  };
+}
+
+/**
+ * finalizeAIRecipe — single exit point for every LLM path. Runs the
+ * deterministic enforcer, then attaches display name, structured fields, source
+ * metadata, and the engine tag. Keeps all paths consistent + observable.
+ */
+function finalizeAIRecipe(thin, { hintTitle = '', imageUrl = '', sourceUrl = '', via = '' } = {}) {
+  const enforced = enforceDeterministicRules({ ...thin, _structuredVia: via || thin._structuredVia });
+  const audit = enforced._postProcessAudit;
+  if (audit && (audit.movedCount || audit.filteredCount)) {
+    console.log(`[SpiceHub] Post-process: ${audit.movedCount} moved, ${audit.filteredCount} filtered (engine: ${audit.engine})`);
+  }
+  return {
+    name: _cleanTitle(enforced.title || hintTitle || 'Imported Recipe', enforced.ingredients),
+    ...enforced,
+    ...buildStructuredFields(enforced.ingredients, enforced.directions),
+    imageUrl: imageUrl || enforced.imageUrl || '',
+    link: sourceUrl || enforced.link || '',
+    _aiStructured: true,
+    _structuredVia: via || enforced._structuredVia || 'unknown',
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GROK (xAI) CLIENT — OpenAI-compatible chat completions
+// ─────────────────────────────────────────────────────────────────────────────
+// Mirrors structureWithAIClient but speaks xAI's OpenAI-style API (Bearer auth,
+// messages[], response_format). Reuses the SAME SYSTEM_INSTRUCTION + few-shot +
+// thinFromStructured so output quality/shape matches the Gemini path exactly.
+// Model is env-configurable (VITE_XAI_MODEL); verify the exact id at console.x.ai.
+
+const XAI_ENDPOINT = 'https://api.x.ai/v1/chat/completions';
+const XAI_MODEL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_XAI_MODEL)
+  || 'grok-4-fast-non-reasoning'; // fast, 2M-context, cheap — good fit for extraction
+
+/** Convert Gemini-format few-shot turns ([{role:'user'|'model',parts:[{text}]}]) to OpenAI messages. */
+function geminiTurnsToOpenAIMessages(turns = []) {
+  if (!Array.isArray(turns)) return [];
+  return turns.map((t) => ({
+    role: t.role === 'model' ? 'assistant' : 'user',
+    content: Array.isArray(t.parts)
+      ? t.parts.map((p) => (p && p.text) || '').join('\n')
+      : String(t.content || ''),
+  }));
+}
+
+// Escalation target when the fast model is unsure (env-configurable; verify id
+// at console.x.ai). Confidence floor + correction count trigger a single
+// escalation. Transient HTTP statuses get one retry before we fall back.
+const XAI_MODEL_FLAGSHIP = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_XAI_MODEL_FLAGSHIP) || 'grok-4';
+const GROK_CONFIDENCE_FLOOR = 0.6;
+const GROK_TRANSIENT_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
+
+const _grokKey = () => (typeof import.meta !== 'undefined' ? import.meta.env?.VITE_XAI_API_KEY : null);
+const _sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * One Grok call. Returns:
+ *   { structured }      on success
+ *   { transient }       on a retryable failure (429/5xx/timeout/network)
+ *   { failed }          on a permanent failure (4xx, empty, unparseable)
+ * Never throws.
+ */
+async function grokFetchStructured(messages, model) {
+  const key = _grokKey();
+  if (!key) return { failed: true };
+  try {
+    const res = await fetch(XAI_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      body: JSON.stringify({ model, messages, temperature: 0.1, response_format: { type: 'json_object' } }),
+      signal: AbortSignal.timeout(20000),
+    });
+    if (!res.ok) {
+      if (GROK_TRANSIENT_STATUSES.has(res.status)) return { transient: true, status: res.status };
+      console.warn('[SpiceHub] Grok HTTP', res.status, '(permanent) — will fall back');
+      return { failed: true };
+    }
+    const data = await res.json();
+    const raw = data?.choices?.[0]?.message?.content?.trim();
+    if (!raw) return { failed: true };
+    const jsonText = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+    return { structured: JSON.parse(jsonText) };
+  } catch (err) {
+    // AbortError (timeout) / network error / JSON.parse → treat as transient.
+    return { transient: true, error: err?.message || String(err) };
+  }
+}
+
+/** Grok call with one retry on transient failures. Returns structured | null. */
+async function grokWithRetry(messages, model, retries = 1) {
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const r = await grokFetchStructured(messages, model);
+    if (r.structured) return r.structured;
+    if (r.failed) return null;
+    if (r.transient && attempt < retries) {
+      console.warn(`[SpiceHub] Grok transient${r.status ? ' ' + r.status : ''} — retry ${attempt + 1}/${retries}`);
+      await _sleep(400 * (attempt + 1));
+      continue;
+    }
+  }
+  console.warn('[SpiceHub] Grok transient failure exhausted retries — falling back');
+  return null;
+}
+
+/** Prefer the recipe with higher confidence; tiebreak on fewer corrections + having content. */
+function pickBetterRecipe(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  const score = (r) => {
+    const conf = typeof r.confidence === 'number' ? r.confidence : 0.5;
+    const corrections = r._postProcessAudit?.movedCount || 0;
+    const hasContent = ((r.ingredients?.length || 0) + (r.directions?.length || 0)) > 0 ? 0 : -1;
+    return conf - 0.03 * corrections + hasContent;
+  };
+  return score(b) > score(a) ? b : a;
+}
+
+export async function structureWithGrokClient(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal' } = {}) {
+  if (!_grokKey() || !rawText || rawText.trim().length < 20) return null;
+
+  const kind = type === 'drink' ? 'drink' : (detectKindHeuristic(rawText) === 'drink' ? 'drink' : 'meal');
+  const fewShot = geminiTurnsToOpenAIMessages(buildFewShotContents(kind));
+  const userText = hintTitle
+    ? `Name hint: "${hintTitle}"\n\n${rawText.slice(0, 24000)}`
+    : rawText.slice(0, 24000);
+
+  const messages = [
+    { role: 'system', content: SYSTEM_INSTRUCTION },
+    ...fewShot,
+    { role: 'user', content: userText },
+  ];
+
+  // Primary attempt on the fast model (with one transient retry).
+  const primary = await grokWithRetry(messages, XAI_MODEL);
+  if (!primary || !primary.isRecipe) return null;
+
+  console.log('[SpiceHub] Grok extraction OK — groups:', primary.ingredientGroups?.length, 'directions:', primary.directions?.length, 'confidence:', primary.confidence);
+
+  let best = finalizeAIRecipe(thinFromStructured(primary), { hintTitle, imageUrl, sourceUrl, via: `grok:${XAI_MODEL}` });
+
+  // Confidence-driven escalation: if the fast model was unsure OR the
+  // deterministic enforcer had to correct ≥3 lines, try the flagship once and
+  // keep whichever result scores better. Bounded to a single escalation.
+  const lowConfidence = typeof primary.confidence === 'number' && primary.confidence < GROK_CONFIDENCE_FLOOR;
+  const manyCorrections = (best._postProcessAudit?.movedCount || 0) >= 3;
+  if ((lowConfidence || manyCorrections) && XAI_MODEL_FLAGSHIP && XAI_MODEL_FLAGSHIP !== XAI_MODEL) {
+    console.log(`[SpiceHub] Grok escalating to ${XAI_MODEL_FLAGSHIP} (confidence ${primary.confidence}, corrections ${best._postProcessAudit?.movedCount || 0})`);
+    const flagship = await grokWithRetry(messages, XAI_MODEL_FLAGSHIP);
+    if (flagship && flagship.isRecipe) {
+      const escalated = finalizeAIRecipe(thinFromStructured(flagship), { hintTitle, imageUrl, sourceUrl, via: `grok:${XAI_MODEL_FLAGSHIP}` });
+      best = pickBetterRecipe(best, escalated);
+    }
+  }
+  return best;
+}
+
 export async function structureWithAIClient(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal' } = {}) {
   const clientKey = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_GOOGLE_AI_KEY : null;
   if (!clientKey || !rawText || rawText.trim().length < 20) return null;
@@ -747,17 +1040,10 @@ export async function structureWithAIClient(rawText, { title: hintTitle = '', im
 
     console.log('[SpiceHub] Schema extraction OK — ingredientGroups:', structured.ingredientGroups?.length, 'directions:', structured.directions?.length, 'confidence:', structured.confidence);
 
-    // Flatten the rich structured output to SpiceHub's thin display shape
+    // Flatten the rich structured output to SpiceHub's thin display shape,
+    // then run the deterministic enforcer before returning.
     const thin = thinFromStructured(structured);
-    return {
-      name: _cleanTitle(thin.title || hintTitle || 'Imported Recipe', thin.ingredients),
-      ...thin,
-      ...buildStructuredFields(thin.ingredients, thin.directions),
-      imageUrl: imageUrl || '',
-      link: sourceUrl || '',
-      _aiStructured: true,
-      _structuredVia: 'gemini-client-schema',
-    };
+    return finalizeAIRecipe(thin, { hintTitle, imageUrl, sourceUrl, via: 'gemini-client-schema' });
   } catch (err) {
     console.warn('[SpiceHub] structureWithAIClient schema path error:', err?.message || err);
     // Fall back to legacy prose prompt on any failure
@@ -791,20 +1077,16 @@ async function _structureWithAIClientLegacy(rawText, { title: hintTitle = '', im
       ? parsed.ingredients.map(ing => typeof ing === 'string' ? ing : [ing.amount, ing.name].filter(Boolean).join(' ').trim()).filter(Boolean)
       : [];
     const _dirs = Array.isArray(parsed.directions) ? parsed.directions.filter(Boolean) : [];
-    return {
-      name: _cleanTitle(parsed.title || hintTitle || 'Imported Recipe', ingredients),
+    const legacyThin = {
+      title: parsed.title || '',
       ingredients,
       directions: _dirs,
-      ...buildStructuredFields(ingredients, _dirs),
       servings: parsed.servings || null,
       cookTime: parsed.cookTime || null,
       notes: parsed.notes || null,
       ...(type === 'drink' ? { glass: parsed.glass || null, garnish: parsed.garnish || null, _type: 'drink' } : { _type: 'meal' }),
-      imageUrl: imageUrl || '',
-      link: sourceUrl || '',
-      _aiStructured: true,
-      _structuredVia: 'gemini-client-legacy',
     };
+    return finalizeAIRecipe(legacyThin, { hintTitle, imageUrl, sourceUrl, via: 'gemini-client-legacy' });
   } catch {
     return null;
   }
@@ -817,7 +1099,21 @@ async function _structureWithAIClientLegacy(rawText, { title: hintTitle = '', im
 export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal' } = {}) {
   if (!rawText || rawText.trim().length < 20) return null;
 
-  // Try client-side Gemini first (faster, no backend roundtrip)
+  const xaiKey = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_XAI_API_KEY : null;
+  const provider = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_AI_PROVIDER : null;
+
+  // Primary engine: Grok, when its key is present and not explicitly overridden
+  // to gemini. Falls through to the Gemini client/server cascade on any miss.
+  if (xaiKey && provider !== 'gemini') {
+    try {
+      const grokResult = await structureWithGrokClient(rawText, { title: hintTitle, imageUrl, sourceUrl, type });
+      if (grokResult && (grokResult.ingredients?.length || grokResult.directions?.length)) {
+        return grokResult;
+      }
+    } catch { /* fall through to Gemini */ }
+  }
+
+  // Try client-side Gemini next (faster, no backend roundtrip)
   try {
     const clientResult = await structureWithAIClient(rawText, { title: hintTitle, imageUrl, sourceUrl, type });
     if (clientResult && (clientResult.ingredients?.length || clientResult.directions?.length)) {
@@ -849,15 +1145,7 @@ export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl
     // Use thinFromStructured if it has the new shape, else legacy flat mapping
     if (r.ingredientGroups) {
       const thin = thinFromStructured(r);
-      return {
-        name: thin.title || hintTitle || 'Imported Recipe',
-        ...thin,
-        ...buildStructuredFields(thin.ingredients, thin.directions),
-        imageUrl: imageUrl || '',
-        link: sourceUrl || '',
-        _aiStructured: true,
-        _structuredVia: 'server-schema',
-      };
+      return finalizeAIRecipe(thin, { hintTitle, imageUrl, sourceUrl, via: 'server-schema' });
     }
     // Legacy flat response fallback
     const ingredients = Array.isArray(r.ingredients)
@@ -867,20 +1155,16 @@ export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl
       }).filter(Boolean)
       : [];
     const _serverDirs = Array.isArray(r.directions) ? r.directions.filter(Boolean) : [];
-    return {
-      name: r.title || hintTitle || 'Imported Recipe',
+    const serverThin = {
+      title: r.title || '',
       ingredients,
       directions: _serverDirs,
-      ...buildStructuredFields(ingredients, _serverDirs),
       servings: r.servings || null,
       cookTime: r.cookTime || null,
       notes: r.notes || null,
       ...(type === 'drink' ? { glass: r.glass || null, garnish: r.garnish || null, _type: 'drink' } : { _type: 'meal' }),
-      imageUrl: imageUrl || '',
-      link: sourceUrl || '',
-      _aiStructured: true,
-      _structuredVia: 'server-legacy',
     };
+    return finalizeAIRecipe(serverThin, { hintTitle, imageUrl, sourceUrl, via: 'server-legacy' });
   } catch {
     return null;
   }
@@ -902,7 +1186,9 @@ export async function captionToRecipe(captionText, { title = '', imageUrl = '', 
     if (aiResult) {
       const hasRealIngs = (aiResult.ingredients || []).some(i => i && !/^see (original post|recipe) for/i.test(i.trim()));
       const hasRealDirs = (aiResult.directions || []).some(d => d && !/^see (original post|recipe) for/i.test(d.trim()));
-      if (hasRealIngs || hasRealDirs) return { ...aiResult, _structuredVia: 'gemini' };
+      // Preserve the real engine tag (grok:* / gemini-client-schema / …) set by
+      // finalizeAIRecipe — don't clobber it with a generic 'gemini'.
+      if (hasRealIngs || hasRealDirs) return { ...aiResult, _structuredVia: aiResult._structuredVia || 'gemini' };
     }
   } catch { /* fall through to heuristic */ }
 

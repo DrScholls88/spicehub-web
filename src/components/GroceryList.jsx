@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback } from 'react';
 import { ShoppingCart, Search, X as XIcon } from 'lucide-react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
 import { saveStoreMemory as dbSaveStoreMemory, getStoreMemory as dbGetStoreMemory, addToBarInventory } from '../db';
-import { GROCERY_CATEGORIES, categorizeIngredient } from '../recipeSchema';
+import { GROCERY_CATEGORIES, categorizeIngredient, fuzzyResolveIngredient } from '../recipeSchema';
 import StoreMode from './StoreMode';
 
 const DEPT_EMOJI = {
@@ -146,9 +146,24 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
     const map = new Map();
     itemList.forEach(item => {
       const parsed = parseIngredient(item.name);
+      // Canonical grouping token: collapse fuzzy-equivalent food names (e.g.
+      // "cherry tomatoes" + "roma tomato" -> "tomato") so they merge onto one line.
+      const base = parsed ? parsed.ingredient : item.name;
+      const literalBase = (parsed ? parsed.ingredient : item.name).toLowerCase().trim();
+      let canonicalBase = literalBase;
+      let fuzzyCanonical = null; // set only on a confident fuzzy (non-exact) match
+      try {
+        const fz = fuzzyResolveIngredient(base);
+        if (fz && fz.method !== 'none' && fz.score >= 0.9) {
+          canonicalBase = fz.canonical;
+          if (fz.method !== 'exact') fuzzyCanonical = fz.canonical;
+        }
+      } catch { /* defensive: never let matching break consolidation */ }
+      // Unit stays part of the key so different units of the same canonical
+      // (e.g. "1 cup tomato" vs "2 cans tomato") correctly stay on separate lines.
       const key = parsed
-        ? `qty::${parsed.unit}::${parsed.ingredient.toLowerCase()}`
-        : `raw::${item.name.toLowerCase().trim()}`;
+        ? `qty::${parsed.unit}::${canonicalBase}`
+        : `raw::${canonicalBase}`;
       if (!map.has(key)) {
         map.set(key, {
           ...item,
@@ -159,6 +174,7 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
           _parsed: parsed,
           _totalAmount: parsed ? parsed.amount : null,
           _ingredientBase: parsed ? parsed.ingredient : null,
+          _fuzzyCanonical: fuzzyCanonical,
         });
       } else {
         const existing = map.get(key);
@@ -174,10 +190,17 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
     return Array.from(map.values()).map(g => {
       let name = g.name;
       let showBadge = g.quantity > 1;
+      // When a fuzzy merge combined variant names, display the shared canonical
+      // (e.g. "tomato") instead of whichever variant happened to be first.
+      const displayBase = g._fuzzyCanonical || g._ingredientBase;
       if (g._parsed && g._totalAmount !== null && g.quantity > 1) {
         const unitDisp = UNIT_DISPLAY[g._parsed.unit] || g._parsed.unit;
-        name = `${formatAmount(g._totalAmount)} ${unitDisp} ${g._ingredientBase}`;
+        name = `${formatAmount(g._totalAmount)} ${unitDisp} ${displayBase}`;
         showBadge = false;
+      } else if (g._fuzzyCanonical && g.quantity > 1) {
+        // Quantities not summable (raw items, or mixed/unparseable amounts):
+        // show the clean canonical and keep the count badge.
+        name = g._fuzzyCanonical;
       }
       return {
         ...g,

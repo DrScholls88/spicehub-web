@@ -19,6 +19,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import { fuzzyResolveIngredient, normalizeIngredientForMatching } from '../recipeSchema';
 
 // Spring-like easing shared across review animations (spec §1)
 const SPRING_EASE = [0.32, 0.72, 0, 1];
@@ -41,6 +42,20 @@ export function looksMisplacedIngredient(line) {
   if (IMPERATIVE_RE.test(s)) return false;
   if (UNIT_RE.test(s)) return true;
   return BARE_QTY_RE.test(s) && !TIME_TEMP_RE.test(s);
+}
+
+/**
+ * Friendly engine label derived from `recipe._structuredVia`.
+ * Returns null for unknown/absent tags so older recipes render nothing.
+ */
+export function engineLabel(structuredVia) {
+  if (!structuredVia || typeof structuredVia !== 'string') return null;
+  const v = structuredVia.toLowerCase();
+  if (v.startsWith('grok')) return 'Grok';
+  if (v.startsWith('gemini')) return 'Gemini';
+  if (v.startsWith('server')) return 'Server';
+  if (v.startsWith('heuristic')) return 'Basic parser';
+  return null;
 }
 
 /**
@@ -483,6 +498,46 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
   const confLevel = hasFlags ? 'review'
     : confidence >= 0.7 ? 'high' : confidence >= 0.4 ? 'medium' : 'low';
 
+  // ── Engine metadata chip (read-only; renders nothing on older recipes) ───
+  const engineName = engineLabel(recipe._structuredVia);
+  const audit = recipe._postProcessAudit;
+  const correctionCount =
+    (typeof audit?.movedCount === 'number' ? audit.movedCount : 0)
+    + (typeof audit?.filteredCount === 'number' ? audit.filteredCount : 0);
+  const engineConfPct =
+    typeof recipe.confidence === 'number'
+      ? Math.round(recipe.confidence * 100)
+      : null;
+
+  // ── Normalization hints (read-only) ─────────────────────────────────────
+  // For each imported ingredient string, surface how its messy name maps to a
+  // cleaner canonical form. Only kept when the resolution is confident AND the
+  // canonical actually differs from the raw normalized input.
+  const normalizationHints = useMemo(() => {
+    const ings = Array.isArray(recipe?.ingredients) ? recipe.ingredients : [];
+    const hints = [];
+    for (const ing of ings) {
+      if (typeof ing !== 'string' || !ing.trim()) continue;
+      let match = null;
+      try {
+        match = fuzzyResolveIngredient(ing);
+      } catch {
+        match = null;
+      }
+      if (!match || match.method === 'none') continue;
+      if (typeof match.score !== 'number' || match.score < 0.85) continue;
+      if (!match.canonical) continue;
+      if (match.canonical === normalizeIngredientForMatching(ing)) continue;
+      hints.push({
+        original: ing,
+        canonical: match.canonical,
+        score: match.score,
+        method: match.method,
+      });
+    }
+    return hints;
+  }, [recipe?.ingredients]);
+
   return (
     <div className="import-review">
       {/* Hero image + title + confidence */}
@@ -518,6 +573,73 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
           />
         </div>
       </motion.div>
+
+      {/* Engine metadata chip — muted, read-only; absent on older recipes */}
+      {engineName && (
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: 6,
+            padding: '6px 12px 0',
+            fontSize: '0.72rem',
+            color: 'var(--text-light)',
+          }}
+        >
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4,
+              padding: '2px 8px',
+              borderRadius: 999,
+              border: '1px solid var(--border)',
+              fontWeight: 600,
+              lineHeight: 1.4,
+            }}
+          >
+            {engineName}
+            {engineConfPct != null && (
+              <span style={{ opacity: 0.75, fontWeight: 500 }}>· {engineConfPct}%</span>
+            )}
+          </span>
+          {correctionCount > 0 && (
+            <span style={{ opacity: 0.8 }}>
+              {correctionCount} correction{correctionCount === 1 ? '' : 's'} applied
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Normalization hints — muted, read-only; show how messy imported
+          ingredient names map to cleaner canonical forms. Renders nothing
+          when no ingredient fuzzy-resolves to a meaningful canonical. */}
+      {normalizationHints.length > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 2,
+            padding: '4px 12px 0',
+            fontSize: '0.72rem',
+            color: 'var(--text-light)',
+            lineHeight: 1.5,
+          }}
+        >
+          {normalizationHints.slice(0, 3).map((h) => (
+            <span key={h.original}>
+              Normalized: <strong style={{ color: 'var(--primary)', fontWeight: 600 }}>{h.canonical}</strong>
+              {typeof h.score === 'number' && (
+                <span style={{ opacity: 0.75 }}> ({Math.round(h.score * 100)}%)</span>
+              )}
+            </span>
+          ))}
+          {normalizationHints.length > 3 && (
+            <span style={{ opacity: 0.7 }}>+{normalizationHints.length - 3} more</span>
+          )}
+        </div>
+      )}
 
       {/* F.6: sticky segmented tabs with live counters.
           The inactive tab doubles as a drop zone for cross-section moves

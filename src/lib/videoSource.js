@@ -61,6 +61,10 @@ export function detectVideoSource(url) {
   if (ytId) {
     const params = new URLSearchParams({
       autoplay: '1',
+      // Browsers block UNMUTED programmatic autoplay — without this the embed
+      // renders as a tap-to-play thumbnail (which opens YouTube on tap). Muted
+      // autoplay reliably plays inline; the user can unmute via the player.
+      mute: '1',
       playsinline: '1',
       rel: '0',
       modestbranding: '1',
