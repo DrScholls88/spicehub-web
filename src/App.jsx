@@ -250,6 +250,15 @@ export default function App() {
     setSharedContent({ mode: 'url', url, text: '', title: '', isShare: false });
   }, [dismissSentinel]);
 
+  // Quick import from the LandingPage paste/drop tray. Item type (meal vs drink)
+  // is auto-detected downstream by the import engine, so we open the meals sheet.
+  const handleQuickImport = useCallback((url) => {
+    if (!url) return;
+    setImportModalKey(k => k + 1);
+    setShowImportFor('meals');
+    setSharedContent({ mode: 'url', url, text: '', title: '', isShare: false });
+  }, []);
+
   // ── Data loaders ─────────────────────────────────────────────────────────────
   const loadMeals = useCallback(async () => {
     const all = await db.meals.toArray();
@@ -915,9 +924,9 @@ useEffect(() => {
       />
 
       <header className="app-header">
-        <div>
+        <div className="app-brand">
+          <span className="app-brand-mark" aria-hidden="true">🌶️</span>
           <h1>SpiceHub</h1>
-          <p className="subtitle">Meal Spinner <span className="build-tag">v{__SPICEHUB_VERSION__}</span></p>
         </div>
         <div className="header-actions">
           <button className="hdr-btn" onClick={() => setShowFridge(true)} title="What's in My Fridge?">🧊</button>
@@ -996,6 +1005,7 @@ useEffect(() => {
             onViewDetail={setDetailItem}
             onOpenFridge={() => setShowFridge(true)}
             onOpenStats={() => setShowStats(true)}
+            onImportLink={handleQuickImport}
           />
         )}
         {tab === 'week' && (
@@ -1243,6 +1253,9 @@ useEffect(() => {
                   <span className="st-install-icon">📲</span>
                   <span>Add to Home Screen</span>
                 </button>
+              </div>
+              <div className="st-version-footer">
+                SpiceHub Meal Spinner · v{__SPICEHUB_VERSION__}
               </div>
             </div>
           </div>
