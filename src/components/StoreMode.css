@@ -1,0 +1,199 @@
+/* A-3 Store Mode — focused in-store shopping UI. Big targets, calm, legible
+   at arm's length. All classes are sm- prefixed to stay out of App.css. */
+
+.sm-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: var(--bg, #fff);
+  display: flex;
+  flex-direction: column;
+  overscroll-behavior: contain;
+}
+
+/* ── Header ── */
+.sm-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  padding-top: calc(12px + env(safe-area-inset-top));
+  background: linear-gradient(135deg, var(--primary), var(--primary-light, #ff8a4c));
+  color: #fff;
+}
+
+.sm-exit,
+.sm-hide-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.sm-exit:active,
+.sm-hide-toggle:active { transform: scale(0.96); }
+.sm-hide-toggle.active { background: rgba(255, 255, 255, 0.32); }
+
+/* ── Progress ring ── */
+.sm-ring {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+}
+.sm-ring svg { position: absolute; inset: 0; }
+.sm-ring-track { fill: none; stroke: rgba(255, 255, 255, 0.3); stroke-width: 4; }
+.sm-ring-fill {
+  fill: none;
+  stroke: #fff;
+  stroke-width: 4;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.4s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.sm-ring-label { position: relative; font-size: 12px; font-weight: 800; color: #fff; line-height: 1; }
+.sm-ring-of { opacity: 0.8; font-size: 10px; }
+
+.sm-reorder-hint {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 8px 16px 4px;
+  font-size: 12px;
+  color: var(--text-light, #888);
+  text-align: center;
+}
+
+/* ── List ── */
+.sm-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 6px 12px calc(28px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.sm-dept {
+  background: var(--card, #fff);
+  border: 1px solid var(--border, #eee);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.sm-dept-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 14px;
+  background: var(--surface, #faf8f5);
+  border-bottom: 1px solid var(--border, #eee);
+  cursor: grab;
+  touch-action: none; /* let framer Reorder own the drag gesture */
+  user-select: none;
+}
+.sm-dept-head:active { cursor: grabbing; }
+.sm-dept-grip { color: var(--text-light, #bbb); flex-shrink: 0; }
+.sm-dept-emoji { font-size: 20px; line-height: 1; }
+.sm-dept-name {
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  color: var(--text, #1c140d);
+  flex: 1;
+}
+.sm-dept-count {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-light, #999);
+  background: var(--bg, #fff);
+  border-radius: 999px;
+  padding: 3px 10px;
+}
+
+.sm-dept-empty {
+  margin: 0;
+  padding: 14px 16px;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--text-light, #aaa);
+}
+
+/* ── Shopping line — oversized one-thumb target ── */
+.sm-line {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 60px;
+  padding: 10px 16px;
+  border: none;
+  border-top: 1px solid var(--border, #f0ece6);
+  background: var(--card, #fff);
+  color: var(--text, #1c140d);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.sm-line:first-of-type { border-top: none; }
+
+.sm-check {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: 2.5px solid var(--border, #d6d0c8);
+  background: var(--bg, #fff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+.sm-check-on {
+  background: var(--primary, #e65100);
+  border-color: var(--primary, #e65100);
+}
+
+.sm-line-text {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+  word-break: break-word;
+}
+.sm-line-qty { color: var(--primary, #e65100); font-weight: 800; }
+
+.sm-line-checked .sm-line-text {
+  text-decoration: line-through;
+  color: var(--text-light, #aaa);
+  font-weight: 500;
+}
+.sm-line-checked { background: var(--surface, #faf8f5); }
+
+/* ── All done ── */
+.sm-alldone {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--primary, #e65100);
+  text-align: center;
+}
+.sm-alldone p { margin: 0; font-size: 16px; font-weight: 700; color: var(--text, #1c140d); }

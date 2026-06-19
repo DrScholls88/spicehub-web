@@ -152,7 +152,8 @@ const wvEmptyItemVariants = {
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function WeekView({
   days, weekPlan, meals, specialDays,
-  onGenerate, onRespin, onSetDay, onSetSpecial, onViewDetail, onBuildGrocery,
+  onGenerate, onSmartPlan, dietaryPref, onChangeDietaryPref,
+  onRespin, onSetDay, onSetSpecial, onViewDetail, onBuildGrocery,
   onToggleLock,
   cookingStats = {},
   weekHistory = [],
@@ -745,15 +746,25 @@ export default function WeekView({
             </div>
           ) : (
             <>
-              <button onClick={() => { navigator.vibrate?.([50, 30, 50]); onGenerate(); }} style={PRIMARY_BTN}>
-                🎰 Spin the Week{rotationCount > 0 ? ` (${rotationCount})` : ''}
+              {/* A-1: Smart Auto-Plan — fills empty/unlocked days from The Rotation */}
+              <button
+                onClick={() => { navigator.vibrate?.([40, 25, 40]); onSmartPlan?.(); }}
+                style={PRIMARY_BTN}
+              >
+                ✨ Plan my Week{rotationCount > 0 ? ` (${rotationCount})` : ''}
               </button>
               <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => { navigator.vibrate?.([50, 30, 50]); onGenerate(); }}
+                  style={{ ...SECONDARY_BTN, flex: 1 }}
+                >
+                  🎰 Spin
+                </button>
                 <button
                   onClick={() => setSelectMode(true)}
                   style={{ ...SECONDARY_BTN, flex: 1 }}
                 >
-                  📌 Select Days
+                  📌 Select
                 </button>
                 {hasWeek && (
                   <button onClick={onBuildGrocery} style={{ ...SECONDARY_BTN, flex: 1 }}>
@@ -761,6 +772,33 @@ export default function WeekView({
                   </button>
                 )}
               </div>
+              {/* A-1: optional household dietary preference for the planner */}
+              {onChangeDietaryPref && (
+                <label style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  fontSize: 12.5, fontWeight: 600, color: 'var(--text-light)',
+                  paddingTop: 2,
+                }}>
+                  <span>🍽️ Plan for</span>
+                  <select
+                    value={dietaryPref?.dietary || ''}
+                    onChange={(e) => onChangeDietaryPref({ dietary: e.target.value, mode: 'require' })}
+                    style={{
+                      flex: 1, minWidth: 0, padding: '7px 10px', borderRadius: 9,
+                      border: '1.5px solid var(--border)', background: 'var(--bg)',
+                      color: 'var(--text)', font: 'inherit', fontWeight: 600, fontSize: 13,
+                    }}
+                  >
+                    <option value="">Any diet</option>
+                    <option value="vegetarian">Vegetarian</option>
+                    <option value="vegan">Vegan</option>
+                    <option value="gluten-free">Gluten-free</option>
+                    <option value="dairy-free">Dairy-free</option>
+                    <option value="keto">Keto</option>
+                    <option value="paleo">Paleo</option>
+                  </select>
+                </label>
+              )}
             </>
           )}
         </div>
