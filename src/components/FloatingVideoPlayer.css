@@ -1,0 +1,253 @@
+/* ── Floating Picture-in-Picture video player ──────────────────────────────── */
+
+/* Invisible full-viewport drag boundary */
+.fvp-bounds {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1199;
+}
+
+.fvp-panel {
+  position: fixed;
+  right: 12px;
+  bottom: 84px;            /* sit above bottom nav */
+  width: 220px;
+  z-index: 1200;
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #0b0b0d;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 18px 40px -12px rgba(0, 0, 0, 0.55),
+    0 2px 8px rgba(0, 0, 0, 0.35);
+  touch-action: none;      /* panel itself doesn't scroll the page */
+  will-change: transform;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Respect iOS safe area when docked at the bottom */
+@supports (padding: max(0px)) {
+  .fvp-panel {
+    bottom: max(84px, calc(env(safe-area-inset-bottom) + 72px));
+  }
+}
+
+/* ── Drag handle bar ── */
+.fvp-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 6px 5px 8px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.10), rgba(255, 255, 255, 0.02));
+  cursor: grab;
+  color: #fff;
+}
+
+.fvp-bar:active { cursor: grabbing; }
+
+.fvp-grip {
+  flex: 0 0 auto;
+  opacity: 0.55;
+}
+
+.fvp-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.fvp-bar-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.fvp-bar-btn:hover { background: rgba(255, 255, 255, 0.18); }
+.fvp-bar-btn:active { transform: scale(0.9); }
+.fvp-close:hover { background: rgba(239, 68, 68, 0.85); }
+
+/* ── Video stage ── */
+.fvp-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+}
+
+/* Instagram reels are vertical — give them a taller stage */
+.fvp-instagram .fvp-stage {
+  aspect-ratio: 9 / 14;
+}
+
+.fvp-iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+/* ── Offline fallback ── */
+.fvp-offline {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.fvp-offline-thumb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(6px) brightness(0.5);
+  transform: scale(1.1);
+}
+
+.fvp-offline-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 10px;
+  text-align: center;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.fvp-offline-overlay span {
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  max-width: 150px;
+}
+
+.fvp-offline-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.fvp-offline-link:hover { background: rgba(255, 255, 255, 0.28); }
+
+/* ── X-ray stepped progress bar ── */
+.fvp-xray {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 7px 8px 8px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(0, 0, 0, 0.25));
+}
+
+.fvp-xray-seg {
+  flex: 1 1 0;
+  height: 5px;
+  min-width: 4px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.20);
+  cursor: pointer;
+  transition: background 0.18s ease, transform 0.12s ease;
+}
+
+.fvp-xray-seg:hover { background: rgba(255, 255, 255, 0.38); }
+.fvp-xray-seg.is-done { background: rgba(255, 255, 255, 0.5); }
+
+.fvp-xray-seg.is-active {
+  background: var(--primary-light, #66bb6a);
+  transform: scaleY(1.7);
+  box-shadow: 0 0 6px rgba(102, 187, 106, 0.7);
+}
+
+/* Give the YouTube (controllable) player a warmer active accent */
+.fvp-youtube .fvp-xray-seg.is-active {
+  background: #ff5252;
+  box-shadow: 0 0 6px rgba(255, 82, 82, 0.7);
+}
+
+/* ── Minimized pill ── */
+.fvp-pill {
+  position: fixed;
+  right: 14px;
+  bottom: 88px;
+  z-index: 1200;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border: none;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary, #2e7d32), var(--primary-light, #66bb6a));
+  color: #fff;
+  font-size: 20px;
+  cursor: pointer;
+  box-shadow: 0 8px 22px -6px rgba(0, 0, 0, 0.5);
+}
+
+@supports (padding: max(0px)) {
+  .fvp-pill {
+    bottom: max(88px, calc(env(safe-area-inset-bottom) + 76px));
+  }
+}
+
+.fvp-pill-icon { line-height: 1; }
+
+/* Pulsing "live" dot */
+.fvp-pill-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ef4444;
+  box-shadow: 0 0 0 2px #fff;
+  animation: fvp-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes fvp-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.25); opacity: 0.7; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fvp-pill-dot { animation: none; }
+}
+
+/* Slightly larger touch target / panel on small phones */
+@media (max-width: 380px) {
+  .fvp-panel { width: 200px; }
+}
