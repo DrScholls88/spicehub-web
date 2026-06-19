@@ -13,6 +13,7 @@ import {
   detectImportType,
 } from '../recipeParser.js';
 import { cleanUrl } from '../api.js';
+import { ENGINE_PROMPT_VERSION } from '../recipeSchema.js';
 import { humanizeImportStatus } from '../importCopy.js';
 import db from '../db.js';
 import useOnlineStatus from '../hooks/useOnlineStatus';
@@ -71,7 +72,7 @@ export function normalizeRecipeForReview(result, fallbackType = 'meal') {
  * structural heuristic as a sanity check so an overconfident model can't
  * claim 95% on a two-line extraction (or a shy one bury a clean result).
  */
-function computeReviewConfidence(recipe) {
+export function computeReviewConfidence(recipe) {
   if (!recipe) return 0;
   const heuristic = scoreExtractionConfidence(recipe) / 100; // engine scores 0–100
   const model =
@@ -464,6 +465,10 @@ export default function ImportSheet({
     setLoadingImage('');
     setProgressMsg('Sorting ingredients from instructions…');
 
+    // The pasted text IS the caption — stash it so a re-extraction can re-run
+    // it later from the saved recipe (I-5) without any re-scrape.
+    setCapturedText(text);
+
     try {
       const result = await captionToRecipe(text, { type: type || initialItemType });
       const normalized = normalizeRecipeForReview(result, type || initialItemType);
@@ -570,18 +575,39 @@ export default function ImportSheet({
   // ── Save from review ─────────────────────────────────────────────────────
   const handleSave = useCallback((finalRecipe) => {
     if (!finalRecipe) return;
+    // ── I-5 self-healing stamp ──────────────────────────────────────────────
+    // Persist the cached caption + the engine version + confidence so the Meal
+    // Library can later re-run extraction on the stored caption (no re-scrape)
+    // and honestly surface low-confidence imports for one-tap improvement.
+    const storedCaption =
+      (typeof finalRecipe.sourceCaption === 'string' && finalRecipe.sourceCaption) ||
+      capturedText ||
+      (activeTab === 'paste' ? pasteText : '') ||
+      '';
+    const finalConfidence =
+      typeof confidence === 'number' ? confidence
+      : typeof finalRecipe.confidence === 'number' ? finalRecipe.confidence
+      : null;
     const out = {
       ...finalRecipe,
       name: (finalRecipe.title || '').trim() || finalRecipe.name || '',
       imageUrl: finalRecipe.imageUrl || finalRecipe.image || '',
       method: finalRecipe.technique || finalRecipe.method || '',
+      sourceCaption: storedCaption,
+      confidence: finalConfidence,
+      needsReview:
+        typeof finalRecipe.needsReview === 'boolean'
+          ? finalRecipe.needsReview
+          : (finalConfidence != null ? finalConfidence < 0.75 : false),
+      engineVersion: ENGINE_PROMPT_VERSION,
+      extractedAt: finalRecipe.extractedAt || new Date().toISOString(),
     };
     // Clear draft from IndexedDB
     const key = importUrl || (activeTab === 'paste' ? 'pasted-text' : activeTab === 'photo' ? 'photo-import' : 'pasted-text');
     db.importDrafts?.delete(key).catch(e => console.warn(e));
     hapticSuccess();
     onImport([out], destination);
-  }, [onImport, importUrl, activeTab, destination]);
+  }, [onImport, importUrl, activeTab, destination, capturedText, pasteText, confidence]);
 
   // ── Re-expand input from collapsed state ─────────────────────────────────
   const handleReExpand = useCallback(() => {
@@ -1042,7 +1068,8 @@ export default function ImportSheet({
                       activeTab === 'photo'
                     }
                   >
-                    Import {itemType === 'drink' ? 'drink' : 'recipe'}
+                    <Zap size={17} strokeWidth={2.5} aria-hidden="true" style={{ marginRight: 6, verticalAlign: '-3px' }} />
+                    Auto-Parse &amp; Import
                   </button>
                 )}
                 {phase === 'loading' && (

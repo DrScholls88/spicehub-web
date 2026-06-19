@@ -405,6 +405,17 @@ export const RECIPE_SCHEMA = {
 };
 
 // -----------------------------------------------------------------------------
+// 8b. ENGINE PROMPT VERSION (I-5 self-healing)
+// -----------------------------------------------------------------------------
+// Stamp every extraction with the prompt/engine version that produced it. Bump
+// this string whenever SYSTEM_INSTRUCTION, the schema, or the extraction prompt
+// changes in a way that could improve results. The Meal Library re-extraction
+// ledger compares a recipe's stored `engineVersion` against this value to offer
+// "improve" re-runs that re-send the cached caption (no re-scrape, no Apify cost).
+// Format: YYYY.MM.patch — human-readable and monotonically comparable as a string.
+export const ENGINE_PROMPT_VERSION = '2026.06.1';
+
+// -----------------------------------------------------------------------------
 // 9. SHARED SYSTEM INSTRUCTION (used identically by text / server / vision)
 // -----------------------------------------------------------------------------
 export const SYSTEM_INSTRUCTION = [

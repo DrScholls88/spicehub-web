@@ -1,0 +1,228 @@
+/* ReExtractSheet — Import self-healing (I-5) re-extraction diff sheet */
+
+.re-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(20, 15, 10, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.re-sheet {
+  width: 100%;
+  max-width: 520px;
+  max-height: 88dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg, #fff);
+  border-radius: 20px 20px 0 0;
+  box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+
+@media (min-width: 720px) {
+  .re-overlay { align-items: center; }
+  .re-sheet { border-radius: 18px; max-height: 84dvh; }
+}
+
+.re-grab {
+  width: 42px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--border, #ddd);
+  margin: 9px auto 0;
+  flex: 0 0 auto;
+}
+
+.re-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px 12px;
+  border-bottom: 0.5px solid var(--border, #eee);
+  flex: 0 0 auto;
+}
+
+.re-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 17px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text, #1c140d);
+}
+.re-title svg { color: var(--primary, #e65100); }
+
+.re-close {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: var(--surface, #f3f0eb);
+  color: var(--text-light, #888);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.re-body {
+  padding: 14px 16px 8px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  overscroll-behavior: contain;
+}
+
+.re-recipe-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text, #1c140d);
+  margin-bottom: 4px;
+}
+
+.re-conf {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-light, #888);
+  margin-bottom: 14px;
+}
+.re-conf-new { color: var(--primary, #e65100); }
+
+/* ── Status states (running / offline / error / nochange) ── */
+.re-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 36px 20px;
+  color: var(--text, #1c140d);
+}
+.re-status p { margin: 0; font-size: 15px; font-weight: 600; }
+.re-status-sub { font-size: 13px; color: var(--text-light, #888); max-width: 280px; line-height: 1.45; }
+.re-status svg { color: var(--primary, #e65100); }
+.re-error-text { color: var(--sh-danger, #c0392b); }
+
+.re-spin { animation: re-spin 900ms linear infinite; }
+@keyframes re-spin { to { transform: rotate(360deg); } }
+
+/* ── Diff sections ── */
+.re-section {
+  padding: 12px 0;
+  border-top: 0.5px solid var(--border, #eee);
+}
+.re-section:first-of-type { border-top: none; }
+
+.re-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.re-section-title {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text, #1c140d);
+}
+.re-section-nochange { font-size: 12px; color: var(--text-light, #999); font-weight: 600; }
+.re-section-delta { display: flex; gap: 8px; font-size: 12.5px; font-weight: 700; }
+.re-delta-add { color: #2e7d32; }
+.re-delta-rem { color: #c0392b; }
+
+.re-choice {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.re-choice-btn {
+  flex: 1;
+  min-height: 40px;
+  border-radius: 9px;
+  border: 1.5px solid var(--border, #ddd);
+  background: var(--bg, #fff);
+  color: var(--text-light, #777);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 150ms, background 150ms, color 150ms;
+}
+.re-choice-btn.active {
+  border-color: var(--primary, #e65100);
+  background: var(--sh-accent-bg, rgba(230, 81, 0, 0.1));
+  color: var(--primary, #e65100);
+}
+
+.re-diff-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.re-diff-col {
+  min-width: 0;
+  border: 1px solid var(--border, #eee);
+  border-radius: 10px;
+  padding: 8px;
+  background: var(--surface, #faf8f5);
+}
+.re-diff-col-label {
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-light, #999);
+  margin-bottom: 6px;
+}
+/* Dim the side that won't be saved */
+.re-diff-cols.prefer-new .re-diff-col:first-child { opacity: 0.55; }
+.re-diff-cols.prefer-current .re-diff-col:last-child { opacity: 0.55; }
+
+.re-diff-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.re-diff-row {
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--text, #1c140d);
+  padding: 3px 6px;
+  border-radius: 6px;
+  word-break: break-word;
+}
+.re-diff-empty { font-size: 12px; color: var(--text-light, #aaa); font-style: italic; }
+.re-diff-row.re-added { background: rgba(46, 125, 50, 0.14); }
+.re-diff-row.re-removed { background: rgba(192, 57, 43, 0.12); text-decoration: line-through; opacity: 0.8; }
+
+/* ── Footer ── */
+.re-footer {
+  display: flex;
+  gap: 10px;
+  padding: 12px 16px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  border-top: 0.5px solid var(--border, #eee);
+  flex: 0 0 auto;
+}
+.re-btn {
+  min-height: 48px;
+  flex: 1;
+  border-radius: 12px;
+  border: none;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  transition: opacity 150ms, transform 100ms;
+}
+.re-btn:active { transform: scale(0.98); }
+.re-btn-primary { background: var(--primary, #e65100); color: #fff; }
+.re-btn-ghost { background: var(--surface, #f3f0eb); color: var(--text, #333); }
+.re-btn-full { flex: 1 1 100%; }
