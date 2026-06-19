@@ -163,6 +163,9 @@ export default function App() {
   useBackHandler(showBarShelf, () => setShowBarShelf(false), 'bar-shelf');
   useBackHandler(showBarFridge, () => setShowBarFridge(false), 'bar-fridge');
   useBackHandler(!!cookModeMeal, () => setCookModeMeal(null), 'cook-mode');
+  // Floating video PiP: mobile back / back-gesture closes the player instead of
+  // navigating away from the app.
+  useBackHandler(!!pipVideo, () => setPipVideo(null), 'pip-video');
   useBackHandler(!!mixModeDrink, () => setMixModeDrink(null), 'mix-mode');
   useBackHandler(showSpinner, () => setShowSpinner(false), 'spinner');
   useBackHandler(showStats, () => setShowStats(false), 'stats');

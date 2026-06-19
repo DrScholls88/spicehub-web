@@ -138,6 +138,54 @@ export const INGREDIENT_ALIASES = {
   'soy sauce':      { canonical: 'soy sauce', aisle: 'condiments' },
   'shoyu':          { canonical: 'soy sauce', aisle: 'condiments' },
   'scallion greens': { canonical: 'scallion', aisle: 'produce' },
+  // Common LLM / grocery variations (added for fuzzy-matching coverage).
+  // NOTE: keys MUST be lowercased + trimmed — no stray leading/trailing spaces.
+  // Baking — flour & sugar
+  'ap flour':            { canonical: 'all-purpose flour', aisle: 'baking' },
+  'apf':                 { canonical: 'all-purpose flour', aisle: 'baking' },
+  'a.p. flour':          { canonical: 'all-purpose flour', aisle: 'baking' },
+  'all-purpose flour':   { canonical: 'all-purpose flour', aisle: 'baking' },
+  'granulated sugar':    { canonical: 'sugar', aisle: 'baking' },
+  'white sugar':         { canonical: 'sugar', aisle: 'baking' },
+  'cane sugar':          { canonical: 'sugar', aisle: 'baking' },
+  // Pantry — salt
+  'kosher salt':         { canonical: 'salt', aisle: 'pantry' },
+  'sea salt':            { canonical: 'salt', aisle: 'pantry' },
+  'table salt':          { canonical: 'salt', aisle: 'pantry' },
+  'flaky salt':          { canonical: 'salt', aisle: 'pantry' },
+  // Pantry — oil
+  'extra virgin olive oil': { canonical: 'olive oil', aisle: 'pantry' },
+  'evoo':                { canonical: 'olive oil', aisle: 'pantry' },
+  'extra-virgin olive oil': { canonical: 'olive oil', aisle: 'pantry' },
+  // Produce — garlic
+  'fresh garlic':        { canonical: 'garlic', aisle: 'produce' },
+  'minced garlic':       { canonical: 'garlic', aisle: 'produce' },
+  'garlic cloves':       { canonical: 'garlic', aisle: 'produce' },
+  'garlic clove':        { canonical: 'garlic', aisle: 'produce' },
+  // Produce — onion
+  'yellow onion':        { canonical: 'onion', aisle: 'produce' },
+  'red onion':           { canonical: 'onion', aisle: 'produce' },
+  'sweet onion':         { canonical: 'onion', aisle: 'produce' },
+  'white onion':         { canonical: 'onion', aisle: 'produce' },
+  'brown onion':         { canonical: 'onion', aisle: 'produce' },
+  // Produce — tomato
+  'roma tomato':         { canonical: 'tomato', aisle: 'produce' },
+  'roma tomatoes':       { canonical: 'tomato', aisle: 'produce' },
+  'cherry tomatoes':     { canonical: 'tomato', aisle: 'produce' },
+  'cherry tomato':       { canonical: 'tomato', aisle: 'produce' },
+  'grape tomatoes':      { canonical: 'tomato', aisle: 'produce' },
+  // Meat — ground
+  'ground beef':         { canonical: 'beef', aisle: 'meat' },
+  'ground turkey':       { canonical: 'turkey', aisle: 'meat' },
+  // Meat — chicken
+  'chicken breast':      { canonical: 'chicken', aisle: 'meat' },
+  'chicken breasts':     { canonical: 'chicken', aisle: 'meat' },
+  'chicken thighs':      { canonical: 'chicken', aisle: 'meat' },
+  'chicken thigh':       { canonical: 'chicken', aisle: 'meat' },
+  // Dairy — cheese
+  'parmesan cheese':     { canonical: 'parmesan', aisle: 'dairy' },
+  'parmigiano':          { canonical: 'parmesan', aisle: 'dairy' },
+  'parmigiano reggiano': { canonical: 'parmesan', aisle: 'dairy' },
 };
 
 /** Resolve an ingredient name to {canonical, aisle} (case-insensitive). Returns null if unknown. */
@@ -180,6 +228,13 @@ export function categorizeIngredient(name = '') {
   if (CATEGORY_KEYWORDS['Bakery'].test(s)) return 'Bakery';
   if (CATEGORY_KEYWORDS['Produce'].test(s)) return 'Produce';
   if (CATEGORY_KEYWORDS['Pantry'].test(s)) return 'Pantry';
+  // Non-lossy fuzzy fallback: if keyword logic found nothing, try resolving the
+  // ingredient (exact or fuzzy) and map its aisle to a grocery department.
+  const resolved = fuzzyResolveIngredient(name);
+  if (resolved && resolved.method !== 'none' && resolved.aisle) {
+    const dept = AISLE_TO_DEPARTMENT[resolved.aisle];
+    if (dept) return dept;
+  }
   return 'Other';
 }
 
@@ -693,11 +748,182 @@ export function thinFromStructured(structured = {}) {
   };
 }
 
+// -----------------------------------------------------------------------------
+// 13. FUZZY INGREDIENT MATCHING (zero-dependency, pure)
+// -----------------------------------------------------------------------------
+// Layered on top of the EXACT alias system (resolveIngredientAlias). Handles
+// messy LLM output, minor typos, and word reordering by normalizing the raw
+// name then approximate-matching against INGREDIENT_ALIASES keys.
+//
+// Pure + defensive: never throws on bad input, no imports, no I/O.
+
+// Cap on raw edit distance for a Levenshtein hit to count. Beyond this we treat
+// the strings as unrelated even if the normalized ratio looks acceptable.
+const LEVENSHTEIN_MAX_DISTANCE = 3;
+
+// Prep / descriptor words stripped during normalization (they describe state,
+// cut, or freshness rather than the food itself).
+const PREP_DESCRIPTORS = [
+  'fresh', 'freshly', 'frozen', 'dried', 'dry', 'ground', 'whole', 'large',
+  'medium', 'small', 'extra', 'ripe', 'raw', 'cooked', 'organic', 'boneless',
+  'skinless', 'lean', 'finely', 'coarsely', 'roughly', 'thinly', 'thickly',
+  'chopped', 'minced', 'diced', 'sliced', 'grated', 'shredded', 'crushed',
+  'peeled', 'seeded', 'pitted', 'trimmed', 'halved', 'quartered', 'cubed',
+  'julienned', 'crumbled', 'softened', 'melted', 'beaten', 'toasted', 'roasted',
+  'cold', 'warm', 'hot', 'room', 'temperature', 'packed', 'heaping', 'level',
+  'optional', 'divided', 'plus', 'more', 'for', 'to', 'taste', 'garnish',
+  'rinsed', 'drained', 'unsalted', 'salted', 'low', 'fat', 'reduced',
+];
+const PREP_DESCRIPTOR_SET = new Set(PREP_DESCRIPTORS);
+
+// Known-unit alternation, escaped + longest-first (reuses UNIT_ALIASES_ALL so
+// we only ever strip a real measurement word, never a food token like "garlic").
+const _UNIT_ALT = UNIT_ALIASES_ALL
+  .map((u) => u.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+  .join('|');
+// Leading quantity (whole number, fraction, decimal, range, or several of
+// these like "1 1/2") followed by an OPTIONAL known unit. Matches e.g.:
+//   "2", "1 1/2", "1/2", "3.5", "2-3", "2 cups", "1 1/2 tbsp", "1lb", "2 cans"
+const LEADING_QTY_UNIT_RE = new RegExp(
+  '^\\s*(?:[\\d.¼-¾⅐-⅞]+(?:\\s*[-/]\\s*[\\d.¼-¾⅐-⅞]+)?\\s*)+' +
+    '(?:(?:' + _UNIT_ALT + ')\\.?\\b\\s*)?',
+  'i'
+);
+
+/**
+ * Classic dynamic-programming Levenshtein edit distance. Lowercases + trims
+ * both inputs. Pure; not exported. Returns a non-negative integer.
+ */
+function levenshteinDistance(a, b) {
+  const s = String(a == null ? '' : a).trim().toLowerCase();
+  const t = String(b == null ? '' : b).trim().toLowerCase();
+  const m = s.length;
+  const n = t.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  // Single-row rolling DP.
+  let prev = new Array(n + 1);
+  for (let j = 0; j <= n; j++) prev[j] = j;
+  for (let i = 1; i <= m; i++) {
+    let curr = new Array(n + 1);
+    curr[0] = i;
+    const sc = s.charCodeAt(i - 1);
+    for (let j = 1; j <= n; j++) {
+      const cost = sc === t.charCodeAt(j - 1) ? 0 : 1;
+      curr[j] = Math.min(
+        prev[j] + 1,        // deletion
+        curr[j - 1] + 1,    // insertion
+        prev[j - 1] + cost  // substitution
+      );
+    }
+    prev = curr;
+  }
+  return prev[n];
+}
+
+/**
+ * Jaccard similarity over whitespace-delimited tokens. Handles word
+ * reordering ("breast chicken" vs "chicken breast"). Pure; not exported.
+ * Returns a number in [0, 1].
+ */
+function tokenJaccardSimilarity(a, b) {
+  const ta = String(a == null ? '' : a).trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const tb = String(b == null ? '' : b).trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (ta.length === 0 && tb.length === 0) return 1;
+  if (ta.length === 0 || tb.length === 0) return 0;
+  const setA = new Set(ta);
+  const setB = new Set(tb);
+  let intersection = 0;
+  for (const tok of setA) if (setB.has(tok)) intersection++;
+  const union = setA.size + setB.size - intersection;
+  return union === 0 ? 0 : intersection / union;
+}
+
+/**
+ * Strip a leading quantity (+ optional unit) and common prep/state descriptors
+ * and parentheticals, returning the bare lowercased food name. Defensive:
+ * non-string input yields ''.
+ */
+export function normalizeIngredientForMatching(name = '') {
+  if (typeof name !== 'string') return '';
+  let s = name.toLowerCase().trim();
+  if (!s) return '';
+  // Drop parentheticals: "(optional)", "(about 2 cups)", "(plus more)"
+  s = s.replace(/\([^)]*\)/g, ' ');
+  // Drop trailing "to taste" / prep clauses after a comma: "garlic, minced"
+  s = s.replace(/,.*$/, ' ');
+  // Strip a leading quantity + optional unit token.
+  s = s.replace(LEADING_QTY_UNIT_RE, ' ');
+  // Remove stray punctuation, normalize whitespace.
+  s = s.replace(/[^a-z0-9\s-]/g, ' ').replace(/\s+/g, ' ').trim();
+  // Drop prep descriptor words; keep real food tokens.
+  const kept = s.split(' ').filter((w) => w && !PREP_DESCRIPTOR_SET.has(w));
+  // If everything was stripped (e.g. "to taste"), fall back to the de-punctuated
+  // string so we never return '' for a line that had real words.
+  return (kept.length ? kept.join(' ') : s).trim();
+}
+
+/**
+ * Fuzzy-resolve a raw ingredient name to a canonical entry.
+ *
+ * @param {string} rawName    raw imported ingredient text
+ * @param {number} threshold  minimum similarity (0..1) for a fuzzy hit
+ * @returns {null | { canonical: string, aisle: string, score: number,
+ *                    method: 'exact'|'fuzzy-levenshtein'|'fuzzy-token'|'none' }}
+ */
+export function fuzzyResolveIngredient(rawName = '', threshold = 0.82) {
+  const original = String(rawName == null ? '' : rawName).trim().toLowerCase();
+  const normalized = normalizeIngredientForMatching(rawName);
+  if (!normalized && !original) return null;
+
+  // 1) Exact alias on normalized, then on the original raw string.
+  const exact = resolveIngredientAlias(normalized) || resolveIngredientAlias(original);
+  if (exact) {
+    return { canonical: exact.canonical, aisle: exact.aisle, score: 1.0, method: 'exact' };
+  }
+
+  // 2) Approximate match against alias keys.
+  const target = normalized || original;
+  let best = null; // { canonical, aisle, score, method }
+  for (const key of Object.keys(INGREDIENT_ALIASES)) {
+    const dist = levenshteinDistance(target, key);
+    const maxLen = Math.max(target.length, key.length) || 1;
+    // Levenshtein ratio only counts when within the absolute distance cap.
+    const levScore = dist <= LEVENSHTEIN_MAX_DISTANCE ? 1 - dist / maxLen : 0;
+    const tokScore = tokenJaccardSimilarity(target, key);
+    const method = levScore >= tokScore ? 'fuzzy-levenshtein' : 'fuzzy-token';
+    const score = Math.max(levScore, tokScore);
+    if (score >= threshold && (!best || score > best.score)) {
+      const entry = INGREDIENT_ALIASES[key];
+      best = { canonical: entry.canonical, aisle: entry.aisle, score, method };
+    }
+  }
+  if (best) return best;
+
+  // 3) No confident match — return the normalized name with unknown aisle.
+  return { canonical: target, aisle: 'unknown', score: 0, method: 'none' };
+}
+
+// Maps a resolved alias aisle (lowercase vocab) to a GROCERY_CATEGORIES dept.
+const AISLE_TO_DEPARTMENT = {
+  produce: 'Produce',
+  baking: 'Pantry',
+  pantry: 'Pantry',
+  condiments: 'Pantry',
+  canned: 'Pantry',
+  dairy: 'Dairy',
+  meat: 'Meat & Seafood',
+  seafood: 'Meat & Seafood',
+  bakery: 'Bakery',
+  frozen: 'Frozen',
+};
+
 // Convenience export bundle for callers that prefer a namespace import.
 export default {
   UNIT_CANON, UNIT_LOOKUP, UNIT_ALIASES_ALL, canonicalizeUnit,
   normalizeFraction, wordToNumber,
   INGREDIENT_ALIASES, resolveIngredientAlias,
+  normalizeIngredientForMatching, fuzzyResolveIngredient,
   GROCERY_CATEGORIES, categorizeIngredient, isTrashIngredientLine,
   COURSE, DISH_TYPE, CUISINE, DIETARY_TAGS,
   SECTION_HEADERS, isSectionHeader, sectionLabelFrom,

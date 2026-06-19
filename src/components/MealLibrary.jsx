@@ -18,7 +18,19 @@ function isImprovable(meal) {
   const hasCaption = typeof meal.sourceCaption === 'string' && meal.sourceCaption.trim().length > 20;
   if (!hasCaption) return false;
   return meal.needsReview === true
-    || (typeof meal.confidence === 'number' && meal.confidence < 0.75);
+    || (typeof meal.confidence === 'number' && meal.confidence < 0.75)
+    || (typeof meal._postProcessAudit?.movedCount === 'number' && meal._postProcessAudit.movedCount > 2);
+}
+
+// Friendly engine label from `meal._structuredVia` (read-only; null when absent)
+function mealEngineLabel(structuredVia) {
+  if (!structuredVia || typeof structuredVia !== 'string') return null;
+  const v = structuredVia.toLowerCase();
+  if (v.startsWith('grok')) return 'Grok';
+  if (v.startsWith('gemini')) return 'Gemini';
+  if (v.startsWith('server')) return 'Server';
+  if (v.startsWith('heuristic')) return 'Basic parser';
+  return null;
 }
 
 // ── Date formatter: relative for recent, absolute for older ──────────────────
@@ -190,9 +202,11 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
   }, []);
 
   // Fling-up gesture thresholds (launches PiP video for tiles with a video source)
-  const SWIPE_UP_MIN_DY = -55;   // must travel at least 55px upward (dy is negative)
-  const SWIPE_UP_MAX_DX = 40;    // horizontal drift must stay under 40px (else it's a scroll/swipe)
-  const SWIPE_UP_MAX_MS = 500;   // must be a flick, not a slow drag
+  const SWIPE_UP_MIN_DY = -90;   // must travel at least 90px upward (dy is negative) — deliberate fling
+  const SWIPE_UP_MAX_DX = 30;    // horizontal drift must stay under 30px (else it's a scroll/swipe)
+  const SWIPE_UP_MAX_MS = 400;   // must be a fast flick, not a slow drag
+  const SWIPE_UP_MIN_VELOCITY = 0.5; // px/ms — average speed gate; slow scrolls covering distance won't fire
+  const SWIPE_UP_DOMINANCE = 2;  // vertical travel must dominate horizontal by this factor
 
   // Long press (non-select mode) → show quick preview
   const handleTouchStart = useCallback((meal, e) => {
@@ -235,10 +249,13 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
         const dx = touch.clientX - swipeStartPos.current.x;
         const dy = touch.clientY - swipeStartPos.current.y;
         const dt = Date.now() - touchStartTime.current;
+        const velocity = dt > 0 ? Math.abs(dy) / dt : 0; // px/ms over the gesture
         if (
           dy <= SWIPE_UP_MIN_DY &&
           Math.abs(dx) < SWIPE_UP_MAX_DX &&
-          dt < SWIPE_UP_MAX_MS
+          dt < SWIPE_UP_MAX_MS &&
+          velocity > SWIPE_UP_MIN_VELOCITY &&
+          Math.abs(dy) > Math.abs(dx) * SWIPE_UP_DOMINANCE
         ) {
           swipeConsumed.current = true; // suppress the synthetic click that opens detail
           swipeStartPos.current = null;
@@ -832,6 +849,14 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
               {(quickPreview.created || quickPreview.createdAt) && (
                 <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', marginBottom: 8 }}>
                   Added: {new Date(quickPreview.created || quickPreview.createdAt).toLocaleDateString()}
+                </div>
+              )}
+              {mealEngineLabel(quickPreview._structuredVia) && (
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginBottom: 8 }}>
+                  Parsed by {mealEngineLabel(quickPreview._structuredVia)}
+                  {typeof quickPreview.confidence === 'number'
+                    ? ` · ${Math.round(quickPreview.confidence * 100)}%`
+                    : ''}
                 </div>
               )}
 
