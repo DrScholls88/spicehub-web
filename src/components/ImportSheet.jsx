@@ -15,6 +15,7 @@ import {
 import { cleanUrl } from '../api.js';
 import { humanizeImportStatus } from '../importCopy.js';
 import db from '../db.js';
+import useOnlineStatus from '../hooks/useOnlineStatus';
 import ImportInput from './ImportInput';
 import ImportReview from './ImportReview';
 import BrowserAssist from './BrowserAssist';
@@ -130,6 +131,27 @@ export default function ImportSheet({
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const [confirmImport, setConfirmImport] = useState(null);
   const [draftToResume, setDraftToResume] = useState(null);
+
+  // ── Offline import queue badge ───────────────────────────────────────────
+  const { isOnline } = useOnlineStatus();
+  const [pendingQueueCount, setPendingQueueCount] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => {
+      db.importQueue?.where('status').anyOf(['pending', 'failed']).count()
+        .then(n => { if (!cancelled) setPendingQueueCount(n || 0); })
+        .catch(() => {});
+    };
+    refresh();
+    const id = setInterval(refresh, 4000);
+    window.addEventListener('spicehub:import-queue-updated', refresh);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+      window.removeEventListener('spicehub:import-queue-updated', refresh);
+    };
+  }, []);
 
   // ── Loading state ────────────────────────────────────────────────────────
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -768,6 +790,29 @@ export default function ImportSheet({
               initialType={initialItemType}
               title={title}
             />
+
+            {/* Offline / pending-import status banner */}
+            <AnimatePresence initial={false}>
+              {phase === 'input' && pendingQueueCount > 0 && (
+                <motion.div
+                  key="pending-queue-banner"
+                  className={`import-sheet-queue-banner${isOnline ? ' syncing' : ' offline'}`}
+                  initial={{ opacity: 0, height: 0, marginTop: 0 }}
+                  animate={{ opacity: 1, height: 'auto', marginTop: 12 }}
+                  exit={{ opacity: 0, height: 0, marginTop: 0 }}
+                  transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
+                  style={{ overflow: 'hidden' }}
+                >
+                  <span className="import-sheet-queue-icon" aria-hidden="true">
+                    {isOnline ? '🔄' : '⏳'}
+                  </span>
+                  <span className="import-sheet-queue-text">
+                    {pendingQueueCount} pending import{pendingQueueCount === 1 ? '' : 's'}
+                    {isOnline ? ' · syncing…' : ' · waiting for connection'}
+                  </span>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Back to review option (Fix 3) */}
             {phase === 'input' && lastReviewRef.current && (

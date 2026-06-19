@@ -347,7 +347,94 @@
   border-radius: var(--sh-pill);
   cursor: pointer;
   transition: all 150ms;
-  min-height: 44px;
+  min-height: 48px;
+}
+
+/* ── Offline / pending-import status banner ─────────────────────────────── */
+.import-sheet-queue-banner {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 13px;
+  border-radius: var(--sh-radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid var(--sh-border);
+  background: var(--sh-surface);
+  color: var(--sh-text-secondary);
+}
+.import-sheet-queue-banner.offline {
+  border-color: var(--sh-warning, #d98324);
+  background: var(--sh-warning-bg, rgba(217, 131, 36, 0.12));
+  color: var(--sh-warning-dark, #9a5b13);
+}
+.import-sheet-queue-icon { font-size: 15px; line-height: 1; flex-shrink: 0; }
+.import-sheet-queue-text { line-height: 1.3; }
+
+/* ── Unified ingestion zone ─────────────────────────────────────────────── */
+.import-input-zone {
+  border-radius: var(--sh-radius);
+  transition: box-shadow 150ms, background 150ms;
+}
+.import-input-zone.dragover {
+  box-shadow: 0 0 0 2px var(--sh-accent), 0 0 0 6px var(--sh-accent-bg);
+  background: var(--sh-accent-bg);
+}
+
+/* ── Auto-detected type chip / override ─────────────────────────────────── */
+.import-input-type-row {
+  margin-bottom: 12px;
+}
+.import-input-type-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 6px 12px;
+  border-radius: var(--sh-pill);
+  border: 1.5px solid var(--sh-border);
+  background: var(--sh-bg);
+  color: var(--sh-text-secondary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 150ms, background 150ms;
+}
+.import-input-type-chip strong { color: var(--sh-text); }
+.import-input-type-chip-emoji { font-size: 15px; line-height: 1; }
+.import-input-type-chip-change {
+  margin-left: 4px;
+  color: var(--sh-accent);
+  font-weight: 700;
+}
+
+/* ── Single primary CTA ─────────────────────────────────────────────────── */
+.import-input-primary-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 52px;
+  margin-top: 4px;
+  border: none;
+  border-radius: var(--sh-radius-sm);
+  background: var(--sh-accent);
+  color: #fff;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  box-shadow: var(--sh-shadow);
+  transition: opacity 150ms, transform 100ms, background 150ms;
+}
+.import-input-primary-cta:active { transform: scale(0.98); }
+.import-input-primary-cta:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
 }
 
 .import-input-tabs button.active {
@@ -369,7 +456,7 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-height: 46px;
+  min-height: 48px;
   border-radius: var(--sh-radius-sm);
   border: 1.5px solid var(--sh-border);
   background: var(--sh-bg);
@@ -409,7 +496,7 @@
   color: var(--sh-text);
   transition: border-color 150ms, box-shadow 150ms;
   box-sizing: border-box;
-  min-height: 44px;
+  min-height: 48px;
 }
 .import-input-url:focus {
   outline: none;

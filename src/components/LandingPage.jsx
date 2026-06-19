@@ -60,21 +60,139 @@ const STYLES = {
     color: 'var(--text)',
     marginBottom: '12px',
   },
+  // ── Import link tray ──
+  importTray: {
+    marginTop: '14px',
+    borderRadius: '14px',
+    padding: '2px',
+    background: 'linear-gradient(135deg, #833ab4, #fd1d1d, #fcb045)',
+    boxShadow: '0 6px 18px rgba(131, 58, 180, 0.28)',
+  },
+  importTrayInner: {
+    background: 'var(--card)',
+    borderRadius: '12px',
+    padding: '12px 14px',
+  },
+  importTrayPill: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '11px',
+    width: '100%',
+    background: 'none',
+    border: 'none',
+    padding: 0,
+    cursor: 'pointer',
+    textAlign: 'left',
+    outline: 'none',
+  },
+  importTrayIcon: {
+    width: '38px',
+    height: '38px',
+    flexShrink: 0,
+    borderRadius: '10px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '20px',
+    background: 'linear-gradient(135deg, #833ab4, #fd1d1d, #fcb045)',
+  },
+  importTrayTitle: {
+    fontSize: '14px',
+    fontWeight: '700',
+    color: 'var(--text)',
+    lineHeight: '1.2',
+  },
+  importTraySub: {
+    fontSize: '11.5px',
+    color: 'var(--text-light)',
+    fontWeight: '500',
+    marginTop: '2px',
+  },
+  importTrayChevron: {
+    marginLeft: 'auto',
+    fontSize: '18px',
+    color: 'var(--text-light)',
+    flexShrink: 0,
+  },
+  importTrayForm: {
+    display: 'flex',
+    gap: '8px',
+    marginTop: '4px',
+    alignItems: 'center',
+  },
+  importTrayInput: {
+    flex: 1,
+    minWidth: 0,
+    height: '42px',
+    borderRadius: '10px',
+    border: '1.5px solid var(--border)',
+    background: 'var(--surface)',
+    color: 'var(--text)',
+    fontSize: '14px',
+    padding: '0 12px',
+    outline: 'none',
+  },
+  importTrayPaste: {
+    height: '42px',
+    flexShrink: 0,
+    borderRadius: '10px',
+    border: '1.5px solid var(--border)',
+    background: 'var(--surface)',
+    color: 'var(--text)',
+    fontSize: '13px',
+    fontWeight: '600',
+    padding: '0 12px',
+    cursor: 'pointer',
+  },
+  importTrayGo: {
+    height: '42px',
+    flexShrink: 0,
+    borderRadius: '10px',
+    border: 'none',
+    background: 'var(--primary)',
+    color: '#fff',
+    fontSize: '13px',
+    fontWeight: '700',
+    padding: '0 16px',
+    cursor: 'pointer',
+  },
+  importTrayGoDisabled: {
+    opacity: 0.5,
+    cursor: 'not-allowed',
+  },
   // ── Next 5 Days horizontal scroll ──
   nextDaysSection: {
     marginBottom: '24px',
+  },
+  nextDaysScrollWrap: {
+    position: 'relative',
   },
   nextDaysScroll: {
     display: 'flex',
     gap: '10px',
     overflowX: 'auto',
     paddingBottom: '8px',
+    paddingRight: '20px',
     scrollBehavior: 'smooth',
     WebkitOverflowScrolling: 'touch',
+    scrollPaddingLeft: '2px',
+    // Gesture isolation: keep horizontal swipes here from triggering page
+    // pinch-zoom / vertical scroll chaining (eliminates carousel jitter).
+    touchAction: 'pan-x',
+    overscrollBehaviorX: 'contain',
+  },
+  nextDaysFade: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: '8px',
+    width: '36px',
+    pointerEvents: 'none',
+    background: 'linear-gradient(to right, rgba(0,0,0,0), var(--bg))',
   },
   dayCard: {
     flexShrink: 0,
-    width: '130px',
+    width: '144px',
     background: 'var(--card)',
     border: '1.5px solid var(--border)',
     borderRadius: 'var(--radius)',
@@ -89,7 +207,7 @@ const STYLES = {
   },
   dayCardPhotoArea: {
     width: '100%',
-    height: '80px',
+    height: '96px',
     objectFit: 'cover',
     display: 'block',
     background: 'var(--surface)',
@@ -97,7 +215,7 @@ const STYLES = {
   },
   dayCardPhotoFallback: {
     width: '100%',
-    height: '80px',
+    height: '96px',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -123,10 +241,10 @@ const STYLES = {
     color: 'var(--primary)',
   },
   dayCardMealName: {
-    fontSize: '12px',
+    fontSize: '11px',
     fontWeight: '600',
     color: 'var(--text)',
-    lineHeight: '1.3',
+    lineHeight: '1.35',
     display: '-webkit-box',
     WebkitLineClamp: 2,
     WebkitBoxOrient: 'vertical',
@@ -613,6 +731,119 @@ function MealPreviewSheet({ date, meal, isToday, onClose, onViewFull }) {
   );
 }
 
+// ── ImportLinkTray ────────────────────────────────────────────────────────────
+// Permanent, touch-first entry point for the Instagram / social import engine.
+// Collapsed: a tappable gradient pill. Expanded: paste-or-type a URL and import.
+function ImportLinkTray({ onImportLink }) {
+  const [expanded, setExpanded] = useState(false);
+  const [url, setUrl] = useState('');
+  const inputRef = React.useRef(null);
+
+  const open = () => {
+    setExpanded(true);
+    // Focus the field on the next frame so the keyboard pops on mobile.
+    requestAnimationFrame(() => inputRef.current?.focus());
+  };
+
+  const submit = (value) => {
+    const link = (value ?? url).trim();
+    if (!link) return;
+    onImportLink(link);
+    setUrl('');
+    setExpanded(false);
+  };
+
+  const handlePaste = async () => {
+    try {
+      const text = (await navigator.clipboard.readText())?.trim();
+      if (!text) return;
+      setUrl(text);
+      // If it already looks like a link, fire the import immediately.
+      if (/^https?:\/\//i.test(text)) submit(text);
+      else inputRef.current?.focus();
+    } catch {
+      // Clipboard blocked (permissions / iOS) — fall back to manual entry.
+      inputRef.current?.focus();
+    }
+  };
+
+  const canGo = url.trim().length > 0;
+
+  return (
+    <motion.div
+      style={STYLES.importTray}
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.4, ease: [0.32, 0.72, 0, 1], delay: 0.15 }}
+    >
+      <div style={STYLES.importTrayInner}>
+        {!expanded ? (
+          <motion.button
+            type="button"
+            style={STYLES.importTrayPill}
+            onClick={open}
+            whileTap={{ scale: 0.98 }}
+          >
+            <span style={STYLES.importTrayIcon} aria-hidden="true">🔗</span>
+            <span style={{ minWidth: 0 }}>
+              <span style={STYLES.importTrayTitle}>Import a recipe</span>
+              <span style={{ ...STYLES.importTraySub, display: 'block' }}>
+                Paste an Instagram, TikTok or web link
+              </span>
+            </span>
+            <span style={STYLES.importTrayChevron} aria-hidden="true">＋</span>
+          </motion.button>
+        ) : (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.2 }}
+          >
+            <div style={{ ...STYLES.importTrayTitle, marginBottom: '8px' }}>
+              Paste recipe link
+            </div>
+            <div style={STYLES.importTrayForm}>
+              <input
+                ref={inputRef}
+                style={STYLES.importTrayInput}
+                type="url"
+                inputMode="url"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                placeholder="https://instagram.com/…"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+              />
+              <button type="button" style={STYLES.importTrayPaste} onClick={handlePaste}>
+                Paste
+              </button>
+            </div>
+            <div style={{ ...STYLES.importTrayForm, marginTop: '8px' }}>
+              <button
+                type="button"
+                style={{ ...STYLES.importTrayPaste, flex: 1 }}
+                onClick={() => { setUrl(''); setExpanded(false); }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                style={{ ...STYLES.importTrayGo, flex: 1, ...(canGo ? null : STYLES.importTrayGoDisabled) }}
+                onClick={() => submit()}
+                disabled={!canGo}
+              >
+                Import →
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 export default function LandingPage({
   cookingStats = {},
@@ -626,6 +857,7 @@ export default function LandingPage({
   onViewDetail = () => {},
   onOpenFridge = () => {},
   onOpenStats = () => {},
+  onImportLink = () => {},
 }) {
   const [hoveredTile, setHoveredTile] = useState(null);
   const [hoveredStats, setHoveredStats] = useState(false);
@@ -772,6 +1004,8 @@ export default function LandingPage({
               >🎲</motion.span>
             </motion.button>
           </div>
+          {/* Permanent import engine entry point */}
+          <ImportLinkTray onImportLink={onImportLink} />
         </div>
         {/* Subtle decorative glow */}
         <div style={{ position: 'absolute', top: '-50%', right: '-10%', width: '300px', height: '300px', background: 'radial-gradient(circle, var(--primary) 0%, transparent 70%)', opacity: 0.15, filter: 'blur(40px)', zIndex: 1, pointerEvents: 'none' }} />
@@ -781,22 +1015,25 @@ export default function LandingPage({
       <div style={STYLES.nextDaysSection}>
         <div style={STYLES.sectionLabel}>Next 5 Days</div>
         {hasAnyMeal ? (
-          <motion.div
-            style={STYLES.nextDaysScroll}
-            initial="hidden"
-            animate="visible"
-            variants={{ visible: { transition: { staggerChildren: 0.07 } } }}
-          >
-            {next5Days.map(({ date, meal, isToday }) => (
-              <DayPhotoCard
-                key={localDateKey(date)}
-                date={date}
-                meal={meal}
-                isToday={isToday}
-                onClick={() => setPreviewDay({ date, meal, isToday })}
-              />
-            ))}
-          </motion.div>
+          <div style={STYLES.nextDaysScrollWrap}>
+            <motion.div
+              style={STYLES.nextDaysScroll}
+              initial="hidden"
+              animate="visible"
+              variants={{ visible: { transition: { staggerChildren: 0.07 } } }}
+            >
+              {next5Days.map(({ date, meal, isToday }) => (
+                <DayPhotoCard
+                  key={localDateKey(date)}
+                  date={date}
+                  meal={meal}
+                  isToday={isToday}
+                  onClick={() => setPreviewDay({ date, meal, isToday })}
+                />
+              ))}
+            </motion.div>
+            <div style={STYLES.nextDaysFade} aria-hidden="true" />
+          </div>
         ) : (
           <motion.div
             style={STYLES.emptyState}
@@ -897,7 +1134,7 @@ export default function LandingPage({
               See all →
             </button>
           </div>
-          <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '8px', WebkitOverflowScrolling: 'touch' }}>
+          <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '8px', WebkitOverflowScrolling: 'touch', touchAction: 'pan-x', overscrollBehaviorX: 'contain' }}>
             {seasonalMeals.map(meal => (
               <SeasonalMealCard
                 key={meal.id || meal.name}
