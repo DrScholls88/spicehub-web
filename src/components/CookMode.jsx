@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion, useDragControls } from 'framer-motion';
-import { X, CheckCircle2, Pause, Play, Timer, ChevronDown, ChevronRight, Salad, PartyPopper } from 'lucide-react';
+import { X, CheckCircle2, Pause, Play, Timer, ChevronDown, ChevronRight, Salad, PartyPopper, Video } from 'lucide-react';
+import { getMealVideoSource, parseStepTimestamps, mapStepsToTimestamps } from '../lib/videoSource';
 import './CookMode.css';
 
 /**
@@ -99,8 +100,18 @@ function fireTimerDoneNotif(label) {
 }
 
 // ── Component ───────────────────────────────────────────────────────────────
-export default function CookMode({ meal, scaleFactor = 1.0, onClose }) {
+export default function CookMode({ meal, scaleFactor = 1.0, onClose, onPlayVideo }) {
   const dragControls = useDragControls();
+  const videoSource = useMemo(() => getMealVideoSource(meal), [meal]);
+
+  // Map each direction step to a video timestamp (seconds) when the source
+  // caption/description carries "jump to time" markers. Powers PiP step-sync.
+  const stepSeconds = useMemo(() => {
+    if (!videoSource) return [];
+    const caption = meal.sourceCaption || meal.description || meal.notes || '';
+    const ts = parseStepTimestamps(caption, (meal.directions || []).length);
+    return mapStepsToTimestamps(meal.directions || [], ts);
+  }, [videoSource, meal]);
 
   const handleSheetDragEnd = useCallback((_e, info) => {
     if (info.offset.y > 100 || info.velocity.y > 500) onClose();
@@ -201,6 +212,52 @@ export default function CookMode({ meal, scaleFactor = 1.0, onClose }) {
     if (step === currentStep) return;
     animateAndGo(step, step > currentStep ? 'left' : 'right');
   }, [currentStep, animateAndGo]);
+
+  // ── PiP step-sync bridge (decoupled via window events) ──────────────────────
+  // Broadcast the active step + its video timestamp so the Floating player can
+  // mirror it in the X-ray bar and scrub a controllable (YouTube) source.
+  const emitCookStep = useCallback((stepIdx) => {
+    if (!videoSource) return;
+    window.dispatchEvent(new CustomEvent('spicehub:cook-step', {
+      detail: {
+        stepIndex: stepIdx,
+        totalSteps,
+        seconds: stepIdx >= 0 ? (stepSeconds[stepIdx] ?? null) : null,
+      },
+    }));
+  }, [videoSource, totalSteps, stepSeconds]);
+
+  // Emit whenever the active step changes.
+  useEffect(() => {
+    emitCookStep(currentStep);
+  }, [currentStep, emitCookStep]);
+
+  // On Cook Mode exit, tell the player cooking ended so it hides the X-ray bar
+  // (the floating player itself persists by design).
+  useEffect(() => {
+    return () => {
+      window.dispatchEvent(new CustomEvent('spicehub:cook-step', {
+        detail: { stepIndex: -1, totalSteps: 0, seconds: null },
+      }));
+    };
+  }, []);
+
+  // Answer the player's "what step are we on?" probe (mid-cook launch) and honor
+  // X-ray segment taps by jumping to that step.
+  useEffect(() => {
+    if (!videoSource) return;
+    const onReq = () => emitCookStep(currentStep);
+    const onSeek = (e) => {
+      const i = e.detail?.stepIndex;
+      if (typeof i === 'number') goToStep(i);
+    };
+    window.addEventListener('spicehub:pip-request-step', onReq);
+    window.addEventListener('spicehub:pip-seek-step', onSeek);
+    return () => {
+      window.removeEventListener('spicehub:pip-request-step', onReq);
+      window.removeEventListener('spicehub:pip-seek-step', onSeek);
+    };
+  }, [videoSource, currentStep, emitCookStep, goToStep]);
 
   const markComplete = useCallback(() => {
     setCompletedSteps(prev => new Set([...prev, currentStep]));
@@ -318,6 +375,19 @@ export default function CookMode({ meal, scaleFactor = 1.0, onClose }) {
           ))}
         </div>
       </div>
+
+      {/* PiP: launch the floating recipe video as a cooking companion */}
+      {videoSource && onPlayVideo && (
+        <button
+          className="cm-watch-btn"
+          onClick={() => onPlayVideo(meal)}
+          aria-label={`Watch the ${videoSource.label} recipe video while you cook`}
+          title={`Watch video (${videoSource.label})`}
+        >
+          <Video size={15} strokeWidth={2} />
+          Watch video
+        </button>
+      )}
 
       {/* Main content */}
       <div className="cm-content" ref={contentRef}>

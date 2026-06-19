@@ -192,3 +192,26 @@
   font-size: 12px; color: var(--text-secondary, #999);
   text-align: center; margin-top: 4px;
 }
+
+/* ── PiP: "Watch video" launch button (cooking companion) ── */
+.cm-watch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: center;
+  margin: 4px auto 0;
+  padding: 7px 16px;
+  border: 1.5px solid rgba(230, 81, 0, 0.30);
+  border-radius: 999px;
+  background: rgba(230, 81, 0, 0.10);
+  color: var(--primary, #e65100);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background 0.18s ease, transform 0.1s ease;
+}
+
+.cm-watch-btn:hover { background: rgba(230, 81, 0, 0.18); }
+.cm-watch-btn:active { transform: scale(0.96); }

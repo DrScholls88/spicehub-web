@@ -20,6 +20,8 @@ import InstagramZipImport from './components/InstagramZipImport';
 import FridgeMode from './components/FridgeMode';
 import CookMode from './components/CookMode';
 import MixMode from './components/MixMode';
+import FloatingVideoPlayer from './components/FloatingVideoPlayer';
+import { getMealVideoSource } from './lib/videoSource';
 import MealStats from './components/MealStats';
 import BarShelf from './components/BarShelf';
 import BarFridgeMode from './components/BarFridgeMode';
@@ -118,6 +120,7 @@ export default function App() {
   const [showFridge, setShowFridge] = useState(false);
   const [cookModeMeal, setCookModeMeal] = useState(null); // { meal, scaleFactor }
   const [mixModeDrink, setMixModeDrink] = useState(null); // { drink, scaleFactor }
+  const [pipVideo, setPipVideo] = useState(null); // { source, meal } — floating PiP player
   const [showStats, setShowStats] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showBarShelf, setShowBarShelf] = useState(false);
@@ -934,6 +937,18 @@ useEffect(() => {
     setCookModeMeal({ meal, scaleFactor });
   }, []);
 
+  // ── Floating PiP video player ────────────────────────────────────────────────
+  const openPipForMeal = useCallback((meal) => {
+    const source = getMealVideoSource(meal);
+    if (!source) {
+      showToast('No playable video found for this recipe');
+      return;
+    }
+    setPipVideo({ source, meal });
+  }, [showToast]);
+
+  const closePip = useCallback(() => setPipVideo(null), []);
+
   const finishCookMode = useCallback(async () => {
     if (cookModeMeal) {
       const { meal } = cookModeMeal;
@@ -992,6 +1007,15 @@ useEffect(() => {
         <div className="app-brand">
           <span className="app-brand-mark" aria-hidden="true">🌶️</span>
           <h1>SpiceHub</h1>
+          <button
+            type="button"
+            className="app-build-badge"
+            title={`SpiceHub v${__SPICEHUB_VERSION__} · build #${__SPICEHUB_BUILD__}`}
+            aria-label={`Build ${__SPICEHUB_BUILD__}, version ${__SPICEHUB_VERSION__}. Open settings.`}
+            onClick={() => setShowSettings(true)}
+          >
+            #{__SPICEHUB_BUILD__}
+          </button>
         </div>
         <div className="header-actions">
           <button className="hdr-btn" onClick={() => setShowFridge(true)} title="What's in My Fridge?">🧊</button>
@@ -1114,6 +1138,7 @@ useEffect(() => {
             onToast={showToast}
             onToggleFavorite={toggleFavorite}
             onRate={rateMeal}
+            onPlayVideo={openPipForMeal}
           />
         )}
         {tab === 'bar' && (
@@ -1252,6 +1277,7 @@ useEffect(() => {
             meal={cookModeMeal.meal}
             scaleFactor={cookModeMeal.scaleFactor}
             onClose={finishCookMode}
+            onPlayVideo={openPipForMeal}
           />
         )}
       </AnimatePresence>
@@ -1381,6 +1407,19 @@ useEffect(() => {
           <span>{toast.message}</span>
         </div>
       )}
+
+      {/* ── Floating Picture-in-Picture video player (persists across views) ── */}
+      <AnimatePresence>
+        {pipVideo && (
+          <FloatingVideoPlayer
+            key="pip-player"
+            source={pipVideo.source}
+            meal={pipVideo.meal}
+            isOnline={isOnline}
+            onClose={closePip}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

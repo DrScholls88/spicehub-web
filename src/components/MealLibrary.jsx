@@ -8,6 +8,7 @@ import useBackHandler from '../hooks/useBackHandler';
 import SafeMediaImage from './SafeMediaImage';
 import ReExtractSheet from './ReExtractSheet';
 import { hapticLight, hapticSuccess } from '../haptics';
+import { getMealVideoSource } from '../lib/videoSource';
 
 // I-5: a recipe is "improvable" when it was imported with a low-confidence /
 // needs-review flag AND we kept its source caption (so we can re-run extraction
@@ -77,7 +78,7 @@ const fabActionVariants = {
   open: { opacity: 1, y: 0, scale: 1, transition: { type: 'spring', stiffness: 420, damping: 26 } },
 };
 
-export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDetail, onShare, onImport, onReload, onToast, onToggleFavorite, onRate }) {
+export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDetail, onShare, onImport, onReload, onToast, onToggleFavorite, onRate, onPlayVideo }) {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
@@ -92,6 +93,9 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
   const categoryScrollRef = useRef(null);
   const longPressTimer = useRef(null);
   const touchStartPos = useRef(null); // {x, y} at touchStart — cancel long-press on scroll
+  const touchStartTime = useRef(0);   // ms timestamp at touchStart — for swipe-up velocity check
+  const swipeStartPos = useRef(null); // {x, y} at touchStart — survives long-press cancel for fling-up analysis
+  const swipeConsumed = useRef(false); // true when a fling-up fired → suppress the synthetic click
 
   // Swipe-to-dismiss state for quickPreview sheet
   const sheetRef = useRef(null);
@@ -185,11 +189,19 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
     touchStartPos.current = null;
   }, []);
 
+  // Fling-up gesture thresholds (launches PiP video for tiles with a video source)
+  const SWIPE_UP_MIN_DY = -55;   // must travel at least 55px upward (dy is negative)
+  const SWIPE_UP_MAX_DX = 40;    // horizontal drift must stay under 40px (else it's a scroll/swipe)
+  const SWIPE_UP_MAX_MS = 500;   // must be a flick, not a slow drag
+
   // Long press (non-select mode) → show quick preview
   const handleTouchStart = useCallback((meal, e) => {
     if (selectMode) return;
     const touch = e.changedTouches?.[0];
     touchStartPos.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
+    swipeStartPos.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
+    touchStartTime.current = Date.now();
+    swipeConsumed.current = false;
     longPressTimer.current = setTimeout(() => {
       longPressTimer.current = null;
       hapticLight();
@@ -206,7 +218,40 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
     if (dx > MOVE_THRESHOLD_PX || dy > MOVE_THRESHOLD_PX) cancelLongPress();
   }, [cancelLongPress]);
 
-  const handleTouchEnd = useCallback(() => cancelLongPress(), [cancelLongPress]);
+  // touchend: first analyze for a fling-up (launches PiP video), then clean up long-press.
+  // We only inspect the final displacement here — we never call preventDefault, so vertical
+  // grid scrolling is fully preserved. The swipe only fires for tiles that actually have a
+  // video source, when onPlayVideo is wired and we're not in multi-select.
+  const handleTouchEnd = useCallback((meal, e) => {
+    if (
+      !selectMode &&
+      meal &&
+      onPlayVideo &&
+      swipeStartPos.current &&
+      getMealVideoSource(meal)
+    ) {
+      const touch = e?.changedTouches?.[0];
+      if (touch) {
+        const dx = touch.clientX - swipeStartPos.current.x;
+        const dy = touch.clientY - swipeStartPos.current.y;
+        const dt = Date.now() - touchStartTime.current;
+        if (
+          dy <= SWIPE_UP_MIN_DY &&
+          Math.abs(dx) < SWIPE_UP_MAX_DX &&
+          dt < SWIPE_UP_MAX_MS
+        ) {
+          swipeConsumed.current = true; // suppress the synthetic click that opens detail
+          swipeStartPos.current = null;
+          cancelLongPress();
+          hapticLight();
+          onPlayVideo(meal);
+          return;
+        }
+      }
+    }
+    swipeStartPos.current = null;
+    cancelLongPress();
+  }, [selectMode, onPlayVideo, cancelLongPress]);
 
   // Long press (non-select mode) → enter multi-select
   const handleLongPressSelect = useCallback((meal, e) => {
@@ -372,6 +417,12 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
 
   // ── Tile click handler — safe for broken meals ────────────────────────────
   const handleTileClick = useCallback((meal) => {
+    // A fling-up just launched the video — swallow the synthetic click so we don't
+    // also open the detail view for the same gesture.
+    if (swipeConsumed.current) {
+      swipeConsumed.current = false;
+      return;
+    }
     if (selectMode) {
       toggleSelect(meal.id);
       return;
@@ -540,8 +591,8 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
               onClick={() => handleTileClick(meal)}
               onTouchStart={e => selectMode ? handleLongPressSelect(meal, e) : handleTouchStart(meal, e)}
               onTouchMove={handleTouchMove}
-              onTouchEnd={handleTouchEnd}
-              onTouchCancel={handleTouchEnd}
+              onTouchEnd={e => handleTouchEnd(meal, e)}
+              onTouchCancel={e => handleTouchEnd(meal, e)}
               onContextMenu={e => {
                 e.preventDefault();
                 if (selectMode) toggleSelect(meal.id);
@@ -591,6 +642,22 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                     ⋯
                   </button>
                 )}
+                {/* PiP: play video badge — only on cards with a YouTube/Instagram source */}
+                {!selectMode && onPlayVideo && (() => {
+                  const vsrc = getMealVideoSource(meal);
+                  if (!vsrc) return null;
+                  return (
+                    <button
+                      className={`ml-tile-play ml-tile-play-${vsrc.platform}`}
+                      aria-label={`Play ${vsrc.label} video in floating player`}
+                      title={`Play video (${vsrc.label})`}
+                      onClick={e => { e.stopPropagation(); hapticLight(); onPlayVideo(meal); }}
+                      onTouchEnd={e => e.stopPropagation()}
+                    >
+                      <span className="ml-tile-play-tri" aria-hidden="true">▶</span>
+                    </button>
+                  );
+                })()}
               </div>
 
               {/* Info row */}
@@ -813,6 +880,13 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
               {onToggleFavorite && (
                 <button onClick={() => { onToggleFavorite(quickPreview); setQuickPreview(null); }}>
                   {quickPreview.isFavorite ? '💔 Unfavorite' : '❤️ Favorite'}
+                </button>
+              )}
+              {onPlayVideo && getMealVideoSource(quickPreview) && (
+                <button
+                  onClick={() => { hapticLight(); onPlayVideo(quickPreview); setQuickPreview(null); }}
+                >
+                  🎥 Play Video ({getMealVideoSource(quickPreview).label})
                 </button>
               )}
               {(quickPreview.link || quickPreview.sourceUrl) && (
