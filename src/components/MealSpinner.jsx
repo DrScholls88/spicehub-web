@@ -117,8 +117,11 @@ export default function MealSpinner({
   const [pickedMeals, setPickedMeals] = useState(null); // meals[numSlots]
   const timers = useRef([]);
 
-  const pool = (rotationMeals && rotationMeals.length>=5) ? rotationMeals : meals;
-  const usingRotation = !!(rotationMeals && rotationMeals.length>=5);
+  // A-1: the spinner and planner draw ONLY from The Rotation. Fall back to the
+  // full library only when the rotation is completely empty, so the control
+  // never dead-ends for a user who hasn't curated a rotation yet.
+  const pool = (rotationMeals && rotationMeals.length > 0) ? rotationMeals : meals;
+  const usingRotation = !!(rotationMeals && rotationMeals.length > 0);
   const minNeeded = Math.max(1, Math.min(5, numSlots));
 
   // Build picks array[numSlots] — preserves locked meals, de-prioritizes recently used

@@ -3,6 +3,7 @@ import { ShoppingCart, Search, X as XIcon } from 'lucide-react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
 import { saveStoreMemory as dbSaveStoreMemory, getStoreMemory as dbGetStoreMemory, addToBarInventory } from '../db';
 import { GROCERY_CATEGORIES, categorizeIngredient } from '../recipeSchema';
+import StoreMode from './StoreMode';
 
 const DEPT_EMOJI = {
   'Produce':        '🥦',
@@ -124,6 +125,7 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
   const [batchStoreOverlayOpen, setBatchStoreOverlayOpen] = useState(false);
   const [confettiBurst, setConfettiBurst] = useState(0); // incremented to rekey confetti
   const [searchQuery, setSearchQuery] = useState('');
+  const [storeMode, setStoreMode] = useState(false); // A-3: in-store shopping mode
 
   // View modes
   const [viewMode, setViewMode] = useState('simple'); // 'simple' | 'detailed'
@@ -383,6 +385,19 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
 
   return (
     <div className="gl-container">
+      {/* ── A-3 Store Mode overlay ── */}
+      <AnimatePresence>
+        {storeMode && (
+          <StoreMode
+            key="store-mode"
+            items={items}
+            setItems={setItems}
+            onExit={() => setStoreMode(false)}
+            onToast={onToast}
+          />
+        )}
+      </AnimatePresence>
+
       {/* ── Alchemy confetti burst ── */}
       {confettiBurst > 0 && (
         <div className="gl-confetti-wrap" key={confettiBurst} aria-hidden="true">
@@ -401,6 +416,30 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
           {checkedCount}/{activeItems.length} items
           {pantryList.length > 0 && <span className="gl-pantry-badge"> · {rawPantry.length} in pantry</span>}
         </div>
+        {/* A-3: enter focused in-store shopping mode */}
+        {activeItems.length > 0 && (
+          <button
+            type="button"
+            className="gl-store-mode-btn"
+            onClick={() => setStoreMode(true)}
+            style={{
+              marginTop: 8,
+              width: '100%',
+              minHeight: 48,
+              border: 'none',
+              borderRadius: 12,
+              background: 'linear-gradient(135deg, var(--primary), var(--primary-light, #ff8a4c))',
+              color: '#fff',
+              fontSize: 15,
+              fontWeight: 800,
+              letterSpacing: 0.2,
+              cursor: 'pointer',
+              boxShadow: '0 3px 10px rgba(230, 81, 0, 0.28)',
+            }}
+          >
+            🛒 Store Mode
+          </button>
+        )}
         {/* Pixel bartender encouragement at 50% */}
         {progressPercent >= 50 && progressPercent < 100 && (
           <div className="gl-mini-bartender">

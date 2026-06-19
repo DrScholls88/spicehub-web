@@ -32,7 +32,19 @@ import { isMobileDevice } from './isMobile';
 import useOnlineStatus, { onOnlineStatusChange } from './hooks/useOnlineStatus';
 import useBackHandler from './hooks/useBackHandler';
 import useSwipeDismiss from './hooks/useSwipeDismiss';
+import { planWeek, pickForSlot, buildRecencyMap } from './lib/weekPlanner';
 import './App.css';
+
+// A-1: household dietary preference for Smart Auto-Plan (device-local).
+const DIETARY_PREF_KEY = 'spicehub_dietary_pref';
+function loadDietaryPref() {
+  try {
+    const raw = localStorage.getItem(DIETARY_PREF_KEY);
+    if (!raw) return { dietary: '', mode: 'require' };
+    const p = JSON.parse(raw);
+    return { dietary: p.dietary || '', mode: p.mode || 'require' };
+  } catch { return { dietary: '', mode: 'require' }; }
+}
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -88,6 +100,9 @@ export default function App() {
   const [meals, setMeals] = useState([]);
   const [drinks, setDrinks] = useState([]);
   const [weekPlan, setWeekPlan] = useState(Array(7).fill(null));
+  // A-1: household dietary preference + cached recency map for Smart Auto-Plan
+  const [dietaryPref, setDietaryPref] = useState(loadDietaryPref);
+  const recencyMapRef = useRef(new Map());
   const [detailItem, setDetailItem] = useState(null);   // meal or drink being viewed
   const [editMeal, setEditMeal] = useState(null);
   const [editDrink, setEditDrink] = useState(null);
@@ -361,6 +376,16 @@ export default function App() {
     return ids;
   }, [weekHistory, weekPlan]);
 
+  // A-1: warm the recency map once so single-day rerolls are recency-aware even
+  // before the first "Plan my Week" tap. Refreshed again inside smartPlanWeek.
+  useEffect(() => {
+    let cancelled = false;
+    getCookingLog()
+      .then(log => { if (!cancelled) recencyMapRef.current = buildRecencyMap(log); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   // Persist grocery list whenever it changes
   useEffect(() => {
     if (groceryItems.length === 0) return;
@@ -618,15 +643,55 @@ useEffect(() => {
     showToast('Week restored!');
   }, [showToast]);
 
+  // A-1: reroll a single day — rotation-only and score-aware (variety/recency/
+  // time-fit), with jitter so repeated rerolls vary. Falls back to all meals
+  // only when The Rotation is empty so the control never dead-ends.
   const respinDay = useCallback((dayIndex) => {
     const current = weekPlan[dayIndex];
     if (current && current._special) return;
-    const otherIds = weekPlan.filter((m, i) => i !== dayIndex && m && !m._special).map(m => m.id);
-    const available = meals.filter(m => !otherIds.includes(m.id) && m.id !== current?.id);
-    if (available.length === 0) { alert('No more meals available to swap in!'); return; }
-    const pick = available[Math.floor(Math.random() * available.length)];
+    const pool = rotationMeals.length > 0 ? rotationMeals : meals;
+    const pick = pickForSlot(pool, {
+      slotIndex: dayIndex,
+      currentPlan: weekPlan,
+      recencyMap: recencyMapRef.current,
+      prefs: dietaryPref,
+    });
+    if (!pick) { showToast('Add more meals to The Rotation to swap in 🔄'); return; }
     setWeekPlan(prev => prev.map((m, i) => i === dayIndex ? pick : m));
-  }, [meals, weekPlan]);
+  }, [meals, weekPlan, rotationMeals, dietaryPref, showToast]);
+
+  // A-1: Smart Auto-Plan — fill every empty, unlocked slot from The Rotation
+  // using the local scoring engine. Locked/filled days are preserved.
+  const smartPlanWeek = useCallback(async () => {
+    if (rotationMeals.length === 0) {
+      showToast('Add meals to The Rotation first, then plan your week 🔄');
+      return;
+    }
+    let recencyMap = recencyMapRef.current;
+    try {
+      const log = await getCookingLog();
+      recencyMap = buildRecencyMap(log);
+      recencyMapRef.current = recencyMap;
+    } catch { /* use cached/empty recency — still works offline */ }
+    const planned = planWeek(rotationMeals, {
+      currentPlan: weekPlan,
+      recencyMap,
+      prefs: dietaryPref,
+    });
+    const filled = planned.filter(Boolean).length;
+    setWeekPlan(planned);
+    if (filled < 7) {
+      showToast(`Planned ${filled} day${filled === 1 ? '' : 's'} — add more to The Rotation to fill the week ✨`);
+    } else {
+      showToast('Week planned ✨');
+    }
+  }, [rotationMeals, weekPlan, dietaryPref, showToast]);
+
+  const updateDietaryPref = useCallback((pref) => {
+    const next = { dietary: pref?.dietary || '', mode: pref?.mode || 'require' };
+    setDietaryPref(next);
+    try { localStorage.setItem(DIETARY_PREF_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+  }, []);
 
   const setDayMeal = useCallback((dayIndex, meal) => {
     setWeekPlan(prev => prev.map((m, i) => i === dayIndex ? meal : m));
@@ -1015,6 +1080,9 @@ useEffect(() => {
             meals={meals}
             specialDays={SPECIAL_DAYS}
             onGenerate={generateWeek}
+            onSmartPlan={smartPlanWeek}
+            dietaryPref={dietaryPref}
+            onChangeDietaryPref={updateDietaryPref}
             onRespin={respinDay}
             onSetDay={setDayMeal}
             onSetSpecial={setDaySpecial}
