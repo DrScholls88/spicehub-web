@@ -6,7 +6,19 @@ import { toggleRotation, bulkSetRotation } from '../db';
 import db from '../db';
 import useBackHandler from '../hooks/useBackHandler';
 import SafeMediaImage from './SafeMediaImage';
+import ReExtractSheet from './ReExtractSheet';
 import { hapticLight, hapticSuccess } from '../haptics';
+
+// I-5: a recipe is "improvable" when it was imported with a low-confidence /
+// needs-review flag AND we kept its source caption (so we can re-run extraction
+// on the cached text — no re-scrape). Recipes without a caption can't be re-run.
+function isImprovable(meal) {
+  if (!meal || meal.status === 'processing' || meal.status === 'failed') return false;
+  const hasCaption = typeof meal.sourceCaption === 'string' && meal.sourceCaption.trim().length > 20;
+  if (!hasCaption) return false;
+  return meal.needsReview === true
+    || (typeof meal.confidence === 'number' && meal.confidence < 0.75);
+}
 
 // ── Date formatter: relative for recent, absolute for older ──────────────────
 function formatAddedDate(isoString) {
@@ -59,11 +71,19 @@ const CATEGORY_COLORS = {
 
 export const MEAL_CATEGORIES = ['All', '🔄 The Rotation', ...CATEGORY_OPTIONS];
 
+// Speed-dial action reveal: rise + fade, staggered from the main FAB
+const fabActionVariants = {
+  closed: { opacity: 0, y: 14, scale: 0.9, transition: { duration: 0.12 } },
+  open: { opacity: 1, y: 0, scale: 1, transition: { type: 'spring', stiffness: 420, damping: 26 } },
+};
+
 export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDetail, onShare, onImport, onReload, onToast, onToggleFavorite, onRate }) {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [showOptionsSheet, setShowOptionsSheet] = useState(false);
+  const [fabOpen, setFabOpen] = useState(false); // speed-dial: + expands to add/import
+  const [reExtractMeal, setReExtractMeal] = useState(null); // I-5: meal being re-extracted
   const [quickPreview, setQuickPreview] = useState(null); // meal object for popup
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -371,6 +391,8 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
 
   // ── Hardware back button (Android PWA) ───────────────────────────────────
   useBackHandler(selectMode, exitSelectMode, 'meal-select');
+  useBackHandler(fabOpen, () => setFabOpen(false), 'meal-fab');
+  useBackHandler(!!reExtractMeal, () => setReExtractMeal(null), 'meal-reextract');
 
   return (
     <div className="ml">
@@ -546,6 +568,18 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                 {meal.category && meal.category !== 'Dinners' && (
                   <span className="ml-tile-cat">{meal.category}</span>
                 )}
+                {/* I-5: low-confidence import → one-tap re-extraction */}
+                {!selectMode && isImprovable(meal) && (
+                  <button
+                    className="ml-tile-improve"
+                    aria-label="Improve this recipe with the latest engine"
+                    title="Low-confidence import — tap to re-run extraction"
+                    onClick={e => { e.stopPropagation(); hapticLight(); setReExtractMeal(meal); }}
+                    onTouchEnd={e => e.stopPropagation()}
+                  >
+                    <span aria-hidden="true">✨</span> Improve
+                  </button>
+                )}
                 {/* ⋯ menu button — always visible, bottom-right of image */}
                 {!selectMode && (
                   <button
@@ -589,35 +623,97 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
         )}
       </div>
 
-      {/* ── FABs ── */}
+      {/* ── Speed-dial FAB: single + expands to Create / Import ── */}
+      <AnimatePresence>
+        {fabOpen && (
+          <motion.div
+            key="ml-fab-scrim"
+            className="ml-fab-scrim"
+            onClick={() => setFabOpen(false)}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+          />
+        )}
+      </AnimatePresence>
+
       <motion.div
         className="ml-fab-group"
         initial={{ y: 80, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ type: 'spring', stiffness: 260, damping: 22, delay: 0.15 }}
       >
+        <AnimatePresence>
+          {fabOpen && (
+            <motion.div
+              key="ml-fab-actions"
+              className="ml-fab-actions"
+              initial="closed"
+              animate="open"
+              exit="closed"
+              variants={{
+                open: { transition: { staggerChildren: 0.06, delayChildren: 0.02 } },
+                closed: { transition: { staggerChildren: 0.04, staggerDirection: -1 } },
+              }}
+            >
+              <motion.button
+                className="ml-fab-action"
+                variants={fabActionVariants}
+                onClick={() => { hapticLight(); setFabOpen(false); onImport?.(); }}
+                whileTap={{ scale: 0.94 }}
+              >
+                <span className="ml-fab-action-label">Import from Web</span>
+                <span className="ml-fab-action-icon ml-fab-action-icon--import" aria-hidden="true">📥</span>
+              </motion.button>
+              <motion.button
+                className="ml-fab-action"
+                variants={fabActionVariants}
+                onClick={() => { hapticLight(); setFabOpen(false); onAdd?.(); }}
+                whileTap={{ scale: 0.94 }}
+              >
+                <span className="ml-fab-action-label">Create Manual Recipe</span>
+                <span className="ml-fab-action-icon ml-fab-action-icon--add" aria-hidden="true">✏️</span>
+              </motion.button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         <motion.button
-          className="ml-fab ml-fab-import"
-          onClick={onImport}
-          title="Import Recipe"
-          whileHover={{ scale: 1.08, y: -2 }}
-          whileTap={{ scale: 0.91 }}
-          transition={{ type: 'spring', stiffness: 380, damping: 22 }}
-        >
-          <span>📥</span>
-          <span className="ml-fab-label">Import</span>
-        </motion.button>
-        <motion.button
-          className="ml-fab ml-fab-add"
-          onClick={onAdd}
-          title="Add New Meal"
-          whileHover={{ scale: 1.12, rotate: 90 }}
+          className="ml-fab ml-fab-add ml-fab-main"
+          onClick={() => { hapticLight(); setFabOpen(o => !o); }}
+          aria-expanded={fabOpen}
+          aria-label={fabOpen ? 'Close actions' : 'Add or import a recipe'}
           whileTap={{ scale: 0.88 }}
+          animate={{ rotate: fabOpen ? 45 : 0 }}
           transition={{ type: 'spring', stiffness: 380, damping: 22 }}
         >
           <span>+</span>
         </motion.button>
       </motion.div>
+
+      {/* ── I-5 Re-extraction (improve) sheet ── */}
+      <AnimatePresence>
+        {reExtractMeal && (
+          <ReExtractSheet
+            key="reextract-sheet"
+            meal={reExtractMeal}
+            onClose={() => setReExtractMeal(null)}
+            onSaved={async (updated) => {
+              try {
+                await db.meals.put(updated);
+              } catch (err) {
+                console.error('[MealLibrary] re-extract save failed:', err);
+                onToast?.('Could not save changes');
+                return;
+              }
+              setReExtractMeal(null);
+              await onReload?.();
+              onToast?.('Recipe improved ✨');
+            }}
+          />
+        )}
+      </AnimatePresence>
 
       {/* ── Quick Preview bottom sheet (long-press or ⋯ button) ── */}
       <AnimatePresence>

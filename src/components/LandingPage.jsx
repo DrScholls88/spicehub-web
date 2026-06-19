@@ -60,13 +60,53 @@ const STYLES = {
     color: 'var(--text)',
     marginBottom: '12px',
   },
+  // ── Slim context bar (replaces bulky greeting card) ──
+  contextBar: {
+    display: 'flex',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: '7px',
+    marginBottom: '14px',
+    fontSize: '15px',
+    lineHeight: 1.3,
+  },
+  contextGreeting: {
+    fontWeight: '700',
+    color: 'var(--text)',
+  },
+  contextDivider: {
+    color: 'var(--text-muted, var(--text-light))',
+    opacity: 0.55,
+  },
+  contextDate: {
+    color: 'var(--text-light)',
+    fontWeight: '500',
+  },
+  contextStreak: {
+    marginLeft: 'auto',
+    fontSize: '12.5px',
+    fontWeight: '700',
+    color: 'var(--primary)',
+    background: 'var(--surface)',
+    border: '1px solid var(--border)',
+    borderRadius: '999px',
+    padding: '3px 10px',
+  },
+  spinBtnFull: {
+    display: 'flex',
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '8px',
+    marginBottom: '12px',
+  },
   // ── Import link tray ──
   importTray: {
-    marginTop: '14px',
+    marginTop: '0',
     borderRadius: '14px',
-    padding: '2px',
+    padding: '1.5px',
     background: 'linear-gradient(135deg, #833ab4, #fd1d1d, #fcb045)',
-    boxShadow: '0 6px 18px rgba(131, 58, 180, 0.28)',
+    boxShadow: '0 3px 10px rgba(131, 58, 180, 0.16)',
   },
   importTrayInner: {
     background: 'var(--card)',
@@ -739,7 +779,19 @@ function ImportLinkTray({ onImportLink }) {
   const [url, setUrl] = useState('');
   const inputRef = React.useRef(null);
 
-  const open = () => {
+  const open = async () => {
+    // Tapping anywhere in the box runs an automatic clipboard check: if a link
+    // is already copied, import it instantly; otherwise prefill + expand.
+    try {
+      const text = (await navigator.clipboard.readText())?.trim();
+      if (text && /^https?:\/\//i.test(text)) {
+        onImportLink(text);
+        return;
+      }
+      if (text) setUrl(text);
+    } catch {
+      // Clipboard blocked (permissions / iOS) — fall back to manual entry.
+    }
     setExpanded(true);
     // Focus the field on the next frame so the keyboard pops on mobile.
     requestAnimationFrame(() => inputRef.current?.focus());
@@ -974,41 +1026,42 @@ export default function LandingPage({
 
   return (
     <div style={STYLES.container}>
-      {/* Hero Section */}
-      <motion.div 
-        className="hero-container" 
-        style={{ padding: '24px 20px', minHeight: 'auto', borderRadius: 'var(--radius)', marginBottom: '24px', position: 'relative', overflow: 'hidden' }}
-        initial={{ opacity: 0, y: 15 }}
+      {/* Hero — flattened to reclaim the fold (slim context bar + primary CTA) */}
+      <motion.div
+        style={{ marginBottom: '20px' }}
+        initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: "easeOut" }}
+        transition={{ duration: 0.45, ease: 'easeOut' }}
       >
-        <div className="hero-content" style={{ zIndex: 2, position: 'relative' }}>
-          <h1 className="hero-headline" style={{ animation: 'none', opacity: 1 }}>{greeting}</h1>
-          <p className="hero-subheadline" style={{ animation: 'none', opacity: 0.9, marginTop: 4 }}>
-            {formattedDate} • {streak > 0 ? <span style={{ color: 'var(--primary)', fontWeight: 700 }}>{streak} Day Streak 🔥</span> : 'Ready to spin?'}
-          </p>
-          <div className="hero-actions" style={{ animation: 'none', opacity: 1, marginTop: '20px' }}>
-            <motion.button
-              className="btn-primary"
-              onClick={onGenerate}
-              initial="rest"
-              whileHover="hover"
-              whileTap={{ scale: 0.95 }}
-              animate="rest"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-            >
-              Spin the Week{' '}
-              <motion.span
-                variants={diceVariants}
-                style={{ display: 'inline-block', transformOrigin: 'center' }}
-              >🎲</motion.span>
-            </motion.button>
-          </div>
-          {/* Permanent import engine entry point */}
-          <ImportLinkTray onImportLink={onImportLink} />
+        {/* Slim single-line context bar */}
+        <div style={STYLES.contextBar}>
+          <span style={STYLES.contextGreeting}>{greeting}</span>
+          <span style={STYLES.contextDivider}>•</span>
+          <span style={STYLES.contextDate}>{formattedDate}</span>
+          {streak > 0 && (
+            <span style={STYLES.contextStreak}>{streak} day streak 🔥</span>
+          )}
         </div>
-        {/* Subtle decorative glow */}
-        <div style={{ position: 'absolute', top: '-50%', right: '-10%', width: '300px', height: '300px', background: 'radial-gradient(circle, var(--primary) 0%, transparent 70%)', opacity: 0.15, filter: 'blur(40px)', zIndex: 1, pointerEvents: 'none' }} />
+
+        {/* Primary CTA — Spin the Week (full width) */}
+        <motion.button
+          className="btn-primary"
+          onClick={onGenerate}
+          initial="rest"
+          whileHover="hover"
+          whileTap={{ scale: 0.97 }}
+          animate="rest"
+          style={STYLES.spinBtnFull}
+        >
+          Spin the Week{' '}
+          <motion.span
+            variants={diceVariants}
+            style={{ display: 'inline-block', transformOrigin: 'center' }}
+          >🎲</motion.span>
+        </motion.button>
+
+        {/* Permanent import engine entry point (secondary) */}
+        <ImportLinkTray onImportLink={onImportLink} />
       </motion.div>
 
       {/* ── Next 5 Days ── */}
@@ -1017,6 +1070,7 @@ export default function LandingPage({
         {hasAnyMeal ? (
           <div style={STYLES.nextDaysScrollWrap}>
             <motion.div
+              className="sh-carousel"
               style={STYLES.nextDaysScroll}
               initial="hidden"
               animate="visible"
@@ -1134,7 +1188,7 @@ export default function LandingPage({
               See all →
             </button>
           </div>
-          <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '8px', WebkitOverflowScrolling: 'touch', touchAction: 'pan-x', overscrollBehaviorX: 'contain' }}>
+          <div className="sh-carousel" style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '8px', WebkitOverflowScrolling: 'touch', touchAction: 'pan-x', overscrollBehaviorX: 'contain' }}>
             {seasonalMeals.map(meal => (
               <SeasonalMealCard
                 key={meal.id || meal.name}

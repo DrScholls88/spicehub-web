@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Pencil, Zap, Camera, FolderOpen, X as XIcon } from 'lucide-react';
+import { Pencil, Camera, FolderOpen, X as XIcon } from 'lucide-react';
 import { isSocialMediaUrl, getSocialPlatform, detectImportType } from '../recipeParser.js';
 import { hapticLight } from '../haptics';
 
@@ -375,23 +375,6 @@ export default function ImportInput({
                   </div>
                 )}
               </div>
-            )}
-
-            {/* Single clear primary CTA (URL / Text modes) */}
-            {tab !== 'photo' && (
-              <button
-                type="button"
-                className="import-input-primary-cta"
-                disabled={tab === 'url' ? !url.trim() : !pasteText.trim()}
-                onClick={() => {
-                  hapticLight();
-                  if (tab === 'url') handleUrlSubmit();
-                  else onPasteImport(pasteText, itemType);
-                }}
-              >
-                <Zap size={18} strokeWidth={2.5} aria-hidden="true" />
-                Auto-Parse Recipe
-              </button>
             )}
           </motion.div>
         )}

@@ -5113,6 +5113,29 @@ body {
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
 }
 
+/* I-5: "Improve" badge — low-confidence imports with a cached caption */
+.ml-tile-improve {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: none;
+  cursor: pointer;
+  background: linear-gradient(135deg, #7b1fa2, #9c27b0);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(123, 31, 162, 0.4);
+  -webkit-tap-highlight-color: transparent;
+  z-index: 2;
+}
+.ml-tile-improve:active { transform: scale(0.92); }
+
 /* Category badge on tile */
 .ml-tile-cat {
   position: absolute;
@@ -5478,6 +5501,77 @@ body {
 .ml-fab-add:hover {
   background: var(--primary-dark);
   box-shadow: 0 6px 16px rgba(230, 81, 0, 0.5);
+}
+
+/* ── Speed-dial FAB (consolidated add + import) ── */
+.ml-fab-main {
+  z-index: 97;
+}
+
+.ml-fab-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 15, 10, 0.32);
+  backdrop-filter: blur(1.5px);
+  -webkit-backdrop-filter: blur(1.5px);
+  z-index: 94;
+}
+
+.ml-fab-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 2px;
+}
+
+.ml-fab-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ml-fab-action-label {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--text, #1c140d);
+  background: var(--card, #fff);
+  padding: 9px 14px;
+  border-radius: 10px;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.16);
+  white-space: nowrap;
+}
+
+.ml-fab-action-icon {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.ml-fab-action-icon--import {
+  background: linear-gradient(135deg, #1565c0, #1976d2);
+}
+
+.ml-fab-action-icon--add {
+  background: linear-gradient(135deg, var(--primary), var(--primary-light, #ff8a4c));
+}
+
+[data-theme="dark"] .ml-fab-action-label {
+  color: var(--text, #f5efe7);
+  background: var(--card, #2a2018);
 }
 
 /* ── Menu button (top right) ── */
