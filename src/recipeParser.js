@@ -7,7 +7,7 @@
  *   2. CORS PROXY    Ã¢â€ â€™ fallback if server unreachable (limited for social media)
  *   3. CAPTION TEXT  Ã¢â€ â€™ 4-pass heuristic parser (used internally on extracted captions)
  */
-import { cleanUrl, isInstagramCdnUrl, fetchHtmlViaProxy as fetchHtmlViaProxyFromApi, downloadImageAsDataUrl, fetchInstagramOEmbed, fetchInstagramJson, fetchInstagramJsonDetails, fetchInstagramViaApify } from './api.js';
+import { cleanUrl, isInstagramCdnUrl, fetchHtmlViaProxy as fetchHtmlViaProxyFromApi, downloadImageAsDataUrl, fetchInstagramOEmbed, fetchInstagramJson, fetchInstagramJsonDetails, fetchInstagramViaApify, proxyImageUrl } from './api.js';
 import { getCachedImport, setCachedImport } from './db.js';
 import { isRedditUrl, isRedditPostUrl, tryRedditJson } from './scrapers/redditDiscovery.js';
 import { htmlToMarkdown, htmlLooksLikeRecipe } from './scrapers/markdownConverter.js';
@@ -992,31 +992,31 @@ export async function structureWithGrokClient(rawText, { title: hintTitle = '', 
   return best;
 }
 
-export async function structureWithAIClient(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal' } = {}) {
-  const clientKey = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_GOOGLE_AI_KEY : null;
-  if (!clientKey || !rawText || rawText.trim().length < 20) return null;
+// Gemini models are env-configurable. Primary stays on the cheap flash-lite
+// (free-tier friendly); a stronger flagship is used ONLY for confidence-driven
+// escalation on messy imports, so clean imports cost nothing extra. Verify exact
+// ids at ai.google.dev if you override.
+const GEMINI_MODEL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GEMINI_MODEL) || 'gemini-2.0-flash-lite';
+const GEMINI_MODEL_FLAGSHIP = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GEMINI_MODEL_FLAGSHIP) || 'gemini-2.5-flash';
+const GEMINI_CONFIDENCE_FLOOR = 0.6;
 
-  // Auto-detect drink vs meal from text content when type is still 'meal'
-  const kind = type === 'drink' ? 'drink' : detectKindHeuristic(rawText) === 'drink' ? 'drink' : 'meal';
-
-  const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${clientKey}`;
-
-  // Build request with native structured output (responseSchema) + shared system
-  // instruction + few-shot exemplars. Eliminates JSON.parse failures and ensures
-  // all paths use the same extraction rules from recipeSchema.js.
-  const fewShotTurns = buildFewShotContents(kind);
-  const userTurn = {
-    role: 'user',
-    parts: [{ text: hintTitle ? `Name hint: "${hintTitle}"\n\n${rawText.slice(0, 8000)}` : rawText.slice(0, 8000) }],
-  };
-
+/**
+ * One Gemini structured-output call. Returns:
+ *   { structured }  on success
+ *   { status }      on a non-OK HTTP (caller decides fallback)
+ *   { failed }      on empty response
+ *   { error }       on network/parse throw
+ * Never throws.
+ */
+async function geminiGenerateStructured(model, contents, clientKey) {
+  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${clientKey}`;
   try {
-    const res = await fetch(GEMINI_ENDPOINT, {
+    const res = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] },
-        contents: [...fewShotTurns, userTurn],
+        contents,
         generationConfig: {
           temperature: 0.1,
           responseMimeType: 'application/json',
@@ -1025,30 +1025,61 @@ export async function structureWithAIClient(rawText, { title: hintTitle = '', im
       }),
       signal: AbortSignal.timeout(14000),
     });
-    if (!res.ok) {
-      console.warn('[SpiceHub] responseSchema rejected (HTTP', res.status, ') — falling back to legacy prompt');
-      return _structureWithAIClientLegacy(rawText, { title: hintTitle, imageUrl, sourceUrl, type });
-    }
+    if (!res.ok) return { status: res.status };
     const data = await res.json();
     const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-    if (!raw) return null;
-
-    // With responseSchema the response is guaranteed valid JSON
+    if (!raw) return { failed: true };
     const jsonText = raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
-    const structured = JSON.parse(jsonText);
-    if (!structured.isRecipe) return null;
-
-    console.log('[SpiceHub] Schema extraction OK — ingredientGroups:', structured.ingredientGroups?.length, 'directions:', structured.directions?.length, 'confidence:', structured.confidence);
-
-    // Flatten the rich structured output to SpiceHub's thin display shape,
-    // then run the deterministic enforcer before returning.
-    const thin = thinFromStructured(structured);
-    return finalizeAIRecipe(thin, { hintTitle, imageUrl, sourceUrl, via: 'gemini-client-schema' });
+    return { structured: JSON.parse(jsonText) };
   } catch (err) {
-    console.warn('[SpiceHub] structureWithAIClient schema path error:', err?.message || err);
-    // Fall back to legacy prose prompt on any failure
+    return { error: err?.message || String(err) };
+  }
+}
+
+export async function structureWithAIClient(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal' } = {}) {
+  const clientKey = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_GOOGLE_AI_KEY : null;
+  if (!clientKey || !rawText || rawText.trim().length < 20) return null;
+
+  // Auto-detect drink vs meal from text content when type is still 'meal'
+  const kind = type === 'drink' ? 'drink' : detectKindHeuristic(rawText) === 'drink' ? 'drink' : 'meal';
+
+  // Native structured output (responseSchema) + shared system instruction +
+  // few-shot exemplars, so every path uses the same extraction rules.
+  const fewShotTurns = buildFewShotContents(kind);
+  const userTurn = {
+    role: 'user',
+    parts: [{ text: hintTitle ? `Name hint: "${hintTitle}"\n\n${rawText.slice(0, 8000)}` : rawText.slice(0, 8000) }],
+  };
+  const contents = [...fewShotTurns, userTurn];
+
+  // ── Primary: cheap fast model ──────────────────────────────────────────────
+  const primary = await geminiGenerateStructured(GEMINI_MODEL, contents, clientKey);
+  if (primary.status || primary.error) {
+    console.warn(`[SpiceHub] Gemini schema ${primary.status ? 'HTTP ' + primary.status : 'error ' + primary.error} — falling back to legacy prompt`);
     return _structureWithAIClientLegacy(rawText, { title: hintTitle, imageUrl, sourceUrl, type });
   }
+  if (!primary.structured || !primary.structured.isRecipe) return null;
+  const s = primary.structured;
+  console.log(`[SpiceHub] Gemini (${GEMINI_MODEL}) extraction OK — groups:`, s.ingredientGroups?.length, 'directions:', s.directions?.length, 'confidence:', s.confidence);
+
+  let best = finalizeAIRecipe(thinFromStructured(s), { hintTitle, imageUrl, sourceUrl, via: `gemini:${GEMINI_MODEL}` });
+
+  // ── Confidence-driven escalation to a stronger Gemini model ────────────────
+  // Same engine improvement we built for Grok: if the fast model was unsure OR
+  // the deterministic enforcer had to correct ≥3 lines, try the flagship once
+  // and keep whichever scores better. A wrong flagship id just no-ops (we keep
+  // the fast result), so this is safe to leave on.
+  const lowConfidence = typeof s.confidence === 'number' && s.confidence < GEMINI_CONFIDENCE_FLOOR;
+  const manyCorrections = (best._postProcessAudit?.movedCount || 0) >= 3;
+  if ((lowConfidence || manyCorrections) && GEMINI_MODEL_FLAGSHIP && GEMINI_MODEL_FLAGSHIP !== GEMINI_MODEL) {
+    console.log(`[SpiceHub] Gemini escalating to ${GEMINI_MODEL_FLAGSHIP} (confidence ${s.confidence}, corrections ${best._postProcessAudit?.movedCount || 0})`);
+    const esc = await geminiGenerateStructured(GEMINI_MODEL_FLAGSHIP, contents, clientKey);
+    if (esc.structured && esc.structured.isRecipe) {
+      const escalated = finalizeAIRecipe(thinFromStructured(esc.structured), { hintTitle, imageUrl, sourceUrl, via: `gemini:${GEMINI_MODEL_FLAGSHIP}` });
+      best = pickBetterRecipe(best, escalated);
+    }
+  }
+  return best;
 }
 
 /** Legacy prose-prompt fallback for when responseSchema isn't supported. */
@@ -1102,9 +1133,11 @@ export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl
   const xaiKey = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_XAI_API_KEY : null;
   const provider = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_AI_PROVIDER : null;
 
-  // Primary engine: Grok, when its key is present and not explicitly overridden
-  // to gemini. Falls through to the Gemini client/server cascade on any miss.
-  if (xaiKey && provider !== 'gemini') {
+  // Grok is OFF by default (credit constraints). It stays fully wired and can be
+  // re-enabled instantly by setting VITE_AI_PROVIDER=grok. Until then, extraction
+  // runs on Gemini — which already gets every engine improvement (deterministic
+  // post-processor, confidence-driven escalation, fuzzy categorization).
+  if (provider === 'grok' && xaiKey) {
     try {
       const grokResult = await structureWithGrokClient(rawText, { title: hintTitle, imageUrl, sourceUrl, type });
       if (grokResult && (grokResult.ingredients?.length || grokResult.directions?.length)) {
@@ -4619,6 +4652,21 @@ export async function resolveShortUrl(url) {
  *   status: 'running' | 'done' | 'failed' | 'skipped' | 'pending'
  * @returns {Object} Structured recipe or { _needsManualCaption: true }
  */
+// Resolve a raw image URL into something the browser can actually display.
+// Instagram CDN URLs (scontent/fbcdn/cdninstagram) 403 on direct <img> load, so:
+//   1. inline the bytes as a data URL (persistFn → downloadImageAsDataUrl cascade)
+//   2. else route the raw URL through the display proxy (allorigins) so it renders
+// Returns { url, status: 'data-url' | 'proxied' | 'raw' | 'none' }.
+async function resolveDisplayableImage(rawUrl, persistFn) {
+  if (!rawUrl) return { url: '', status: 'none' };
+  if (rawUrl.startsWith('data:')) return { url: rawUrl, status: 'data-url' };
+  let persisted = '';
+  try { persisted = await persistFn(rawUrl); } catch { /* fall through */ }
+  if (persisted && persisted.startsWith('data:')) return { url: persisted, status: 'data-url' };
+  if (/scontent|fbcdn|cdninstagram/i.test(rawUrl)) return { url: proxyImageUrl(rawUrl), status: 'proxied' };
+  return { url: rawUrl, status: 'raw' };
+}
+
 export async function importFromInstagram(url, onProgress = () => {}, { type = 'meal', signal } = {}) {
   url = cleanUrl(url);
   const progress = (phase, status, msg) => {
@@ -4655,6 +4703,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   let capturedCaption   = '';
   let capturedImageUrl  = '';
   let capturedTitle     = '';   // best title found across all phases
+  let capturedSource    = '';   // which extraction method won (apify/oembed/ig-json/embed/browser)
   let videoRecipe       = null; // yt-dlp/server resource helper result
 
   // Track raw page text from embed as last-resort Gemini input
@@ -4719,6 +4768,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
     try {
       const w = await Promise.any(cheapPhases);
       capturedCaption = w.caption;
+      capturedSource = w.src;
       if (w.img && !capturedImageUrl) {
         capturedImageUrl = w.img;
         if (w.src === 'apify') {
@@ -4759,7 +4809,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
 
       if (embedData?.caption) {
         const embedCaption = cleanSocialCaption(embedData.caption);
-        if (embedCaption.length > capturedCaption.length) capturedCaption = embedCaption;
+        if (embedCaption.length > capturedCaption.length) { capturedCaption = embedCaption; if (!capturedSource) capturedSource = 'embed'; }
 
         const isWeak = isCaptionWeak(capturedCaption);
         progress(1, 'done',
@@ -4813,6 +4863,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
       if (agentRecipe && (hasRecipeContent(agentRecipe) || agentRecipe.imageUrl)) {
         const agentText = recipeToText(agentRecipe);
         if (agentText.length > capturedCaption.length) capturedCaption = agentText;
+        if (!capturedSource) capturedSource = 'browser';
         capturedImageUrl = agentRecipe.imageUrl || capturedImageUrl;
         capturedTitle = agentRecipe.name || capturedTitle;
         if (agentRecipe._hasSubtitles) videoRecipe = agentRecipe;
@@ -4877,21 +4928,22 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
       // Use OR: accept if EITHER ingredients OR directions is non-placeholder
       if (recipe && (!isPlaceholder(recipe.ingredients) || !isPlaceholder(recipe.directions))) {
         progress(3, 'done', 'Recipe structured successfully!');
-        const persistedImageUrl = capturedImageUrl || recipe.imageUrl || '';
-        // Async image persistence — don't block the recipe return
-        if (persistedImageUrl && !persistedImageUrl.startsWith('data:')) {
-          persistCapturedImage(persistedImageUrl).then(dataUrl => {
-            if (dataUrl && dataUrl !== persistedImageUrl) {
-              try { setCachedImport(url, { ...finalRecipe, imageUrl: dataUrl }); } catch {}
-            }
-          }).catch(() => {});
-        }
+        // Resolve a DISPLAYABLE image BEFORE returning. Instagram CDN URLs
+        // (scontent/fbcdn) 403 when the browser loads them directly, so the old
+        // async persistence left the saved recipe pointing at a broken image.
+        // Now: block on inlining the bytes to a data URL (downloadImageAsDataUrl
+        // has a server-proxy cascade); if that fails, route the raw URL through
+        // the display proxy so the <img> still renders instead of 403-ing.
+        const { url: resolvedImageUrl, status: imageStatus } =
+          await resolveDisplayableImage(capturedImageUrl || recipe.imageUrl || '', persistCapturedImage);
         const finalRecipe = {
           ...recipe,
           name: recipe.name && recipe.name.trim() && !/^(recipe|imported|untitled)$/i.test(recipe.name.trim())
             ? recipe.name
             : generateTitleFromIngredients(recipe.ingredients, type),
-          imageUrl: persistedImageUrl,
+          imageUrl: resolvedImageUrl,
+          _imageStatus: imageStatus,
+          _extractionSource: capturedSource || (videoRecipe ? 'video' : ''),
           extractedVia: videoRecipe ? 'yt-dlp+ai' : 'caption-ai',
           sourceUrl: url,
           importedAt: new Date().toISOString(),

@@ -1,32 +1,62 @@
-recipeParser.js:2478 [SpiceHub] Instagram URL Ã¢â‚¬â€ trying embed extraction...
-api.js:763 [fetchInstagramJsonDetails] Failed: Unexpected token 'O', "Oops, an e"... is not valid JSON
-api.js:677 [fetchInstagramOEmbed] Not configured or error: {message: "(#10) To use 'Meta oEmbed Read', your use of this …https://developers.facebook.com/docs/apps/review.", type: 'OAuthException', code: 10, fbtrace_id: 'ALp-ypRnvis5jPK9DXuT86C'}
-api.js:248 [fetchInstagramViaApify] ✅ Got caption (853 chars) + image: yes
-Access to fetch at 'https://scontent-lga3-1.cdninstagram.com/v/t51.2885-15/480919542_18263290849274350_7955219054872986511_n.jpg?stp=dst-jpg_e35_p1080x1080_sh2.08_tt6&_nc_ht=scontent-lga3-1.cdninstagram.com&_nc_cat=110&_nc_oc=Q6cZ2gEH1k4NUqbkrCxGzBsd102AvJPQGfO-rNKOaAFbVxvkmXBHIkZvKDY9ytz_uxJTdis&_nc_ohc=BZr2E9ecMJYQ7kNvwFIsnFj&_nc_gid=g3kSU6eMaBHnlAhPNVVk7Q&edm=APs17CUBAAAA&ccb=7-5&oh=00_Af8hfYouO6AIQ-iKxLDEsJGDpHhWSciimpqsHskFlsY6xQ&oe=6A30BB9F&_nc_sid=10d13b' from origin 'https://spicehub-web.vercel.app' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.
-The FetchEvent for "https://scontent-lga3-1.cdninstagram.com/v/t51.2885-15/480919542_18263290849274350_7955219054872986511_n.jpg?stp=dst-jpg_e35_p1080x1080_sh2.08_tt6&_nc_ht=scontent-lga3-1.cdninstagram.com&_nc_cat=110&_nc_oc=Q6cZ2gEH1k4NUqbkrCxGzBsd102AvJPQGfO-rNKOaAFbVxvkmXBHIkZvKDY9ytz_uxJTdis&_nc_ohc=BZr2E9ecMJYQ7kNvwFIsnFj&_nc_gid=g3kSU6eMaBHnlAhPNVVk7Q&edm=APs17CUBAAAA&ccb=7-5&oh=00_Af8hfYouO6AIQ-iKxLDEsJGDpHhWSciimpqsHskFlsY6xQ&oe=6A30BB9F&_nc_sid=10d13b" resulted in a network error response: the promise was rejected.
-NetworkOnly.js:93 Uncaught (in promise) no-response: no-response :: [{"url":"https://scontent-lga3-1.cdninstagram.com/v/t51.2885-15/480919542_18263290849274350_7955219054872986511_n.jpg?stp=dst-jpg_e35_p1080x1080_sh2.08_tt6&_nc_ht=scontent-lga3-1.cdninstagram.com&_nc_cat=110&_nc_oc=Q6cZ2gEH1k4NUqbkrCxGzBsd102AvJPQGfO-rNKOaAFbVxvkmXBHIkZvKDY9ytz_uxJTdis&_nc_ohc=BZr2E9ecMJYQ7kNvwFIsnFj&_nc_gid=g3kSU6eMaBHnlAhPNVVk7Q&edm=APs17CUBAAAA&ccb=7-5&oh=00_Af8hfYouO6AIQ-iKxLDEsJGDpHhWSciimpqsHskFlsY6xQ&oe=6A30BB9F&_nc_sid=10d13b","error":{}}]
-at Pe._handle (NetworkOnly.js:93:19)
-at async Pe._getResponse (Strategy.js:144:24)
-_handle @ NetworkOnly.js:93
-await in _handle
-_getResponse @ Strategy.js:144
-await in _getResponse
-handleAll @ Strategy.js:135
-handle @ Strategy.js:96
-handleRequest @ Router.js:197
-(anonymous) @ Router.js:56
-network request
-downloadImageAsDataUrl @ api.js:622
-importFromInstagram @ recipeParser.js:4393
-await in importFromInstagram
-_importRecipeFromUrlInner @ recipeParser.js:2481
-importRecipeFromUrl @ recipeParser.js:2429
-(anonymous) @ ImportSheet.jsx:92
-(anonymous) @ ImportInput.jsx:67
-processDispatchQueue @ react-dom-client.production.js:12317
-(anonymous) @ react-dom-client.production.js:12867
-batchedUpdates$1 @ react-dom-client.production.js:1498
-dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
-dispatchEvent @ react-dom-client.production.js:15306
-dispatchDiscreteEvent @ react-dom-client.production.js:15274
-api.js:622 GET https://scontent-lga3-1.cdninstagram.com/v/t51.2885-15/480919542_18263290849274350_7955219054872986511_n.jpg?stp=dst-jpg_e35_p1080x1080_sh2.08_tt6&_nc_ht=scontent-lga3-1.cdninstagram.com&_nc_cat=110&_nc_oc=Q6cZ2gEH1k4NUqbkrCxGzBsd102AvJPQGfO-rNKOaAFbVxvkmXBHIkZvKDY9ytz_uxJTdis&_nc_ohc=BZr2E9ecMJYQ7kNvwFIsnFj&_nc_gid=g3kSU6eMaBHnlAhPNVVk7Q&edm=APs17CUBAAAA&ccb=7-5&oh=00_Af8hfYouO6AIQ-iKxLDEsJGDpHhWSciimpqsHskFlsY6xQ&oe=6A30BB9F&_nc_sid=10d13b net::ERR_FAILED"
+Extension keyboard shortcuts loaded. Available shortcuts:
+VM318 keyboard-shortcuts.js:215 - Alt+C: Toggle Copy Mode
+VM318 keyboard-shortcuts.js:216 - Alt+A: Toggle Absolute Mode
+VM318 keyboard-shortcuts.js:217 - Alt+O: Trigger OCR Mode
+scontent.cdninstagram.com/v/t51.75761-15/469389722_18479697202043998_1244488128777864909_n.jpg?stp=cmp1_dst-jpg_e35_s640x640_tt6&_nc_cat=106&ccb=1-7&_nc_sid=18de74&_nc_ohc=pYBquYydtEgQ7kNvwHCm9qi&_nc_oc=Adk16vZc1OJDbDT68Sdl7lZFP23OlHR36U_MZNmJdodKt0Fs2d-LVGNfAJP2r6WUg4s&_nc_zt=23&_nc_ht=scontent.cdninstagram.com&_nc_gid=ErCvqILRIHsiUi79_y89KA&oh=00_AfMOG0BMXN0O9LELBtOUSUgoTXJmKn9x2bkOqJZ0i5AnRA&oe=684BEE2E:1  GET https://scontent.cdninstagram.com/v/t51.75761-15/469389722_18479697202043998_1244488128777864909_n.jpg?stp=cmp1_dst-jpg_e35_s640x640_tt6&_nc_cat=106&ccb=1-7&_nc_sid=18de74&_nc_ohc=pYBquYydtEgQ7kNvwHCm9qi&_nc_oc=Adk16vZc1OJDbDT68Sdl7lZFP23OlHR36U_MZNmJdodKt0Fs2d-LVGNfAJP2r6WUg4s&_nc_zt=23&_nc_ht=scontent.cdninstagram.com&_nc_gid=ErCvqILRIHsiUi79_y89KA&oh=00_AfMOG0BMXN0O9LELBtOUSUgoTXJmKn9x2bkOqJZ0i5AnRA&oe=684BEE2E 403 (Forbidden)
+Image
+commitHostMount @ react-dom-client.production.js:8718
+commitLayoutEffectOnFiber @ react-dom-client.production.js:9079
+recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
+commitLayoutEffectOnFiber @ react-dom-client.production.js:9078
+recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
+commitLayoutEffectOnFiber @ react-dom-client.production.js:9078
+recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
+commitLayoutEffectOnFiber @ react-dom-client.production.js:9126
+recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
+commitLayoutEffectOnFiber @ react-dom-client.production.js:9014
+recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
+commitLayoutEffectOnFiber @ react-dom-client.production.js:9078
+recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
+commitLayoutEffectOnFiber @ react-dom-client.production.js:9014
+recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
+commitLayoutEffectOnFiber @ react-dom-client.production.js:9018
+recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
+commitLayoutEffectOnFiber @ react-dom-client.production.js:9014
+recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
+commitLayoutEffectOnFiber @ react-dom-client.production.js:9126
+recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
+commitLayoutEffectOnFiber @ react-dom-client.production.js:9014
+recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
+commitLayoutEffectOnFiber @ react-dom-client.production.js:9014
+recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
+commitLayoutEffectOnFiber @ react-dom-client.production.js:9078
+recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
+commitLayoutEffectOnFiber @ react-dom-client.production.js:9014
+recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
+commitLayoutEffectOnFiber @ react-dom-client.production.js:9126
+recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
+commitLayoutEffectOnFiber @ react-dom-client.production.js:9014
+recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
+commitLayoutEffectOnFiber @ react-dom-client.production.js:9126
+recursivelyTraverseLayoutEffects @ react-dom-client.production.js:9904
+commitLayoutEffectOnFiber @ react-dom-client.production.js:9050
+flushLayoutEffects @ react-dom-client.production.js:11660
+commitRoot @ react-dom-client.production.js:11520
+commitRootWhenReady @ react-dom-client.production.js:10920
+performWorkOnRoot @ react-dom-client.production.js:10826
+performSyncWorkOnRoot @ react-dom-client.production.js:12086
+flushSyncWorkAcrossRoots_impl @ react-dom-client.production.js:11956
+processRootScheduleInMicrotask @ react-dom-client.production.js:11990
+(anonymous) @ react-dom-client.production.js:12095
+recipeParser.js:2808 [SpiceHub] Instagram URL Ã¢â‚¬â€ trying embed extraction...
+VM322 keyboard-shortcuts.js:214 Extension keyboard shortcuts loaded. Available shortcuts:
+VM322 keyboard-shortcuts.js:215 - Alt+C: Toggle Copy Mode
+VM322 keyboard-shortcuts.js:216 - Alt+A: Toggle Absolute Mode
+VM322 keyboard-shortcuts.js:217 - Alt+O: Trigger OCR Mode
+keyboard-shortcuts.js:214 Extension keyboard shortcuts loaded. Available shortcuts:
+keyboard-shortcuts.js:215 - Alt+C: Toggle Copy Mode
+keyboard-shortcuts.js:216 - Alt+A: Toggle Absolute Mode
+keyboard-shortcuts.js:217 - Alt+O: Trigger OCR Mode
+api.js:680 [fetchInstagramOEmbed] Not configured or error: {message: "(#10) To use 'Meta oEmbed Read', your use of this …https://developers.facebook.com/docs/apps/review.", type: 'OAuthException', code: 10, fbtrace_id: 'A1XAIMFD54E0_vqI0g0fr6O'}
+api.js:766 [fetchInstagramJsonDetails] Failed: Unexpected token 'O', "Oops, an e"... is not valid JSON
+api.js:248 [fetchInstagramViaApify] ✅ Got caption (1117 chars) + image: yes
