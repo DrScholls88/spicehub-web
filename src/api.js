@@ -228,29 +228,41 @@ export function proxyImageUrl(imageUrl) {
 // Returns { ok, caption, displayUrl, videoUrl, ownerUsername, ownerFullName, ... } or null.
 
 export async function fetchInstagramViaApify(url) {
-  try {
-    const cleanedUrl = cleanUrl(url);
-    const proxyUrl = `/api/proxy?mode=instagram-apify&url=${encodeURIComponent(cleanedUrl)}`;
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 35000); // Apify runs can take 20-30s
-    const resp = await fetch(proxyUrl, { signal: ctrl.signal });
-    clearTimeout(timer);
-    if (!resp.ok) {
-      const errData = await resp.json().catch(() => ({}));
-      console.log('[fetchInstagramViaApify] Failed:', resp.status, errData.error || '');
+  const cleanedUrl = cleanUrl(url);
+  const proxyUrl = `/api/proxy?mode=instagram-apify&url=${encodeURIComponent(cleanedUrl)}`;
+
+  // One bounded retry on TRANSIENT failures (network throw / 5xx / timeout).
+  // We do NOT retry on a successful-but-weak response — that just re-bills Apify.
+  for (let attempt = 0; attempt <= 1; attempt += 1) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 35000); // Apify runs can take 20-30s
+      const resp = await fetch(proxyUrl, { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({}));
+        console.log('[fetchInstagramViaApify] Failed:', resp.status, errData.error || '');
+        // Retry only on server-side / transient statuses; 4xx is permanent.
+        if (resp.status >= 500 && attempt === 0) {
+          await new Promise(r => setTimeout(r, 800));
+          continue;
+        }
+        return null;
+      }
+      const data = await resp.json();
+      if (!data.ok || !data.caption) {
+        console.log('[fetchInstagramViaApify] No caption in response');
+        return null; // permanent — no retry
+      }
+      console.log(`[fetchInstagramViaApify] ✅ Got caption (${data.caption.length} chars) + image: ${data.displayUrl ? 'yes' : 'no'}${attempt ? ` (retry ${attempt})` : ''}`);
+      return data;
+    } catch (e) {
+      console.log(`[fetchInstagramViaApify] Error${attempt ? ` (retry ${attempt})` : ''}:`, e.message);
+      if (attempt === 0) { await new Promise(r => setTimeout(r, 800)); continue; }
       return null;
     }
-    const data = await resp.json();
-    if (!data.ok || !data.caption) {
-      console.log('[fetchInstagramViaApify] No caption in response');
-      return null;
-    }
-    console.log(`[fetchInstagramViaApify] ✅ Got caption (${data.caption.length} chars) + image: ${data.displayUrl ? 'yes' : 'no'}`);
-    return data;
-  } catch (e) {
-    console.log('[fetchInstagramViaApify] Error:', e.message);
-    return null;
   }
+  return null;
 }
 
 // ── Instagram embed extraction (client-side, no server needed) ────────────────

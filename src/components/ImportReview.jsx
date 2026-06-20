@@ -509,6 +509,16 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
       ? Math.round(recipe.confidence * 100)
       : null;
 
+  // ── Extraction source + image-status chip (Instagram import diagnostics) ──
+  const SOURCE_LABELS = { apify: 'Apify', oembed: 'oEmbed', 'ig-json': 'IG JSON', embed: 'Embed', browser: 'Browser', video: 'Video' };
+  const sourceLabel = recipe._extractionSource ? (SOURCE_LABELS[recipe._extractionSource] || null) : null;
+  const imageStatusLabel =
+    recipe._imageStatus === 'data-url' ? 'image saved'
+    : recipe._imageStatus === 'proxied' ? 'image via proxy'
+    : recipe._imageStatus === 'raw' ? 'image unverified'
+    : recipe._imageStatus === 'none' ? 'no image'
+    : null;
+
   // ── Normalization hints (read-only) ─────────────────────────────────────
   // For each imported ingredient string, surface how its messy name maps to a
   // cleaner canonical form. Only kept when the resolution is confident AND the
@@ -608,6 +618,28 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
             <span style={{ opacity: 0.8 }}>
               {correctionCount} correction{correctionCount === 1 ? '' : 's'} applied
             </span>
+          )}
+        </div>
+      )}
+
+      {/* Extraction source + image status — muted, read-only (Instagram imports) */}
+      {(sourceLabel || imageStatusLabel) && (
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: 6,
+            padding: '2px 12px 0',
+            fontSize: '0.72rem',
+            color: 'var(--text-light)',
+          }}
+        >
+          {sourceLabel && (
+            <span>Source: <strong style={{ fontWeight: 600 }}>{sourceLabel}</strong></span>
+          )}
+          {imageStatusLabel && (
+            <span style={{ opacity: 0.8 }}>{sourceLabel ? '· ' : ''}{imageStatusLabel}</span>
           )}
         </div>
       )}
