@@ -258,6 +258,9 @@ const TRAILING_COLON_HEADER_RE = /^[^,.;]{1,40}:\s*$/;
 const TRASH_HYPE_RE = /^(so\s+(easy|quick|good|simple|delicious|yummy)\b.*|packed\s+(with|full of)\s+.*|enjoy\s*!*|gluten\s*[- ]?free!?|dairy\s*[- ]?free!?|vegan!?|vegetarian!?|keto!?|healthy!?|so\s+good!?|yum+!?|delicious!?|easy\s+(peasy)?!?|quick\s+and\s+easy!?|perfect!?|amazing!?|love\s+this!?|xo+|x{1,3})\s*$/i;
 // Initial-style sign-offs: "DB x", "— J.", "K x", "love, Sam"
 const TRASH_SIGNOFF_RE = /^(?:[-—]\s*)?(?:love,?\s*)?[A-Z]{1,3}\.?\s*x{1,3}$/;
+// Social calls-to-action / engagement bait that survive caption cleaning and
+// get mis-read as ingredients. These never name a food + quantity.
+const TRASH_SOCIAL_RE = /^(comments?|commenting|save (this|it|for later|the recipe)|saved|follow( for more| me)?|link in bio|recipe (below|in bio|in comments)|full recipe|see (more|below|the link)|tag (a friend|someone|your)|share (this|with)|dm (me|for|us)|swipe (up|left|right)|double tap|like (and|&) (save|share|follow)|new recipe|viral|trending|fyp|f\.?y\.?p|reels?|tutorial|watch (the )?full|subscribe|hit follow|part \d+|recipe👇|👇.*recipe)\b[\s.!👇➡️⬇️]*$/i;
 
 /** True if an extracted ingredient line is structural junk, not a real item. */
 export function isTrashIngredientLine(line = '') {
@@ -268,6 +271,10 @@ export function isTrashIngredientLine(line = '') {
   if (TRASH_BARE_LABEL_RE.test(s)) return true;
   if (TRASH_HYPE_RE.test(s)) return true;
   if (TRASH_SIGNOFF_RE.test(s)) return true;
+  if (TRASH_SOCIAL_RE.test(s)) return true;
+  // No alphabetic character at all (emoji-only, punctuation, stray numbers like
+  // "👇👇", "...", "1.") — never a real ingredient.
+  if (!/[a-z]/i.test(s)) return true;
   // Trailing-colon headers with no quantity ("For the sauce:") — but keep
   // legit lines that happen to end in ":" AND start with a quantity.
   if (TRAILING_COLON_HEADER_RE.test(s) && !/^\d/.test(s)) return true;

@@ -496,23 +496,33 @@ function _cleanTitle(title = '', ingredients = []) {
   t = t.replace(/[!.,;:\s]+$/, '').trim();
   // Truncate to 60 chars at a word boundary
   if (t.length > 60) t = t.substring(0, 60).replace(/\s\S+$/, '').trim();
-  // Conversational-hook safeguard (2026-06-09 CX review): a social-media hook
-  // ("Let's take it back to another one of my favorite...") is not a title.
-  // If the cleaned title still reads conversational, derive one from the
-  // first ingredients instead.
-  if (_isConversationalTitle(t)) {
+  // Conversational-hook safeguard: only REPLACE the title with an ingredient-
+  // derived one when the cleaned title is genuinely a social hook
+  // ("Let's take it back to my favorite…") or is empty after cleaning. A merely
+  // long but descriptive title ("Grandma's Slow-Braised Short Rib Ragu") is a
+  // FINE title and must not be discarded — that was the old >8-word bug.
+  if (t && _isConversationalTitle(t)) {
+    const derived = _titleFromIngredients(ingredients);
+    if (derived) return derived;
+  }
+  // Empty after cleaning → derive from ingredients rather than return junk.
+  if (!t) {
     const derived = _titleFromIngredients(ingredients);
     if (derived) return derived;
   }
   return t || title.trim();
 }
 
-const _CONVO_TITLE_RE = /\b(let'?s|lets take|my favorite|my favourite|back to|recipe for you|you guys|i'?m so|i'?ve been|we'?re|this one is|who else|when you|if you|trust me|obsessed with|pov\b)\b/i;
+const _CONVO_TITLE_RE = /\b(let'?s|lets take|my favorite|my favourite|back to|recipe for you|you guys|i'?m so|i'?ve been|we'?re|this one is|who else|when you|if you|trust me|obsessed with|pov\b|comment|save this|link in bio|follow for)\b/i;
 
+// A title is "conversational" (and should be replaced) only when it reads like a
+// caption hook — NOT merely because it's long. The 60-char truncation above
+// already bounds length; a long-but-descriptive dish name is a valid title.
 function _isConversationalTitle(t) {
   if (!t) return false;
   if (_CONVO_TITLE_RE.test(t)) return true;
-  return t.split(/\s+/).length > 8;
+  // Extreme outlier only: very long AND ends without looking like a dish name.
+  return t.split(/\s+/).length > 14;
 }
 
 /** Build a concise fallback title from the first couple of ingredient names. */
@@ -748,13 +758,18 @@ function reclassifyIngredientsAndDirections(ingredients = [], directions = []) {
   ing = keepIng;
 
   // Pass 2 — pure quantity+food lines hiding in the directions list (rarer).
+  // CONSERVATIVE on purpose: only rescue a line that carries a real quantity+unit
+  // (NUM_UNIT_RE, e.g. "2 cups flour"). looksLikeIngredient is too broad and would
+  // pull verb-less step text ("eggs and flour, whisked together") into ingredients,
+  // which sometimes emptied the steps entirely on re-import. Also NEVER remove the
+  // last remaining direction — better a slightly-misplaced step than zero steps.
   const keepDir = [];
-  for (const line of dir) {
-    const strongIng = looksLikeIngredient(line);
-    // Use strict direction signals here too — looksLikeDirection/STEP_NUM_RE would
-    // falsely flag "3 eggs" as a direction (digit+space) and block the rescue.
+  for (let i = 0; i < dir.length; i += 1) {
+    const line = dir[i];
+    const strongIng = NUM_UNIT_RE.test(line);
     const strongDir = COOKING_VERBS_RE.test(line) || SPOKEN_DIRECTION_RE.test(line) || NUMBERED_STEP_RE.test(line);
-    if (strongIng && !strongDir) {
+    const wouldEmptyDirections = keepDir.length === 0 && i === dir.length - 1;
+    if (strongIng && !strongDir && !wouldEmptyDirections) {
       ing.push(line);
       moved.push({ from: 'directions', to: 'ingredients', line, reason: 'pure-quantity-food' });
       continue;

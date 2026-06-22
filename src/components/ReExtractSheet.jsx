@@ -164,6 +164,15 @@ export default function ReExtractSheet({ meal, onClose, onSaved }) {
       });
       if (abortRef.current) return;
       const normalized = result ? normalizeForReview(result, itemType) : null;
+      // Re-extraction must NEVER lose steps: if this pass returned no directions
+      // (Gemini variance) but we already have some, keep the existing ones so an
+      // "accept new" can't blow away a recipe's steps. Same guard for ingredients.
+      if (normalized && (!normalized.directions || normalized.directions.length === 0) && curDirections.length) {
+        normalized.directions = curDirections.slice();
+      }
+      if (normalized && (!normalized.ingredients || normalized.ingredients.length === 0) && curIngredients.length) {
+        normalized.ingredients = curIngredients.slice();
+      }
       if (!normalized || (!normalized.ingredients.length && !normalized.directions.length)) {
         setErrorMsg("The new pass couldn't pull a cleaner recipe from the saved caption.");
         setPhase('error');
