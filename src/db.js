@@ -1,5 +1,6 @@
 import Dexie from 'dexie';
 import { buildStructuredFields } from './recipeParser';
+import { upgradeRecipeIngredients } from './recipeSchema';
 
 const db = new Dexie('SpiceHubDB');
 
@@ -75,6 +76,32 @@ db.version(12).stores({
 // v13: Batch Import — multi-share queue (P12)
 db.version(13).stores({
   batchQueue: '++id, status, createdAt',
+});
+
+// v14: Spec A — structured ingredients as source of truth. Backfill
+// `ingredientsStructured` on every existing meal + drink from their flat
+// ingredients[] + _ingredientMeta[]. Idempotent, offline, no network. New
+// imports already populate the field via thinFromStructured; consumers also
+// upgrade on the fly, so this backfill is belt-and-suspenders for old records.
+db.version(14).stores({
+  meals: '++id, name, status, sourceHash, jobId, ingredients_text',
+  drinks: '++id, name',
+}).upgrade(tx => {
+  const backfill = (meal) => {
+    if (Array.isArray(meal.ingredientsStructured) && meal.ingredientsStructured.length) return;
+    try {
+      const upgraded = upgradeRecipeIngredients(meal);
+      if (Array.isArray(upgraded.ingredientsStructured)) {
+        meal.ingredientsStructured = upgraded.ingredientsStructured;
+      }
+    } catch (e) {
+      // Defensive: a single bad record must never abort the whole upgrade.
+      console.warn('[SpiceHub DB] v14 ingredient backfill skipped a record:', e);
+    }
+  };
+  const meals = tx.table('meals').toCollection().modify(backfill);
+  const drinks = tx.table('drinks').toCollection().modify(backfill);
+  return Promise.all([meals, drinks]);
 });
 
 export default db;

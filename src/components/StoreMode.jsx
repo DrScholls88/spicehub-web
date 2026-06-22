@@ -161,8 +161,13 @@ export default function StoreMode({ items, setItems, onExit, onToast }) {
 
     items.forEach((item, idx) => {
       if (!item || item.store === PANTRY_ID) return; // pantry items aren't shopped
-      const dept = item.category || categorizeIngredient(item.name) || 'Other';
-      const key = norm(item.name);
+      // Spec A: prefer the structured Item's department + clean food name so
+      // department routing and dedup key off real fields, not the display string.
+      const struct = item._struct;
+      const structName = struct && struct.name;
+      const dept = (struct && struct.category) || item.category
+        || categorizeIngredient(structName || item.name) || 'Other';
+      const key = norm(structName || item.name);
       if (!byDept.has(dept)) byDept.set(dept, new Map());
       const lines = byDept.get(dept);
       if (!lines.has(key)) {

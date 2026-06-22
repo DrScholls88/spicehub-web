@@ -15,6 +15,9 @@ import { parseIngredient } from 'parse-ingredient';
 import {
   SYSTEM_INSTRUCTION, RECIPE_SCHEMA, buildFewShotContents,
   thinFromStructured, detectKindHeuristic, isTrashIngredientLine,
+  // Spec C — deterministic parser building blocks + cross-check
+  isSectionHeader, sectionLabelFrom, categorizeIngredient, canonicalizeUnit,
+  crossCheckStructured, reconcileStructuredWithFlat,
 } from './recipeSchema.js';
 
 /**
@@ -862,9 +865,16 @@ function finalizeAIRecipe(thin, { hintTitle = '', imageUrl = '', sourceUrl = '',
   if (audit && (audit.movedCount || audit.filteredCount)) {
     console.log(`[SpiceHub] Post-process: ${audit.movedCount} moved, ${audit.filteredCount} filtered (engine: ${audit.engine})`);
   }
+  // Spec C: enforceDeterministicRules may reclassify/dedupe the flat ingredients[];
+  // re-align ingredientsStructured to the final flat list so the structured source
+  // of truth never drifts from what the UI shows.
+  const reconciledStructured = reconcileStructuredWithFlat(
+    enforced.ingredientsStructured, enforced.ingredients, enforced._ingredientMeta,
+  );
   return {
     name: _cleanTitle(enforced.title || hintTitle || 'Imported Recipe', enforced.ingredients),
     ...enforced,
+    ingredientsStructured: reconciledStructured,
     ...buildStructuredFields(enforced.ingredients, enforced.directions),
     imageUrl: imageUrl || enforced.imageUrl || '',
     link: sourceUrl || enforced.link || '',
@@ -1221,6 +1231,80 @@ export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ captionToRecipe: Gemini-first structuring with heuristic fallback Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 // Takes raw caption text and returns a structured recipe object.
 // Used by BrowserAssist Pass 0 and extractInstagramAgent to get clean results.
+// ─────────────────────────────────────────────────────────────────────────────
+// DETERMINISTIC PARSER (Spec C) — local, no-API structuring + LLM cross-check
+// ─────────────────────────────────────────────────────────────────────────────
+// Assembles the SAME RECIPE_SCHEMA shape the LLM emits, using only local
+// primitives: parseCaption (ingredient/direction split), parse-ingredient
+// (qty/unit/name), and the recipeSchema vocab (sections, kind, category). Flows
+// through thinFromStructured → finalizeAIRecipe so the output is structurally
+// identical to an LLM result, tagged _structuredVia: 'deterministic'.
+
+/** Map one raw ingredient line to a RECIPE_SCHEMA item via parse-ingredient. */
+function _detItemFromLine(line) {
+  const raw = String(line || '').trim();
+  let parsed = {};
+  try {
+    const arr = parseIngredient(raw);
+    parsed = (Array.isArray(arr) && arr[0]) || {};
+  } catch { parsed = {}; }
+  let name = String(parsed.description || raw).trim();
+  let prep = '';
+  const ci = name.indexOf(',');
+  if (ci !== -1) { prep = name.slice(ci + 1).trim(); name = name.slice(0, ci).trim(); }
+  const quantity = parsed.quantity != null ? String(parsed.quantity) : '';
+  const rawUnit = parsed.unitOfMeasure || '';
+  const unit = canonicalizeUnit(rawUnit) || rawUnit || '';
+  return { quantity, unit, name, prep, category: categorizeIngredient(name || raw) };
+}
+
+/**
+ * Deterministic, local recipe structuring. Returns a finalized thin recipe
+ * (Spec-A-shaped ingredientsStructured) or null when nothing usable was found.
+ */
+export function structureDeterministic(caption, { type = 'meal', imageUrl = '', sourceUrl = '' } = {}) {
+  if (!caption || !String(caption).trim()) return null;
+  const parsed = parseCaption(caption);
+  const ings = Array.isArray(parsed?.ingredients) ? parsed.ingredients : [];
+  const dirs = (Array.isArray(parsed?.directions) ? parsed.directions : []).filter(Boolean);
+  if (ings.length === 0 && dirs.length === 0) return null;
+
+  const kind = type === 'drink' ? 'drink' : detectKindHeuristic(caption);
+
+  // Group ingredients by section header.
+  const groups = [{ section: '', items: [] }];
+  let current = groups[0];
+  for (const raw of ings) {
+    const line = String(raw || '').trim();
+    if (!line) continue;
+    if (isSectionHeader(line)) {
+      current = { section: sectionLabelFrom(line), items: [] };
+      groups.push(current);
+      continue;
+    }
+    if (isTrashIngredientLine(line)) continue;
+    current.items.push(_detItemFromLine(line));
+  }
+  const ingredientGroups = groups.filter((g) => g.items.length);
+  if (ingredientGroups.length === 0 && dirs.length === 0) return null;
+
+  const schemaObj = {
+    isRecipe: true,
+    kind,
+    title: parsed.title || '',
+    ingredientGroups,
+    directions: dirs,
+    // Guardrail: don't guess these offline — leave for review.
+    servings: '', prepTime: '', cookTime: '', totalTime: '',
+    cuisine: '', course: '', dishType: '', dietaryTags: [],
+    notes: '',
+    confidence: 0.5,
+    needsReview: true,
+  };
+  const thin = thinFromStructured(schemaObj);
+  return finalizeAIRecipe(thin, { hintTitle: parsed.title || '', imageUrl, sourceUrl, via: 'deterministic' });
+}
+
 export async function captionToRecipe(captionText, { title = '', imageUrl = '', sourceUrl = '', type = 'meal' } = {}) {
   if (!captionText || captionText.trim().length < 20) return null;
 
@@ -1236,7 +1320,31 @@ export async function captionToRecipe(captionText, { title = '', imageUrl = '', 
       const hasRealDirs = (aiResult.directions || []).some(d => d && !/^see (original post|recipe) for/i.test(d.trim()));
       // Preserve the real engine tag (grok:* / gemini-client-schema / …) set by
       // finalizeAIRecipe — don't clobber it with a generic 'gemini'.
-      if (hasRealIngs || hasRealDirs) return { ...aiResult, _structuredVia: aiResult._structuredVia || 'gemini' };
+      if (hasRealIngs || hasRealDirs) {
+        const result = { ...aiResult, _structuredVia: aiResult._structuredVia || 'gemini' };
+        // Spec C: cross-check the LLM's qty/unit split against a deterministic
+        // local parse of the same text. Flag disagreements + fill empty fields;
+        // never override populated LLM values. Best-effort — never blocks import.
+        try {
+          const det = structureDeterministic(textForAI, { type });
+          const detItems = det?.ingredientsStructured;
+          if (Array.isArray(detItems) && detItems.length && Array.isArray(result.ingredientsStructured)) {
+            const xc = crossCheckStructured(result.ingredientsStructured, detItems, { fillGaps: true });
+            result.ingredientsStructured = xc.items;
+            result._crossCheckAudit = xc.audit;
+            if (xc.audit.disagreements > 0) {
+              result.needsReview = true;
+              if (typeof result.confidence === 'number') {
+                result.confidence = Math.max(0, result.confidence - 0.03 * Math.min(xc.audit.disagreements, 4));
+              }
+            }
+            if (xc.audit.filled || xc.audit.disagreements) {
+              console.log(`[SpiceHub] Cross-check: ${xc.audit.filled} filled, ${xc.audit.disagreements} disagreements (${xc.audit.matched}/${result.ingredientsStructured.length} matched)`);
+            }
+          }
+        } catch { /* cross-check is best-effort */ }
+        return result;
+      }
     }
   } catch { /* fall through to heuristic */ }
 
@@ -1247,24 +1355,15 @@ export async function captionToRecipe(captionText, { title = '', imageUrl = '', 
   const textForParse = !textForAI.includes('\n') && /   /.test(textForAI)
     ? textForAI.replace(/   +/g, '\n').replace(/[ \t]+/g, ' ')
     : textForAI;
-  const parsed = parseCaption(textForParse);
-  if (!parsed) return null;
 
-  const name = parsed.title || title || '';
-  const ingredients = parsed.ingredients?.length > 0 ? parsed.ingredients : [];
-  const directions = parsed.directions?.length > 0 ? parsed.directions : [];
-
-  if (ingredients.length === 0 && directions.length === 0) return null;
-
-  return {
-    name,
-    ingredients,
-    directions,
-    ...buildStructuredFields(ingredients, directions),
-    imageUrl,
-    link: sourceUrl,
-    _structuredVia: 'heuristic',
-  };
+  // Spec C: the offline fallback now runs the deterministic parser, so no-API /
+  // offline imports get the SAME Spec-A structured ingredients (kind, sections,
+  // qty/unit/name, category) instead of flat strings via the weak splitter.
+  const det = structureDeterministic(textForParse, { type, imageUrl, sourceUrl });
+  if (det && ((det.ingredients?.length || 0) > 0 || (det.directions?.length || 0) > 0)) {
+    return { ...det, name: det.name || title || '' };
+  }
+  return null;
 }
 
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Caption Parser (Paprika-style 4-pass, enhanced for video content) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
