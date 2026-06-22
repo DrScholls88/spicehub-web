@@ -98,6 +98,20 @@ function parseIngredient(rawName) {
   return { amount, unit: canonical, ingredient };
 }
 
+// Spec A: build the same {amount, unit, ingredient} shape directly from a
+// structured ingredient Item (no string re-parse). Returns null when the item
+// lacks a summable quantity+unit, so callers fall back to count-based grouping.
+function parsedFromStruct(s) {
+  if (!s) return null;
+  const ingredient = (s.name || '').trim();
+  if (!ingredient) return null;
+  const amount = s.quantity ? parseAmount(String(s.quantity)) : null;
+  const unitRaw = (s.unit || '').toLowerCase().replace(/\.$/, '');
+  const canonical = UNIT_CANONICAL[unitRaw] || unitRaw || null;
+  if (amount && canonical) return { amount, unit: canonical, ingredient };
+  return null;
+}
+
 async function rememberStore(ingredientName, storeId) {
   const key = ingredientName.toLowerCase().trim();
   await dbSaveStoreMemory(key, storeId || '');
@@ -145,10 +159,12 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
     if (viewMode === 'detailed') return itemList.map(i => ({...i, indices: [i._idx], names: [i.name]}));
     const map = new Map();
     itemList.forEach(item => {
-      const parsed = parseIngredient(item.name);
+      // Spec A: prefer the structured Item (real qty/unit/name) over re-parsing
+      // the display string; fall back to the string parser when absent.
+      const parsed = (item._struct ? parsedFromStruct(item._struct) : null) || parseIngredient(item.name);
       // Canonical grouping token: collapse fuzzy-equivalent food names (e.g.
       // "cherry tomatoes" + "roma tomato" -> "tomato") so they merge onto one line.
-      const base = parsed ? parsed.ingredient : item.name;
+      const base = parsed ? parsed.ingredient : (item._struct?.name || item.name);
       const literalBase = (parsed ? parsed.ingredient : item.name).toLowerCase().trim();
       let canonicalBase = literalBase;
       let fuzzyCanonical = null; // set only on a confident fuzzy (non-exact) match

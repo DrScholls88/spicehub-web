@@ -15,7 +15,7 @@ import ImportSheet from './components/ImportSheet';
 import BatchImportQueue, { BatchQueuePill } from './components/BatchImportQueue';
 import { startBatchImportEngine } from './batchImportEngine';
 import { extractMultipleUrls } from './recipeParser';
-import { categorizeIngredient } from './recipeSchema';
+import { categorizeIngredient, upgradeRecipeIngredients } from './recipeSchema';
 import InstagramZipImport from './components/InstagramZipImport';
 import FridgeMode from './components/FridgeMode';
 import CookMode from './components/CookMode';
@@ -773,12 +773,40 @@ useEffect(() => {
     const storeMemory = window._storeMemory || {};
     weekPlan.forEach(meal => {
       if (!meal || meal._special) return;
-      // Build quick lookup: ingredient text (lowercase) → department category from LLM metadata
+
+      // Spec A: prefer the structured ingredient array (source of truth). It
+      // carries real quantity/unit/name/category per row, so grocery
+      // aggregation + Store Mode no longer re-parse the display string. Fall
+      // back to the legacy flat path for any record without the field.
+      const structured = (Array.isArray(meal.ingredientsStructured) && meal.ingredientsStructured.length)
+        ? meal.ingredientsStructured
+        : (upgradeRecipeIngredients(meal).ingredientsStructured || []);
+
+      if (structured.length) {
+        structured.forEach(si => {
+          if (!si) return;
+          // Display name matches the legacy flat string (display + section
+          // suffix) so nothing visual changes.
+          const base = (si.original_text || si.display || si.name || '').trim();
+          if (!base) return;
+          const sec = (si.section || '').trim();
+          const name = sec ? `${base} (${sec})` : base;
+          const key = name.toLowerCase().trim();
+          if (!items[key]) {
+            const rememberedStore = storeMemory[key] || '';
+            const category = si.category || categorizeIngredient(si.name || name);
+            items[key] = { name, checked: false, store: rememberedStore, category, _struct: si };
+          }
+        });
+        return;
+      }
+
+      // ── Legacy fallback (no structured data available) ──────────────────────
       const metaMap = {};
       (meal._ingredientMeta || []).forEach(m => {
         if (m && m.text && m.category) metaMap[m.text.toLowerCase().trim()] = m.category;
       });
-      meal.ingredients.forEach(ing => {
+      (meal.ingredients || []).forEach(ing => {
         const key = ing.toLowerCase().trim();
         if (!items[key]) {
           const rememberedStore = storeMemory[key] || '';

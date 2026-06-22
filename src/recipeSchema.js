@@ -723,11 +723,19 @@ export function ingredientMetaFromGroups(groups = []) {
  */
 export function thinFromStructured(structured = {}) {
   const kind = structured.kind === 'drink' ? 'drink' : 'meal';
+  // Spec A: the structured ingredient array is the SOURCE OF TRUTH. Build it
+  // once, then derive the legacy flat string[] and the _ingredientMeta sidecar
+  // FROM it so they can never drift apart. The two derived fields are
+  // byte-identical to the old flattenIngredientGroups / ingredientMetaFromGroups
+  // output (pinned by recipeSchema.structured.test.js).
+  const structuredItems = structuredFromGroups(structured.ingredientGroups);
   const base = {
     title: (structured.title || '').trim(),
-    ingredients: flattenIngredientGroups(structured.ingredientGroups),
+    // Spec A: persisted structured ingredients (additive; never throws).
+    ingredientsStructured: structuredItems,
+    ingredients: flatIngredientsFromStructured(structuredItems),
     // Phase G: department metadata for grocery routing (non-breaking sidecar)
-    _ingredientMeta: ingredientMetaFromGroups(structured.ingredientGroups),
+    _ingredientMeta: metaFromStructured(structuredItems),
     directions: Array.isArray(structured.directions) ? structured.directions.filter(Boolean) : [],
     notes: structured.notes || '',
     confidence: typeof structured.confidence === 'number' ? structured.confidence : null,
@@ -753,6 +761,344 @@ export function thinFromStructured(structured = {}) {
     dishType: structured.dishType || '',
     dietaryTags: Array.isArray(structured.dietaryTags) ? structured.dietaryTags : [],
   };
+}
+
+// -----------------------------------------------------------------------------
+// 12. STRUCTURED INGREDIENT MODEL (Spec A — source of truth)
+// -----------------------------------------------------------------------------
+// The LLM already emits {quantity, unit, name, prep, category} per item grouped
+// by section. Previously thinFromStructured FLATTENED that to "2 cups flour
+// (sauce)" strings and kept only category in a parallel sidecar, forcing every
+// consumer (grocery aggregation, Store Mode, scaling) to re-parse the string.
+//
+// This section persists the structured item as the source of truth. The legacy
+// `ingredients: string[]` and `_ingredientMeta` fields are DERIVED from it and
+// remain byte-identical, so nothing downstream breaks. Pure + defensive: no
+// imports, no I/O, never throws on bad input.
+//
+//   Item = {
+//     ref,           // stable id (reorder + future step-links)
+//     quantity,      // "2", "1/2", "2-3", ""   (string, matches RECIPE_SCHEMA)
+//     unit,          // canonical unit ("cup") or "" or original-if-unknown
+//     name,          // "all-purpose flour"
+//     prep,          // "minced", "to taste", ""
+//     category,      // one of GROCERY_CATEGORIES
+//     section,       // "" ungrouped, else "sauce"
+//     original_text, // the joined display line WITHOUT section suffix
+//     display,       // cached render string (== original_text)
+//   }
+
+// Known section labels (lowercased), derived from the shared sub-section vocab.
+// Used to decide whether a trailing "(...)" on a legacy string is a real section
+// suffix (added by flattenIngredientGroups) vs. an organic parenthetical like
+// "(optional)" or "(about 2 cups)" that must stay part of the ingredient.
+const KNOWN_SECTION_LABELS = new Set(
+  SECTION_HEADERS.subSections.map((h) => sectionLabelFrom(h).toLowerCase())
+);
+
+let _refCounter = 0;
+/** Short, collision-resistant id for an ingredient row. Pure-enough (ids only). */
+export function makeIngredientRef() {
+  _refCounter = (_refCounter + 1) % 1e9;
+  return (
+    'ing_' +
+    Date.now().toString(36) +
+    '_' +
+    _refCounter.toString(36) +
+    Math.random().toString(36).slice(2, 6)
+  );
+}
+
+/** Render a structured item to a clean display line (no section). */
+export function deriveDisplay(item = {}) {
+  return ingredientItemToString(item || {});
+}
+
+/**
+ * Pure qty/unit/name/prep splitter for UPGRADING legacy flat strings. The LLM
+ * path already has these fields; this only runs on old stored strings. Built
+ * from this module's own primitives so the zero-import rule holds.
+ */
+export function parseIngredientLine(line = '') {
+  const out = { quantity: '', unit: '', name: '', prep: '' };
+  let s = normalizeFraction(String(line == null ? '' : line))
+    .replace(/^[•\-*]\s*/, '')
+    .trim();
+  if (!s) return out;
+
+  // Trailing prep after the first comma: "garlic, minced" / "2 eggs, beaten".
+  const commaIdx = s.indexOf(',');
+  if (commaIdx !== -1) {
+    out.prep = s.slice(commaIdx + 1).trim();
+    s = s.slice(0, commaIdx).trim();
+  }
+
+  // Leading quantity: integer, decimal, fraction, mixed (1 1/2), or range (2-3).
+  const qm = s.match(
+    /^(\d+(?:\.\d+)?(?:\s*\/\s*\d+)?(?:\s+\d+\s*\/\s*\d+)?(?:\s*[-–]\s*\d+(?:\.\d+)?(?:\s*\/\s*\d+)?)?)\s+/
+  );
+  if (qm) {
+    out.quantity = qm[1]
+      .replace(/\s*\/\s*/g, '/')
+      .replace(/\s*[-–]\s*/g, '-')
+      .trim();
+    s = s.slice(qm[0].length).trim();
+
+    // Optional unit immediately after the quantity, longest-alias-first so
+    // "fl oz" beats "oz". Gated on a quantity to avoid stripping a food token
+    // that merely starts with a unit letter (e.g. "lemon").
+    for (const alias of UNIT_ALIASES_ALL) {
+      const esc = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const re = new RegExp('^' + esc + '\\.?(?=\\s|$)', 'i');
+      if (re.test(s)) {
+        out.unit = canonicalizeUnit(alias) || '';
+        s = s.replace(re, '').trim();
+        break;
+      }
+    }
+  }
+
+  out.name = s.trim();
+  return out;
+}
+
+/** Build a structured Item from a raw RECIPE_SCHEMA item + its section label. */
+export function structuredItemFromRaw(rawItem = {}, section = '') {
+  const it = rawItem || {};
+  const sec = section ? String(section).trim() : '';
+  const displayLine = ingredientItemToString(it);
+  const withSection = sec ? `${displayLine} (${sec})` : displayLine;
+  const category = GROCERY_CATEGORIES.includes(it.category)
+    ? it.category
+    : categorizeIngredient(it.name || withSection);
+  const rawUnit = (it.unit || '').toString().trim();
+  return {
+    ref: makeIngredientRef(),
+    quantity: (it.quantity || '').toString().trim(),
+    unit: canonicalizeUnit(rawUnit) || rawUnit,
+    name: (it.name || '').toString().trim(),
+    prep: (it.prep || '').toString().trim(),
+    category,
+    section: sec,
+    original_text: displayLine,
+    display: displayLine,
+  };
+}
+
+/**
+ * Convert ingredientGroups into Item[]. Applies the SAME trash filter, on the
+ * SAME derived line, as flattenIngredientGroups — so the structured array and
+ * the derived flat array stay exactly 1:1.
+ */
+export function structuredFromGroups(groups = []) {
+  const out = [];
+  for (const g of groups || []) {
+    const section = g && g.section ? String(g.section).trim() : '';
+    for (const item of (g && g.items) || []) {
+      const line = ingredientItemToString(item);
+      if (!line) continue;
+      if (isTrashIngredientLine(line)) continue;
+      out.push(structuredItemFromRaw(item, section));
+    }
+  }
+  return out;
+}
+
+/**
+ * Derive the legacy flat string[] from Item[]. Re-appends "(section)" exactly as
+ * flattenIngredientGroups did. MUST equal flattenIngredientGroups(groups).
+ */
+export function flatIngredientsFromStructured(items = []) {
+  const out = [];
+  for (const it of items || []) {
+    if (!it) continue;
+    const base = (it.original_text || deriveDisplay(it) || '').trim();
+    if (!base) continue;
+    const sec = (it.section || '').trim();
+    out.push(sec ? `${base} (${sec})` : base);
+  }
+  return out;
+}
+
+/**
+ * Derive the _ingredientMeta sidecar from Item[]. MUST equal
+ * ingredientMetaFromGroups(groups).
+ */
+export function metaFromStructured(items = []) {
+  const out = [];
+  for (const it of items || []) {
+    if (!it) continue;
+    const base = (it.original_text || deriveDisplay(it) || '').trim();
+    if (!base) continue;
+    const sec = (it.section || '').trim();
+    const text = sec ? `${base} (${sec})` : base;
+    const category = GROCERY_CATEGORIES.includes(it.category)
+      ? it.category
+      : categorizeIngredient(it.name || text);
+    out.push({ text, category });
+  }
+  return out;
+}
+
+/**
+ * Upgrade ONE legacy flat string (+ optional known category) into an Item.
+ * Strips a trailing "(section)" only when it matches the known section vocab,
+ * so organic parentheticals like "(optional)" survive in the name.
+ */
+export function upgradeFlatIngredient(str = '', category = '') {
+  const raw = String(str == null ? '' : str).trim();
+  let section = '';
+  let core = raw;
+  const secM = raw.match(/\s*\(([^)]+)\)\s*$/);
+  if (secM && KNOWN_SECTION_LABELS.has(secM[1].trim().toLowerCase())) {
+    section = secM[1].trim();
+    core = raw.slice(0, secM.index).trim();
+  }
+  const parsed = parseIngredientLine(core);
+  const cat = GROCERY_CATEGORIES.includes(category)
+    ? category
+    : categorizeIngredient(parsed.name || core);
+  return {
+    ref: makeIngredientRef(),
+    quantity: parsed.quantity,
+    unit: parsed.unit,
+    name: parsed.name,
+    prep: parsed.prep,
+    category: cat,
+    section,
+    original_text: core,
+    display: core,
+  };
+}
+
+/**
+ * Idempotent lazy upgrade for a stored recipe. If ingredientsStructured already
+ * exists (non-empty), returns the recipe unchanged. Otherwise builds it from the
+ * flat ingredients[] + _ingredientMeta[]. Never throws; safe to call on any read.
+ */
+export function upgradeRecipeIngredients(recipe = {}) {
+  if (!recipe || typeof recipe !== 'object') return recipe;
+  if (Array.isArray(recipe.ingredientsStructured) && recipe.ingredientsStructured.length) {
+    return recipe;
+  }
+  const ingredients = Array.isArray(recipe.ingredients) ? recipe.ingredients : [];
+  if (!ingredients.length) return { ...recipe, ingredientsStructured: [] };
+  const meta = Array.isArray(recipe._ingredientMeta) ? recipe._ingredientMeta : [];
+  const metaMap = {};
+  for (const m of meta) {
+    if (m && m.text) metaMap[String(m.text).toLowerCase().trim()] = m.category || '';
+  }
+  const structured = ingredients.map((line) => {
+    const cat = metaMap[String(line).toLowerCase().trim()] || '';
+    return upgradeFlatIngredient(line, cat);
+  });
+  return { ...recipe, ingredientsStructured: structured };
+}
+
+/** Lowercase + trim, for tolerant field comparison. */
+function _normField(v) {
+  return String(v == null ? '' : v).trim().toLowerCase();
+}
+
+/** Re-derive the flat line (with section suffix) for a structured Item. */
+function _flatLineFromItem(it) {
+  if (!it) return '';
+  const base = (it.original_text || deriveDisplay(it) || '').trim();
+  if (!base) return '';
+  const sec = (it.section || '').trim();
+  return sec ? `${base} (${sec})` : base;
+}
+
+/**
+ * Spec C — cross-check the LLM's structured ingredients against a deterministic
+ * parse of the same source. Policy: FLAG + FILL GAPS ONLY.
+ *   - Always record qty/unit disagreements (per-item `_xcheck`, + audit) for
+ *     Spec B's per-field confidence.
+ *   - Fill an AI field ONLY when it is empty and the deterministic parser found
+ *     a value. NEVER overrides a populated AI field.
+ * Pure + defensive: returns the AI items untouched if anything is missing.
+ *
+ * @returns {{ items: object[], audit: { compared, matched, disagreements, filled } }}
+ */
+export function crossCheckStructured(aiItems = [], detItems = [], { fillGaps = true } = {}) {
+  const ai = Array.isArray(aiItems) ? aiItems : [];
+  const det = Array.isArray(detItems) ? detItems : [];
+  const audit = { compared: 0, matched: 0, disagreements: 0, filled: 0 };
+
+  if (!ai.length || !det.length) return { items: ai, audit };
+
+  // Index deterministic rows by normalized food name (first wins).
+  const detByName = new Map();
+  for (const d of det) {
+    if (!d) continue;
+    const k = normalizeIngredientForMatching(d.name || '');
+    if (k && !detByName.has(k)) detByName.set(k, d);
+  }
+
+  const items = ai.map((it) => {
+    if (!it) return it;
+    const key = normalizeIngredientForMatching(it.name || '');
+    const d = key ? detByName.get(key) : null;
+    if (!d) return it;
+
+    audit.compared += 1;
+    audit.matched += 1;
+    const disagree = [];
+    const filled = [];
+    let next = it;
+
+    // quantity
+    if (_normField(d.quantity) !== _normField(it.quantity)) {
+      if (fillGaps && !_normField(it.quantity) && _normField(d.quantity)) {
+        next = { ...next, quantity: d.quantity };
+        filled.push('quantity');
+      } else if (_normField(it.quantity) && _normField(d.quantity)) {
+        disagree.push('quantity');
+      }
+    }
+    // unit
+    if (_normField(d.unit) !== _normField(it.unit)) {
+      if (fillGaps && !_normField(it.unit) && _normField(d.unit)) {
+        next = { ...next, unit: d.unit };
+        filled.push('unit');
+      } else if (_normField(it.unit) && _normField(d.unit)) {
+        disagree.push('unit');
+      }
+    }
+
+    audit.disagreements += disagree.length;
+    audit.filled += filled.length;
+    if (disagree.length || filled.length) {
+      next = { ...next, _xcheck: { disagree, filled } };
+    }
+    return next;
+  });
+
+  return { items, audit };
+}
+
+/**
+ * Spec C — keep ingredientsStructured aligned with a (possibly reclassified)
+ * flat ingredients[] after enforceDeterministicRules. Unchanged lines keep their
+ * original Item; a moved-in line is upgraded; a removed line is dropped. Fixes a
+ * latent Spec A drift. Pure; never throws.
+ */
+export function reconcileStructuredWithFlat(structured = [], flat = [], meta = []) {
+  const flatArr = Array.isArray(flat) ? flat : [];
+  const byLine = new Map();
+  for (const it of Array.isArray(structured) ? structured : []) {
+    const line = _flatLineFromItem(it);
+    if (line && !byLine.has(line)) byLine.set(line, it);
+  }
+  const metaMap = {};
+  for (const m of Array.isArray(meta) ? meta : []) {
+    if (m && m.text) metaMap[String(m.text).toLowerCase().trim()] = m.category || '';
+  }
+  return flatArr.map((line) => {
+    const hit = byLine.get(line);
+    if (hit) return hit;
+    return upgradeFlatIngredient(line, metaMap[String(line).toLowerCase().trim()] || '');
+  });
 }
 
 // -----------------------------------------------------------------------------
@@ -937,4 +1283,10 @@ export default {
   SPIRITS, LIQUEURS, COCKTAIL_ACTIONS, GLASSWARE, DRINK_METHODS, detectKindHeuristic,
   DISPLAY_SCHEMA, RECIPE_SCHEMA, SYSTEM_INSTRUCTION, EXEMPLARS, buildFewShotContents,
   ingredientItemToString, flattenIngredientGroups, ingredientMetaFromGroups, thinFromStructured,
+  // Spec A — structured ingredient model
+  makeIngredientRef, deriveDisplay, parseIngredientLine, structuredItemFromRaw,
+  structuredFromGroups, flatIngredientsFromStructured, metaFromStructured,
+  upgradeFlatIngredient, upgradeRecipeIngredients,
+  // Spec C — deterministic cross-check + structured reconciliation
+  crossCheckStructured, reconcileStructuredWithFlat,
 };

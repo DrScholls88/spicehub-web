@@ -5509,7 +5509,9 @@ body {
 /* ── Floating Action Buttons (FAB group) ── */
 .ml-fab-group {
   position: fixed;
-  bottom: 20px;
+  /* Clear the fixed .tab-bar (min-height 52px + safe-area inset) so the Import
+     speed-dial is never hidden behind the bottom nav. */
+  bottom: calc(52px + env(safe-area-inset-bottom) + 16px);
   right: 20px;
   display: flex;
   flex-direction: column;
@@ -5957,7 +5959,8 @@ body {
   }
 
   .ml-fab-group {
-    bottom: 24px;
+    /* Keep clearance above the bottom tab-bar on wider viewports too. */
+    bottom: calc(52px + env(safe-area-inset-bottom) + 20px);
     right: 24px;
   }
 
