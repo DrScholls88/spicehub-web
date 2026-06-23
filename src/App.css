@@ -7105,44 +7105,12 @@ body {
   background: #f8bbd0;
 }
 
-.bl-fab {
-  position: fixed;
-  bottom: 80px;
-  right: 20px;
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #7b1fa2, #9c27b0);
-  color: white;
-  border: none;
-  font-size: 28px;
-  cursor: pointer;
-  box-shadow: 0 4px 14px rgba(123, 31, 162, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s, transform 0.2s;
-  z-index: 40;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.bl-fab:active {
-  transform: scale(0.92);
-  box-shadow: 0 2px 6px rgba(123, 31, 162, 0.3);
-}
-
-/* Two FABs stacked — import at bottom, add above */
-.bl-fab-import {
-  bottom: 80px;
-  background: linear-gradient(135deg, #e65100, #ff6d00);
-  box-shadow: 0 4px 14px rgba(230, 81, 0, 0.4);
-  font-size: 24px;
-}
-.bl-fab-add {
-  bottom: 148px;
-  font-size: 32px;
-  font-family: system-ui, sans-serif;
-}
+/* NOTE: the legacy stacked-FAB rules that previously lived here (.bl-fab with
+   position:fixed/bottom:80px, plus .bl-fab-import/.bl-fab-add bottom offsets)
+   have been removed. The Bar Library now uses the speed-dial FAB group defined
+   lower in this file (.bl-fab-group → .bl-fab-main + .bl-fab-actions), matching
+   the Meal Library. Keeping a second position:fixed .bl-fab block here would
+   override the flow layout inside .bl-fab-group. */
 
 /* ── "Enter the Saloon" hero button ── */
 .bl-saloon-btn {
@@ -7942,10 +7910,12 @@ body {
   margin-top: 1px;
 }
 
-/* ── FAB group (bar-themed: purple import) ── */
+/* ── Speed-dial FAB group (bar-themed: purple) — parity with .ml-fab-group ── */
 .bl-fab-group {
   position: fixed;
-  bottom: 20px;
+  /* Clear the fixed .tab-bar (min-height 52px + safe-area inset) so the speed-dial
+     FAB is never hidden behind the bottom nav. Matches .ml-fab-group. */
+  bottom: calc(52px + env(safe-area-inset-bottom) + 16px);
   right: 20px;
   display: flex;
   flex-direction: column;
@@ -8003,6 +7973,137 @@ body {
 
 .bl-fab:active {
   transform: scale(0.93);
+}
+
+/* ── Speed-dial FAB (consolidated add + import) — parity with .ml-fab-* ── */
+.bl-fab-main {
+  z-index: 97;
+}
+
+.bl-fab-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 12, 28, 0.32);
+  backdrop-filter: blur(1.5px);
+  -webkit-backdrop-filter: blur(1.5px);
+  z-index: 94;
+}
+
+.bl-fab-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 2px;
+}
+
+.bl-fab-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bl-fab-action-label {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--text, #1c140d);
+  background: var(--card, #fff);
+  padding: 9px 14px;
+  border-radius: 10px;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.16);
+  white-space: nowrap;
+}
+
+.bl-fab-action-icon {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.bl-fab-action-icon--import {
+  background: linear-gradient(135deg, #6a1b9a, #9c27b0);
+}
+
+.bl-fab-action-icon--add {
+  background: linear-gradient(135deg, #9c27b0, #c158d8);
+}
+
+[data-theme="dark"] .bl-fab-action-label {
+  color: var(--text, #f5efe7);
+  background: var(--card, #2a2018);
+}
+
+/* ── Tile "Improve" badge (low-confidence import) — parity with .ml-tile-improve ── */
+.bl-tile-improve {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: none;
+  cursor: pointer;
+  background: linear-gradient(135deg, #7b1fa2, #9c27b0);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(123, 31, 162, 0.4);
+  -webkit-tap-highlight-color: transparent;
+  z-index: 4;
+}
+.bl-tile-improve:active { transform: scale(0.92); }
+
+/* ── PiP play-video badge on tiles — parity with .ml-tile-play ── */
+.bl-tile-play {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.9);
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 4;
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  transition: background 0.15s, transform 0.1s;
+}
+
+.bl-tile-play-tri {
+  font-size: 12px;
+  line-height: 1;
+  margin-left: 2px; /* optical centering of the ▶ glyph */
+}
+
+.bl-tile-play:active { transform: scale(0.88); }
+.bl-tile-play-youtube { background: rgba(255, 0, 0, 0.78); border-color: rgba(255, 255, 255, 0.95); }
+.bl-tile-play-instagram {
+  background: linear-gradient(135deg, rgba(240, 148, 51, 0.9), rgba(188, 42, 141, 0.9), rgba(150, 47, 191, 0.9));
+  border-color: rgba(255, 255, 255, 0.95);
 }
 
 /* ── Quick Preview bottom sheet ── */
@@ -8195,6 +8296,12 @@ body {
 
   .bl-icon-btn:hover {
     background: #e0e0e0;
+  }
+
+  .bl-fab-group {
+    /* Keep clearance above the bottom tab-bar on wider viewports too. Matches .ml-fab-group. */
+    bottom: calc(52px + env(safe-area-inset-bottom) + 20px);
+    right: 24px;
   }
 }
 

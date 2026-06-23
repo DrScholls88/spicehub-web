@@ -803,6 +803,53 @@
   color: #e8b860;
 }
 
+/* ── Per-field confidence hints (Spec B) ─────────────────────────────────────
+   Subtle, advisory amber pills that flag the exact ingredient field to verify
+   (qty / unit / name). Restrained on purpose — informative, never alarming. */
+.review-conf-hints {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.review-conf-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  background: rgba(245, 180, 60, 0.13);
+  border: 1px solid rgba(245, 180, 60, 0.34);
+  color: #9a6a00;
+  border-radius: var(--sh-pill);
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  min-height: 26px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+}
+.review-conf-hint::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #e8a400;
+  flex-shrink: 0;
+}
+.review-conf-hint:hover {
+  background: rgba(245, 180, 60, 0.22);
+  border-color: rgba(245, 180, 60, 0.55);
+}
+.review-conf-hint:active { transform: scale(0.96); }
+[data-theme="dark"] .review-conf-hint {
+  background: rgba(178, 106, 0, 0.16);
+  border-color: rgba(178, 106, 0, 0.42);
+  color: #edc070;
+}
+[data-theme="dark"] .review-conf-hint::before { background: #d99a1f; }
+
 .review-hero-title-wrap {
   position: absolute;
   left: 12px;

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import db, { importPaprikaMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getCookingLog, getWeekHistory, saveWeekToHistory, toggleRotation, addBatchQueueItems, getBatchQueueItems, updateBatchQueueItem } from './db';
+import db, { importPaprikaMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getCookingLog, getWeekHistory, saveWeekToHistory, toggleRotation, addBatchQueueItems, getBatchQueueItems, updateBatchQueueItem, getLearnedAliases } from './db';
 import { PAPRIKA_MEALS } from './paprika_import_data';
 import { checkStorageQuota, checkAndRecommendCleanup } from './storageManager';
 import { initializeBackgroundSync } from './backgroundSync';
@@ -15,7 +15,7 @@ import ImportSheet from './components/ImportSheet';
 import BatchImportQueue, { BatchQueuePill } from './components/BatchImportQueue';
 import { startBatchImportEngine } from './batchImportEngine';
 import { extractMultipleUrls } from './recipeParser';
-import { categorizeIngredient, upgradeRecipeIngredients } from './recipeSchema';
+import { categorizeIngredient, upgradeRecipeIngredients, setLearnedAliases } from './recipeSchema';
 import InstagramZipImport from './components/InstagramZipImport';
 import FridgeMode from './components/FridgeMode';
 import CookMode from './components/CookMode';
@@ -186,6 +186,21 @@ export default function App() {
     const t = setTimeout(() => setPostImportActions(null), 8000);
     return () => clearTimeout(t);
   }, [postImportActions]);
+
+  // Spec D: load user-taught ingredient aliases into the resolver on startup so
+  // they auto-apply everywhere (import categorization, grocery aggregation, hints).
+  useEffect(() => {
+    (async () => {
+      try {
+        const rows = await getLearnedAliases();
+        const map = {};
+        for (const r of rows) {
+          if (r && r.raw && r.canonical) map[r.raw] = { canonical: r.canonical, aisle: r.aisle || 'unknown' };
+        }
+        setLearnedAliases(map);
+      } catch { /* learned aliases are best-effort */ }
+    })();
+  }, []);
 
   const handlePostAddToWeek = useCallback(() => {
     if (!postImportActions?.recipe) return;
@@ -1185,6 +1200,7 @@ useEffect(() => {
             onToast={showToast}
             onOpenShelf={() => setShowBarShelf(true)}
             onOpenBarFridge={() => setShowBarFridge(true)}
+            onPlayVideo={openPipForMeal}
           />
         )}
         {tab === 'grocery' && (

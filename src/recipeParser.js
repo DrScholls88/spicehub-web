@@ -18,6 +18,8 @@ import {
   // Spec C — deterministic parser building blocks + cross-check
   isSectionHeader, sectionLabelFrom, categorizeIngredient, canonicalizeUnit,
   crossCheckStructured, reconcileStructuredWithFlat,
+  // Spec B — per-field confidence
+  annotateFieldConfidence,
 } from './recipeSchema.js';
 
 /**
@@ -769,7 +771,14 @@ function reclassifyIngredientsAndDirections(ingredients = [], directions = []) {
   const keepDir = [];
   for (let i = 0; i < dir.length; i += 1) {
     const line = dir[i];
-    const strongIng = NUM_UNIT_RE.test(line);
+    // A stranded ingredient is either "<qty> <unit> <food>" (NUM_UNIT_RE) OR a
+    // short, quantity-led, ingredient-looking line with no unit ("3 eggs",
+    // "2 ripe avocados"). The word cap + leading-quantity requirement keep
+    // sentence-like directions ("350 degrees for 20 minutes") out.
+    const strongIng = NUM_UNIT_RE.test(line)
+      || (/^\s*[\d¼-¾⅐-⅞]/.test(line)
+          && looksLikeIngredient(line)
+          && line.trim().split(/\s+/).length <= 4);
     const strongDir = COOKING_VERBS_RE.test(line) || SPOKEN_DIRECTION_RE.test(line) || NUMBERED_STEP_RE.test(line);
     const wouldEmptyDirections = keepDir.length === 0 && i === dir.length - 1;
     if (strongIng && !strongDir && !wouldEmptyDirections) {
@@ -871,10 +880,13 @@ function finalizeAIRecipe(thin, { hintTitle = '', imageUrl = '', sourceUrl = '',
   const reconciledStructured = reconcileStructuredWithFlat(
     enforced.ingredientsStructured, enforced.ingredients, enforced._ingredientMeta,
   );
+  // Spec B: attach per-field confidence to every structured Item (baseline;
+  // captionToRecipe re-annotates after cross-check so _xcheck is reflected).
+  const scoredStructured = annotateFieldConfidence(reconciledStructured);
   return {
     name: _cleanTitle(enforced.title || hintTitle || 'Imported Recipe', enforced.ingredients),
     ...enforced,
-    ingredientsStructured: reconciledStructured,
+    ingredientsStructured: scoredStructured,
     ...buildStructuredFields(enforced.ingredients, enforced.directions),
     imageUrl: imageUrl || enforced.imageUrl || '',
     link: sourceUrl || enforced.link || '',
@@ -1330,7 +1342,8 @@ export async function captionToRecipe(captionText, { title = '', imageUrl = '', 
           const detItems = det?.ingredientsStructured;
           if (Array.isArray(detItems) && detItems.length && Array.isArray(result.ingredientsStructured)) {
             const xc = crossCheckStructured(result.ingredientsStructured, detItems, { fillGaps: true });
-            result.ingredientsStructured = xc.items;
+            // Spec B: re-score per-field confidence now that _xcheck is set.
+            result.ingredientsStructured = annotateFieldConfidence(xc.items);
             result._crossCheckAudit = xc.audit;
             if (xc.audit.disagreements > 0) {
               result.needsReview = true;
