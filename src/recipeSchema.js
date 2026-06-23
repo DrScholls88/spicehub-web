@@ -191,7 +191,71 @@ export const INGREDIENT_ALIASES = {
 /** Resolve an ingredient name to {canonical, aisle} (case-insensitive). Returns null if unknown. */
 export function resolveIngredientAlias(name = '') {
   const key = String(name).trim().toLowerCase();
-  return INGREDIENT_ALIASES[key] || null;
+  // Spec D: user-taught aliases win over the static dictionary.
+  return LEARNED_ALIASES[key] || INGREDIENT_ALIASES[key] || null;
+}
+
+// -----------------------------------------------------------------------------
+// 3a-bis. LEARNED ALIASES (Spec D — runtime, user-taught; augments §3)
+// -----------------------------------------------------------------------------
+// A small in-memory map of corrections the user made in ImportReview, loaded
+// from Dexie at startup and updated on save. Kept here (not in §3's static map)
+// so the static dictionary is never mutated, and so recipeSchema stays pure —
+// db.js owns persistence; this module only holds the live map. Shape mirrors
+// INGREDIENT_ALIASES entries: rawNormalized -> { canonical, aisle }.
+let LEARNED_ALIASES = {};
+
+// Grocery department -> a representative aisle, so learned entries can return the
+// same { canonical, aisle } shape consumers expect (inverse of AISLE_TO_DEPARTMENT).
+const DEPARTMENT_TO_AISLE = {
+  'Produce': 'produce',
+  'Pantry': 'pantry',
+  'Dairy': 'dairy',
+  'Meat & Seafood': 'meat',
+  'Bakery': 'bakery',
+  'Frozen': 'frozen',
+  'Other': 'unknown',
+};
+
+/** Replace the whole learned-alias map (called once at startup from Dexie). */
+export function setLearnedAliases(map = {}) {
+  LEARNED_ALIASES = {};
+  if (map && typeof map === 'object') {
+    for (const [k, v] of Object.entries(map)) {
+      if (!k || !v || !v.canonical) continue;
+      LEARNED_ALIASES[String(k).trim().toLowerCase()] = {
+        canonical: v.canonical,
+        aisle: v.aisle || 'unknown',
+      };
+    }
+  }
+}
+
+/** Add/replace one learned alias in the live map (called on save). */
+export function addLearnedAlias(raw, canonical, aisle = 'unknown') {
+  const k = String(raw == null ? '' : raw).trim().toLowerCase();
+  if (!k || !canonical) return;
+  LEARNED_ALIASES[k] = { canonical, aisle: aisle || 'unknown' };
+}
+
+/** Snapshot of the live learned-alias map (defensive copy). */
+export function getLearnedAliasMap() {
+  return { ...LEARNED_ALIASES };
+}
+
+/**
+ * Decide whether a user's ImportReview edit teaches a new alias. Returns
+ * { raw, canonical, aisle, category } only when the normalized FOOD NAME changed
+ * (so quantity/unit-only edits never learn). Pure; never throws.
+ */
+export function learnableAliasFrom(importedName = '', editedLine = '') {
+  const raw = normalizeIngredientForMatching(importedName);
+  const corrected = normalizeIngredientForMatching(editedLine);
+  if (!raw || !corrected) return null;
+  if (raw === corrected) return null;
+  if (corrected.length < 2 || !/[a-z]/i.test(corrected)) return null;
+  const category = categorizeIngredient(corrected);
+  return { raw, canonical: corrected, aisle: DEPARTMENT_TO_AISLE[category] || 'unknown', category };
 }
 
 // -----------------------------------------------------------------------------
@@ -1102,6 +1166,56 @@ export function reconcileStructuredWithFlat(structured = [], flat = [], meta = [
 }
 
 // -----------------------------------------------------------------------------
+// 12b. PER-FIELD CONFIDENCE (Spec B — Mealie IngredientConfidence analog)
+// -----------------------------------------------------------------------------
+// A single recipe-level confidence can't point the user at the shaky token.
+// fieldConfidence scores each ingredient field 0..1 from the Spec C cross-check
+// signal (`_xcheck`) plus light presence heuristics, so ImportReview can flag the
+// exact field to verify. Pure + defensive.
+
+// Lines that lead with a cooking verb are likely a direction that leaked into the
+// ingredient list — its "name" is low confidence.
+const _NAME_VERB_LEAD_RE = /^(mix|combine|preheat|add|cook|bake|stir|pour|heat|fold|whisk|blend|season|serve|place|remove|transfer|bring|let|cover|simmer|boil|drain|rinse|sprinkle|drizzle|toss|marinate|melt|beat|knead|roll|broil|brush|sear|steam|shake|strain|muddle|garnish)\b/i;
+
+/**
+ * Per-field confidence for one structured Item.
+ * @returns {{ quantity:number, unit:number, name:number, overall:number }}
+ */
+export function fieldConfidence(item = {}) {
+  const it = item || {};
+  const xc = it._xcheck || null;
+  const disagree = new Set(xc && Array.isArray(xc.disagree) ? xc.disagree : []);
+  const filled = new Set(xc && Array.isArray(xc.filled) ? xc.filled : []);
+  const hasQty = !!String(it.quantity == null ? '' : it.quantity).trim();
+  const hasUnit = !!String(it.unit == null ? '' : it.unit).trim();
+  const name = String(it.name == null ? '' : it.name).trim();
+
+  // Cross-check signal dominates: conflict -> 0.4, gap-filled -> 0.7, else 1.
+  const fromXcheck = (f) => (disagree.has(f) ? 0.4 : filled.has(f) ? 0.7 : 1);
+
+  let quantity = fromXcheck('quantity');
+  let unit = fromXcheck('unit');
+  let nameScore = 1;
+
+  // Presence heuristics — only when the cross-check didn't already speak.
+  if (!disagree.has('quantity') && !filled.has('quantity') && hasUnit && !hasQty) {
+    quantity = 0.5; // a unit with no number ("cup" of what amount?)
+  }
+  if (!name) nameScore = 0;
+  else if (name.length > 40 || _NAME_VERB_LEAD_RE.test(name)) nameScore = 0.5;
+
+  const overall = Math.min(quantity, unit, nameScore);
+  return { quantity, unit, name: nameScore, overall };
+}
+
+/** Attach `confidenceFields` to each Item. Additive; never mutates input. */
+export function annotateFieldConfidence(items = []) {
+  return (Array.isArray(items) ? items : []).map((it) =>
+    it ? { ...it, confidenceFields: fieldConfidence(it) } : it
+  );
+}
+
+// -----------------------------------------------------------------------------
 // 13. FUZZY INGREDIENT MATCHING (zero-dependency, pure)
 // -----------------------------------------------------------------------------
 // Layered on top of the EXACT alias system (resolveIngredientAlias). Handles
@@ -1238,7 +1352,10 @@ export function fuzzyResolveIngredient(rawName = '', threshold = 0.82) {
   // 2) Approximate match against alias keys.
   const target = normalized || original;
   let best = null; // { canonical, aisle, score, method }
-  for (const key of Object.keys(INGREDIENT_ALIASES)) {
+  // Spec D: learned (user-taught) aliases participate in fuzzy matching too, and
+  // win on key collision with the static dictionary.
+  const aliasTable = { ...INGREDIENT_ALIASES, ...LEARNED_ALIASES };
+  for (const key of Object.keys(aliasTable)) {
     const dist = levenshteinDistance(target, key);
     const maxLen = Math.max(target.length, key.length) || 1;
     // Levenshtein ratio only counts when within the absolute distance cap.
@@ -1247,7 +1364,7 @@ export function fuzzyResolveIngredient(rawName = '', threshold = 0.82) {
     const method = levScore >= tokScore ? 'fuzzy-levenshtein' : 'fuzzy-token';
     const score = Math.max(levScore, tokScore);
     if (score >= threshold && (!best || score > best.score)) {
-      const entry = INGREDIENT_ALIASES[key];
+      const entry = aliasTable[key];
       best = { canonical: entry.canonical, aisle: entry.aisle, score, method };
     }
   }
@@ -1289,4 +1406,8 @@ export default {
   upgradeFlatIngredient, upgradeRecipeIngredients,
   // Spec C — deterministic cross-check + structured reconciliation
   crossCheckStructured, reconcileStructuredWithFlat,
+  // Spec B — per-field confidence
+  fieldConfidence, annotateFieldConfidence,
+  // Spec D — learned (user-taught) aliases
+  setLearnedAliases, addLearnedAlias, getLearnedAliasMap, learnableAliasFrom,
 };

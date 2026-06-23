@@ -19,7 +19,8 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { fuzzyResolveIngredient, normalizeIngredientForMatching } from '../recipeSchema';
+import { fuzzyResolveIngredient, normalizeIngredientForMatching, learnableAliasFrom, addLearnedAlias } from '../recipeSchema';
+import { saveLearnedAliases } from '../db';
 
 // Spring-like easing shared across review animations (spec §1)
 const SPRING_EASE = [0.32, 0.72, 0, 1];
@@ -239,9 +240,11 @@ function ListItem({
   rowId,
   onHandleDrag,
   onHandleDragEnd,
+  confHints,
 }) {
   const dragControls = useDragControls();
   const [dragging, setDragging] = useState(false);
+  const inputRef = useRef(null);
 
   return (
     <Reorder.Item
@@ -277,10 +280,26 @@ function ListItem({
         <GripVertical size={18} strokeWidth={2} />
       </span>
       <input
+        ref={inputRef}
         type="text"
         value={value}
         onChange={(e) => onChange(index, e.target.value)}
       />
+      {Array.isArray(confHints) && confHints.length > 0 && (
+        <span className="review-conf-hints">
+          {confHints.map((h) => (
+            <button
+              key={h.field}
+              type="button"
+              className="review-conf-hint"
+              onClick={() => inputRef.current?.focus()}
+              title="Tap to edit this field"
+            >
+              {h.label}
+            </button>
+          ))}
+        </span>
+      )}
       {flagged && (
         <button
           className="review-flag-chip"
@@ -350,6 +369,23 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
   const ingredientIds = syncRowIds('ingredients', (recipe?.ingredients || []).length);
   const directionIds = syncRowIds('directions', (recipe?.directions || []).length);
 
+  // ── Alias learning (Spec D) ──────────────────────────────────────────────
+  // Remember each ingredient row's imported origin (keyed by stable rowId) so an
+  // edit can be diffed against what was imported. Reorder/delete-safe because the
+  // rowId travels with the row. Staged corrections commit to Dexie on save.
+  const learnOriginRef = useRef({}); // rowId -> imported structured item
+  const pendingLearnsRef = useRef({}); // raw -> { raw, canonical, aisle, category }
+  useEffect(() => {
+    const items = Array.isArray(recipe?.ingredientsStructured) ? recipe.ingredientsStructured : [];
+    if (!items.length) return;
+    const ids = rowIdsRef.current.ingredients;
+    ids.forEach((id, i) => {
+      if (id && learnOriginRef.current[id] === undefined && items[i]) {
+        learnOriginRef.current[id] = items[i];
+      }
+    });
+  }, [recipe?.ingredientsStructured]);
+
   // ── Field helpers ────────────────────────────────────────────────────────
   const updateField = useCallback((field, value) => {
     onChange({ ...recipe, [field]: value });
@@ -359,6 +395,21 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
     const list = [...(recipe[field] || [])];
     list[index] = value;
     onChange({ ...recipe, [field]: list });
+    // Spec D: stage a learned alias when an ingredient's food NAME was corrected
+    // (qty/unit-only edits return null and learn nothing). Reverting unstages it.
+    if (field === 'ingredients') {
+      const rowId = rowIdsRef.current.ingredients[index];
+      const origin = rowId ? learnOriginRef.current[rowId] : null;
+      if (origin && origin.name) {
+        const learn = learnableAliasFrom(origin.name, value);
+        if (learn) {
+          pendingLearnsRef.current[learn.raw] = learn;
+        } else {
+          const key = normalizeIngredientForMatching(origin.name);
+          if (key) delete pendingLearnsRef.current[key];
+        }
+      }
+    }
   }, [recipe, onChange]);
 
   const removeListItem = useCallback((field, index) => {
@@ -489,6 +540,13 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
       ];
 
   const handleSave = useCallback(() => {
+    // Spec D: persist any aliases the user taught us this session, and apply them
+    // immediately to the in-memory map so the rest of this session benefits.
+    const pending = Object.values(pendingLearnsRef.current);
+    if (pending.length) {
+      saveLearnedAliases(pending).catch(() => {});
+      pending.forEach((p) => addLearnedAlias(p.raw, p.canonical, p.aisle));
+    }
     const finalRecipe = { ...recipe, _saveDestination: destValue };
     onSave(finalRecipe);
   }, [recipe, destValue, onSave]);
@@ -548,6 +606,40 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
     return hints;
   }, [recipe?.ingredients]);
 
+  // ── Per-field confidence hints (Spec B) ──────────────────────────────────
+  // Map each structured ingredient's flat line → its confidenceFields so we can
+  // flag the exact uncertain field per row. Keyed by line (survives reorder /
+  // delete); once a line is edited it stops matching, which reads as "fixed".
+  const confByLine = useMemo(() => {
+    const m = new Map();
+    const items = Array.isArray(recipe?.ingredientsStructured) ? recipe.ingredientsStructured : [];
+    for (const it of items) {
+      if (!it || !it.confidenceFields) continue;
+      const base = String(it.original_text || '').trim();
+      if (!base) continue;
+      const sec = String(it.section || '').trim();
+      const line = sec ? `${base} (${sec})` : base;
+      if (!m.has(line)) m.set(line, { cf: it.confidenceFields, item: it });
+    }
+    return m;
+  }, [recipe?.ingredientsStructured]);
+
+  const hintsForLine = useCallback((line) => {
+    const hit = confByLine.get(String(line == null ? '' : line).trim());
+    if (!hit) return [];
+    const { cf, item } = hit;
+    const out = [];
+    if (cf.quantity < 0.6) out.push({ field: 'quantity', label: String(item.quantity || '').trim() ? 'Check qty' : 'Add qty' });
+    if (cf.unit < 0.6) out.push({ field: 'unit', label: String(item.unit || '').trim() ? 'Check unit' : 'Add unit' });
+    if (cf.name < 0.6) out.push({ field: 'name', label: 'Check name' });
+    return out;
+  }, [confByLine]);
+
+  const lowFieldCount = useMemo(
+    () => (recipe?.ingredients || []).reduce((n, line) => n + hintsForLine(line).length, 0),
+    [recipe?.ingredients, hintsForLine],
+  );
+
   return (
     <div className="import-review">
       {/* Hero image + title + confidence */}
@@ -564,13 +656,20 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
           </div>
         )}
         <div className="review-hero-gradient" />
-        {(confidence != null || hasFlags) && (
+        {(confidence != null || hasFlags || lowFieldCount > 0) && (
           <span className={`review-confidence review-confidence-${confLevel}`}>
             {hasFlags ? (
               <>
                 <AlertTriangle size={13} strokeWidth={2} /> Review needed
               </>
-            ) : `${confLabel} ${Math.round(confidence * 100)}%`}
+            ) : confidence != null ? (
+              <>
+                {confLabel} {Math.round(confidence * 100)}%
+                {lowFieldCount > 0 ? ` · ${lowFieldCount} to check` : ''}
+              </>
+            ) : (
+              `${lowFieldCount} to check`
+            )}
           </span>
         )}
         <div className="review-hero-title-wrap">
@@ -729,6 +828,7 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
                 moveToOtherListIcon={<ClipboardList size={16} strokeWidth={2} />}
                 onHandleDrag={(info) => handleHandleDrag('ingredients', i, info)}
                 onHandleDragEnd={(info) => handleHandleDragEnd('ingredients', i, info)}
+                confHints={hintsForLine(item)}
               />
             ))}
           </AnimatePresence>

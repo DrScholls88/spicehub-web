@@ -1,15 +1,50 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Martini } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import db from '../db';
 import { getBarInventory } from '../db';
 import SafeMediaImage from './SafeMediaImage';
+import ReExtractSheet from './ReExtractSheet';
 import useBackHandler from '../hooks/useBackHandler';
+import { hapticLight } from '../haptics';
+import { getMealVideoSource } from '../lib/videoSource';
 
 // ── Assignable drink categories ──────────────────────────────────────────────
 const DRINK_CATEGORY_OPTIONS = [
   'Cocktail', 'Mocktail', 'Beer & Wine', 'Spirits', 'Shots', 'Non-Alcoholic',
 ];
 export const BAR_CATEGORIES = ['All', ...DRINK_CATEGORY_OPTIONS];
+
+// I-5 (parity with Meal Library): a drink is "improvable" when it was imported
+// with a low-confidence / needs-review flag AND we kept its source caption (so we
+// can re-run extraction on the cached text — no re-scrape). Same predicate as
+// MealLibrary.isImprovable so the badge fires on identical signals.
+function isImprovable(drink) {
+  if (!drink || drink.status === 'processing' || drink.status === 'failed') return false;
+  const hasCaption = typeof drink.sourceCaption === 'string' && drink.sourceCaption.trim().length > 20;
+  if (!hasCaption) return false;
+  return drink.needsReview === true
+    || (typeof drink.confidence === 'number' && drink.confidence < 0.75)
+    || (typeof drink._postProcessAudit?.movedCount === 'number' && drink._postProcessAudit.movedCount > 2);
+}
+
+// Friendly engine label from `drink._structuredVia` (read-only; null when absent)
+function drinkEngineLabel(structuredVia) {
+  if (!structuredVia || typeof structuredVia !== 'string') return null;
+  const v = structuredVia.toLowerCase();
+  if (v.startsWith('grok')) return 'Grok';
+  if (v.startsWith('gemini')) return 'Gemini';
+  if (v.startsWith('server')) return 'Server';
+  if (v.startsWith('heuristic')) return 'Basic parser';
+  return null;
+}
+
+// Speed-dial action reveal: rise + fade, staggered from the main FAB
+// (mirrors MealLibrary's fabActionVariants)
+const fabActionVariants = {
+  closed: { opacity: 0, y: 14, scale: 0.9, transition: { duration: 0.12 } },
+  open: { opacity: 1, y: 0, scale: 1, transition: { type: 'spring', stiffness: 420, damping: 26 } },
+};
 
 // ── Rarity system ────────────────────────────────────────────────────────────
 const LEGENDARY_NAMES = [
@@ -87,7 +122,7 @@ function DrinkImage({ src, alt, className, phClass }) {
 // ── Main component ────────────────────────────────────────────────────────────
 export default function BarLibrary({
   drinks, onAdd, onEdit, onDelete, onViewDetail, onShare,
-  onImport, onReload, onToast, onOpenShelf, onOpenBarFridge,
+  onImport, onReload, onToast, onOpenShelf, onOpenBarFridge, onPlayVideo,
 }) {
   const [search, setSearch]                   = useState('');
   const [category, setCategory]               = useState('All');
@@ -100,6 +135,8 @@ export default function BarLibrary({
   const [confirmDelete, setConfirmDelete]     = useState(null);
   const [showMenu, setShowMenu]               = useState(false);
   const [menuAnimation, setMenuAnimation]     = useState(false);
+  const [fabOpen, setFabOpen]                 = useState(false); // speed-dial: + expands to add/import
+  const [reExtractDrink, setReExtractDrink]   = useState(null);  // I-5: drink being re-extracted
 
   const longPressTimer    = useRef(null);
   const touchStartPos     = useRef(null);
@@ -190,6 +227,8 @@ export default function BarLibrary({
   }, []);
 
   useBackHandler(selectMode, exitSelectMode, 'bar-select');
+  useBackHandler(fabOpen, () => setFabOpen(false), 'bar-fab');
+  useBackHandler(!!reExtractDrink, () => setReExtractDrink(null), 'bar-reextract');
 
   // ── Long-press to enter select mode ───────────────────────────────────────
   const LONG_PRESS_MS     = 500;
@@ -494,6 +533,18 @@ export default function BarLibrary({
                   {ms && ms.pct === 100 && (
                     <span className="bl-tile-pour">&#127864;</span>
                   )}
+                  {/* I-5: low-confidence import → one-tap re-extraction (parity with Meal Library) */}
+                  {!selectMode && isImprovable(drink) && (
+                    <button
+                      className="bl-tile-improve"
+                      aria-label="Improve this drink with the latest engine"
+                      title="Low-confidence import — tap to re-run extraction"
+                      onClick={e => { e.stopPropagation(); hapticLight(); setReExtractDrink(drink); }}
+                      onTouchEnd={e => e.stopPropagation()}
+                    >
+                      <span aria-hidden="true">✨</span> Improve
+                    </button>
+                  )}
                   {!selectMode && (
                     <button
                       className="bl-tile-menu-btn"
@@ -504,6 +555,22 @@ export default function BarLibrary({
                       &hellip;
                     </button>
                   )}
+                  {/* PiP: play-video badge — only on cards with a YouTube/Instagram source */}
+                  {!selectMode && onPlayVideo && (() => {
+                    const vsrc = getMealVideoSource(drink);
+                    if (!vsrc) return null;
+                    return (
+                      <button
+                        className={'bl-tile-play bl-tile-play-' + vsrc.platform}
+                        aria-label={'Play ' + vsrc.label + ' video in floating player'}
+                        title={'Play video (' + vsrc.label + ')'}
+                        onClick={e => { e.stopPropagation(); hapticLight(); onPlayVideo(drink); }}
+                        onTouchEnd={e => e.stopPropagation()}
+                      >
+                        <span className="bl-tile-play-tri" aria-hidden="true">▶</span>
+                      </button>
+                    );
+                  })()}
                 </div>
 
                 <div className="bl-tile-info">
@@ -540,14 +607,105 @@ export default function BarLibrary({
         )}
       </div>
 
-      {/* FABs */}
-      <div className="bl-fab-group">
-        <button className="bl-fab bl-fab-import" onClick={onImport} title="Import a drink">
-          <span>&#128229;</span>
-          <span className="bl-fab-label">Import</span>
-        </button>
-        <button className="bl-fab bl-fab-add" onClick={onAdd} title="Add new drink">+</button>
-      </div>
+      {/* ── Speed-dial FAB: single + expands to Create / Import (parity with Meal Library) ── */}
+      <AnimatePresence>
+        {fabOpen && (
+          <motion.div
+            key="bl-fab-scrim"
+            className="bl-fab-scrim"
+            onClick={() => setFabOpen(false)}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+          />
+        )}
+      </AnimatePresence>
+
+      <motion.div
+        className="bl-fab-group"
+        initial={{ y: 80, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ type: 'spring', stiffness: 260, damping: 22, delay: 0.15 }}
+      >
+        <AnimatePresence>
+          {fabOpen && (
+            <motion.div
+              key="bl-fab-actions"
+              className="bl-fab-actions"
+              initial="closed"
+              animate="open"
+              exit="closed"
+              variants={{
+                open: { transition: { staggerChildren: 0.06, delayChildren: 0.02 } },
+                closed: { transition: { staggerChildren: 0.04, staggerDirection: -1 } },
+              }}
+            >
+              <motion.button
+                className="bl-fab-action"
+                variants={fabActionVariants}
+                onClick={() => { hapticLight(); setFabOpen(false); onImport?.(); }}
+                whileTap={{ scale: 0.94 }}
+              >
+                <span className="bl-fab-action-label">Import from Web</span>
+                <span className="bl-fab-action-icon bl-fab-action-icon--import" aria-hidden="true">📥</span>
+              </motion.button>
+              <motion.button
+                className="bl-fab-action"
+                variants={fabActionVariants}
+                onClick={() => { hapticLight(); setFabOpen(false); onAdd?.(); }}
+                whileTap={{ scale: 0.94 }}
+              >
+                <span className="bl-fab-action-label">Create Manual Drink</span>
+                <span className="bl-fab-action-icon bl-fab-action-icon--add" aria-hidden="true">✏️</span>
+              </motion.button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <motion.button
+          className="bl-fab bl-fab-add bl-fab-main"
+          onClick={() => { hapticLight(); setFabOpen(o => !o); }}
+          aria-expanded={fabOpen}
+          aria-label={fabOpen ? 'Close actions' : 'Add or import a drink'}
+          whileTap={{ scale: 0.88 }}
+          animate={{ rotate: fabOpen ? 45 : 0 }}
+          transition={{ type: 'spring', stiffness: 380, damping: 22 }}
+        >
+          <span>+</span>
+        </motion.button>
+      </motion.div>
+
+      {/* ── I-5 Re-extraction (improve) sheet ── */}
+      <AnimatePresence>
+        {reExtractDrink && (
+          <ReExtractSheet
+            key="bl-reextract-sheet"
+            meal={{ ...reExtractDrink, itemType: reExtractDrink.itemType || reExtractDrink.type || 'drink' }}
+            onClose={() => setReExtractDrink(null)}
+            onSaved={async (updated) => {
+              try {
+                // If the drink didn't originally carry an itemType/type, strip the
+                // temporary 'drink' seed we passed in so we never persist a spurious
+                // field onto the stored record.
+                let toSave = updated;
+                if (!(reExtractDrink.itemType || reExtractDrink.type)) {
+                  toSave = { ...updated };
+                  delete toSave.itemType;
+                }
+                await db.drinks.put(toSave);
+              } catch (err) {
+                console.error('[BarLibrary] re-extract save failed:', err);
+                onToast?.('Could not save changes');
+                return;
+              }
+              setReExtractDrink(null);
+              await onReload?.();
+              onToast?.('Drink improved ✨');
+            }}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Quick Preview bottom sheet */}
       {quickPreview && (
@@ -572,6 +730,15 @@ export default function BarLibrary({
             )}
             <div className="bl-qp-body">
               <h3 className="bl-qp-title">{quickPreview.name || 'Untitled Drink'}</h3>
+
+              {drinkEngineLabel(quickPreview._structuredVia) && (
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginBottom: 8 }}>
+                  Parsed by {drinkEngineLabel(quickPreview._structuredVia)}
+                  {typeof quickPreview.confidence === 'number'
+                    ? ' · ' + Math.round(quickPreview.confidence * 100) + '%'
+                    : ''}
+                </div>
+              )}
 
               <div className="bl-qp-cat-row">
                 <span className="bl-qp-cat-label">Category:</span>
@@ -606,6 +773,22 @@ export default function BarLibrary({
                 <button className="bl-qp-btn" onClick={() => { setQuickPreview(null); onViewDetail?.(quickPreview); }}>View</button>
                 <button className="bl-qp-btn" onClick={() => { setQuickPreview(null); onEdit?.(quickPreview); }}>Edit</button>
                 <button className="bl-qp-btn" onClick={() => { setQuickPreview(null); onShare?.(quickPreview); }}>Share</button>
+                {onPlayVideo && getMealVideoSource(quickPreview) && (
+                  <button
+                    className="bl-qp-btn"
+                    onClick={() => { hapticLight(); onPlayVideo(quickPreview); setQuickPreview(null); }}
+                  >
+                    🎥 Play ({getMealVideoSource(quickPreview).label})
+                  </button>
+                )}
+                {isImprovable(quickPreview) && (
+                  <button
+                    className="bl-qp-btn"
+                    onClick={() => { hapticLight(); setReExtractDrink(quickPreview); setQuickPreview(null); }}
+                  >
+                    ✨ Improve
+                  </button>
+                )}
                 <button
                   className="bl-qp-btn bl-qp-btn-danger"
                   onClick={() => { setQuickPreview(null); setConfirmDelete(quickPreview.id); }}

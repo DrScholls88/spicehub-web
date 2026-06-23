@@ -104,7 +104,49 @@ db.version(14).stores({
   return Promise.all([meals, drinks]);
 });
 
+// v15: Spec D — learned ingredient aliases (user corrections from ImportReview).
+// Keyed by the normalized raw imported name; augments the static INGREDIENT_ALIASES.
+db.version(15).stores({
+  ingredientAliases: 'raw, updatedAt',
+});
+
 export default db;
+
+// ── Learned alias helpers (Spec D) ────────────────────────────────────────────
+export async function getLearnedAliases() {
+  try {
+    return await db.ingredientAliases.toArray();
+  } catch (e) {
+    console.warn('[SpiceHub DB] getLearnedAliases failed:', e);
+    return [];
+  }
+}
+
+export async function saveLearnedAlias(entry) {
+  if (!entry || !entry.raw || !entry.canonical) return;
+  const raw = String(entry.raw).trim().toLowerCase();
+  if (!raw) return;
+  try {
+    const existing = await db.ingredientAliases.get(raw);
+    await db.ingredientAliases.put({
+      raw,
+      canonical: entry.canonical,
+      aisle: entry.aisle || 'unknown',
+      category: entry.category || '',
+      count: (existing?.count || 0) + 1,
+      updatedAt: Date.now(),
+    });
+  } catch (e) {
+    console.warn('[SpiceHub DB] saveLearnedAlias failed:', e);
+  }
+}
+
+export async function saveLearnedAliases(list = []) {
+  for (const entry of Array.isArray(list) ? list : []) {
+    // eslint-disable-next-line no-await-in-loop
+    await saveLearnedAlias(entry);
+  }
+}
 
 // ── Bar Inventory helpers ─────────────────────────────────────────────────────
 export async function getBarInventory() {
