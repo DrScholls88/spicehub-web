@@ -731,6 +731,20 @@ If handwritten, do your best to read every word. Output plain text only — no J
 // only fires on real numbered instructions ("1. Preheat", "2) Mix").
 const NUMBERED_STEP_RE = /^\d{1,3}[.)]\s+\S/;
 
+// Nutrition macro panels creators paste into captions ("394 Calories | 43g
+// Protein | 27g Carbs") are neither ingredients nor steps — strip them from both
+// lists. Conservative: requires a calorie figure OR 2+ macro figures, and never
+// fires on a line that reads like a cooking instruction (so "200g sugar" or
+// "Add 2g salt" are safe).
+const _MACRO_RE = /\b\d+\s*g\b\s*(?:protein|carb(?:ohydrate)?s?|fat|fibre|fiber|sodium)\b/ig;
+function isNutritionLine(line = '') {
+  const s = String(line == null ? '' : line).trim();
+  if (!s || COOKING_VERBS_RE.test(s)) return false;
+  const hasCalories = /\b\d+\s*(?:k?cals?|calories?)\b/i.test(s);
+  const macroHits = (s.match(_MACRO_RE) || []).length;
+  return hasCalories || macroHits >= 2;
+}
+
 function reclassifyIngredientsAndDirections(ingredients = [], directions = []) {
   const moved = [];
   const filtered = [];
@@ -742,8 +756,8 @@ function reclassifyIngredientsAndDirections(ingredients = [], directions = []) {
   // Pass 1 — directions hiding in the ingredient list.
   const keepIng = [];
   for (const line of ing) {
-    if (isTrashIngredientLine(line)) {
-      filtered.push({ from: 'ingredients', line, reason: 'trash' });
+    if (isTrashIngredientLine(line) || isNutritionLine(line)) {
+      filtered.push({ from: 'ingredients', line, reason: isNutritionLine(line) ? 'nutrition' : 'trash' });
       continue;
     }
     if (NUMBERED_STEP_RE.test(line)) {
@@ -792,8 +806,19 @@ function reclassifyIngredientsAndDirections(ingredients = [], directions = []) {
 
   // Final defensive trash sweep on ingredients.
   const finalIng = ing.filter((line) => {
-    if (isTrashIngredientLine(line)) {
+    if (isTrashIngredientLine(line) || isNutritionLine(line)) {
       filtered.push({ from: 'ingredients', line, reason: 'final-trash' });
+      return false;
+    }
+    return true;
+  });
+
+  // Trash sweep on DIRECTIONS too — strip nutrition panels, ingredient/serving
+  // headers ("Ingredients (Makes 10 Servings)"), and social CTAs that the model
+  // sometimes emits as steps. Same structural filter used on ingredients.
+  const finalDir = dir.filter((line) => {
+    if (isTrashIngredientLine(line) || isNutritionLine(line)) {
+      filtered.push({ from: 'directions', line, reason: 'direction-trash' });
       return false;
     }
     return true;
@@ -812,7 +837,7 @@ function reclassifyIngredientsAndDirections(ingredients = [], directions = []) {
 
   return {
     ingredients: dedupe(finalIng),
-    directions: dedupe(dir),
+    directions: dedupe(finalDir),
     moved,
     filtered,
     movedCount: moved.length,

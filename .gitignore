@@ -36,3 +36,6 @@ dist-ssr
 .env*.local
 
 cookies.json
+
+# yt-dlp binary fetched at build time (render-build.sh)
+/bin/yt-dlp

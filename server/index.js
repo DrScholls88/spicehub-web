@@ -11,6 +11,7 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 // Shared extraction contract (single source of truth). recipeSchema.js has ZERO
 // imports and is ESM + browser/server safe, so the server imports it directly to
@@ -23,6 +24,24 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Resolve the yt-dlp binary once: explicit YT_DLP_BIN env wins; otherwise prefer
+// the standalone binary the build script drops in <repo>/bin/yt-dlp (Python-free,
+// fetched as a direct release asset — see render-build.sh); finally fall back to
+// a `yt-dlp` on PATH. Cached so we only stat the file once.
+const _BUNDLED_YT_DLP = path.join(__dirname, '..', 'bin', 'yt-dlp');
+let _ytDlpBinCache = null;
+function resolveYtDlpBin() {
+  if (_ytDlpBinCache) return _ytDlpBinCache;
+  if (process.env.YT_DLP_BIN) {
+    _ytDlpBinCache = process.env.YT_DLP_BIN;
+  } else if (fs.existsSync(_BUNDLED_YT_DLP)) {
+    _ytDlpBinCache = _BUNDLED_YT_DLP;
+  } else {
+    _ytDlpBinCache = 'yt-dlp';
+  }
+  return _ytDlpBinCache;
+}
 
 export const app = express();
 const PORT = process.env.PORT || 3001;
@@ -192,7 +211,7 @@ function extractInstagramEmbedData(html, sourceUrl) {
 
 function runYtDlpJson(url, timeoutMs = 70000) {
   return new Promise((resolve) => {
-    const bin = process.env.YT_DLP_BIN || 'yt-dlp';
+    const bin = resolveYtDlpBin();
     const child = spawn(bin, ['--dump-json', '--skip-download', '--no-warnings', url], {
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -419,7 +438,7 @@ function asrEnabled() {
 // cleaned subtitle transcript if any English track was written, else ''.
 function runYtDlpSubtitles(url, timeoutMs = 70000) {
   return new Promise((resolve) => {
-    const bin = process.env.YT_DLP_BIN || 'yt-dlp';
+    const bin = resolveYtDlpBin();
     // --skip-download grabs metadata/subs without the media; auto-subs cover
     // creator captions; --sub-lang en limits to English; --dump-json so we can
     // locate the written caption track URL via the same pickCaptionUrl path.
