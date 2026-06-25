@@ -399,18 +399,25 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
       setConfirmDeleteId(meal.id);
       return;
     }
-    try {
-      onViewDetail?.(meal);
-    } catch (err) {
-      console.error('[MealLibrary] onViewDetail threw:', err);
-      onToast?.('Could not open this recipe — it may be corrupted.');
-    }
-  }, [selectMode, onViewDetail, onToast]);
+    // Tap → expand the tile into the centered expandable card (shared-element morph).
+    // "View Full Recipe" inside the card still routes to the full detail view.
+    hapticLight();
+    setQuickPreview(meal);
+  }, [selectMode]);
 
   // ── Hardware back button (Android PWA) ───────────────────────────────────
   useBackHandler(selectMode, exitSelectMode, 'meal-select');
   useBackHandler(fabOpen, () => setFabOpen(false), 'meal-fab');
   useBackHandler(!!reExtractMeal, () => setReExtractMeal(null), 'meal-reextract');
+  useBackHandler(!!quickPreview, () => setQuickPreview(null), 'meal-quickpreview');
+
+  // ── Escape key closes the expandable card (desktop / keyboard) ──────────────
+  useEffect(() => {
+    if (!quickPreview) return;
+    const onKey = (e) => { if (e.key === 'Escape') setQuickPreview(null); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [quickPreview]);
 
   return (
     <div className="ml">
@@ -574,7 +581,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
               )}
 
               {/* Image area */}
-              <div className="ml-tile-image">
+              <motion.div className="ml-tile-image" layoutId={`ml-card-img-${meal.id}`}>
                 <CardImage
                   src={meal.imageUrl}
                   alt={meal.name || 'Recipe'}
@@ -625,11 +632,11 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                     </button>
                   );
                 })()}
-              </div>
+              </motion.div>
 
               {/* Info row */}
               <div className="ml-tile-info">
-                <span className="ml-tile-name">{meal.name || 'Untitled Recipe'}</span>
+                <motion.span className="ml-tile-name" layoutId={`ml-card-title-${meal.id}`}>{meal.name || 'Untitled Recipe'}</motion.span>
                 <span className="ml-tile-meta">
                   {meal.status === 'processing'
                     ? '⏳ Import in progress…'
@@ -749,7 +756,10 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
         )}
       </AnimatePresence>
 
-      {/* ── Quick Preview bottom sheet (long-press or ⋯ button) ── */}
+      {/* ── Expandable card (tap a tile, long-press, or ⋯ button) ──
+            Shared-element morph: the tapped tile's image + title carry the same
+            layoutId as this card's hero + title, so the tile grows into the modal
+            and shrinks back on close (Aceternity "expandable card" pattern). */}
       <AnimatePresence>
       {quickPreview && (
         <motion.div
@@ -761,12 +771,27 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
           exit={{ opacity: 0 }}
           transition={{ duration: 0.22 }}
         >
+          {/* Floating close button (Aceternity-style), outside the card surface */}
+          <motion.button
+            key="qp-close"
+            className="ml-qp-close"
+            aria-label="Close"
+            onClick={() => setQuickPreview(null)}
+            initial={{ opacity: 0, scale: 0.6 }}
+            animate={{ opacity: 1, scale: 1, transition: { delay: 0.08 } }}
+            exit={{ opacity: 0, scale: 0.6, transition: { duration: 0.05 } }}
+            whileTap={{ scale: 0.88 }}
+          >
+            ✕
+          </motion.button>
+
           <motion.div
             ref={sheetRef}
-            className="ml-qp-sheet"
+            className="ml-qp-sheet ml-qp-card"
             onClick={e => e.stopPropagation()}
-            initial={{ y: '100%' }}
-            animate={{ y: 0 }}
+            initial={{ opacity: 0, scale: 0.96, y: 18 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: 18, transition: { duration: 0.16 } }}
             transition={{ type: 'spring', stiffness: 320, damping: 34 }}
             onTouchStart={handleSheetTouchStart}
             onTouchMove={handleSheetTouchMove}
@@ -774,23 +799,24 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
             onTouchCancel={handleSheetTouchEnd}
           >
             <div className="ml-qp-handle" />
-            {quickPreview.imageUrl && (
-              <SafeMediaImage
-                src={quickPreview.imageUrl}
-                alt={quickPreview.name || 'Recipe'}
-                style={{
-                  width: '100%',
-                  height: 200,
-                  objectFit: 'cover',
-                  borderRadius: '12px 12px 0 0',
-                  flexShrink: 0,
-                  display: 'block',
-                }}
-                fallbackEmoji="🍽️"
-              />
-            )}
+            <motion.div className="ml-qp-hero" layoutId={`ml-card-img-${quickPreview.id}`}>
+              {quickPreview.imageUrl ? (
+                <SafeMediaImage
+                  src={quickPreview.imageUrl}
+                  alt={quickPreview.name || 'Recipe'}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                  fallbackEmoji="🍽️"
+                />
+              ) : (
+                <div className="ml-qp-hero-empty">
+                  <UtensilsCrossed size={40} strokeWidth={1.5} style={{ opacity: 0.35 }} />
+                </div>
+              )}
+            </motion.div>
             <div className="ml-qp-body">
-              <h3 className="ml-qp-title">{quickPreview.name || 'Untitled Recipe'}</h3>
+              <motion.h3 className="ml-qp-title" layoutId={`ml-card-title-${quickPreview.id}`}>
+                {quickPreview.name || 'Untitled Recipe'}
+              </motion.h3>
               {quickPreview.category && quickPreview.category !== 'Dinners' && (
                 <span className="ml-tile-cat" style={{ position: 'static', marginBottom: 8 }}>
                   {quickPreview.category}

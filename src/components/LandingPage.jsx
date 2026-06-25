@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Dices } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import SafeMediaImage from './SafeMediaImage.jsx';
+import GlowingEffect from './GlowingEffect.jsx';
 import './LandingPage.css';
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
@@ -98,107 +99,7 @@ const STYLES = {
     alignItems: 'center',
     justifyContent: 'center',
     gap: '8px',
-    marginBottom: '12px',
-  },
-  // ── Import link tray ──
-  importTray: {
-    marginTop: '0',
-    borderRadius: '14px',
-    padding: '1.5px',
-    background: 'linear-gradient(135deg, #833ab4, #fd1d1d, #fcb045)',
-    boxShadow: '0 3px 10px rgba(131, 58, 180, 0.16)',
-  },
-  importTrayInner: {
-    background: 'var(--card)',
-    borderRadius: '12px',
-    padding: '12px 14px',
-  },
-  importTrayPill: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '11px',
-    width: '100%',
-    background: 'none',
-    border: 'none',
-    padding: 0,
-    cursor: 'pointer',
-    textAlign: 'left',
-    outline: 'none',
-  },
-  importTrayIcon: {
-    width: '38px',
-    height: '38px',
-    flexShrink: 0,
-    borderRadius: '10px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '20px',
-    background: 'linear-gradient(135deg, #833ab4, #fd1d1d, #fcb045)',
-  },
-  importTrayTitle: {
-    fontSize: '14px',
-    fontWeight: '700',
-    color: 'var(--text)',
-    lineHeight: '1.2',
-  },
-  importTraySub: {
-    fontSize: '11.5px',
-    color: 'var(--text-light)',
-    fontWeight: '500',
-    marginTop: '2px',
-  },
-  importTrayChevron: {
-    marginLeft: 'auto',
-    fontSize: '18px',
-    color: 'var(--text-light)',
-    flexShrink: 0,
-  },
-  importTrayForm: {
-    display: 'flex',
-    gap: '8px',
-    marginTop: '4px',
-    alignItems: 'center',
-  },
-  importTrayInput: {
-    flex: 1,
-    minWidth: 0,
-    height: '42px',
-    borderRadius: '10px',
-    border: '1.5px solid var(--border)',
-    background: 'var(--surface)',
-    color: 'var(--text)',
-    fontSize: '14px',
-    padding: '0 12px',
-    outline: 'none',
-  },
-  importTrayPaste: {
-    height: '42px',
-    flexShrink: 0,
-    borderRadius: '10px',
-    border: '1.5px solid var(--border)',
-    background: 'var(--surface)',
-    color: 'var(--text)',
-    fontSize: '13px',
-    fontWeight: '600',
-    padding: '0 12px',
-    cursor: 'pointer',
-  },
-  importTrayGo: {
-    height: '42px',
-    flexShrink: 0,
-    borderRadius: '10px',
-    border: 'none',
-    background: 'var(--primary)',
-    color: '#fff',
-    fontSize: '13px',
-    fontWeight: '700',
-    padding: '0 16px',
-    cursor: 'pointer',
-  },
-  importTrayGoDisabled: {
-    opacity: 0.5,
-    cursor: 'not-allowed',
+    marginBottom: '0',
   },
   // ── Next 5 Days horizontal scroll ──
   nextDaysSection: {
@@ -771,131 +672,6 @@ function MealPreviewSheet({ date, meal, isToday, onClose, onViewFull }) {
   );
 }
 
-// ── ImportLinkTray ────────────────────────────────────────────────────────────
-// Permanent, touch-first entry point for the Instagram / social import engine.
-// Collapsed: a tappable gradient pill. Expanded: paste-or-type a URL and import.
-function ImportLinkTray({ onImportLink }) {
-  const [expanded, setExpanded] = useState(false);
-  const [url, setUrl] = useState('');
-  const inputRef = React.useRef(null);
-
-  const open = async () => {
-    // Tapping anywhere in the box runs an automatic clipboard check: if a link
-    // is already copied, import it instantly; otherwise prefill + expand.
-    try {
-      const text = (await navigator.clipboard.readText())?.trim();
-      if (text && /^https?:\/\//i.test(text)) {
-        onImportLink(text);
-        return;
-      }
-      if (text) setUrl(text);
-    } catch {
-      // Clipboard blocked (permissions / iOS) — fall back to manual entry.
-    }
-    setExpanded(true);
-    // Focus the field on the next frame so the keyboard pops on mobile.
-    requestAnimationFrame(() => inputRef.current?.focus());
-  };
-
-  const submit = (value) => {
-    const link = (value ?? url).trim();
-    if (!link) return;
-    onImportLink(link);
-    setUrl('');
-    setExpanded(false);
-  };
-
-  const handlePaste = async () => {
-    try {
-      const text = (await navigator.clipboard.readText())?.trim();
-      if (!text) return;
-      setUrl(text);
-      // If it already looks like a link, fire the import immediately.
-      if (/^https?:\/\//i.test(text)) submit(text);
-      else inputRef.current?.focus();
-    } catch {
-      // Clipboard blocked (permissions / iOS) — fall back to manual entry.
-      inputRef.current?.focus();
-    }
-  };
-
-  const canGo = url.trim().length > 0;
-
-  return (
-    <motion.div
-      style={STYLES.importTray}
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: [0.32, 0.72, 0, 1], delay: 0.15 }}
-    >
-      <div style={STYLES.importTrayInner}>
-        {!expanded ? (
-          <motion.button
-            type="button"
-            style={STYLES.importTrayPill}
-            onClick={open}
-            whileTap={{ scale: 0.98 }}
-          >
-            <span style={STYLES.importTrayIcon} aria-hidden="true">🔗</span>
-            <span style={{ minWidth: 0 }}>
-              <span style={STYLES.importTrayTitle}>Import a recipe</span>
-              <span style={{ ...STYLES.importTraySub, display: 'block' }}>
-                Paste an Instagram, TikTok or web link
-              </span>
-            </span>
-            <span style={STYLES.importTrayChevron} aria-hidden="true">＋</span>
-          </motion.button>
-        ) : (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.2 }}
-          >
-            <div style={{ ...STYLES.importTrayTitle, marginBottom: '8px' }}>
-              Paste recipe link
-            </div>
-            <div style={STYLES.importTrayForm}>
-              <input
-                ref={inputRef}
-                style={STYLES.importTrayInput}
-                type="url"
-                inputMode="url"
-                autoCapitalize="off"
-                autoCorrect="off"
-                spellCheck={false}
-                placeholder="https://instagram.com/…"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
-              />
-              <button type="button" style={STYLES.importTrayPaste} onClick={handlePaste}>
-                Paste
-              </button>
-            </div>
-            <div style={{ ...STYLES.importTrayForm, marginTop: '8px' }}>
-              <button
-                type="button"
-                style={{ ...STYLES.importTrayPaste, flex: 1 }}
-                onClick={() => { setUrl(''); setExpanded(false); }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                style={{ ...STYLES.importTrayGo, flex: 1, ...(canGo ? null : STYLES.importTrayGoDisabled) }}
-                onClick={() => submit()}
-                disabled={!canGo}
-              >
-                Import →
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </div>
-    </motion.div>
-  );
-}
-
 // ── Main component ────────────────────────────────────────────────────────────
 export default function LandingPage({
   cookingStats = {},
@@ -909,7 +685,6 @@ export default function LandingPage({
   onViewDetail = () => {},
   onOpenFridge = () => {},
   onOpenStats = () => {},
-  onImportLink = () => {},
 }) {
   const [hoveredTile, setHoveredTile] = useState(null);
   const [hoveredStats, setHoveredStats] = useState(false);
@@ -1059,9 +834,6 @@ export default function LandingPage({
             style={{ display: 'inline-block', transformOrigin: 'center' }}
           >🎲</motion.span>
         </motion.button>
-
-        {/* Permanent import engine entry point (secondary) */}
-        <ImportLinkTray onImportLink={onImportLink} />
       </motion.div>
 
       {/* ── Next 5 Days ── */}
@@ -1129,6 +901,7 @@ export default function LandingPage({
             whileTap={{ scale: 0.94 }}
             style={{ ...STYLES.tile, padding: '16px 16px 16px 20px', textAlign: 'left', outline: 'none' }}
           >
+            <GlowingEffect glow proximity={64} spread={40} borderWidth={2} />
             <div style={{ ...STYLES.tileAccent, backgroundColor: tile.accent }} />
             <div style={STYLES.tileEmoji}>{tile.emoji}</div>
             <div style={STYLES.tileTitle}>{tile.title}</div>

@@ -1,0 +1,66 @@
+.glow {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  opacity: 1;
+}
+
+.glow__border {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  border: var(--glow-border-width) solid transparent;
+
+  /* multi-color rotating conic gradient (default variant) */
+  --gradient: repeating-conic-gradient(
+    from 236.84deg at 50% 50%,
+    #dd7bbb 0%,
+    #d79f1e calc(25% / var(--repeating-conic-gradient-times)),
+    #5a922c calc(50% / var(--repeating-conic-gradient-times)),
+    #4c7894 calc(75% / var(--repeating-conic-gradient-times)),
+    #dd7bbb calc(100% / var(--repeating-conic-gradient-times))
+  );
+
+  background: var(--gradient);
+  background-attachment: fixed;
+
+  opacity: var(--active, 0);
+  transition: opacity 0.35s ease;
+  filter: blur(var(--blur, 0px));
+
+  /* show gradient only in a wedge that follows the pointer angle (--start),
+     and only on the border ring (padding-box xor) */
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0),
+    conic-gradient(
+      from calc((var(--start) - (var(--spread) * 0.5)) * 1deg),
+      transparent 0deg,
+      #fff,
+      transparent calc(var(--spread) * 1deg)
+    );
+  -webkit-mask-composite: xor, source-in;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0),
+    conic-gradient(
+      from calc((var(--start) - (var(--spread) * 0.5)) * 1deg),
+      transparent 0deg,
+      #fff,
+      transparent calc(var(--spread) * 1deg)
+    );
+  mask-composite: exclude, intersect;
+}
+
+.glow--white .glow__border {
+  --gradient: repeating-conic-gradient(
+    from 236.84deg at 50% 50%,
+    #fff 0%, #ccc 25%, #fff 50%, #ccc 75%, #fff 100%
+  );
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glow__border { transition: none; }
+}

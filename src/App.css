@@ -5332,37 +5332,77 @@ body {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.55);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
   z-index: 1000;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
-  animation: fadeIn 0.15s ease-out;
+  padding: 16px;
 }
 
+/* Expandable card: centered modal that the tile morphs into */
 .ml-qp-sheet {
   background: var(--card);
-  border-radius: 20px 20px 0 0;
+  border-radius: 20px;
   width: 100%;
-  max-width: 500px;
-  max-height: 85vh;
+  max-width: 460px;
+  max-height: 88vh;
   overflow-y: auto;
-  animation: slideUp 0.25s ease-out;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
+  box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.45),
+              0 0 0 1px rgba(0, 0, 0, 0.04);
+  will-change: transform, opacity;
 }
 
 .ml-qp-handle {
-  width: 36px;
+  width: 40px;
   height: 4px;
   border-radius: 2px;
-  background: #ccc;
-  margin: 8px auto;
+  background: rgba(0, 0, 0, 0.18);
+  margin: 8px auto 4px;
 }
 
-.ml-qp-image {
+/* Shared-element hero — matches the tile image box (1:1) so the morph is seamless */
+.ml-qp-hero {
+  position: relative;
   width: 100%;
-  max-height: 220px;
-  object-fit: cover;
+  height: 240px;
+  background: #f0ece6;
+  overflow: hidden;
+  border-radius: 16px 16px 0 0;
+}
+
+.ml-qp-hero-empty {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Floating close button (Aceternity-faithful) */
+.ml-qp-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1010;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: var(--card, #fff);
+  color: var(--text, #222);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
 }
 
 .ml-qp-body {
@@ -8000,6 +8040,7 @@ body {
 .bl-fab-action {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 12px;
   border: none;
   background: transparent;
@@ -8018,6 +8059,11 @@ body {
   border-radius: 10px;
   box-shadow: 0 3px 12px rgba(0, 0, 0, 0.16);
   white-space: nowrap;
+  /* Guard against the label overflowing the viewport on very narrow phones —
+     keeps the import/add label + icon pill aligned without clipping. */
+  max-width: calc(100vw - 96px);
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .bl-fab-action-icon {
@@ -8106,39 +8152,89 @@ body {
   border-color: rgba(255, 255, 255, 0.95);
 }
 
-/* ── Quick Preview bottom sheet ── */
+/* ── Quick Preview — Aceternity-style centered expandable card ──
+   (the tapped tile's image + title morph into this card via shared layoutId) */
 .bl-qp-overlay {
   position: fixed;
-  top: 0; right: 0; bottom: 0; left: 0;
-  background: rgba(0, 0, 0, 0.5);
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
   z-index: 1000;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   justify-content: center;
-  animation: fadeIn 0.15s ease-out;
+  padding: 16px;
 }
 
+/* Expandable card: centered modal that the tile morphs into */
 .bl-qp-sheet {
   background: var(--card);
-  border-radius: 20px 20px 0 0;
+  border-radius: 20px;
   width: 100%;
-  max-width: 500px;
-  max-height: 85vh;
+  max-width: 460px;
+  max-height: 88vh;
   overflow-y: auto;
-  animation: slideUp 0.25s ease-out;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
+  box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.45),
+              0 0 0 1px rgba(0, 0, 0, 0.04);
+  will-change: transform, opacity;
 }
 
 .bl-qp-handle {
-  width: 36px;
+  width: 40px;
   height: 4px;
   border-radius: 2px;
-  background: #ccc;
-  margin: 8px auto;
+  background: rgba(0, 0, 0, 0.18);
+  margin: 8px auto 4px;
+}
+
+/* Shared-element hero — matches the tile image box so the morph is seamless */
+.bl-qp-hero {
+  position: relative;
+  width: 100%;
+  height: 240px;
+  background: #2a1538;
+  overflow: hidden;
+  border-radius: 16px 16px 0 0;
+}
+
+.bl-qp-hero-empty {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 56px;
+  line-height: 1;
+}
+
+/* Floating close button (Aceternity-faithful) */
+.bl-qp-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1010;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: var(--card, #fff);
+  color: var(--text, #222);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+  -webkit-tap-highlight-color: transparent;
 }
 
 .bl-qp-body {
-  padding: 4px 16px 8px;
+  padding: 12px 16px 8px;
 }
 
 .bl-qp-title {
