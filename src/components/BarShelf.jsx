@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback, useReducer, useRef } from 'r
 import { motion, AnimatePresence, useMotionValue, useAnimation } from 'framer-motion';
 import useBackHandler from '../hooks/useBackHandler';
 import { getBarInventory, addToBarInventory } from '../db';
+import SquigglyText from './SquigglyText';
 
 /**
  * BarShelf — Fully realized 8-bit Speakeasy
@@ -2258,7 +2259,9 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
             <span className="bs-pixel-arrow">&larr;</span> BACK
           </button>
           <h1 className="bs-title">
-            <NeonText text="MY BAR" color={isHappyHour ? '#ffd700' : '#ff4081'} />
+            <SquigglyText as="span" style={{ display: 'inline-block' }}>
+              <NeonText text="MY BAR" color={isHappyHour ? '#ffd700' : '#ff4081'} />
+            </SquigglyText>
           </h1>
           <div className="bs-bottle-count">
             <span className="bs-count-num">{drinks.length}</span>

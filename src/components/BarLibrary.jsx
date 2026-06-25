@@ -8,6 +8,7 @@ import ReExtractSheet from './ReExtractSheet';
 import useBackHandler from '../hooks/useBackHandler';
 import { hapticLight } from '../haptics';
 import { getMealVideoSource } from '../lib/videoSource';
+import SquigglyText from './SquigglyText';
 
 // ── Assignable drink categories ──────────────────────────────────────────────
 const DRINK_CATEGORY_OPTIONS = [
@@ -229,6 +230,15 @@ export default function BarLibrary({
   useBackHandler(selectMode, exitSelectMode, 'bar-select');
   useBackHandler(fabOpen, () => setFabOpen(false), 'bar-fab');
   useBackHandler(!!reExtractDrink, () => setReExtractDrink(null), 'bar-reextract');
+  useBackHandler(!!quickPreview, () => setQuickPreview(null), 'bar-quickpreview');
+
+  // ── Escape key closes the expandable card (desktop / keyboard) ──────────────
+  useEffect(() => {
+    if (!quickPreview) return;
+    const onKey = (e) => { if (e.key === 'Escape') setQuickPreview(null); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [quickPreview]);
 
   // ── Long-press to enter select mode ───────────────────────────────────────
   const LONG_PRESS_MS     = 500;
@@ -322,8 +332,9 @@ export default function BarLibrary({
   // ── Tile click ────────────────────────────────────────────────────────────
   const handleTileClick = useCallback((drink) => {
     if (selectMode) { toggleSelect(drink.id); return; }
-    onViewDetail?.(drink);
-  }, [selectMode, onViewDetail, toggleSelect]);
+    hapticLight();
+    setQuickPreview(drink);
+  }, [selectMode, toggleSelect]);
 
   // ── Backup / restore ──────────────────────────────────────────────────────
   const handleMenuOpen  = () => { setShowMenu(true); setMenuAnimation(false); };
@@ -400,7 +411,7 @@ export default function BarLibrary({
       {onOpenShelf && (
         <button className="bl-saloon-btn" onClick={onOpenShelf}>
           <span className="bl-saloon-icon">&#127918;</span>
-          <span className="bl-saloon-text">Enter the Saloon</span>
+          <SquigglyText as="span" className="bl-saloon-text" steps={5} stepDuration={110} scale={[3, 4]}>Enter the Saloon</SquigglyText>
           <span className="bl-saloon-count">{drinks.length} bottle{drinks.length !== 1 ? 's' : ''}</span>
         </button>
       )}
@@ -517,7 +528,7 @@ export default function BarLibrary({
                   </div>
                 )}
 
-                <div className="bl-tile-image">
+                <motion.div className="bl-tile-image" layoutId={`bl-card-img-${drink.id}`}>
                   <DrinkImage
                     src={drink.imageUrl}
                     alt={drink.name}
@@ -571,15 +582,16 @@ export default function BarLibrary({
                       </button>
                     );
                   })()}
-                </div>
+                </motion.div>
 
                 <div className="bl-tile-info">
-                  <span
+                  <motion.span
                     className="bl-tile-name"
+                    layoutId={`bl-card-title-${drink.id}`}
                     style={rarityColor ? { color: rarityColor } : undefined}
                   >
                     {drink.name || 'Untitled Drink'}
-                  </span>
+                  </motion.span>
                   <span className="bl-tile-meta">
                     {drink.ingredients?.length ?? 0} ing
                     {ms && ms.pct > 0 && ms.pct < 100 && ' - ' + ms.pct + '% ready'}
@@ -707,29 +719,65 @@ export default function BarLibrary({
         )}
       </AnimatePresence>
 
-      {/* Quick Preview bottom sheet */}
+      {/* ── Expandable card (tap a tile, long-press is select, or ⋯ button) ──
+            Shared-element morph: the tapped tile's image + title carry the same
+            layoutId as this card's hero + title, so the tile grows into the modal
+            and shrinks back on close (Aceternity "expandable card" pattern). */}
+      <AnimatePresence>
       {quickPreview && (
-        <div className="bl-qp-overlay" onClick={() => setQuickPreview(null)}>
-          <div
+        <motion.div
+          key="bl-qp-overlay"
+          className="bl-qp-overlay"
+          onClick={() => setQuickPreview(null)}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.22 }}
+        >
+          {/* Floating close button (Aceternity-style), outside the card surface */}
+          <motion.button
+            key="bl-qp-close"
+            className="bl-qp-close"
+            aria-label="Close"
+            onClick={() => setQuickPreview(null)}
+            initial={{ opacity: 0, scale: 0.6 }}
+            animate={{ opacity: 1, scale: 1, transition: { delay: 0.08 } }}
+            exit={{ opacity: 0, scale: 0.6, transition: { duration: 0.05 } }}
+            whileTap={{ scale: 0.88 }}
+          >
+            ✕
+          </motion.button>
+
+          <motion.div
             ref={sheetRef}
-            className="bl-qp-sheet"
+            className="bl-qp-sheet bl-qp-card"
             onClick={e => e.stopPropagation()}
+            initial={{ opacity: 0, scale: 0.96, y: 18 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.96, y: 18, transition: { duration: 0.16 } }}
+            transition={{ type: 'spring', stiffness: 320, damping: 34 }}
             onTouchStart={handleSheetTouchStart}
             onTouchMove={handleSheetTouchMove}
             onTouchEnd={handleSheetTouchEnd}
             onTouchCancel={handleSheetTouchEnd}
           >
             <div className="bl-qp-handle" />
-            {quickPreview.imageUrl && (
-              <SafeMediaImage
-                src={quickPreview.imageUrl}
-                alt={quickPreview.name || 'Drink'}
-                style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: '12px 12px 0 0', flexShrink: 0, display: 'block' }}
-                fallbackEmoji="&#127865;"
-              />
-            )}
+            <motion.div className="bl-qp-hero" layoutId={`bl-card-img-${quickPreview.id}`}>
+              {quickPreview.imageUrl ? (
+                <SafeMediaImage
+                  src={quickPreview.imageUrl}
+                  alt={quickPreview.name || 'Drink'}
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                  fallbackEmoji="&#127865;"
+                />
+              ) : (
+                <div className="bl-qp-hero-empty" aria-hidden="true">&#127864;</div>
+              )}
+            </motion.div>
             <div className="bl-qp-body">
-              <h3 className="bl-qp-title">{quickPreview.name || 'Untitled Drink'}</h3>
+              <motion.h3 className="bl-qp-title" layoutId={`bl-card-title-${quickPreview.id}`}>
+                {quickPreview.name || 'Untitled Drink'}
+              </motion.h3>
 
               {drinkEngineLabel(quickPreview._structuredVia) && (
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginBottom: 8 }}>
@@ -797,9 +845,10 @@ export default function BarLibrary({
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
       {/* Batch Category Picker */}
       {showCategoryPicker && (

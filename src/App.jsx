@@ -286,8 +286,11 @@ export default function App() {
     setSharedContent({ mode: 'url', url, text: '', title: '', isShare: false });
   }, [dismissSentinel]);
 
-  // Quick import from the LandingPage paste/drop tray. Item type (meal vs drink)
-  // is auto-detected downstream by the import engine, so we open the meals sheet.
+  // Quick import helper. The LandingPage import tray that used to call this was
+  // removed (declutter), but the handler is retained for other/future import
+  // entry points — item type (meal vs drink) is auto-detected downstream by the
+  // import engine, so we open the meals sheet.
+  // eslint-disable-next-line no-unused-vars
   const handleQuickImport = useCallback((url) => {
     if (!url) return;
     setImportModalKey(k => k + 1);
@@ -1140,7 +1143,6 @@ useEffect(() => {
             onViewDetail={setDetailItem}
             onOpenFridge={() => setShowFridge(true)}
             onOpenStats={() => setShowStats(true)}
-            onImportLink={handleQuickImport}
           />
         )}
         {tab === 'week' && (
