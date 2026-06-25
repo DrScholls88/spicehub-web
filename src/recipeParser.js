@@ -21,6 +21,7 @@ import {
   // Spec B — per-field confidence
   annotateFieldConfidence,
 } from './recipeSchema.js';
+import { normalizeIngredient, resolveUnit } from './utils/ingredientNormalizer.js';
 
 /**
  * looksLikeIngredientLine Ã¢â‚¬â€ uses parse-ingredient (battle-tested NLP for
@@ -908,16 +909,65 @@ function finalizeAIRecipe(thin, { hintTitle = '', imageUrl = '', sourceUrl = '',
   // Spec B: attach per-field confidence to every structured Item (baseline;
   // captionToRecipe re-annotates after cross-check so _xcheck is reflected).
   const scoredStructured = annotateFieldConfidence(reconciledStructured);
+
+  // Enrich structured items with normalizer data (canonical names + categories).
+  // Non-breaking: augments items in-place, never removes or reorders them.
+  const enrichedStructured = _enrichWithNormalizer(scoredStructured);
+
   return {
     name: _cleanTitle(enforced.title || hintTitle || 'Imported Recipe', enforced.ingredients),
     ...enforced,
-    ingredientsStructured: scoredStructured,
+    ingredientsStructured: enrichedStructured,
     ...buildStructuredFields(enforced.ingredients, enforced.directions),
     imageUrl: imageUrl || enforced.imageUrl || '',
     link: sourceUrl || enforced.link || '',
     _aiStructured: true,
     _structuredVia: via || enforced._structuredVia || 'unknown',
   };
+}
+
+/**
+ * _enrichWithNormalizer — Enrich structured ingredient Items with canonical
+ * names, improved categories, and resolved units from the ingredientNormalizer.
+ * Non-destructive: only fills in missing/weak data, never overwrites user edits
+ * or high-confidence AI output. Operates on a shallow copy of each item.
+ */
+function _enrichWithNormalizer(items = []) {
+  if (!Array.isArray(items) || items.length === 0) return items;
+  try {
+    return items.map(item => {
+      if (!item || !item.name) return item;
+      const norm = normalizeIngredient(item.name);
+      const enriched = { ...item };
+
+      // Upgrade category if the current one is 'Other' or missing and the
+      // normalizer found something more specific.
+      if (norm.category && norm.category !== 'Other' &&
+          (!enriched.category || enriched.category === 'Other')) {
+        enriched.category = norm.category;
+      }
+
+      // Attach canonical name for downstream grocery consolidation.
+      // Stored as _canonical so it doesn't collide with the display name.
+      if (norm.canonical && norm.source !== 'unresolved') {
+        enriched._canonical = norm.canonical;
+        enriched._normConfidence = norm.confidence;
+        enriched._normSource = norm.source;
+      }
+
+      // Resolve unit if the AI left it empty or non-standard.
+      if (enriched.unit && !canonicalizeUnit(enriched.unit)) {
+        const resolved = resolveUnit(enriched.unit);
+        if (resolved) enriched.unit = resolved;
+      }
+
+      return enriched;
+    });
+  } catch (err) {
+    // Non-breaking: if the normalizer fails, return items unchanged.
+    console.warn('[SpiceHub] Normalizer enrichment failed, continuing:', err.message);
+    return items;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

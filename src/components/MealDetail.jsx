@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { motion, useDragControls } from 'framer-motion';
-import { X, Share2, Copy, Check, Heart, Star, RefreshCw, Flame, UtensilsCrossed, Loader2, CheckCircle2, XCircle, Camera, ChefHat, Martini } from 'lucide-react';
+import { X, Share2, Copy, Check, Heart, Star, RefreshCw, Flame, UtensilsCrossed, Loader2, CheckCircle2, XCircle, Camera, ChefHat, Martini, FileDown } from 'lucide-react';
 import db from '../db';
 
 function CopyLinkButton({ url }) {
@@ -19,7 +19,7 @@ function CopyLinkButton({ url }) {
   );
 }
 
-export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, onRate, onStartCook, onStartMix, onToggleRotation, isDrink = false, onPhotoUpdated }) {
+export default function MealDetail({ meal, onClose, onShare, onExport, onToggleFavorite, onRate, onStartCook, onStartMix, onToggleRotation, isDrink = false, onPhotoUpdated }) {
   // ── Drag-down-to-dismiss ──
   const sheetRef = useRef(null);
   const dragControls = useDragControls();
@@ -133,6 +133,7 @@ export default function MealDetail({ meal, onClose, onShare, onToggleFavorite, o
           <h2>{meal.name}</h2>
           <div className="modal-header-actions">
             <button className="btn-icon" onClick={onShare} title="Share" aria-label="Share recipe"><Share2 size={18} strokeWidth={1.75} /></button>
+            {onExport && <button className="btn-icon" onClick={onExport} title="Export options" aria-label="Export recipe"><FileDown size={18} strokeWidth={1.75} /></button>}
             <button className="btn-icon" onClick={onClose} aria-label="Close"><X size={18} strokeWidth={1.75} /></button>
           </div>
         </div>

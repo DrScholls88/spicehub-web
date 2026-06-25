@@ -1,0 +1,524 @@
+[
+    {
+        "plural": "cups",
+        "variations": [
+            [
+                "c",
+                "c"
+            ],
+            [
+                "cp",
+                "cps"
+            ],
+            [
+                "cup",
+                "cup(s)"
+            ]
+        ],
+        "name": "cup"
+    },
+    {
+        "plural": "ounces",
+        "variations": [
+            [
+                "oz",
+                "oz"
+            ],
+            [
+                "oz",
+                "ozs"
+            ],
+            [
+                "ounce",
+                "ounce(s)"
+            ]
+        ],
+        "name": "ounce"
+    },
+    {
+        "plural": "grams",
+        "variations": [
+            [
+                "g",
+                "g"
+            ],
+            [
+                "g",
+                "gs"
+            ],
+            [
+                "gm",
+                "gm"
+            ],
+            [
+                "gm",
+                "gms"
+            ],
+            [
+                "gr",
+                "gr"
+            ],
+            [
+                "gr",
+                "grs"
+            ],
+            [
+                "grm",
+                "grm"
+            ],
+            [
+                "grm",
+                "grms"
+            ]
+        ],
+        "name": "gram"
+    },
+    {
+        "plural": "teaspoons",
+        "variations": [
+            [
+                "t",
+                "t"
+            ],
+            [
+                "t",
+                "ts"
+            ],
+            [
+                "tsp",
+                "tsp"
+            ],
+            [
+                "tsp",
+                "tsps"
+            ],
+            [
+                "tea spoon",
+                "tea spoons"
+            ],
+            [
+                "teapoon",
+                "teapoons"
+            ],
+            [
+                "teapsoon",
+                "teapsoons"
+            ],
+            [
+                "teaspooon",
+                "teaspooons"
+            ],
+            [
+                "teaspoonful",
+                "teaspoonfuls"
+            ],
+            [
+                "tspn",
+                "tspn"
+            ],
+            [
+                "tspn",
+                "tspns"
+            ],
+            [
+                "tp",
+                "tp"
+            ],
+            [
+                "tp",
+                "tps"
+            ],
+            [
+                "teaspoon",
+                "teaspoon(s)"
+            ],
+            [
+                "tspoon",
+                "tspoons"
+            ]
+        ],
+        "name": "teaspoon"
+    },
+    {
+        "plural": "pints",
+        "variations": [
+            [
+                "pt",
+                "pt"
+            ],
+            [
+                "pt",
+                "pts"
+            ],
+            [
+                "pint",
+                "pint(s)"
+            ]
+        ],
+        "name": "pint"
+    },
+    {
+        "plural": "inches",
+        "variations": [
+            [
+                "in",
+                "in"
+            ],
+            [
+                "in",
+                "ins"
+            ]
+        ],
+        "name": "inch"
+    },
+    {
+        "plural": "kilograms",
+        "variations": [
+            [
+                "kg",
+                "kg"
+            ],
+            [
+                "kg",
+                "kgs"
+            ],
+            [
+                "k",
+                "k"
+            ],
+            [
+                "k",
+                "ks"
+            ],
+            [
+                "kilo",
+                "kilos"
+            ]
+        ],
+        "name": "kilogram"
+    },
+    {
+        "plural": "milliliters",
+        "variations": [
+            [
+                "ml",
+                "ml"
+            ],
+            [
+                "ml",
+                "mls"
+            ],
+            [
+                "millilitre",
+                "millilitres"
+            ]
+        ],
+        "name": "milliliter"
+    },
+    {
+        "plural": "pounds",
+        "variations": [
+            [
+                "lb",
+                "lb"
+            ],
+            [
+                "lb",
+                "lbs"
+            ],
+            [
+                "pound",
+                "pound(s)"
+            ]
+        ],
+        "name": "pound"
+    },
+    {
+        "plural": "deciliters",
+        "variations": [
+            [
+                "dl",
+                "dl"
+            ],
+            [
+                "dl",
+                "dls"
+            ]
+        ],
+        "name": "deciliter"
+    },
+    {
+        "plural": "fluid ounces",
+        "variations": [
+            [
+                "fl",
+                "fl"
+            ],
+            [
+                "fl",
+                "fls"
+            ],
+            [
+                "fl oz",
+                "fl oz"
+            ],
+            [
+                "fl oz",
+                "fl ozs"
+            ],
+            [
+                "fluid oz",
+                "fluid oz"
+            ],
+            [
+                "fluid oz",
+                "fluid ozs"
+            ],
+            [
+                "floz",
+                "floz"
+            ],
+            [
+                "floz",
+                "flozs"
+            ]
+        ],
+        "name": "fluid ounce"
+    },
+    {
+        "plural": "quarts",
+        "variations": [
+            [
+                "qt",
+                "qt"
+            ],
+            [
+                "qt",
+                "qts"
+            ]
+        ],
+        "name": "quart"
+    },
+    {
+        "plural": "liters",
+        "variations": [
+            [
+                "l",
+                "l"
+            ],
+            [
+                "l",
+                "ls"
+            ],
+            [
+                "ltr",
+                "ltr"
+            ],
+            [
+                "ltr",
+                "ltrs"
+            ],
+            [
+                "litre",
+                "litres"
+            ],
+            [
+                "lt",
+                "lt"
+            ],
+            [
+                "lt",
+                "lts"
+            ]
+        ],
+        "name": "liter"
+    },
+    {
+        "plural": "gallons",
+        "variations": [
+            [
+                "gal",
+                "gal"
+            ],
+            [
+                "gal",
+                "gals"
+            ]
+        ],
+        "name": "gallon"
+    },
+    {
+        "plural": "centimeters",
+        "variations": [
+            [
+                "cm",
+                "cm"
+            ],
+            [
+                "cm",
+                "cms"
+            ],
+            [
+                "centimetre",
+                "centimetres"
+            ]
+        ],
+        "name": "centimeter"
+    },
+    {
+        "plural": "tablespoons",
+        "variations": [
+            [
+                "T",
+                "T"
+            ],
+            [
+                "tbsp",
+                "tbsp"
+            ],
+            [
+                "tbsp",
+                "tbsps"
+            ],
+            [
+                "tb",
+                "tb"
+            ],
+            [
+                "tb",
+                "tbs"
+            ],
+            [
+                "tbl",
+                "tbl"
+            ],
+            [
+                "tbl",
+                "tbls"
+            ],
+            [
+                "tblspn",
+                "tblspns"
+            ],
+            [
+                "tblsp",
+                "tblsps"
+            ],
+            [
+                "tbspn",
+                "tbspns"
+            ],
+            [
+                "tbps",
+                "tbps"
+            ],
+            [
+                "table spoon",
+                "table spoons"
+            ],
+            [
+                "tablepoon",
+                "tablepoons"
+            ],
+            [
+                "tablespoonful",
+                "tablespoonfuls"
+            ],
+            [
+                "tlb",
+                "tlbs"
+            ],
+            [
+                "tlbe",
+                "tlbes"
+            ],
+            [
+                "tbsn",
+                "tbsns"
+            ],
+            [
+                "tablespoon",
+                "tablespoon(s)"
+            ],
+            [
+                "tbspoon",
+                "tbspoons"
+            ]
+        ],
+        "name": "tablespoon"
+    },
+    {
+        "plural": "centiliters",
+        "variations": [
+            [
+                "cl",
+                "cl"
+            ],
+            [
+                "cl",
+                "cls"
+            ],
+            [
+                "centilitre",
+                "centilitres"
+            ]
+        ],
+        "name": "centiliter"
+    },
+    {
+        "variations": [
+            "f",
+            "farenheit"
+        ],
+        "name": "fahrenheit"
+    },
+    {
+        "variations": [
+            "c",
+            "celcius"
+        ],
+        "name": "celsius"
+    },
+    {
+        "plural": "millimeters",
+        "variations": [
+            [
+                "mm",
+                "mm"
+            ],
+            [
+                "mm",
+                "mms"
+            ],
+            [
+                "millimetre",
+                "millimetres"
+            ]
+        ],
+        "name": "millimeter"
+    },
+    {
+        "plural": "milligrams",
+        "variations": [
+            [
+                "mg",
+                "mg"
+            ],
+            [
+                "mg",
+                "mgs"
+            ]
+        ],
+        "name": "milligram"
+    },
+    {
+        "plural": "feet",
+        "variations": [
+            [
+                "ft",
+                "ft"
+            ]
+        ],
+        "name": "foot"
+    }
+]

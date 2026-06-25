@@ -2,7 +2,8 @@ import { useState, useMemo, useCallback } from 'react';
 import { ShoppingCart, Search, X as XIcon } from 'lucide-react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
 import { saveStoreMemory as dbSaveStoreMemory, getStoreMemory as dbGetStoreMemory, addToBarInventory } from '../db';
-import { GROCERY_CATEGORIES, categorizeIngredient, fuzzyResolveIngredient } from '../recipeSchema';
+import { GROCERY_CATEGORIES, categorizeIngredient, fuzzyResolveIngredient,
+         canonicalizeUnit, UNIT_CANON, normalizeFraction } from '../recipeSchema';
 import StoreMode from './StoreMode';
 
 const DEPT_EMOJI = {
@@ -28,44 +29,18 @@ const PANTRY_ID = '__pantry__';
 const PANTRY_STORE = { id: PANTRY_ID, name: 'In Pantry', color: '#4caf50', logo: '' };
 
 // ── Quantity aggregation helpers ─────────────────────────────────────────────
-const UNIT_CANONICAL = {
-  cup: 'cup', cups: 'cup',
-  tablespoon: 'tablespoon', tablespoons: 'tablespoon',
-  tbsp: 'tablespoon', tbs: 'tablespoon', 'tbsp.': 'tablespoon',
-  teaspoon: 'teaspoon', teaspoons: 'teaspoon', tsp: 'teaspoon', 'tsp.': 'teaspoon',
-  ounce: 'oz', ounces: 'oz', oz: 'oz',
-  pound: 'lb', pounds: 'lb', lb: 'lb', lbs: 'lb',
-  gram: 'g', grams: 'g', g: 'g',
-  kilogram: 'kg', kilograms: 'kg', kg: 'kg',
-  ml: 'ml', milliliter: 'ml', milliliters: 'ml',
-  liter: 'L', liters: 'L',
-  pinch: 'pinch', pinches: 'pinch',
-  clove: 'clove', cloves: 'clove',
-  slice: 'slice', slices: 'slice',
-  can: 'can', cans: 'can',
-  bag: 'bag', bags: 'bag',
-  bunch: 'bunch', bunches: 'bunch',
-  package: 'package', packages: 'package', pkg: 'package',
-  head: 'head', heads: 'head',
-  stalk: 'stalk', stalks: 'stalk',
-  sprig: 'sprig', sprigs: 'sprig',
-  piece: 'piece', pieces: 'piece',
-  scoop: 'scoop', scoops: 'scoop',
-};
-
-const UNIT_DISPLAY = {
-  cup: 'cups', tablespoon: 'tbsp', teaspoon: 'tsp',
-  oz: 'oz', lb: 'lb', g: 'g', kg: 'kg', ml: 'ml', L: 'L',
-  pinch: 'pinch', clove: 'cloves', slice: 'slices', can: 'cans',
-  bag: 'bags', bunch: 'bunches', package: 'packages',
-  head: 'heads', stalk: 'stalks', sprig: 'sprigs', piece: 'pieces', scoop: 'scoops',
-};
+// Build display labels from recipeSchema's UNIT_CANON (canonical key → preferred display string).
+// Use the canonical key itself as display, except for a few special cases.
+const UNIT_DISPLAY = Object.fromEntries(
+  Object.entries(UNIT_CANON).map(([canon]) => {
+    // 'l' displays as 'L' for liters
+    const display = canon === 'l' ? 'L' : canon;
+    return [canon, display];
+  })
+);
 
 function parseAmount(str) {
-  const s = str.trim()
-    .replace('½','1/2').replace('¼','1/4').replace('¾','3/4')
-    .replace('⅓','1/3').replace('⅔','2/3')
-    .replace('⅛','1/8').replace('⅜','3/8').replace('⅝','5/8').replace('⅞','7/8');
+  const s = normalizeFraction(str.trim());
   const mixed = s.match(/^(\d+)\s+(\d+)\/(\d+)$/);
   if (mixed) return parseInt(mixed[1]) + parseInt(mixed[2]) / parseInt(mixed[3]);
   const frac = s.match(/^(\d+)\/(\d+)$/);
@@ -91,7 +66,7 @@ function parseIngredient(rawName) {
   const amount = parseAmount(m[1].trim());
   if (!amount) return null;
   const unitRaw = m[2].trim().toLowerCase().replace(/\.$/, '');
-  const canonical = UNIT_CANONICAL[unitRaw];
+  const canonical = canonicalizeUnit(unitRaw);
   if (!canonical) return null;
   const ingredient = m[3].trim();
   if (!ingredient) return null;
@@ -107,7 +82,7 @@ function parsedFromStruct(s) {
   if (!ingredient) return null;
   const amount = s.quantity ? parseAmount(String(s.quantity)) : null;
   const unitRaw = (s.unit || '').toLowerCase().replace(/\.$/, '');
-  const canonical = UNIT_CANONICAL[unitRaw] || unitRaw || null;
+  const canonical = canonicalizeUnit(unitRaw) || unitRaw || null;
   if (amount && canonical) return { amount, unit: canonical, ingredient };
   return null;
 }
@@ -133,7 +108,7 @@ function sendToKeep(title, content, onToast) {
   });
 }
 
-export default function GroceryList({ items, setItems, weekPlan, onRebuild, onToast }) {
+export default function GroceryList({ items, setItems, weekPlan, onRebuild, onToast, onExport }) {
   const [batchMode, setBatchMode] = useState(false);
   const [selectedItems, setSelectedItems] = useState(new Set());
   const [batchStoreOverlayOpen, setBatchStoreOverlayOpen] = useState(false);
@@ -563,6 +538,11 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
         <button className="gl-btn-keep-primary" onClick={sendFullGroceryToKeep}>
           <KeepIcon /> Keep Export
         </button>
+        {onExport && (
+          <button className="gl-btn-keep-secondary" onClick={() => onExport(items.map(i => i.name || i))}>
+            📤 Export
+          </button>
+        )}
         <button className="gl-btn-keep-secondary" onClick={sendWeekPlanToKeep}>
           📅 Week
         </button>

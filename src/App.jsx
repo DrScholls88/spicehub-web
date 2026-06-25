@@ -35,6 +35,8 @@ import useOnlineStatus, { onOnlineStatusChange } from './hooks/useOnlineStatus';
 import useBackHandler from './hooks/useBackHandler';
 import useSwipeDismiss from './hooks/useSwipeDismiss';
 import { planWeek, pickForSlot, buildRecencyMap } from './lib/weekPlanner';
+import ExportSheet from './components/ExportSheet';
+import { renderRecipeExport, exportViaShare } from './utils/exportRenderer.js';
 import './App.css';
 
 // A-1: household dietary preference for Smart Auto-Plan (device-local).
@@ -108,6 +110,8 @@ export default function App() {
   const [detailItem, setDetailItem] = useState(null);   // meal or drink being viewed
   const [editMeal, setEditMeal] = useState(null);
   const [editDrink, setEditDrink] = useState(null);
+  // Export sheet: { mode: 'recipe'|'grocery'|'mealPlan', data, recipes?, title? }
+  const [exportSheet, setExportSheet] = useState(null);
   // 'meals' | 'drinks' | null — controls which ImportModal is open and where to save
   const [showImportFor, setShowImportFor] = useState(null);
   // Increment this to force ImportModal to fully remount (fresh state) on each open
@@ -1033,13 +1037,16 @@ useEffect(() => {
     return drinks.some(d => d.id === item.id);
   }, [drinks]);
 
-  // ── Share ─────────────────────────────────────────────────────────────────────
+  // ── Share / Export ──────────────────────────────────────────────────────────
+  // Quick share: uses the template renderer for clean text, then navigator.share
   const shareItem = useCallback((item) => {
-    const text = item.name + '\n\nIngredients:\n' + item.ingredients.map(i => '- ' + i).join('\n') +
-      '\n\nDirections:\n' + item.directions.map((d, i) => (i + 1) + '. ' + d).join('\n') +
-      (item.link ? '\n\nRecipe: ' + item.link : '');
-    if (navigator.share) { navigator.share({ title: item.name, text }).catch(() => { }); }
-    else { navigator.clipboard.writeText(text).then(() => alert('Recipe copied to clipboard!')).catch(() => { }); }
+    const text = renderRecipeExport(item, { format: 'text' });
+    exportViaShare(item.name, text);
+  }, []);
+
+  // Full export sheet: opens the ExportSheet bottom-sheet with format picker
+  const openExportSheet = useCallback((mode, data, opts = {}) => {
+    setExportSheet({ mode, data, recipes: opts.recipes, title: opts.title });
   }, []);
 
 
@@ -1181,6 +1188,7 @@ useEffect(() => {
             onDelete={deleteMeal}
             onViewDetail={setDetailItem}
             onShare={shareItem}
+            onExport={(item) => openExportSheet('recipe', item)}
             onImport={() => { setImportModalKey(k => k + 1); setShowImportFor('meals'); }}
             onReload={loadMeals}
             onToast={showToast}
@@ -1212,6 +1220,7 @@ useEffect(() => {
             weekPlan={weekPlan}
             onRebuild={buildGroceryList}
             onToast={showToast}
+            onExport={(items) => openExportSheet('grocery', items)}
           />
         )}
       </main>
@@ -1248,6 +1257,7 @@ useEffect(() => {
             meal={detailItem}
             onClose={() => setDetailItem(null)}
             onShare={() => shareItem(detailItem)}
+            onExport={() => openExportSheet('recipe', detailItem)}
             onToggleFavorite={isDrink(detailItem) ? null : toggleFavorite}
             onToggleRotation={isDrink(detailItem) ? null : handleToggleRotation}
             onRate={isDrink(detailItem) ? null : rateMeal}
@@ -1262,6 +1272,15 @@ useEffect(() => {
           <AddEditMeal key="edit-meal" meal={editMeal} onSave={saveMeal} onClose={() => setEditMeal(null)} />
         )}
       </AnimatePresence>
+      {exportSheet && (
+        <ExportSheet
+          mode={exportSheet.mode}
+          data={exportSheet.data}
+          recipes={exportSheet.recipes}
+          title={exportSheet.title}
+          onClose={() => setExportSheet(null)}
+        />
+      )}
       <AnimatePresence>
         {editDrink !== null && (
           <AddEditMeal

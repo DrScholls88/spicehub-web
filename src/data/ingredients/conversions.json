@@ -1,0 +1,184 @@
+{
+    "conversions": [
+        {
+            "type": "volume",
+            "ratio": 202.88414,
+            "system": "standard",
+            "measurement": "teaspoon"
+        },
+        {
+            "type": "volume",
+            "ratio": 67.628045,
+            "system": "standard",
+            "measurement": "tablespoon"
+        },
+        {
+            "type": "volume",
+            "ratio": 33.814023,
+            "system": "standard",
+            "measurement": "fluid ounce"
+        },
+        {
+            "type": "volume",
+            "ratio": 4.2267528,
+            "system": "standard",
+            "measurement": "cup"
+        },
+        {
+            "type": "volume",
+            "ratio": 2.1133764,
+            "system": "standard",
+            "measurement": "pint"
+        },
+        {
+            "type": "volume",
+            "ratio": 1.0566882,
+            "system": "standard",
+            "measurement": "quart"
+        },
+        {
+            "type": "volume",
+            "ratio": 0.26417205,
+            "system": "standard",
+            "measurement": "gallon"
+        },
+        {
+            "type": "volume",
+            "ratio": 1000,
+            "system": "metric",
+            "measurement": "milliliter"
+        },
+        {
+            "type": "volume",
+            "ratio": 100,
+            "system": "metric",
+            "measurement": "centiliter"
+        },
+        {
+            "type": "volume",
+            "ratio": 100,
+            "system": "metric",
+            "measurement": "deciliter"
+        },
+        {
+            "type": "volume",
+            "ratio": 1,
+            "system": "metric",
+            "measurement": "liter"
+        },
+        {
+            "type": "weight",
+            "ratio": 1000,
+            "system": "metric",
+            "measurement": "milligram"
+        },
+        {
+            "type": "weight",
+            "ratio": 1,
+            "system": "metric",
+            "measurement": "gram"
+        },
+        {
+            "type": "weight",
+            "ratio": 0.001,
+            "system": "metric",
+            "measurement": "kilogram"
+        },
+        {
+            "type": "weight",
+            "ratio": 0.035273962,
+            "system": "standard",
+            "measurement": "ounce"
+        },
+        {
+            "type": "weight",
+            "ratio": 0.0022046228,
+            "system": "standard",
+            "measurement": "pound"
+        }
+    ],
+    "thresholds": [
+        {
+            "convert_to": "pound",
+            "measurement": "ounce",
+            "quantity": 16
+        },
+        {
+            "convert_to": "gram",
+            "measurement": "milligram",
+            "quantity": 1000
+        },
+        {
+            "convert_to": "kilogram",
+            "measurement": "gram",
+            "quantity": 1000
+        },
+        {
+            "convert_to": "tablespoon",
+            "measurement": "teaspoon",
+            "quantity": 3
+        },
+        {
+            "convert_to": "cup",
+            "measurement": "tablespoon",
+            "quantity": 16
+        },
+        {
+            "convert_to": "quart",
+            "measurement": "pint",
+            "quantity": 2
+        },
+        {
+            "convert_to": "gallon",
+            "measurement": "quart",
+            "quantity": 4
+        },
+        {
+            "convert_to": "liter",
+            "measurement": "milliliter",
+            "quantity": 1000
+        }
+    ],
+    "formats": {
+        "medium": {
+            "liter": "l",
+            "tablespoon": "tbsp",
+            "milliliter": "ml",
+            "millimeter": "mm",
+            "centiliter": "cl",
+            "pound": "lb",
+            "gallon": "gal",
+            "centimeter": "cm",
+            "quart": "qt",
+            "cup": "cup",
+            "kilogram": "kg",
+            "ounce": "oz",
+            "gram": "g",
+            "inch": "in",
+            "pint": "pt",
+            "deciliter": "dl",
+            "teaspoon": "tsp",
+            "fluid ounce": "fl oz"
+        },
+        "short": {
+            "liter": "l",
+            "tablespoon": "T",
+            "milliliter": "ml",
+            "millimeter": "mm",
+            "centiliter": "cl",
+            "pound": "lb",
+            "gallon": "gal",
+            "centimeter": "cm",
+            "quart": "qt",
+            "cup": "c",
+            "kilogram": "kg",
+            "ounce": "oz",
+            "gram": "g",
+            "inch": "in",
+            "pint": "pt",
+            "deciliter": "dl",
+            "teaspoon": "t",
+            "fluid ounce": "fl oz"
+        }
+    }
+}
