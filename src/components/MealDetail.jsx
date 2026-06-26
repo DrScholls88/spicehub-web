@@ -2,6 +2,9 @@ import { useState, useRef, useCallback } from 'react';
 import { motion, useDragControls } from 'framer-motion';
 import { X, Share2, Copy, Check, Heart, Star, RefreshCw, Flame, UtensilsCrossed, Loader2, CheckCircle2, XCircle, Camera, ChefHat, Martini, FileDown } from 'lucide-react';
 import db from '../db';
+import PhotoGallery from './PhotoGallery';
+import { NUTRITION_LABELS } from '../recipeSchema';
+import { formatNutritionValue, formatIngredientLine } from '../utils/displayFormatter';
 
 function CopyLinkButton({ url }) {
   const [copied, setCopied] = useState(false);
@@ -36,6 +39,9 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
   ];
   const [scaleFactor, setScaleFactor] = useState(1.0);
 
+  // ── PhotoSwipe lightbox ────────────────────────────────────────────────────────
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+
   // ── Re-import photo ───────────────────────────────────────────────────────────
   // Local imageUrl override so the new photo shows immediately without parent re-render.
   const [localImageUrl, setLocalImageUrl] = useState(meal.imageUrl || null);
@@ -66,44 +72,33 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
     }
   }, [sourceUrl, meal.id, onPhotoUpdated]);
 
-  const scaleIngredient = (ingredient, factor) => {
-    // Simple regex to detect numbers/fractions at the start of the ingredient string
+  // Scale + format ingredients: prefer structured data (display formatter with
+  // unicode fractions + auto-pluralization), fall back to regex for legacy records.
+  const scaleIngredientLegacy = (ingredient, factor) => {
     const regex = /^(\d+\.?\d*|\d+\/\d+|\d+\s+\d+\/\d+)\s*(.*)$/;
     const match = ingredient.match(regex);
-
     if (!match) return ingredient;
-
     const [, amount, rest] = match;
-    let scaled = 0;
-
-    // Handle fractions like "1/2", "3/4"
-    if (amount.includes('/')) {
-      const [num, denom] = amount.split('/').map(Number);
-      scaled = (num / denom) * factor;
-    } else {
-      // Handle decimals and whole numbers, including compound like "2 1/2"
-      const parts = amount.split(/\s+/);
-      let value = 0;
-      for (const part of parts) {
-        if (part.includes('/')) {
-          const [num, denom] = part.split('/').map(Number);
-          value += num / denom;
-        } else {
-          value += parseFloat(part);
-        }
+    let value = 0;
+    const parts = amount.split(/\s+/);
+    for (const part of parts) {
+      if (part.includes('/')) {
+        const [num, denom] = part.split('/').map(Number);
+        value += denom ? num / denom : 0;
+      } else {
+        value += parseFloat(part) || 0;
       }
-      scaled = value * factor;
     }
-
-    // Format the scaled value nicely
-    const formattedAmount = scaled % 1 !== 0
-      ? scaled.toFixed(2).replace(/\.?0+$/, '')
-      : Math.round(scaled).toString();
-
-    return `${formattedAmount} ${rest}`;
+    const scaled = value * factor;
+    const fmt = scaled % 1 !== 0 ? scaled.toFixed(2).replace(/\.?0+$/, '') : Math.round(scaled).toString();
+    return `${fmt} ${rest}`;
   };
 
-  const scaledIngredients = meal.ingredients.map(ing => scaleIngredient(ing, scaleFactor));
+  const scaledIngredients = Array.isArray(meal.ingredientsStructured) && meal.ingredientsStructured.length > 0
+    ? meal.ingredientsStructured.map(item =>
+        formatIngredientLine(item, { useFractions: true, includeSection: true, scaleFactor })
+      )
+    : meal.ingredients.map(ing => scaleIngredientLegacy(ing, scaleFactor));
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -145,10 +140,19 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
               src={localImageUrl}
               alt={meal.name}
               className="detail-image"
+              style={{ cursor: 'zoom-in' }}
+              onClick={() => setLightboxOpen(true)}
               onError={e => { e.target.style.display = 'none'; }}
             />
           ) : (
             <div className="detail-image-placeholder"><UtensilsCrossed size={32} strokeWidth={1.75} /></div>
+          )}
+          {localImageUrl && (
+            <PhotoGallery
+              images={[{ src: localImageUrl, title: meal.name }]}
+              open={lightboxOpen}
+              onClose={() => setLightboxOpen(false)}
+            />
           )}
           {/* Re-import photo button — shown when there's a source URL to scrape */}
           {sourceUrl && (
@@ -268,6 +272,23 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
           <div className="detail-section">
             <h3>📌 Notes</h3>
             <p className="detail-notes">{meal.notes}</p>
+          </div>
+        )}
+
+        {/* Nutrition panel — only shown when LLM extracted nutrition data */}
+        {meal.nutrition && Object.keys(meal.nutrition).length > 0 && (
+          <div className="detail-section">
+            <h3>🥗 Nutrition</h3>
+            <div className="detail-nutrition-grid">
+              {Object.entries(meal.nutrition).map(([key, val]) => (
+                val ? (
+                  <div key={key} className="detail-nutrition-item">
+                    <span className="detail-nutrition-label">{NUTRITION_LABELS[key] || key}</span>
+                    <span className="detail-nutrition-value">{formatNutritionValue(val)}</span>
+                  </div>
+                ) : null
+              ))}
+            </div>
           </div>
         )}
 

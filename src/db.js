@@ -110,6 +110,38 @@ db.version(15).stores({
   ingredientAliases: 'raw, updatedAt',
 });
 
+// v16: Unified Schema Upgrade — first-class Food & Unit entities + nutrition +
+// structured directions with ingredient references. New tables seeded on first
+// open by ingredientEntities.seedEntities(). Backfill adds directionsStructured
+// and nutrition:null to existing meals/drinks. Lazy upgrade on read means old
+// records without these fields are transparently handled by CookMode/MealDetail.
+db.version(16).stores({
+  meals: '++id, name, status, sourceHash, jobId, ingredients_text',
+  drinks: '++id, name',
+  // First-class ingredient entities (Mealie-inspired)
+  ingredientFoods: '++id, name',
+  ingredientUnits: '++id, name',
+}).upgrade(tx => {
+  const backfillDirections = (record) => {
+    // Add directionsStructured from flat directions if missing
+    if (!Array.isArray(record.directionsStructured)) {
+      record.directionsStructured = Array.isArray(record.directions)
+        ? record.directions.map(d => ({
+            text: typeof d === 'string' ? d : (d && d.text) || '',
+            ingredientRefs: (d && Array.isArray(d.ingredientRefs)) ? d.ingredientRefs : [],
+          })).filter(d => d.text)
+        : [];
+    }
+    // Add nutrition:null placeholder if missing
+    if (record.nutrition === undefined) {
+      record.nutrition = null;
+    }
+  };
+  const meals = tx.table('meals').toCollection().modify(backfillDirections);
+  const drinks = tx.table('drinks').toCollection().modify(backfillDirections);
+  return Promise.all([meals, drinks]);
+});
+
 export default db;
 
 // ── Learned alias helpers (Spec D) ────────────────────────────────────────────

@@ -16,23 +16,27 @@
 import { renderTemplate, renderRecipe, TEMPLATES } from '../recipeTemplates.js';
 import { consolidateGroceries, normalizeIngredient } from './ingredientNormalizer.js';
 import { GROCERY_CATEGORIES } from '../recipeSchema.js';
+import { formatQuantity, formatUnit, formatFood } from './displayFormatter.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Format a consolidated grocery item as a display string.
- * E.g. { canonical: 'onion', totalQuantity: 2, unit: 'cup' } → "2 cup onion"
+ * Format a consolidated grocery item as a polished display string using the
+ * display formatter for unicode fractions + automatic pluralization.
+ * E.g. { canonical: 'onion', totalQuantity: 2, unit: 'cup' } → "2 cups onion"
+ *      { canonical: 'tomato', totalQuantity: 3, unit: '' }   → "3 tomatoes"
  */
 function formatGroceryItem(item) {
-  const parts = [];
-  if (item.totalQuantity != null) {
-    // Pretty-print: drop trailing .000
-    const q = item.totalQuantity;
-    parts.push(Number.isInteger(q) ? String(q) : String(q));
-  }
-  if (item.unit) parts.push(item.unit);
-  parts.push(item.canonical || item.name || '');
-  return parts.join(' ').trim();
+  const qty = item.totalQuantity != null ? item.totalQuantity : '';
+  const unit = item.unit || '';
+  const food = item.canonical || item.name || '';
+  const numQty = typeof qty === 'number' ? qty : parseFloat(qty);
+
+  const fmtQty = formatQuantity(qty, { useFractions: true });
+  const fmtUnit = formatUnit(unit, isNaN(numQty) ? 1 : numQty);
+  const fmtFood = formatFood(food, isNaN(numQty) ? 1 : numQty, !!unit);
+
+  return [fmtQty, fmtUnit, fmtFood].filter(Boolean).join(' ').trim();
 }
 
 /**
