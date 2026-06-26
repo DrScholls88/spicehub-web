@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion, useDragControls } from 'framer-motion';
 import { X, CheckCircle2, Pause, Play, Timer, ChevronDown, ChevronRight, Salad, PartyPopper, Video } from 'lucide-react';
 import { getMealVideoSource, parseStepTimestamps, mapStepsToTimestamps } from '../lib/videoSource';
+import PhotoGallery from './PhotoGallery';
 import './CookMode.css';
 
 /**
@@ -300,10 +301,40 @@ export default function CookMode({ meal, scaleFactor = 1.0, onClose, onPlayVideo
     return `${fmt} ${rest}`;
   };
 
-  // Smart ingredient matching
+  // Smart ingredient matching — prefer directionsStructured.ingredientRefs when
+  // available (high-fidelity, LLM-linked), fall back to fuzzy text matching.
   const matchedIngredients = useMemo(() => {
     if (currentStep < 0 || !meal.directions[currentStep]) return [];
-    const stepText = meal.directions[currentStep].toLowerCase();
+
+    // ── New path: structured direction refs ──
+    const dirStructured = Array.isArray(meal.directionsStructured)
+      ? meal.directionsStructured[currentStep]
+      : null;
+    if (dirStructured && Array.isArray(dirStructured.ingredientRefs) && dirStructured.ingredientRefs.length > 0) {
+      const refSet = new Set(dirStructured.ingredientRefs.map(r => r.toLowerCase()));
+      // Match against structured ingredients if available, else flat strings
+      if (Array.isArray(meal.ingredientsStructured) && meal.ingredientsStructured.length > 0) {
+        return meal.ingredientsStructured
+          .filter(item => item.name && refSet.has(item.name.toLowerCase()))
+          .map(item => item.display || item.original_text || `${item.quantity || ''} ${item.unit || ''} ${item.name}`.trim());
+      }
+      // Fall back to flat ingredient strings
+      return meal.ingredients.filter(ing => {
+        const cleaned = ing
+          .replace(/^[\d½¼¾⅓⅔⅛⅜⅝⅞\s./]+/, '')
+          .replace(/\b(cups?|tbsp|tsp|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|grams?|g\b|kg|ml|liters?|pinch|dash|bunch|cloves?|cans?|jars?|packages?|sticks?|slices?|handful|medium|large|small|whole|half)\b/gi, '')
+          .replace(/[,()]/g, '')
+          .trim()
+          .toLowerCase();
+        return cleaned.length >= 3 && [...refSet].some(ref => cleaned.includes(ref) || ref.includes(cleaned));
+      });
+    }
+
+    // ── Legacy path: fuzzy text matching ──
+    const stepText = (typeof meal.directions[currentStep] === 'string'
+      ? meal.directions[currentStep]
+      : meal.directions[currentStep]?.text || ''
+    ).toLowerCase();
     return meal.ingredients.filter(ing => {
       const cleaned = ing
         .replace(/^[\d½¼¾⅓⅔⅛⅜⅝⅞\s./]+/, '')
@@ -314,7 +345,7 @@ export default function CookMode({ meal, scaleFactor = 1.0, onClose, onPlayVideo
       if (cleaned.length < 3) return false;
       return cleaned.split(/\s+/).filter(w => w.length >= 3).some(word => stepText.includes(word));
     });
-  }, [currentStep, meal.directions, meal.ingredients]);
+  }, [currentStep, meal.directions, meal.directionsStructured, meal.ingredients, meal.ingredientsStructured]);
 
   useEffect(() => {
     setShowIngSidebar(matchedIngredients.length > 0);
@@ -395,7 +426,14 @@ export default function CookMode({ meal, scaleFactor = 1.0, onClose, onPlayVideo
           <div className={`cm-ingredients-view ${slideDir ? 'cm-slide-' + slideDir : 'cm-slide-in'}`}>
             <h2 className="cm-recipe-name">{meal.name}</h2>
             {meal.imageUrl && (
-              <img src={meal.imageUrl} alt={meal.name} className="cm-hero-img" onError={e => { e.target.style.display = 'none'; }} />
+              <img
+                src={meal.imageUrl}
+                alt={meal.name}
+                className="cm-hero-img"
+                style={{ cursor: 'zoom-in' }}
+                onClick={() => PhotoGallery.openSingle(meal.imageUrl, meal.name)}
+                onError={e => { e.target.style.display = 'none'; }}
+              />
             )}
             <div className="cm-ing-header">
               <h3>Gather Your Ingredients</h3>

@@ -16,6 +16,7 @@ import BatchImportQueue, { BatchQueuePill } from './components/BatchImportQueue'
 import { startBatchImportEngine } from './batchImportEngine';
 import { extractMultipleUrls } from './recipeParser';
 import { categorizeIngredient, upgradeRecipeIngredients, setLearnedAliases } from './recipeSchema';
+import { seedEntities } from './utils/ingredientEntities';
 import InstagramZipImport from './components/InstagramZipImport';
 import FridgeMode from './components/FridgeMode';
 import CookMode from './components/CookMode';
@@ -193,6 +194,7 @@ export default function App() {
 
   // Spec D: load user-taught ingredient aliases into the resolver on startup so
   // they auto-apply everywhere (import categorization, grocery aggregation, hints).
+  // Also seed first-class Food & Unit entities (v16) on first open.
   useEffect(() => {
     (async () => {
       try {
@@ -203,6 +205,8 @@ export default function App() {
         }
         setLearnedAliases(map);
       } catch { /* learned aliases are best-effort */ }
+      // Seed ingredient entity tables (idempotent, skips if already populated)
+      try { await seedEntities(); } catch { /* best-effort seeding */ }
     })();
   }, []);
 

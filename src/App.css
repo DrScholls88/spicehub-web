@@ -4947,6 +4947,38 @@ body {
   margin: 0;
 }
 
+/* ── Nutrition grid ── */
+.detail-nutrition-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px 12px;
+  background: #fafafa;
+  border-radius: 10px;
+  padding: 12px;
+}
+.detail-nutrition-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+}
+.detail-nutrition-item:last-child,
+.detail-nutrition-item:nth-last-child(2):nth-child(odd) {
+  border-bottom: none;
+}
+.detail-nutrition-label {
+  font-size: 12px;
+  color: var(--text-secondary, #666);
+  font-weight: 500;
+}
+.detail-nutrition-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Meal card rating display ── */
 .meal-card-rating {
   display: inline-flex;

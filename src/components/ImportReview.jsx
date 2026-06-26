@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { fuzzyResolveIngredient, normalizeIngredientForMatching, learnableAliasFrom, addLearnedAlias } from '../recipeSchema';
 import { saveLearnedAliases } from '../db';
+import PhotoGallery from './PhotoGallery';
 
 // Spring-like easing shared across review animations (spec §1)
 const SPRING_EASE = [0.32, 0.72, 0, 1];
@@ -645,7 +646,8 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
       {/* Hero image + title + confidence */}
       <motion.div
         className="review-hero"
-        style={recipe.image ? { backgroundImage: `url(${recipe.image})` } : undefined}
+        style={recipe.image ? { backgroundImage: `url(${recipe.image})`, cursor: 'zoom-in' } : undefined}
+        onClick={recipe.image ? () => PhotoGallery.openSingle(recipe.image, recipe.name || 'Imported Recipe') : undefined}
         initial={{ opacity: 0, scale: 1.03 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.35, ease: SPRING_EASE }}

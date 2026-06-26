@@ -485,6 +485,232 @@ export const DISPLAY_SCHEMA = {
 };
 
 // -----------------------------------------------------------------------------
+// 7b. UNIT CONVERSION FACTORS (Mealie-inspired: standard_quantity/standard_unit)
+// -----------------------------------------------------------------------------
+// Powers cross-unit aggregation in grocery consolidation. Each entry maps a
+// canonical unit to its base type (volume/weight/count) and a factor to convert
+// to the base SI unit (ml for volume, g for weight, 1 for count).
+export const UNIT_CONVERSION_FACTORS = {
+  // Volume → base ml
+  tsp:      { type: 'volume', toBase: 4.929 },
+  tbsp:     { type: 'volume', toBase: 14.787 },
+  cup:      { type: 'volume', toBase: 236.588 },
+  oz:       { type: 'volume', toBase: 29.574 },    // fluid ounce
+  pint:     { type: 'volume', toBase: 473.176 },
+  quart:    { type: 'volume', toBase: 946.353 },
+  gallon:   { type: 'volume', toBase: 3785.41 },
+  ml:       { type: 'volume', toBase: 1 },
+  cl:       { type: 'volume', toBase: 10 },
+  l:        { type: 'volume', toBase: 1000 },
+  dash:     { type: 'volume', toBase: 0.616 },     // ~1/8 tsp
+  splash:   { type: 'volume', toBase: 4.929 },     // ~1 tsp
+  barspoon: { type: 'volume', toBase: 4.929 },     // ~1 tsp
+  shot:     { type: 'volume', toBase: 44.36 },      // 1.5 oz
+  jigger:   { type: 'volume', toBase: 44.36 },
+  drop:     { type: 'volume', toBase: 0.05 },
+  // Weight → base g
+  g:        { type: 'weight', toBase: 1 },
+  kg:       { type: 'weight', toBase: 1000 },
+  mg:       { type: 'weight', toBase: 0.001 },
+  lb:       { type: 'weight', toBase: 453.592 },
+  // Count → base 1
+  pinch:    { type: 'count', toBase: 1 },
+  piece:    { type: 'count', toBase: 1 },
+  slice:    { type: 'count', toBase: 1 },
+  clove:    { type: 'count', toBase: 1 },
+  can:      { type: 'count', toBase: 1 },
+  jar:      { type: 'count', toBase: 1 },
+  package:  { type: 'count', toBase: 1 },
+  stick:    { type: 'count', toBase: 1 },
+  head:     { type: 'count', toBase: 1 },
+  bunch:    { type: 'count', toBase: 1 },
+  sprig:    { type: 'count', toBase: 1 },
+  stalk:    { type: 'count', toBase: 1 },
+  ear:      { type: 'count', toBase: 1 },
+  leaf:     { type: 'count', toBase: 1 },
+  loaf:     { type: 'count', toBase: 1 },
+  bag:      { type: 'count', toBase: 1 },
+  box:      { type: 'count', toBase: 1 },
+  bottle:   { type: 'count', toBase: 1 },
+  handful:  { type: 'count', toBase: 1 },
+  scoop:    { type: 'count', toBase: 1 },
+  wedge:    { type: 'count', toBase: 1 },
+  container: { type: 'count', toBase: 1 },
+  envelope: { type: 'count', toBase: 1 },
+  part:     { type: 'count', toBase: 1 },
+  float:    { type: 'count', toBase: 1 },
+  rinse:    { type: 'count', toBase: 1 },
+};
+
+/**
+ * Convert a quantity from one canonical unit to another within the same type.
+ * Returns null if units are incompatible or unknown. Pure; never throws.
+ */
+export function convertUnit(qty, fromUnit, toUnit) {
+  const from = UNIT_CONVERSION_FACTORS[fromUnit];
+  const to = UNIT_CONVERSION_FACTORS[toUnit];
+  if (!from || !to || from.type !== to.type) return null;
+  if (to.toBase === 0) return null;
+  return (qty * from.toBase) / to.toBase;
+}
+
+/**
+ * Check whether two canonical units are the same measurement type (volume,
+ * weight, or count) and therefore convertible. Returns false for unknown units.
+ */
+export function unitsAreConvertible(unitA, unitB) {
+  const a = UNIT_CONVERSION_FACTORS[unitA];
+  const b = UNIT_CONVERSION_FACTORS[unitB];
+  return !!(a && b && a.type === b.type);
+}
+
+// -----------------------------------------------------------------------------
+// 7c. UNIT & FOOD PLURAL MAPS (Mealie-inspired: automatic display pluralization)
+// -----------------------------------------------------------------------------
+// Maps canonical unit to its plural display form. Used by displayFormatter.js
+// for professional ingredient rendering: "1 cup" → "2 cups".
+export const UNIT_PLURALS = {
+  tsp: 'tsp', tbsp: 'tbsp', cup: 'cups', oz: 'oz', lb: 'lbs',
+  g: 'g', kg: 'kg', mg: 'mg', ml: 'ml', cl: 'cl', l: 'l',
+  pint: 'pints', quart: 'quarts', gallon: 'gallons',
+  clove: 'cloves', can: 'cans', jar: 'jars', package: 'packages',
+  stick: 'sticks', slice: 'slices', piece: 'pieces', pinch: 'pinches',
+  handful: 'handfuls', bunch: 'bunches', sprig: 'sprigs',
+  bag: 'bags', head: 'heads', stalk: 'stalks', scoop: 'scoops',
+  box: 'boxes', bottle: 'bottles', container: 'containers',
+  envelope: 'envelopes', leaf: 'leaves', loaf: 'loaves', ear: 'ears',
+  wedge: 'wedges',
+  dash: 'dashes', splash: 'splashes', barspoon: 'barspoons',
+  part: 'parts', shot: 'shots', jigger: 'jiggers', drop: 'drops',
+  float: 'floats', rinse: 'rinses',
+};
+
+// Common food pluralization rules. Irregular forms are explicit; regular -s
+// suffix is the default. Used by displayFormatter.js for "1 tomato" → "2 tomatoes".
+export const FOOD_PLURALS = {
+  // Irregular plurals
+  tomato: 'tomatoes', potato: 'potatoes', mango: 'mangoes', avocado: 'avocados',
+  jalapeño: 'jalapeños', jalapeno: 'jalapenos',
+  leaf: 'leaves', loaf: 'loaves', half: 'halves', knife: 'knives',
+  // -y → -ies
+  anchovy: 'anchovies', cherry: 'cherries', berry: 'berries',
+  strawberry: 'strawberries', blueberry: 'blueberries', raspberry: 'raspberries',
+  blackberry: 'blackberries', cranberry: 'cranberries',
+  // -sh / -ch → -es
+  radish: 'radishes', squash: 'squash', peach: 'peaches',
+  // Already plural or uncountable (no change)
+  rice: 'rice', pasta: 'pasta', quinoa: 'quinoa', couscous: 'couscous',
+  sugar: 'sugar', flour: 'flour', salt: 'salt', pepper: 'pepper',
+  butter: 'butter', oil: 'oil', vinegar: 'vinegar', honey: 'honey',
+  milk: 'milk', cream: 'cream', water: 'water', broth: 'broth',
+  stock: 'stock', sauce: 'sauce', juice: 'juice',
+  garlic: 'garlic', ginger: 'ginger', cilantro: 'cilantro',
+  parsley: 'parsley', basil: 'basil', oregano: 'oregano', thyme: 'thyme',
+  rosemary: 'rosemary', dill: 'dill', mint: 'mint', sage: 'sage',
+  cinnamon: 'cinnamon', cumin: 'cumin', paprika: 'paprika', turmeric: 'turmeric',
+  spinach: 'spinach', lettuce: 'lettuce', kale: 'kale',
+  corn: 'corn', broccoli: 'broccoli', cauliflower: 'cauliflower',
+  celery: 'celery', asparagus: 'asparagus', fennel: 'fennel',
+  bacon: 'bacon', ham: 'ham', beef: 'beef', pork: 'pork', lamb: 'lamb',
+  chicken: 'chicken', turkey: 'turkey', duck: 'duck', veal: 'veal',
+  salmon: 'salmon', tuna: 'tuna', cod: 'cod', shrimp: 'shrimp',
+  // Cheese (uncountable)
+  cheese: 'cheese', cheddar: 'cheddar', mozzarella: 'mozzarella',
+  parmesan: 'parmesan', feta: 'feta', ricotta: 'ricotta',
+  // Spirits & liqueurs (uncountable)
+  vodka: 'vodka', gin: 'gin', rum: 'rum', tequila: 'tequila',
+  whiskey: 'whiskey', bourbon: 'bourbon', brandy: 'brandy',
+  vermouth: 'vermouth', campari: 'campari', aperol: 'aperol',
+};
+
+/**
+ * Pluralize a unit for display. Returns the plural form when qty > 1, singular
+ * otherwise. Falls through to the raw input for unknown units.
+ */
+export function pluralizeUnit(unit = '', qty = 1) {
+  const canon = String(unit).trim().toLowerCase();
+  if (!canon) return '';
+  if (qty <= 1) return canon;
+  return UNIT_PLURALS[canon] || canon;
+}
+
+/**
+ * Pluralize a food name for display. Returns the plural form when qty > 1.
+ * Falls through to a simple heuristic (+s) for unknown foods.
+ */
+export function pluralizeFood(food = '', qty = 1) {
+  const name = String(food).trim();
+  if (!name || qty <= 1) return name;
+  const key = name.toLowerCase();
+  if (FOOD_PLURALS[key]) {
+    // Preserve original casing for the first letter
+    const plural = FOOD_PLURALS[key];
+    return name[0] === name[0].toUpperCase()
+      ? plural[0].toUpperCase() + plural.slice(1)
+      : plural;
+  }
+  // Default heuristic: words ending in -s, -x, -z, -ch, -sh get -es
+  if (/(?:s|x|z|ch|sh)$/i.test(name)) return name + 'es';
+  // Words ending in consonant + y → -ies
+  if (/[^aeiou]y$/i.test(name)) return name.slice(0, -1) + 'ies';
+  return name + 's';
+}
+
+// -----------------------------------------------------------------------------
+// 7d. NUTRITION FIELDS (Schema.org NutritionInformation)
+// -----------------------------------------------------------------------------
+// Mealie stores nutrition as string values (e.g. "250 kcal") matching
+// Schema.org's NutritionInformation. We use the same field names for future
+// interoperability with recipe export formats (JSON-LD, Recipe schema.org).
+export const NUTRITION_FIELDS = [
+  'calories',             // e.g. "250 kcal"
+  'totalFat',             // e.g. "12 g"
+  'saturatedFat',         // e.g. "4 g"
+  'transFat',             // e.g. "0 g"
+  'unsaturatedFat',       // e.g. "8 g"
+  'cholesterol',          // e.g. "55 mg"
+  'sodium',               // e.g. "480 mg"
+  'carbohydrates',        // e.g. "30 g"
+  'fiber',                // e.g. "3 g"
+  'sugar',                // e.g. "5 g"
+  'protein',              // e.g. "18 g"
+];
+
+/**
+ * Validate and normalize a nutrition object. Returns a clean object with only
+ * known fields, or null if empty. Values are kept as strings for Schema.org
+ * compatibility. Pure; never throws.
+ */
+export function normalizeNutrition(raw = {}) {
+  if (!raw || typeof raw !== 'object') return null;
+  const out = {};
+  let hasAny = false;
+  for (const field of NUTRITION_FIELDS) {
+    const val = raw[field];
+    if (val != null && String(val).trim()) {
+      out[field] = String(val).trim();
+      hasAny = true;
+    }
+  }
+  return hasAny ? out : null;
+}
+
+// Schema.org field name → user-friendly display label
+export const NUTRITION_LABELS = {
+  calories: 'Calories',
+  totalFat: 'Total Fat',
+  saturatedFat: 'Saturated Fat',
+  transFat: 'Trans Fat',
+  unsaturatedFat: 'Unsaturated Fat',
+  cholesterol: 'Cholesterol',
+  sodium: 'Sodium',
+  carbohydrates: 'Carbohydrates',
+  fiber: 'Fiber',
+  sugar: 'Sugar',
+  protein: 'Protein',
+};
+
+// -----------------------------------------------------------------------------
 // 8. GEMINI STRUCTURED-OUTPUT SCHEMA (responseSchema)
 // -----------------------------------------------------------------------------
 // OpenAPI-3.0 subset accepted by the Gemini REST v1beta `generationConfig`.
@@ -524,7 +750,42 @@ export const RECIPE_SCHEMA = {
         required: ['items'],
       },
     },
-    directions: { type: 'array', items: { type: 'string' } },
+    // Directions as structured step objects with optional ingredient references
+    // (Mealie-inspired RecipeStep.ingredient_references). The LLM emits refs
+    // pointing to ingredient names; thinFromStructured resolves to Item refs.
+    directions: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          text: { type: 'string' },                     // the step text
+          ingredientRefs: {                              // ingredient names used in this step
+            type: 'array',
+            items: { type: 'string' },
+          },
+        },
+        required: ['text'],
+      },
+    },
+    // Nutrition (Schema.org NutritionInformation subset). The LLM estimates
+    // values when the source provides them; omits when unavailable. Values are
+    // strings with units, e.g. "250 kcal", "12 g".
+    nutrition: {
+      type: 'object',
+      properties: {
+        calories:       { type: 'string' },
+        totalFat:       { type: 'string' },
+        saturatedFat:   { type: 'string' },
+        unsaturatedFat: { type: 'string' },
+        transFat:       { type: 'string' },
+        cholesterol:    { type: 'string' },
+        sodium:         { type: 'string' },
+        carbohydrates:  { type: 'string' },
+        fiber:          { type: 'string' },
+        sugar:          { type: 'string' },
+        protein:        { type: 'string' },
+      },
+    },
     servings: { type: 'string' },
     prepTime: { type: 'string' },
     cookTime: { type: 'string' },
@@ -552,7 +813,7 @@ export const RECIPE_SCHEMA = {
 // ledger compares a recipe's stored `engineVersion` against this value to offer
 // "improve" re-runs that re-send the cached caption (no re-scrape, no Apify cost).
 // Format: YYYY.MM.patch — human-readable and monotonically comparable as a string.
-export const ENGINE_PROMPT_VERSION = '2026.06.1';
+export const ENGINE_PROMPT_VERSION = '2026.06.2';
 
 // -----------------------------------------------------------------------------
 // 9. SHARED SYSTEM INSTRUCTION (used identically by text / server / vision)
@@ -613,6 +874,20 @@ export const SYSTEM_INSTRUCTION = [
   "COMPLETENESS. Capture EVERY ingredient (including minor spices, oils, garnishes) and EVERY",
   "step in order; never summarize multiple steps into one.",
   "",
+  "DIRECTIONS FORMAT. Each direction is an object {text, ingredientRefs}. `text` is the step",
+  "prose. `ingredientRefs` is an array of ingredient NAMES (matching the `name` field of items",
+  "in ingredientGroups) that the step uses. For example, if step 1 says \"Sear the chicken\",",
+  "its ingredientRefs should be [\"chicken breast\"]. If a step uses no specific ingredient,",
+  "set ingredientRefs to []. This enables CookMode to highlight relevant ingredients per step.",
+  "",
+  "NUTRITION. When the source explicitly states nutritional information (e.g. in a recipe blog",
+  "sidebar, structured data, or printed on a recipe card), extract it into the `nutrition`",
+  "object. Use Schema.org NutritionInformation field names: calories (with \"kcal\" unit),",
+  "totalFat, saturatedFat, unsaturatedFat, transFat, cholesterol, sodium, carbohydrates,",
+  "fiber, sugar, protein. Each value is a string with units, e.g. \"250 kcal\", \"12 g\",",
+  "\"480 mg\". If the source does NOT state nutrition, omit the nutrition object entirely —",
+  "do NOT estimate or fabricate nutritional values.",
+  "",
   "CONFIDENCE. Set `confidence` 0–1 for how cleanly the source mapped to the schema, and",
   "`needsReview`=true if anything was ambiguous, illegible, or inferred rather than stated. If",
   "the source is not a recipe, return {\"isRecipe\":false,\"kind\":\"meal\",\"title\":\"\",",
@@ -668,9 +943,9 @@ export const EXEMPLARS = {
           },
         ],
         directions: [
-          'Sear the chicken until golden, about 5 minutes. Set aside.',
-          'Sauté garlic, then add cream and sun-dried tomatoes and simmer 3 minutes.',
-          'Stir in spinach until wilted, return the chicken, and toss with pasta.',
+          { text: 'Sear the chicken until golden, about 5 minutes. Set aside.', ingredientRefs: ['chicken breast'] },
+          { text: 'Sauté garlic, then add cream and sun-dried tomatoes and simmer 3 minutes.', ingredientRefs: ['garlic', 'heavy cream', 'sun-dried tomatoes'] },
+          { text: 'Stir in spinach until wilted, return the chicken, and toss with pasta.', ingredientRefs: ['baby spinach', 'chicken breast'] },
         ],
         servings: '4',
         prepTime: '',
@@ -704,9 +979,9 @@ export const EXEMPLARS = {
           },
         ],
         directions: [
-          'Stir with ice until well chilled.',
-          'Strain into a chilled coupe.',
-          'Express an orange peel over the top and garnish.',
+          { text: 'Stir with ice until well chilled.', ingredientRefs: ['rye whiskey', 'sweet vermouth', 'Angostura bitters'] },
+          { text: 'Strain into a chilled coupe.', ingredientRefs: [] },
+          { text: 'Express an orange peel over the top and garnish.', ingredientRefs: [] },
         ],
         glass: 'coupe',
         garnish: 'expressed orange peel',
@@ -813,7 +1088,28 @@ export function thinFromStructured(structured = {}) {
     ingredients: flatIngredientsFromStructured(structuredItems),
     // Phase G: department metadata for grocery routing (non-breaking sidecar)
     _ingredientMeta: metaFromStructured(structuredItems),
-    directions: Array.isArray(structured.directions) ? structured.directions.filter(Boolean) : [],
+    // Directions: accept both new structured format {text, ingredientRefs} and
+    // legacy flat string[] for backward compatibility.
+    directions: Array.isArray(structured.directions)
+      ? structured.directions
+          .filter(Boolean)
+          .map(d => (typeof d === 'string' ? d : (d.text || '')))
+          .filter(Boolean)
+      : [],
+    // Structured directions with ingredient references for CookMode highlighting.
+    // Each entry: { text: string, ingredientRefs: string[] }.
+    directionsStructured: Array.isArray(structured.directions)
+      ? structured.directions
+          .filter(Boolean)
+          .map(d => typeof d === 'string'
+            ? { text: d, ingredientRefs: [] }
+            : { text: d.text || '', ingredientRefs: Array.isArray(d.ingredientRefs) ? d.ingredientRefs : [] }
+          )
+          .filter(d => d.text)
+      : [],
+    // Nutrition (Schema.org NutritionInformation): persisted when the LLM extracts
+    // values from the source. null when not available. Never fabricated.
+    nutrition: normalizeNutrition(structured.nutrition),
     notes: structured.notes || '',
     confidence: typeof structured.confidence === 'number' ? structured.confidence : null,
     needsReview: !!structured.needsReview,
@@ -1423,4 +1719,8 @@ export default {
   fieldConfidence, annotateFieldConfidence,
   // Spec D — learned (user-taught) aliases
   setLearnedAliases, addLearnedAlias, getLearnedAliasMap, learnableAliasFrom,
+  // Unified schema upgrade — unit conversion, pluralization, nutrition
+  UNIT_CONVERSION_FACTORS, convertUnit, unitsAreConvertible,
+  UNIT_PLURALS, FOOD_PLURALS, pluralizeUnit, pluralizeFood,
+  NUTRITION_FIELDS, NUTRITION_LABELS, normalizeNutrition,
 };
