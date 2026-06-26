@@ -50,7 +50,7 @@ db.version(9).stores({
   meals: '++id, name, status, sourceHash, jobId',
 });
 
-// v10: Paprika-style structured fields — ingredients_text indexed for full-text search
+// v10: Structured fields — ingredients_text indexed for full-text search
 db.version(10).stores({
   meals: '++id, name, status, sourceHash, jobId, ingredients_text',
 }).upgrade(tx => {
@@ -118,7 +118,7 @@ db.version(15).stores({
 db.version(16).stores({
   meals: '++id, name, status, sourceHash, jobId, ingredients_text',
   drinks: '++id, name',
-  // First-class ingredient entities (Mealie-inspired)
+  // First-class ingredient entities
   ingredientFoods: '++id, name',
   ingredientUnits: '++id, name',
 }).upgrade(tx => {
@@ -674,14 +674,14 @@ export async function clearInstagramCache() {
 export const getCachedImport   = getCachedInstagramRecipe;
 export const setCachedImport   = cacheInstagramRecipe;
 
-export async function importPaprikaMeals(paprikaMeals) {
+export async function importSeedMeals(seedMeals) {
   try {
     const existing = await db.meals.toArray();
     const existingNames = new Set(existing.map(m => m.name.toLowerCase().trim()));
     const toAdd = [];
     let skipped = 0;
 
-    for (const meal of paprikaMeals) {
+    for (const meal of seedMeals) {
       if (existingNames.has(meal.name.toLowerCase().trim())) {
         skipped++;
         continue;
@@ -694,10 +694,10 @@ export async function importPaprikaMeals(paprikaMeals) {
       await db.meals.bulkAdd(toAdd);
     }
 
-    return { imported: toAdd.length, skipped, total: paprikaMeals.length };
+    return { imported: toAdd.length, skipped, total: seedMeals.length };
   } catch (error) {
-    console.error('[SpiceHub DB] importPaprikaMeals failed:', error);
-    throw new Error('Failed to import Paprika meals. Your data is safe — try again.');
+    console.error('[SpiceHub DB] importSeedMeals failed:', error);
+    throw new Error('Failed to import seed meals. Your data is safe — try again.');
   }
 }
 

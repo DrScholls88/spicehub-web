@@ -485,7 +485,7 @@ export const DISPLAY_SCHEMA = {
 };
 
 // -----------------------------------------------------------------------------
-// 7b. UNIT CONVERSION FACTORS (Mealie-inspired: standard_quantity/standard_unit)
+// 7b. UNIT CONVERSION FACTORS
 // -----------------------------------------------------------------------------
 // Powers cross-unit aggregation in grocery consolidation. Each entry maps a
 // canonical unit to its base type (volume/weight/count) and a factor to convert
@@ -565,7 +565,7 @@ export function unitsAreConvertible(unitA, unitB) {
 }
 
 // -----------------------------------------------------------------------------
-// 7c. UNIT & FOOD PLURAL MAPS (Mealie-inspired: automatic display pluralization)
+// 7c. UNIT & FOOD PLURAL MAPS
 // -----------------------------------------------------------------------------
 // Maps canonical unit to its plural display form. Used by displayFormatter.js
 // for professional ingredient rendering: "1 cup" → "2 cups".
@@ -659,9 +659,9 @@ export function pluralizeFood(food = '', qty = 1) {
 // -----------------------------------------------------------------------------
 // 7d. NUTRITION FIELDS (Schema.org NutritionInformation)
 // -----------------------------------------------------------------------------
-// Mealie stores nutrition as string values (e.g. "250 kcal") matching
-// Schema.org's NutritionInformation. We use the same field names for future
-// interoperability with recipe export formats (JSON-LD, Recipe schema.org).
+// Nutrition stored as string values (e.g. "250 kcal") matching
+// Schema.org NutritionInformation. Same field names for future
+// interoperability with recipe export formats (JSON-LD, Schema.org).
 export const NUTRITION_FIELDS = [
   'calories',             // e.g. "250 kcal"
   'totalFat',             // e.g. "12 g"
@@ -750,9 +750,9 @@ export const RECIPE_SCHEMA = {
         required: ['items'],
       },
     },
-    // Directions as structured step objects with optional ingredient references
-    // (Mealie-inspired RecipeStep.ingredient_references). The LLM emits refs
-    // pointing to ingredient names; thinFromStructured resolves to Item refs.
+    // Directions as structured step objects with optional ingredient references.
+    // The LLM emits refs pointing to ingredient names; thinFromStructured
+    // resolves to Item refs.
     directions: {
       type: 'array',
       items: {
@@ -786,10 +786,12 @@ export const RECIPE_SCHEMA = {
         protein:        { type: 'string' },
       },
     },
+    description: { type: 'string' }, // brief 1-2 sentence recipe summary
+    recipeYield: { type: 'string' }, // e.g. "12 cookies", "4 servings", "1 loaf"
     servings: { type: 'string' },
-    prepTime: { type: 'string' },
-    cookTime: { type: 'string' },
-    totalTime: { type: 'string' },
+    prepTime: { type: 'string' },   // prep time only; do NOT duplicate totalTime
+    cookTime: { type: 'string' },   // cook/perform time only; do NOT duplicate totalTime
+    totalTime: { type: 'string' },  // total time if only one time is given
     cuisine: { type: 'string' },
     course: { type: 'string', enum: COURSE },
     dishType: { type: 'string' },
@@ -797,7 +799,17 @@ export const RECIPE_SCHEMA = {
     glass: { type: 'string' },   // drink only
     garnish: { type: 'string' }, // drink only
     method: { type: 'string' },  // drink only
-    notes: { type: 'string' },
+    notes: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' }, // note title; omit generic titles like "Note"
+          text: { type: 'string' },  // the note content (tips, variations, advice)
+        },
+        required: ['text'],
+      },
+    },
     confidence: { type: 'number' },  // 0..1, model self-rated
     needsReview: { type: 'boolean' },
   },
@@ -813,7 +825,7 @@ export const RECIPE_SCHEMA = {
 // ledger compares a recipe's stored `engineVersion` against this value to offer
 // "improve" re-runs that re-send the cached caption (no re-scrape, no Apify cost).
 // Format: YYYY.MM.patch — human-readable and monotonically comparable as a string.
-export const ENGINE_PROMPT_VERSION = '2026.06.2';
+export const ENGINE_PROMPT_VERSION = '2026.06.3';
 
 // -----------------------------------------------------------------------------
 // 9. SHARED SYSTEM INSTRUCTION (used identically by text / server / vision)
@@ -851,6 +863,14 @@ export const SYSTEM_INSTRUCTION = [
   "\"to taste\"). Prefer canonical units: tsp, tbsp, cup, oz, lb, g, kg, ml, l, clove, can, pinch,",
   "and for drinks oz, ml, cl, dash, splash, barspoon, part.",
   "",
+  "DESCRIPTION. Set `description` to a brief 1-2 sentence summary of the dish. Keep it",
+  "factual and concise (e.g. \"Quick weeknight pasta with a creamy sun-dried tomato sauce.\").",
+  "If no description is evident, make your best one-line summary from the recipe content.",
+  "",
+  "YIELD. Set `recipeYield` to the recipe's stated yield as text (e.g. \"12 cookies\",",
+  "\"4 servings\", \"1 loaf\", \"2 cocktails\"). This is more descriptive than the numeric",
+  "`servings` field. If the yield is a simple serving count, set both fields.",
+  "",
   "CLEANING. Strip from the TITLE and ALL fields: hashtags, @handles, emojis, calls-to-action",
   "(\"save this\", \"link in bio\", \"follow for more\", \"comment RECIPE\"), sponsor disclosures,",
   "engagement bait, view/like counts, and blog boilerplate (\"Jump to Recipe\", \"Pin this\").",
@@ -875,10 +895,12 @@ export const SYSTEM_INSTRUCTION = [
   "step in order; never summarize multiple steps into one.",
   "",
   "DIRECTIONS FORMAT. Each direction is an object {text, ingredientRefs}. `text` is the step",
-  "prose. `ingredientRefs` is an array of ingredient NAMES (matching the `name` field of items",
-  "in ingredientGroups) that the step uses. For example, if step 1 says \"Sear the chicken\",",
-  "its ingredientRefs should be [\"chicken breast\"]. If a step uses no specific ingredient,",
-  "set ingredientRefs to []. This enables CookMode to highlight relevant ingredients per step.",
+  "prose. Do NOT include numeric prefixes like \"1.\", \"Step 1:\", or \"Step 1 -\" in `text`.",
+  "DO include word-based prefixes like \"First\", \"Next\", or \"Meanwhile\". `ingredientRefs`",
+  "is an array of ingredient NAMES (matching the `name` field of items in ingredientGroups)",
+  "that the step uses. For example, if step 1 says \"Sear the chicken\", its ingredientRefs",
+  "should be [\"chicken breast\"]. If a step uses no specific ingredient, set ingredientRefs",
+  "to []. This enables CookMode to highlight relevant ingredients per step.",
   "",
   "NUTRITION. When the source explicitly states nutritional information (e.g. in a recipe blog",
   "sidebar, structured data, or printed on a recipe card), extract it into the `nutrition`",
@@ -887,6 +909,18 @@ export const SYSTEM_INSTRUCTION = [
   "fiber, sugar, protein. Each value is a string with units, e.g. \"250 kcal\", \"12 g\",",
   "\"480 mg\". If the source does NOT state nutrition, omit the nutrition object entirely —",
   "do NOT estimate or fabricate nutritional values.",
+  "",
+  "TIME FIELDS. Use `totalTime` when only one time value is available (e.g. \"1 hour 30",
+  "minutes\"). Use `prepTime` for preparation time and `cookTime` for cooking/performance time",
+  "when they are stated separately. Do NOT duplicate totalTime into prepTime or cookTime;",
+  "each field should carry distinct information or be left empty.",
+  "",
+  "NOTES. The `notes` field is an array of {title, text} objects. Extract tips, variations,",
+  "serving suggestions, storage instructions, and any other non-ingredient/non-direction content",
+  "as separate note entries. Set `title` only when the source uses a meaningful heading (e.g.",
+  "\"Make-ahead tip\"); ignore generic titles like \"Note\" or \"Info\" and leave title empty.",
+  "If there are any elements you are not sure how to classify, capture them as a note.",
+  "If the source has no notes, set notes to an empty array [].",
   "",
   "CONFIDENCE. Set `confidence` 0–1 for how cleanly the source mapped to the schema, and",
   "`needsReview`=true if anything was ambiguous, illegible, or inferred rather than stated. If",
@@ -947,6 +981,8 @@ export const EXEMPLARS = {
           { text: 'Sauté garlic, then add cream and sun-dried tomatoes and simmer 3 minutes.', ingredientRefs: ['garlic', 'heavy cream', 'sun-dried tomatoes'] },
           { text: 'Stir in spinach until wilted, return the chicken, and toss with pasta.', ingredientRefs: ['baby spinach', 'chicken breast'] },
         ],
+        description: 'Quick creamy pasta with sun-dried tomatoes, spinach, and seared chicken.',
+        recipeYield: '4 servings',
         servings: '4',
         prepTime: '',
         cookTime: '15 min',
@@ -955,7 +991,7 @@ export const EXEMPLARS = {
         course: 'dinner',
         dishType: 'pasta',
         dietaryTags: [],
-        notes: '',
+        notes: [],
         confidence: 0.95,
         needsReview: false,
       },
@@ -983,10 +1019,11 @@ export const EXEMPLARS = {
           { text: 'Strain into a chilled coupe.', ingredientRefs: [] },
           { text: 'Express an orange peel over the top and garnish.', ingredientRefs: [] },
         ],
+        description: 'Classic stirred cocktail with rye whiskey, sweet vermouth, and bitters.',
         glass: 'coupe',
         garnish: 'expressed orange peel',
         method: 'stirred',
-        notes: '',
+        notes: [],
         confidence: 0.96,
         needsReview: false,
       },
@@ -1110,7 +1147,24 @@ export function thinFromStructured(structured = {}) {
     // Nutrition (Schema.org NutritionInformation): persisted when the LLM extracts
     // values from the source. null when not available. Never fabricated.
     nutrition: normalizeNutrition(structured.nutrition),
-    notes: structured.notes || '',
+    // Description: brief recipe summary for cards and search.
+    description: (structured.description || '').trim(),
+    // Yield: descriptive output (e.g. "12 cookies", "1 loaf").
+    recipeYield: (structured.recipeYield || '').trim(),
+    // Notes: structured [{title?, text}] array. Legacy string notes are wrapped
+    // into a single-entry array for backward compatibility.
+    notes: Array.isArray(structured.notes)
+      ? structured.notes.filter(n => n && n.text).map(n => ({
+          title: (n.title || '').trim(),
+          text: (n.text || '').trim(),
+        }))
+      : typeof structured.notes === 'string' && structured.notes.trim()
+        ? [{ title: '', text: structured.notes.trim() }]
+        : [],
+    // Legacy flat notes string for backward-compat display (MealDetail, exports).
+    _notesFlat: Array.isArray(structured.notes)
+      ? structured.notes.filter(n => n && n.text).map(n => n.text.trim()).join('\n\n')
+      : (structured.notes || ''),
     confidence: typeof structured.confidence === 'number' ? structured.confidence : null,
     needsReview: !!structured.needsReview,
     _type: kind,
@@ -1475,7 +1529,7 @@ export function reconcileStructuredWithFlat(structured = [], flat = [], meta = [
 }
 
 // -----------------------------------------------------------------------------
-// 12b. PER-FIELD CONFIDENCE (Spec B — Mealie IngredientConfidence analog)
+// 12b. PER-FIELD CONFIDENCE
 // -----------------------------------------------------------------------------
 // A single recipe-level confidence can't point the user at the shaky token.
 // fieldConfidence scores each ingredient field 0..1 from the Spec C cross-check

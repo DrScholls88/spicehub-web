@@ -110,7 +110,7 @@ const BrowserAssist = forwardRef(function BrowserAssist({ url, onRecipeExtracted
   const iframeRef = useRef(null);
   const extractionRef = useRef(null);
 
-  // â”€â”€ Paprika-style aim-the-parser state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Aim-the-parser state ─────────────────────────────────────────────────
   // aimMode: when true, a tap inside the iframe routes that element's text
   // straight to the parser instead of navigating the page.
   const [aimMode, setAimMode] = useState(false);
@@ -126,7 +126,7 @@ const BrowserAssist = forwardRef(function BrowserAssist({ url, onRecipeExtracted
   // Toast shown briefly after a successful aim-tap, e.g. "Added 3 ingredients".
   const [aimToast, setAimToast] = useState('');
   const [deepModeToggle, setDeepModeToggle] = useState(false); // for Purple V manual override
-// Purple V click handler (already exists from Paprika)
+// Purple V click handler
 const toggleDeepMode = () => {
   setDeepModeToggle(!deepModeToggle);
   // Optionally trigger import immediately in deep mode
@@ -710,7 +710,7 @@ const toggleDeepMode = () => {
     }
   }, [isSocial]);
 
-  // ——— Visual scrape — Paprika-style DOM walker ————————————————————————————————
+  // ——— Visual scrape — DOM walker ——————————————————————————————————————————————
   // Walks the iframe's DOM, captures text nodes with computed styles + bounding
   // rects, then POSTs to /api/import/visual-parse for server-side layout-based
   // extraction. The server returns { recipe, blocks } — blocks already have a
@@ -1371,7 +1371,7 @@ const toggleDeepMode = () => {
             </button>
           </div>
 
-          {/* ——— Paprika-style power row: Expand captions + Aim parser ———————
+          {/* ——— Power row: Expand captions + Aim parser ————————————————————————
               These are the controls the user specifically asked for. They mirror
               the floating buttons injected inside the iframe, but are bigger
               and always-visible in the parent UI so they can't be covered by
@@ -1439,12 +1439,12 @@ const toggleDeepMode = () => {
                 : <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Crosshair size={15} strokeWidth={2} /> Aim parser</span>}
             </button>
 
-            {/* Visual scrape mode toggle — Paprika-style layout detection */}
+            {/* Visual scrape mode toggle — layout detection */}
             <button
               type="button"
               onClick={() => setVisualScrapeMode(v => !v)}
               disabled={phase === 'extracting' || visualScrapeRunning}
-              title={visualScrapeMode ? 'Visual parse mode active (click to disable)' : 'Enable visual parse mode (Paprika-style)'}
+              title={visualScrapeMode ? 'Visual parse mode active (click to disable)' : 'Enable visual parse mode'}
               aria-pressed={visualScrapeMode}
               aria-label="Toggle visual parse mode"
               style={{

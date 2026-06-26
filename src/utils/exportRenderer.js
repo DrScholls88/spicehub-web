@@ -165,7 +165,10 @@ export function renderRecipeExport(recipe, options = {}) {
     imageUrl: recipe.imageUrl || recipe.image || '',
     ingredients: Array.isArray(recipe.ingredients) ? recipe.ingredients.filter(Boolean) : [],
     directions: Array.isArray(recipe.directions) ? recipe.directions.filter(Boolean) : [],
-    notes: recipe.notes || '',
+    // Flatten structured notes [{title, text}] to a single string for templates.
+    notes: Array.isArray(recipe.notes)
+      ? recipe.notes.map(n => n.title ? `${n.title}: ${n.text}` : n.text).join('\n')
+      : (recipe._notesFlat || recipe.notes || ''),
     prepTime: recipe.prepTime || '',
     cookTime: recipe.cookTime || '',
     servings: recipe.servings || '',

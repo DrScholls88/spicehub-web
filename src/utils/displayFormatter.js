@@ -1,6 +1,6 @@
 // src/utils/displayFormatter.js
 //
-// Smart display formatting engine (Mealie-inspired).
+// Smart display formatting engine.
 // Converts raw ingredient data into polished, human-readable strings with:
 //   - Unicode fraction rendering (½, ⅓, ¾, etc.)
 //   - Automatic unit pluralization ("1 cup" → "2 cups")
@@ -19,7 +19,7 @@ import {
 // ---------------------------------------------------------------------------
 // 1. UNICODE FRACTION RENDERING
 // ---------------------------------------------------------------------------
-// Mealie approach: SUPERSCRIPT/SUBSCRIPT maps for arbitrary n/d fractions,
+// SUPERSCRIPT/SUBSCRIPT maps for arbitrary n/d fractions,
 // with a fast path for common vulgar fraction code points.
 
 const SUPERSCRIPT = {
@@ -89,9 +89,9 @@ export function formatFraction(fraction) {
   return `${sup}${FRACTION_SLASH}${sub}`;
 }
 
-// Max denominator for decimal→fraction conversion (Mealie uses 32)
+// Max denominator for decimal→fraction conversion
 const MAX_DENOMINATOR = 32;
-// Precision: 3 decimal places (Mealie: INGREDIENT_QTY_PRECISION = 3)
+// Precision: 3 decimal places
 const QTY_PRECISION = 3;
 
 /**
