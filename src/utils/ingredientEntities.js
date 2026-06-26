@@ -1,6 +1,6 @@
 // src/utils/ingredientEntities.js
 //
-// First-class IngredientFood and IngredientUnit entities (Mealie-inspired).
+// First-class IngredientFood and IngredientUnit entities.
 // These live in Dexie tables and provide:
 //   - Canonical food/unit resolution (name → entity with plural, aliases, aisle)
 //   - Cross-recipe food identity (same "garlic" entity shared by all recipes)

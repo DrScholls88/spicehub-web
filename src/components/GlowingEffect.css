@@ -1,9 +1,13 @@
+/* GlowingEffect — restrained, on-brand cursor-tracked border bloom.
+   Replaces the old multi-color conic version (which used background-attachment:fixed
+   and rendered a garish viewport-anchored rainbow per card). This is a single-accent
+   glow confined to the card's border ring via the padding + mask-xor technique. */
+
 .glow {
   pointer-events: none;
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  opacity: 1;
 }
 
 .glow__border {
@@ -11,54 +15,39 @@
   inset: 0;
   border-radius: inherit;
   pointer-events: none;
-  border: var(--glow-border-width) solid transparent;
 
-  /* multi-color rotating conic gradient (default variant) */
-  --gradient: repeating-conic-gradient(
-    from 236.84deg at 50% 50%,
-    #dd7bbb 0%,
-    #d79f1e calc(25% / var(--repeating-conic-gradient-times)),
-    #5a922c calc(50% / var(--repeating-conic-gradient-times)),
-    #4c7894 calc(75% / var(--repeating-conic-gradient-times)),
-    #dd7bbb calc(100% / var(--repeating-conic-gradient-times))
+  /* Ring thickness */
+  padding: var(--glow-border-width, 1.5px);
+
+  /* Accent color — adapts to the active theme's --primary, with a safe fallback */
+  --glow-color: rgba(230, 81, 0, 0.55);
+  --glow-color: color-mix(in srgb, var(--primary, #e65100) 65%, transparent);
+
+  /* Soft bloom anchored at the cursor (defaults to center when idle) */
+  background: radial-gradient(
+    var(--glow-size, 180px) circle at var(--mx, 50%) var(--my, 50%),
+    var(--glow-color),
+    transparent 70%
   );
-
-  background: var(--gradient);
-  background-attachment: fixed;
 
   opacity: var(--active, 0);
-  transition: opacity 0.35s ease;
-  filter: blur(var(--blur, 0px));
+  transition: opacity 0.45s cubic-bezier(0.32, 0.72, 0, 1);
+  will-change: opacity;
 
-  /* show gradient only in a wedge that follows the pointer angle (--start),
-     and only on the border ring (padding-box xor) */
+  /* Keep paint on the border ring only — masks out the content-box interior */
   -webkit-mask:
     linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0),
-    conic-gradient(
-      from calc((var(--start) - (var(--spread) * 0.5)) * 1deg),
-      transparent 0deg,
-      #fff,
-      transparent calc(var(--spread) * 1deg)
-    );
-  -webkit-mask-composite: xor, source-in;
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
   mask:
     linear-gradient(#fff 0 0) content-box,
-    linear-gradient(#fff 0 0),
-    conic-gradient(
-      from calc((var(--start) - (var(--spread) * 0.5)) * 1deg),
-      transparent 0deg,
-      #fff,
-      transparent calc(var(--spread) * 1deg)
-    );
-  mask-composite: exclude, intersect;
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
 }
 
-.glow--white .glow__border {
-  --gradient: repeating-conic-gradient(
-    from 236.84deg at 50% 50%,
-    #fff 0%, #ccc 25%, #fff 50%, #ccc 75%, #fff 100%
-  );
+/* Touch / no-hover devices: hide entirely so it can never stick on after a tap */
+@media (hover: none) {
+  .glow__border { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

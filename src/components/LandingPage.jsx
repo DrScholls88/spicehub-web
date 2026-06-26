@@ -901,7 +901,7 @@ export default function LandingPage({
             whileTap={{ scale: 0.94 }}
             style={{ ...STYLES.tile, padding: '16px 16px 16px 20px', textAlign: 'left', outline: 'none' }}
           >
-            <GlowingEffect glow proximity={64} spread={40} borderWidth={2} />
+            <GlowingEffect proximity={56} borderWidth={1.5} />
             <div style={{ ...STYLES.tileAccent, backgroundColor: tile.accent }} />
             <div style={STYLES.tileEmoji}>{tile.emoji}</div>
             <div style={STYLES.tileTitle}>{tile.title}</div>

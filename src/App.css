@@ -3465,7 +3465,7 @@ body {
 
 /* ═══════════════════════════════════════════════════════════════════
    BrowserImport — In-app browser import panel
-   Mirrors Paprika's embedded WebView UX
+   Mirrors embedded WebView UX
    ═══════════════════════════════════════════════════════════════════ */
 
 /* ── Fake browser address bar ── */
@@ -3589,7 +3589,7 @@ body {
   gap: 8px;
 }
 
-/* ── Download / Extract button (the "big green" Paprika-style button) ── */
+/* ── Download / Extract button (the "big green" extract button) ── */
 .btn-download {
   display: flex;
   align-items: center;
@@ -4936,6 +4936,17 @@ body {
 }
 
 /* ── Detail notes styling ── */
+.detail-note-entry { margin-bottom: 8px; }
+.detail-note-entry:last-child { margin-bottom: 0; }
+.detail-note-title {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--primary);
+  margin-bottom: 2px;
+}
 .detail-notes {
   font-size: 14px;
   line-height: 1.6;

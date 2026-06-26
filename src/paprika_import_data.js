@@ -1,4 +1,4 @@
-export const PAPRIKA_MEALS = [
+export const SEED_MEALS = [
   {
     "name": "Asian Sriracha Noodles",
     "ingredients": [

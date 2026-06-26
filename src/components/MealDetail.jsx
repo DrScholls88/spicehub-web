@@ -234,6 +234,15 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
           </div>
         </div>
 
+        {/* Description + Yield — shown when LLM extracted a summary */}
+        {(meal.description || meal.recipeYield) && (
+          <div className="detail-description-bar" style={{ padding: '0 16px 8px', fontSize: 14, color: 'var(--color-text-secondary, #666)' }}>
+            {meal.description && <span>{meal.description}</span>}
+            {meal.description && meal.recipeYield && <span> · </span>}
+            {meal.recipeYield && <span style={{ fontWeight: 500 }}>{meal.recipeYield}</span>}
+          </div>
+        )}
+
         {/* Recipe Scale Selector */}
         <div className="servings-scaler">
           <label>Scale:</label>
@@ -268,10 +277,18 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
           </ol>
         </div>
 
-        {meal.notes && (
+        {/* Notes: support both structured [{title, text}] and legacy flat string */}
+        {(Array.isArray(meal.notes) ? meal.notes.length > 0 : !!meal.notes) && (
           <div className="detail-section">
             <h3>📌 Notes</h3>
-            <p className="detail-notes">{meal.notes}</p>
+            {Array.isArray(meal.notes) ? meal.notes.map((note, i) => (
+              <div key={i} className="detail-note-entry">
+                {note.title && <strong className="detail-note-title">{note.title}</strong>}
+                <p className="detail-notes">{note.text}</p>
+              </div>
+            )) : (
+              <p className="detail-notes">{meal.notes}</p>
+            )}
           </div>
         )}
 
