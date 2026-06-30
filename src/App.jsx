@@ -794,10 +794,14 @@ useEffect(() => {
   }, [loadDrinks]);
 
   // ── Grocery list ──────────────────────────────────────────────────────────────
-  const buildGroceryList = useCallback(() => {
+  const buildGroceryList = useCallback((dayIndices) => {
     const items = {};
     const storeMemory = window._storeMemory || {};
-    weekPlan.forEach(meal => {
+    // If dayIndices supplied, only include those days; otherwise all 7
+    const plansToUse = dayIndices
+      ? dayIndices.map(i => weekPlan[i]).filter(Boolean)
+      : weekPlan;
+    plansToUse.forEach(meal => {
       if (!meal || meal._special) return;
 
       // Spec A: prefer the structured ingredient array (source of truth). It
@@ -1154,6 +1158,8 @@ useEffect(() => {
             onViewDetail={setDetailItem}
             onOpenFridge={() => setShowFridge(true)}
             onOpenStats={() => setShowStats(true)}
+            canInstall={!!deferredPrompt}
+            onInstallApp={handleInstallApp}
           />
         )}
         {tab === 'week' && (
