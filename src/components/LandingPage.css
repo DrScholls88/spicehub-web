@@ -331,6 +331,283 @@
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
+   Spin Pulse Glow — shown when week is unplanned
+   ───────────────────────────────────────────────────────────────────────────── */
+
+@keyframes spinPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 107, 53, 0.45); }
+  50%      { box-shadow: 0 0 18px 4px rgba(255, 107, 53, 0.25); }
+}
+
+.btn-primary.spin-pulse {
+  animation: spinPulse 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Sticky Mini-Header — appears on scroll past hero
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.landing-sticky-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  max-width: 600px;
+  margin: 0 auto;
+  transform: translateY(-100%);
+  opacity: 0;
+  transition: transform 280ms cubic-bezier(0.32, 0.72, 0, 1),
+              opacity 280ms cubic-bezier(0.32, 0.72, 0, 1);
+  pointer-events: none;
+}
+
+.landing-sticky-header.visible {
+  transform: translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.landing-sticky-header .sticky-brand {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.landing-sticky-header .sticky-spin-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 100px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: filter 150ms cubic-bezier(0.4, 0, 0.2, 1),
+              transform 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.landing-sticky-header .sticky-spin-btn:active {
+  transform: scale(0.96);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Glassmorphism tiles
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.landing-tile-glass {
+  background: color-mix(in srgb, var(--card) 78%, transparent) !important;
+  backdrop-filter: blur(12px) saturate(1.2);
+  -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent) !important;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06),
+              inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* Bar Shelf neon tavern glow */
+.landing-tile-glass.tile-bar {
+  box-shadow: 0 0 14px rgba(123, 31, 162, 0.18),
+              0 2px 12px rgba(0, 0, 0, 0.06),
+              inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  border-color: rgba(123, 31, 162, 0.3) !important;
+}
+
+/* Primary tiles (full-width span) */
+.landing-tile-primary {
+  grid-column: 1 / -1;
+  min-height: 100px !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 14px;
+  padding: 18px 20px 18px 24px !important;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--card) 85%, var(--primary)) 0%,
+    color-mix(in srgb, var(--card) 95%, transparent) 100%
+  ) !important;
+}
+
+.landing-tile-primary .tile-emoji-wrap {
+  font-size: 36px;
+  flex-shrink: 0;
+}
+
+.landing-tile-primary .tile-text-wrap {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Today Hero Card — elevated meal highlight
+   ───────────────────────────────────────────────────────────────────────────── */
+
+@keyframes heroShimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.today-hero-card {
+  position: relative;
+  background: var(--card);
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 20px;
+  cursor: pointer;
+  transition: transform 200ms cubic-bezier(0.32, 0.72, 0, 1),
+              box-shadow 200ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.today-hero-card:active {
+  transform: scale(0.98);
+}
+
+.today-hero-card .hero-photo {
+  width: 100%;
+  height: 140px;
+  object-fit: cover;
+  display: block;
+  position: relative;
+}
+
+.today-hero-card .hero-photo-wrap {
+  position: relative;
+  overflow: hidden;
+}
+
+.today-hero-card .hero-photo-wrap::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 50%,
+    transparent 100%
+  );
+  animation: heroShimmer 3.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  pointer-events: none;
+}
+
+.today-hero-card .hero-body {
+  padding: 12px 14px 14px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.today-hero-card .hero-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--primary);
+  margin-bottom: 4px;
+}
+
+.today-hero-card .hero-meal-name {
+  font-size: 17px;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.25;
+}
+
+.today-hero-card .hero-meal-meta {
+  font-size: 12px;
+  color: var(--text-muted, var(--text-light));
+  margin-top: 3px;
+  font-weight: 500;
+}
+
+.today-hero-card .hero-arrow {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-light);
+  font-size: 14px;
+  margin-top: 2px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Install Banner
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.install-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 16px;
+  cursor: pointer;
+  transition: all 200ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.install-banner:active {
+  transform: scale(0.98);
+}
+
+.install-banner .install-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.install-banner .install-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.install-banner .install-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.install-banner .install-subtitle {
+  font-size: 11px;
+  color: var(--text-muted, var(--text-light));
+  font-weight: 500;
+}
+
+.install-banner .install-dismiss {
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: none;
+  color: var(--text-muted, var(--text-light));
+  font-size: 14px;
+  cursor: pointer;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
    Accessibility & Reduced Motion
    ───────────────────────────────────────────────────────────────────────────── */
 
@@ -346,6 +623,19 @@
   .btn-primary,
   .btn-secondary,
   .hero-image {
+    transition: none;
+  }
+
+  .btn-primary.spin-pulse {
+    animation: none;
+  }
+
+  .today-hero-card .hero-photo-wrap::after {
+    animation: none;
+    display: none;
+  }
+
+  .landing-sticky-header {
     transition: none;
   }
 }

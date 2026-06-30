@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Dices } from 'lucide-react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { Dices, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import SafeMediaImage from './SafeMediaImage.jsx';
 import GlowingEffect from './GlowingEffect.jsx';
@@ -92,6 +92,14 @@ const STYLES = {
     border: '1px solid var(--border)',
     borderRadius: '999px',
     padding: '3px 10px',
+  },
+  tagline: {
+    fontSize: '13px',
+    fontWeight: '500',
+    color: 'var(--text-muted, var(--text-light))',
+    marginTop: '-4px',
+    marginBottom: '10px',
+    letterSpacing: '0.01em',
   },
   spinBtnFull: {
     display: 'flex',
@@ -433,6 +441,9 @@ const TILE_COLORS = {
   stats: '#e65100',
 };
 
+// Primary tiles span full width with distinct treatment
+const PRIMARY_TILES = new Set(['planWeek', 'fridge']);
+
 // ── Seasonal helpers ──────────────────────────────────────────────────────────
 function getSeasonInfo() {
   const m = new Date().getMonth(); // 0-indexed
@@ -531,6 +542,97 @@ function SeasonalMealCard({ meal, onPress }) {
         )}
       </div>
     </motion.button>
+  );
+}
+
+// ── TodayHeroCard ────────────────────────────────────────────────────────────
+function TodayHeroCard({ meal, onPress }) {
+  if (!meal || meal._special) return null;
+  return (
+    <motion.button
+      className="today-hero-card"
+      onClick={() => onPress(meal)}
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: [0.32, 0.72, 0, 1] }}
+      style={{ width: '100%', border: 'none', outline: 'none', textAlign: 'left', padding: 0 }}
+    >
+      {meal.imageUrl ? (
+        <div className="hero-photo-wrap">
+          <SafeMediaImage
+            src={meal.imageUrl}
+            alt={meal.name || ''}
+            className="hero-photo"
+            style={{ width: '100%', height: '140px', objectFit: 'cover', display: 'block' }}
+            fallbackEmoji="🍳"
+          />
+        </div>
+      ) : (
+        <div style={{
+          width: '100%', height: '100px', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', background: 'var(--surface)', fontSize: '40px',
+        }}>
+          🍳
+        </div>
+      )}
+      <div className="hero-body">
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="hero-tag">Tonight's dinner</div>
+          <div className="hero-meal-name">{meal.name}</div>
+          {(meal.category || meal.cuisine) && (
+            <div className="hero-meal-meta">
+              {[meal.category, meal.cuisine].filter(Boolean).join(' · ')}
+            </div>
+          )}
+        </div>
+        <div className="hero-arrow">
+          <ChevronRight size={16} strokeWidth={2.5} />
+        </div>
+      </div>
+    </motion.button>
+  );
+}
+
+// ── InstallBanner ────────────────────────────────────────────────────────────
+function InstallBanner({ onInstall }) {
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed) return null;
+  return (
+    <motion.div
+      className="install-banner"
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, height: 0, marginBottom: 0, padding: 0, overflow: 'hidden' }}
+      transition={{ duration: 0.35, ease: [0.32, 0.72, 0, 1] }}
+      onClick={onInstall}
+    >
+      <span className="install-icon">📲</span>
+      <div className="install-text">
+        <div className="install-title">Install SpiceHub</div>
+        <div className="install-subtitle">Add to home screen for faster access</div>
+      </div>
+      <button
+        className="install-dismiss"
+        onClick={(e) => { e.stopPropagation(); setDismissed(true); }}
+        aria-label="Dismiss"
+      >
+        ✕
+      </button>
+    </motion.div>
+  );
+}
+
+// ── StickyHeader ─────────────────────────────────────────────────────────────
+function StickyHeader({ visible, onSpin }) {
+  return (
+    <div className={`landing-sticky-header${visible ? ' visible' : ''}`}>
+      <div className="sticky-brand">
+        🌶️ SpiceHub
+      </div>
+      <button className="sticky-spin-btn" onClick={onSpin}>
+        Spin 🎲
+      </button>
+    </div>
   );
 }
 
@@ -685,11 +787,28 @@ export default function LandingPage({
   onViewDetail = () => {},
   onOpenFridge = () => {},
   onOpenStats = () => {},
+  onInstallApp = null,
+  canInstall = false,
 }) {
   const [hoveredTile, setHoveredTile] = useState(null);
   const [hoveredStats, setHoveredStats] = useState(false);
   const [hoverEmptyButton, setHoverEmptyButton] = useState(false);
   const [previewDay, setPreviewDay] = useState(null); // { date, meal, isToday }
+
+  // ── Sticky header visibility via IntersectionObserver ────────────────────
+  const heroRef = useRef(null);
+  const [stickyVisible, setStickyVisible] = useState(false);
+
+  useEffect(() => {
+    const el = heroRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setStickyVisible(!entry.isIntersecting),
+      { threshold: 0, rootMargin: '-1px 0px 0px 0px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   // Greeting and date
   const { greeting } = useMemo(() => {
@@ -799,10 +918,17 @@ export default function LandingPage({
     ...(hoveredTile === tileId && STYLES.tileHover),
   });
 
+  // Today's meal for hero card
+  const todayMeal = next5Days[0]?.meal;
+
   return (
     <div style={STYLES.container}>
+      {/* Sticky mini-header — appears on scroll past hero */}
+      <StickyHeader visible={stickyVisible} onSpin={onGenerate} />
+
       {/* Hero — flattened to reclaim the fold (slim context bar + primary CTA) */}
       <motion.div
+        ref={heroRef}
         style={{ marginBottom: '20px' }}
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
@@ -818,9 +944,12 @@ export default function LandingPage({
           )}
         </div>
 
+        {/* Tagline — concise value prop */}
+        <div style={STYLES.tagline}>Your meals, gamified.</div>
+
         {/* Primary CTA — Spin the Week (full width) */}
         <motion.button
-          className="btn-primary"
+          className={`btn-primary${!hasAnyMeal ? ' spin-pulse' : ''}`}
           onClick={onGenerate}
           initial="rest"
           whileHover="hover"
@@ -835,6 +964,18 @@ export default function LandingPage({
           >🎲</motion.span>
         </motion.button>
       </motion.div>
+
+      {/* Install banner — shown when PWA install is available */}
+      <AnimatePresence>
+        {canInstall && onInstallApp && (
+          <InstallBanner onInstall={onInstallApp} />
+        )}
+      </AnimatePresence>
+
+      {/* Today's meal — elevated hero card */}
+      {todayMeal && !todayMeal._special && todayMeal.name && (
+        <TodayHeroCard meal={todayMeal} onPress={onViewDetail} />
+      )}
 
       {/* ── Next 5 Days ── */}
       <div style={STYLES.nextDaysSection}>
@@ -886,28 +1027,58 @@ export default function LandingPage({
       </div>
 
       {/* ── Navigation tiles ── */}
-      <motion.div 
+      <motion.div
         style={STYLES.tilesGrid}
         initial="hidden"
         animate="visible"
         variants={{ visible: { transition: { staggerChildren: 0.05 } } }}
       >
-        {tiles.map((tile) => (
-          <motion.button
-            key={tile.id}
-            onClick={tile.onClick}
-            variants={{ hidden: { opacity: 0, scale: 0.9 }, visible: { opacity: 1, scale: 1, transition: { type: "spring", stiffness: 300, damping: 24 } } }}
-            whileHover={{ scale: 0.97, y: -2, boxShadow: 'var(--shadow)', opacity: 0.98 }}
-            whileTap={{ scale: 0.94 }}
-            style={{ ...STYLES.tile, padding: '16px 16px 16px 20px', textAlign: 'left', outline: 'none' }}
-          >
-            <GlowingEffect proximity={56} borderWidth={1.5} />
-            <div style={{ ...STYLES.tileAccent, backgroundColor: tile.accent }} />
-            <div style={STYLES.tileEmoji}>{tile.emoji}</div>
-            <div style={STYLES.tileTitle}>{tile.title}</div>
-            <div style={STYLES.tileSubtitle}>{tile.subtitle}</div>
-          </motion.button>
-        ))}
+        {tiles.map((tile) => {
+          const isPrimary = PRIMARY_TILES.has(tile.id);
+          const isBar = tile.id === 'bar';
+          const tileClasses = [
+            'landing-tile-glass',
+            isPrimary ? 'landing-tile-primary' : '',
+            isBar ? 'tile-bar' : '',
+          ].filter(Boolean).join(' ');
+
+          return (
+            <motion.button
+              key={tile.id}
+              className={tileClasses}
+              onClick={tile.onClick}
+              variants={{ hidden: { opacity: 0, scale: 0.9 }, visible: { opacity: 1, scale: 1, transition: { type: "spring", stiffness: 300, damping: 24 } } }}
+              whileHover={{ scale: 0.97, y: -2, boxShadow: 'var(--shadow)', opacity: 0.98 }}
+              whileTap={{ scale: 0.94 }}
+              style={{
+                ...STYLES.tile,
+                ...(isPrimary ? { padding: '18px 20px 18px 24px' } : { padding: '16px 16px 16px 20px' }),
+                textAlign: 'left',
+                outline: 'none',
+              }}
+            >
+              <GlowingEffect proximity={56} borderWidth={1.5} />
+              {!isPrimary && (
+                <div style={{ ...STYLES.tileAccent, backgroundColor: tile.accent }} />
+              )}
+              {isPrimary ? (
+                <>
+                  <div className="tile-emoji-wrap" style={{ fontSize: '36px', flexShrink: 0 }}>{tile.emoji}</div>
+                  <div className="tile-text-wrap" style={{ flex: 1, minWidth: 0 }}>
+                    <div style={STYLES.tileTitle}>{tile.title}</div>
+                    <div style={STYLES.tileSubtitle}>{tile.subtitle}</div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={STYLES.tileEmoji}>{tile.emoji}</div>
+                  <div style={STYLES.tileTitle}>{tile.title}</div>
+                  <div style={STYLES.tileSubtitle}>{tile.subtitle}</div>
+                </>
+              )}
+            </motion.button>
+          );
+        })}
       </motion.div>
 
       {/* ── Stats strip ── */}

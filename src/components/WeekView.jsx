@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { X, Lock, Star, BookOpen, UtensilsCrossed } from 'lucide-react';
+import { X, Lock, Star, BookOpen, UtensilsCrossed, ChevronDown, ChevronRight, MoreVertical, Plus, RefreshCw, CheckSquare, ShoppingCart, CalendarDays, List } from 'lucide-react';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import MealSpinner from './MealSpinner';
 
@@ -44,7 +44,6 @@ function addDays(date, n) {
 }
 
 function dateKey(date) {
-  // Use local date parts to avoid timezone issues
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
@@ -66,9 +65,9 @@ function isSameDay(a, b) {
 
 function getCalendarCells(year, month) {
   const firstDay = new Date(year, month, 1);
-  const startDow = firstDay.getDay(); // 0=Sun, already leftmost column
+  const startDow = firstDay.getDay();
   const startDate = new Date(firstDay);
-  startDate.setDate(startDate.getDate() - startDow); // rewind to the Sunday before (or on) month start
+  startDate.setDate(startDate.getDate() - startDow);
   startDate.setHours(0, 0, 0, 0);
   const cells = [];
   for (let i = 0; i < 42; i++) {
@@ -137,9 +136,161 @@ const ANIMATIONS_CSS = `
   .wv-cell-selected {
     animation: wv-selectPop 0.28s var(--ease-bounce, cubic-bezier(0.34,1.56,0.64,1)) forwards;
   }
+  /* ── Grocery-active glow ── */
+  .wv-tl-card.tl-grocery-active {
+    border-color: #43a047;
+    box-shadow: 0 0 0 1px #43a047, 0 2px 16px rgba(67,160,71,0.18);
+    background: rgba(67,160,71,0.06);
+  }
+  .wv-tl-card.tl-grocery-active .wv-tl-grocery-badge {
+    display: flex;
+  }
+  .wv-tl-grocery-badge {
+    display: none; position: absolute; top: 4px; right: 4px;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: #43a047; color: white;
+    align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 800;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+  }
+  .wv-tl-card.tl-grocery-excluded {
+    opacity: 0.4;
+    border-style: dashed;
+    border-color: var(--border);
+  }
+  @keyframes wv-groceryPulse {
+    0%, 100% { box-shadow: 0 0 0 1px #43a047, 0 2px 16px rgba(67,160,71,0.18); }
+    50%      { box-shadow: 0 0 0 2px #43a047, 0 2px 20px rgba(67,160,71,0.30); }
+  }
+  .wv-tl-card.tl-grocery-active {
+    animation: wv-groceryPulse 2s ease-in-out infinite;
+  }
+  .grocery-mode-bar {
+    background: #43a047; color: white;
+    padding: 6px 16px; font-size: 12px; font-weight: 600;
+    display: flex; align-items: center; justify-content: space-between;
+    animation: wv-fadeIn 0.2s ease both;
+  }
+  .grocery-mode-bar .gm-count {
+    background: rgba(255,255,255,0.25); border-radius: 10px;
+    padding: 1px 8px;
+  }
+  /* ── Timeline view styles ── */
+  .wv-tl-card {
+    position: relative;
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    transition: transform 160ms cubic-bezier(0.23,1,0.32,1), box-shadow 160ms ease, border-color 200ms ease, opacity 200ms ease;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    border: 1.5px solid var(--border);
+    background: var(--card);
+  }
+  .wv-tl-card:active { transform: scale(0.97); }
+  .wv-tl-card.tl-today {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 1px var(--primary), 0 2px 12px rgba(230,81,0,0.12);
+  }
+  .wv-tl-card.tl-empty {
+    border-style: dashed;
+    border-color: var(--border);
+    background: transparent;
+  }
+  .wv-tl-card.tl-empty:active { transform: scale(0.98); }
+  .wv-tl-card.tl-selected {
+    border-color: var(--primary);
+    background: rgba(230,81,0,0.06);
+    animation: wv-selectPop 0.28s var(--ease-bounce, cubic-bezier(0.34,1.56,0.64,1)) forwards;
+  }
+  .wv-tl-card.tl-past { opacity: 0.55; }
+  .wv-tl-dow { text-align: center; min-width: 38px; flex-shrink: 0; }
+  .wv-tl-dow-label {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--text-muted);
+  }
+  .wv-tl-card.tl-today .wv-tl-dow-label { color: var(--primary); }
+  .wv-tl-dow-num { font-size: 19px; font-weight: 800; color: var(--text); }
+  .wv-tl-card.tl-today .wv-tl-dow-num { color: var(--primary); }
+  .wv-tl-thumb {
+    width: 48px; height: 48px; border-radius: 10px; flex-shrink: 0;
+    object-fit: cover; display: block;
+  }
+  .wv-tl-thumb-ph {
+    width: 48px; height: 48px; border-radius: 10px; flex-shrink: 0;
+    background: var(--surface); display: flex; align-items: center;
+    justify-content: center; font-size: 22px;
+  }
+  .wv-tl-empty-ph {
+    width: 48px; height: 48px; border-radius: 10px; flex-shrink: 0;
+    background: var(--surface); display: flex; align-items: center;
+    justify-content: center;
+  }
+  .wv-tl-info { flex: 1; min-width: 0; }
+  .wv-tl-name {
+    font-size: 14px; font-weight: 700; color: var(--text);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .wv-tl-meta { font-size: 11px; color: var(--text-light); margin-top: 1px; }
+  .wv-tl-action {
+    flex-shrink: 0; padding: 6px; border-radius: 8px;
+    background: transparent; border: none; color: var(--text-muted);
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+  }
+  .wv-tl-action:active { background: var(--surface); }
+  .wv-tl-spin-chip {
+    flex-shrink: 0; padding: 5px 10px; border-radius: 8px;
+    background: rgba(230,81,0,0.1); border: none;
+    color: var(--primary); font-size: 11px; font-weight: 700;
+    cursor: pointer; display: flex; align-items: center; gap: 4px;
+    transition: transform 100ms ease;
+  }
+  .wv-tl-spin-chip:active { transform: scale(0.93); }
+  .wv-tl-section-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 16px 4px;
+  }
+  .wv-tl-section-title {
+    font-size: 13px; font-weight: 700; color: var(--text-light);
+  }
+  .wv-tl-section-badge {
+    font-size: 11px; font-weight: 700; color: var(--primary);
+  }
+  .wv-tl-next-collapsed {
+    margin: 6px 12px 8px; padding: 12px 14px;
+    background: var(--surface); border-radius: 12px;
+    display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer; border: 1px solid var(--border);
+    transition: transform 160ms cubic-bezier(0.23,1,0.32,1);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wv-tl-next-collapsed:active { transform: scale(0.98); }
+  .wv-tl-toggle {
+    display: flex; gap: 2px; padding: 2px;
+    background: var(--surface); border-radius: 10px;
+  }
+  .wv-tl-toggle-btn {
+    padding: 5px 10px; border-radius: 8px; border: none;
+    font-size: 12px; font-weight: 700; cursor: pointer;
+    display: flex; align-items: center; gap: 4px;
+    transition: all 0.2s cubic-bezier(0.23,1,0.32,1);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wv-tl-toggle-btn.active {
+    background: var(--card); color: var(--text);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .wv-tl-toggle-btn:not(.active) {
+    background: transparent; color: var(--text-muted);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .wv-tl-card, .wv-tl-spin-chip, .wv-tl-next-collapsed,
+    .wv-tl-toggle-btn, .wv-tl-action { transition: none !important; }
+    .wv-tl-card:active, .wv-tl-spin-chip:active,
+    .wv-tl-next-collapsed:active { transform: none !important; }
+  }
 `;
 
-// ── Empty-state motion variants (stagger-reveal, mirrors FridgeMode's fm-empty pattern) ──
 const wvEmptyContainerVariants = {
   hidden: {},
   visible: { transition: { staggerChildren: 0.12, delayChildren: 0.05 } },
@@ -149,7 +300,6 @@ const wvEmptyItemVariants = {
   visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.32, 0.72, 0, 1] } },
 };
 
-// ── Component ─────────────────────────────────────────────────────────────────
 export default function WeekView({
   days, weekPlan, meals, specialDays,
   onGenerate, onSmartPlan, dietaryPref, onChangeDietaryPref,
@@ -165,12 +315,12 @@ export default function WeekView({
   onSpinnerComplete,
   rotationMeals,
   currentPlan,
-  recentlyUsedIds = null,  // Set<id> — passed through to MealSpinner
+  recentlyUsedIds = null,
 }) {
-  // ── Core state ──────────────────────────────────────────────────────────────
   const today = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
   const currentWeekMonday = useMemo(() => getMonday(today), [today]);
 
+  const [viewMode, setViewMode] = useState('timeline');
   const [viewYear,  setViewYear]  = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
   const [activeDate, setActiveDate] = useState(today);
@@ -178,23 +328,22 @@ export default function WeekView({
   const [selectedDates, setSelectedDates] = useState(new Set());
   const [showDetailPanel, setShowDetailPanel] = useState(false);
   const [pickerDay, setPickerDay] = useState(null);
-  const [slideDir, setSlideDir] = useState(null); // 'left'|'right'|null (month transition)
+  const [slideDir, setSlideDir] = useState(null);
   const [spinnerSelectedIndices, setSpinnerSelectedIndices] = useState(null);
   const [spinnerTargetDates, setSpinnerTargetDates] = useState(null);
+  const [grocerySelectMode, setGrocerySelectMode] = useState(false);
+  const [groceryDays, setGroceryDays] = useState(new Set());
 
-  // ── Long-press + drag refs ──────────────────────────────────────────────────
   const longPressTimerRef     = useRef(null);
   const longPressRafRef       = useRef(null);
   const isDraggingSelectRef   = useRef(false);
   const lastDragKeyRef        = useRef(null);
   const longPressStartTimeRef = useRef(null);
-  const [lpProgress, setLpProgress] = useState(null); // { key, pct }
+  const [lpProgress, setLpProgress] = useState(null);
 
-  // ── Calendar cells ──────────────────────────────────────────────────────────
   const calendarCells = useMemo(() => getCalendarCells(viewYear, viewMonth), [viewYear, viewMonth]);
   const calendarGridRef = useRef(null);
 
-  // Inject keyframes once
   useEffect(() => {
     if (document.getElementById('wv-anim-style')) return;
     const style = document.createElement('style');
@@ -204,7 +353,6 @@ export default function WeekView({
     return () => {};
   }, []);
 
-  // ── Meal lookup ─────────────────────────────────────────────────────────────
   const getMealForDate = useCallback((date) => {
     const dow = date.getDay() === 0 ? 6 : date.getDay() - 1;
     const weekMon = getMonday(date);
@@ -222,7 +370,6 @@ export default function WeekView({
     return { meal: null, isCurrent: false, isFuture, dow };
   }, [weekPlan, weekHistory, currentWeekMonday, today]);
 
-  // ── Month navigation ────────────────────────────────────────────────────────
   const handlePrevMonth = useCallback(() => {
     setSlideDir('right');
     setTimeout(() => setSlideDir(null), 320);
@@ -242,7 +389,6 @@ export default function WeekView({
     setViewMonth(today.getMonth());
   }, [today]);
 
-  // ── Long-press detection ────────────────────────────────────────────────────
   const cancelLongPress = useCallback(() => {
     if (longPressTimerRef.current)   clearTimeout(longPressTimerRef.current);
     if (longPressRafRef.current)     cancelAnimationFrame(longPressRafRef.current);
@@ -251,12 +397,10 @@ export default function WeekView({
   }, []);
 
   const handleCellTouchStart = useCallback((e, date) => {
-    // Don't prevent default here — we still want scrolling if not long-pressing
     cancelLongPress();
     const key = dateKey(date);
     longPressStartTimeRef.current = Date.now();
 
-    // Animate the progress ring
     const animateRing = () => {
       if (!longPressStartTimeRef.current) return;
       const elapsed = Date.now() - longPressStartTimeRef.current;
@@ -267,7 +411,6 @@ export default function WeekView({
     longPressRafRef.current = requestAnimationFrame(animateRing);
 
     longPressTimerRef.current = setTimeout(() => {
-      // Activate select mode via long press
       if (navigator.vibrate) navigator.vibrate([20, 10, 40]);
       cancelAnimationFrame(longPressRafRef.current);
       longPressStartTimeRef.current = null;
@@ -289,10 +432,8 @@ export default function WeekView({
     lastDragKeyRef.current = null;
   }, [cancelLongPress]);
 
-  // ── Grid-level touch-move for drag selection ────────────────────────────────
   const handleGridTouchMove = useCallback((e) => {
     if (!isDraggingSelectRef.current) {
-      // Cancel long press if user scrolls
       cancelLongPress();
       return;
     }
@@ -311,7 +452,6 @@ export default function WeekView({
     }
   }, [cancelLongPress, getMealForDate, today]);
 
-  // ── Normal cell tap ─────────────────────────────────────────────────────────
   const handleCellClick = useCallback((date) => {
     if (selectMode) {
       const key = dateKey(date);
@@ -328,19 +468,13 @@ export default function WeekView({
     }
   }, [selectMode, getMealForDate, today]);
 
-  // ── Spin selected days ──────────────────────────────────────────────────────
   const handleSpinSelected = useCallback(() => {
     navigator.vibrate?.([50, 30, 50]);
-    // Collect ALL selected dates (any week), sorted chronologically
     const sortedDates = Array.from(selectedDates)
       .map(key => dateFromKey(key))
       .sort((a, b) => a - b);
-
     if (sortedDates.length === 0) return;
-
-    // Mon-first DOW index (0=Mon..6=Sun) for each date — used in MealSpinner for locked-meal lookup
     const indices = sortedDates.map(date => date.getDay() === 0 ? 6 : date.getDay() - 1);
-
     setSpinnerTargetDates(sortedDates);
     setSpinnerSelectedIndices(indices);
     setSelectMode(false);
@@ -348,14 +482,11 @@ export default function WeekView({
     onGenerate();
   }, [selectedDates, onGenerate]);
 
-  // Dates for each spinner slot (shown as labels inside spinner)
   const spinnerSlotDates = useMemo(() => {
     if (spinnerTargetDates && spinnerTargetDates.length > 0) return spinnerTargetDates;
-    // Default: full current week Mon→Sun
     return [0,1,2,3,4,5,6].map(idx => addDays(currentWeekMonday, idx));
   }, [spinnerTargetDates, currentWeekMonday]);
 
-  // ── Meal picker ─────────────────────────────────────────────────────────────
   const openPicker = useCallback((date) => {
     const dow = date.getDay() === 0 ? 6 : date.getDay() - 1;
     setPickerDay(dow);
@@ -416,61 +547,123 @@ export default function WeekView({
     );
   };
 
-  // ── Derived values ──────────────────────────────────────────────────────────
   const isCurrentMonth = viewYear === today.getFullYear() && viewMonth === today.getMonth();
   const plannedCount   = weekPlan.filter(Boolean).length;
   const hasWeek        = plannedCount > 0;
 
-  // ── Render ──────────────────────────────────────────────────────────────────
+  const thisWeekDates = useMemo(() =>
+    [0,1,2,3,4,5,6].map(i => addDays(currentWeekMonday, i)), [currentWeekMonday]);
+  const nextWeekMonday = useMemo(() => addDays(currentWeekMonday, 7), [currentWeekMonday]);
+  const nextWeekDates = useMemo(() =>
+    [0,1,2,3,4,5,6].map(i => addDays(nextWeekMonday, i)), [nextWeekMonday]);
+  const [nextWeekExpanded, setNextWeekExpanded] = useState(false);
+
+  const nextWeekPlannedCount = useMemo(() => {
+    return nextWeekDates.filter(d => {
+      const { meal } = getMealForDate(d);
+      return !!meal;
+    }).length;
+  }, [nextWeekDates, getMealForDate]);
+
+  const enterGroceryMode = useCallback(() => {
+    const autoSelected = new Set();
+    thisWeekDates.forEach(d => {
+      const { meal } = getMealForDate(d);
+      if (meal && !meal._special) autoSelected.add(dateKey(d));
+    });
+    setGroceryDays(autoSelected);
+    setGrocerySelectMode(true);
+    setSelectMode(false);
+    setSelectedDates(new Set());
+  }, [thisWeekDates, getMealForDate]);
+
+  const handleGroceryToggle = useCallback((key) => {
+    setGroceryDays(prev => {
+      const n = new Set(prev);
+      if (n.has(key)) n.delete(key); else n.add(key);
+      return n;
+    });
+  }, []);
+
+  const handleGroceryBuild = useCallback(() => {
+    const indices = Array.from(groceryDays)
+      .map(key => dateFromKey(key))
+      .filter(d => {
+        const wm = getMonday(d);
+        return wm.getTime() === currentWeekMonday.getTime();
+      })
+      .map(d => d.getDay() === 0 ? 6 : d.getDay() - 1);
+    onBuildGrocery(indices.length > 0 ? indices : undefined);
+    setGrocerySelectMode(false);
+    setGroceryDays(new Set());
+  }, [groceryDays, currentWeekMonday, onBuildGrocery]);
+
+  const cancelGroceryMode = useCallback(() => {
+    setGrocerySelectMode(false);
+    setGroceryDays(new Set());
+  }, []);
+
+  const groceryDayCount = groceryDays.size;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg)', userSelect: 'none' }}>
 
-      {/* ── Month nav header ── */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
         padding: '10px 12px 8px',
         background: 'var(--card)',
         borderBottom: '1px solid var(--border)',
       }}>
-        <button onClick={handlePrevMonth} style={NAV_BTN}>‹</button>
-
-        <div style={{ flex: 1, textAlign: 'center' }}>
-          <span style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)',
-            animation: slideDir ? `wv-slideIn${slideDir === 'left' ? 'Left' : 'Right'} 0.28s ease both` : undefined,
-          }}>
-            {MONTH_NAMES[viewMonth]} {viewYear}
-          </span>
-        </div>
-
-        {!isCurrentMonth && (
-          <button onClick={handleToday} style={TODAY_BTN}>Today</button>
+        {viewMode === 'month' ? (
+          <>
+            <button onClick={handlePrevMonth} style={NAV_BTN}>‹</button>
+            <div style={{ flex: 1, textAlign: 'center' }}>
+              <span style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)',
+                animation: slideDir ? `wv-slideIn${slideDir === 'left' ? 'Left' : 'Right'} 0.28s ease both` : undefined,
+              }}>
+                {MONTH_NAMES[viewMonth]} {viewYear}
+              </span>
+            </div>
+            {!isCurrentMonth && (
+              <button onClick={handleToday} style={TODAY_BTN}>Today</button>
+            )}
+          </>
+        ) : (
+          <div style={{ flex: 1 }}>
+            <span style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>
+              The Rotation
+            </span>
+          </div>
         )}
 
-        {/* Select mode toggle (button) */}
-        <button
-          onClick={() => { setSelectMode(s => !s); setSelectedDates(new Set()); }}
-          style={{
-            ...SELECT_TOGGLE_BTN,
-            background: selectMode ? 'var(--primary)' : 'transparent',
-            color:      selectMode ? 'white' : 'var(--text-light)',
-            borderColor: selectMode ? 'var(--primary)' : 'var(--border)',
-          }}
-        >
-          {selectMode ? '✓ Done' : '☑ Select'}
-        </button>
+        <div className="wv-tl-toggle">
+          <button
+            className={`wv-tl-toggle-btn ${viewMode === 'timeline' ? 'active' : ''}`}
+            onClick={() => setViewMode('timeline')}
+          >
+            <List size={14} strokeWidth={2.5} /> List
+          </button>
+          <button
+            className={`wv-tl-toggle-btn ${viewMode === 'month' ? 'active' : ''}`}
+            onClick={() => setViewMode('month')}
+          >
+            <CalendarDays size={14} strokeWidth={2.5} /> Month
+          </button>
+        </div>
 
-        <button onClick={handleNextMonth} style={NAV_BTN}>›</button>
+        {viewMode === 'month' && (
+          <button onClick={handleNextMonth} style={NAV_BTN}>›</button>
+        )}
       </div>
 
-      {/* Select mode hint bar */}
-      {selectMode && (
+      {selectMode && !grocerySelectMode && (
         <div style={{
           background: 'var(--primary)', color: 'white',
           padding: '6px 16px', fontSize: 12, fontWeight: 600,
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           animation: 'wv-fadeIn 0.2s ease both',
         }}>
-          <span>Tap or drag days to select · Long-press starts here too</span>
+          <span>{viewMode === 'timeline' ? 'Tap days to select' : 'Tap or drag days to select · Long-press starts here too'}</span>
           {selectedDates.size > 0 && (
             <span style={{
               background: 'rgba(255,255,255,0.25)', borderRadius: 10,
@@ -480,23 +673,121 @@ export default function WeekView({
         </div>
       )}
 
-      {/* ── Day-of-week labels ── */}
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)',
-        background: 'var(--card)', borderBottom: '1px solid var(--border)',
-        paddingBottom: 4,
-      }}>
-        {DAY_LABELS.map((d, i) => (
-          <div key={d} style={{
-            textAlign: 'center', fontSize: 11, fontWeight: 700,
-            color: (i === 0 || i === 6) ? 'var(--primary)' : 'var(--text-muted)',
-            padding: '6px 0 2px', letterSpacing: '0.3px',
-          }}>{d}</div>
-        ))}
-      </div>
+      {grocerySelectMode && (
+        <div className="grocery-mode-bar">
+          <span><ShoppingCart size={13} strokeWidth={2.5} style={{ verticalAlign: 'middle', marginRight: 4 }} />Tap days to include in grocery list</span>
+          <span className="gm-count" style={{ borderRadius: 10 }}>{groceryDayCount} day{groceryDayCount !== 1 ? 's' : ''}</span>
+        </div>
+      )}
 
-      {/* ── Calendar grid ── */}
-      <div
+      {viewMode === 'month' && (
+        <div style={{
+          display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)',
+          background: 'var(--card)', borderBottom: '1px solid var(--border)',
+          paddingBottom: 4,
+        }}>
+          {DAY_LABELS.map((d, i) => (
+            <div key={d} style={{
+              textAlign: 'center', fontSize: 11, fontWeight: 700,
+              color: (i === 0 || i === 6) ? 'var(--primary)' : 'var(--text-muted)',
+              padding: '6px 0 2px', letterSpacing: '0.3px',
+            }}>{d}</div>
+          ))}
+        </div>
+      )}
+
+      {viewMode === 'timeline' && (
+        <div style={{ flex: 1, overflowY: 'auto', paddingTop: 4, paddingBottom: 8 }}>
+          <div className="wv-tl-section-header">
+            <span className="wv-tl-section-title">
+              This week{' '}
+              <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>
+                {thisWeekDates[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {thisWeekDates[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              </span>
+            </span>
+            <span className="wv-tl-section-badge">
+              {plannedCount}/7 planned
+            </span>
+          </div>
+
+          <TimelineWeek
+            weekDates={thisWeekDates}
+            today={today}
+            getMealForDate={getMealForDate}
+            currentWeekMonday={currentWeekMonday}
+            selectMode={selectMode}
+            selectedDates={selectedDates}
+            onCellClick={handleCellClick}
+            onToggleSelect={(key) => {
+              setSelectedDates(prev => {
+                const n = new Set(prev);
+                if (n.has(key)) n.delete(key); else n.add(key);
+                return n;
+              });
+            }}
+            onRespin={onRespin}
+            grocerySelectMode={grocerySelectMode}
+            groceryDays={groceryDays}
+            onGroceryToggle={handleGroceryToggle}
+          />
+
+          <div
+            className="wv-tl-next-collapsed"
+            onClick={() => setNextWeekExpanded(x => !x)}
+          >
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-light)' }}>
+                Next week
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
+                {nextWeekDates[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {nextWeekDates[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                <span style={{ marginLeft: 6 }}>{nextWeekPlannedCount}/7 planned</span>
+              </div>
+            </div>
+            <motion.div
+              animate={{ rotate: nextWeekExpanded ? 180 : 0 }}
+              transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+            >
+              <ChevronDown size={18} color="var(--text-muted)" strokeWidth={2} />
+            </motion.div>
+          </div>
+
+          <AnimatePresence>
+            {nextWeekExpanded && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
+                style={{ overflow: 'hidden' }}
+              >
+                <TimelineWeek
+                  weekDates={nextWeekDates}
+                  today={today}
+                  getMealForDate={getMealForDate}
+                  currentWeekMonday={currentWeekMonday}
+                  selectMode={selectMode}
+                  selectedDates={selectedDates}
+                  onCellClick={handleCellClick}
+                  onToggleSelect={(key) => {
+                    setSelectedDates(prev => {
+                      const n = new Set(prev);
+                      if (n.has(key)) n.delete(key); else n.add(key);
+                      return n;
+                    });
+                  }}
+                  onRespin={onRespin}
+                  grocerySelectMode={grocerySelectMode}
+                  groceryDays={groceryDays}
+                  onGroceryToggle={handleGroceryToggle}
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
+
+      {viewMode === 'month' && <div
         ref={calendarGridRef}
         onTouchMove={handleGridTouchMove}
         style={{
@@ -513,7 +804,7 @@ export default function WeekView({
           const isToday     = isSameDay(date, today);
           const isPast      = date < today && !isToday;
           const isSelected  = selectedDates.has(key);
-          const isDow56     = date.getDay() === 0 || date.getDay() === 6; // weekend
+          const isDow56     = date.getDay() === 0 || date.getDay() === 6;
           const { meal }    = getMealForDate(date);
           const isLocked    = meal && meal._locked;
           const isSpecial   = meal && meal._special;
@@ -550,7 +841,6 @@ export default function WeekView({
                 WebkitTapHighlightColor: 'transparent',
               }}
             >
-              {/* Long-press progress ring */}
               {showLPRing && (
                 <svg
                   viewBox="0 0 40 40"
@@ -568,7 +858,6 @@ export default function WeekView({
                 </svg>
               )}
 
-              {/* Selection ripple */}
               {isSelected && (
                 <div style={{
                   position: 'absolute', inset: 0, pointerEvents: 'none',
@@ -576,7 +865,6 @@ export default function WeekView({
                 }} />
               )}
 
-              {/* Day number */}
               <div style={{
                 width: 24, height: 24,
                 borderRadius: '50%',
@@ -592,12 +880,10 @@ export default function WeekView({
                 </span>
               </div>
 
-              {/* Lock indicator */}
               {isLocked && (
                 <span style={{ fontSize: 8, lineHeight: 1, marginTop: 1 }}>🔒</span>
               )}
 
-              {/* Meal preview */}
               {meal && !isSpecial && (
                 <div style={{
                   flex: 1, width: '100%', marginTop: 3,
@@ -636,7 +922,6 @@ export default function WeekView({
                 </div>
               )}
 
-              {/* Special day icon */}
               {isSpecial && (
                 <div style={{
                   flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -647,7 +932,6 @@ export default function WeekView({
                 </div>
               )}
 
-              {/* No meal dot for current/future empty */}
               {!meal && !isPast && isThisMonth && (
                 <div style={{
                   marginTop: 'auto', width: 4, height: 4, borderRadius: '50%',
@@ -658,9 +942,8 @@ export default function WeekView({
             </div>
           );
         })}
-      </div>
+      </div>}
 
-      {/* ── Detail Panel (slides up from bottom) ── */}
       <DetailPanel
         show={showDetailPanel}
         activeDate={activeDate}
@@ -674,7 +957,6 @@ export default function WeekView({
         onClearDay={(dow) => { onSetSpecial(dow, null); setShowDetailPanel(false); }}
       />
 
-      {/* ── Spinner overlay ── */}
       {showSpinner && (
         <div style={{
           position: 'fixed', inset: 0,
@@ -688,7 +970,6 @@ export default function WeekView({
             rotationMeals={rotationMeals}
             currentPlan={currentPlan}
             onComplete={(pickedMeals) => {
-              // Map each picked meal to its target date → [{date, meal}] pairs
               const targetDates = spinnerTargetDates && spinnerTargetDates.length > 0
                 ? spinnerTargetDates
                 : [0,1,2,3,4,5,6].map(idx => addDays(currentWeekMonday, idx));
@@ -709,7 +990,6 @@ export default function WeekView({
         </div>
       )}
 
-      {/* ── Action bar ── */}
       {!showSpinner && (
         <div style={{
           display: 'flex', flexDirection: 'column', gap: 8,
@@ -746,47 +1026,21 @@ export default function WeekView({
             </div>
           ) : (
             <>
-              {/* A-1: Smart Auto-Plan — fills empty/unlocked days from The Rotation */}
-              <button
-                onClick={() => { navigator.vibrate?.([40, 25, 40]); onSmartPlan?.(); }}
-                style={PRIMARY_BTN}
-              >
-                ✨ Plan my Week{rotationCount > 0 ? ` (${rotationCount})` : ''}
-              </button>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button
-                  onClick={() => { navigator.vibrate?.([50, 30, 50]); onGenerate(); }}
-                  style={{ ...SECONDARY_BTN, flex: 1 }}
-                >
-                  🎰 Spin
-                </button>
-                <button
-                  onClick={() => setSelectMode(true)}
-                  style={{ ...SECONDARY_BTN, flex: 1 }}
-                >
-                  📌 Select
-                </button>
-                {hasWeek && (
-                  <button onClick={onBuildGrocery} style={{ ...SECONDARY_BTN, flex: 1 }}>
-                    🛒 Grocery
-                  </button>
-                )}
-              </div>
-              {/* A-1: optional household dietary preference for the planner */}
               {onChangeDietaryPref && (
                 <label style={{
                   display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '6px 10px', borderRadius: 10,
+                  background: 'var(--surface)', border: '1px solid var(--border)',
                   fontSize: 12.5, fontWeight: 600, color: 'var(--text-light)',
-                  paddingTop: 2,
                 }}>
-                  <span>🍽️ Plan for</span>
+                  <span style={{ whiteSpace: 'nowrap', color: 'var(--text-muted)' }}>Plan for</span>
                   <select
                     value={dietaryPref?.dietary || ''}
                     onChange={(e) => onChangeDietaryPref({ dietary: e.target.value, mode: 'require' })}
                     style={{
-                      flex: 1, minWidth: 0, padding: '7px 10px', borderRadius: 9,
+                      flex: 1, minWidth: 0, padding: '5px 8px', borderRadius: 8,
                       border: '1.5px solid var(--border)', background: 'var(--bg)',
-                      color: 'var(--text)', font: 'inherit', fontWeight: 600, fontSize: 13,
+                      color: 'var(--text)', font: 'inherit', fontWeight: 700, fontSize: 13,
                     }}
                   >
                     <option value="">Any diet</option>
@@ -799,12 +1053,56 @@ export default function WeekView({
                   </select>
                 </label>
               )}
+              <button
+                onClick={() => { navigator.vibrate?.([40, 25, 40]); onSmartPlan?.(); }}
+                style={PRIMARY_BTN}
+              >
+                Plan my Week{rotationCount > 0 ? ` (${rotationCount})` : ''}
+              </button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => { navigator.vibrate?.([50, 30, 50]); onGenerate(); }}
+                  style={{ ...SECONDARY_BTN, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
+                >
+                  <RefreshCw size={14} strokeWidth={2.5} /> Spin
+                </button>
+                <button
+                  onClick={() => setSelectMode(true)}
+                  style={{ ...SECONDARY_BTN, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
+                >
+                  <CheckSquare size={14} strokeWidth={2.5} /> Select
+                </button>
+                {hasWeek && !grocerySelectMode && (
+                  <button onClick={enterGroceryMode} style={{ ...SECONDARY_BTN, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
+                    <ShoppingCart size={14} strokeWidth={2.5} /> Grocery
+                  </button>
+                )}
+              </div>
             </>
+          )}
+
+          {grocerySelectMode && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={cancelGroceryMode} style={{ ...SECONDARY_BTN, flex: '0 0 auto', padding: '8px 16px' }}>
+                Cancel
+              </button>
+              <button
+                onClick={handleGroceryBuild}
+                disabled={groceryDayCount === 0}
+                style={{
+                  ...PRIMARY_BTN, flex: 1, display: 'flex', alignItems: 'center',
+                  justifyContent: 'center', gap: 6,
+                  opacity: groceryDayCount === 0 ? 0.4 : 1,
+                }}
+              >
+                <ShoppingCart size={14} strokeWidth={2.5} />
+                Build List ({groceryDayCount} day{groceryDayCount !== 1 ? 's' : ''})
+              </button>
+            </div>
           )}
         </div>
       )}
 
-      {/* ── Stats strip ── */}
       {(cookingStats.streak > 0 || cookingStats.totalCooked > 0) && !showSpinner && (
         <div style={{
           display: 'flex', gap: 20, justifyContent: 'center', alignItems: 'center',
@@ -824,18 +1122,146 @@ export default function WeekView({
         </div>
       )}
 
-      {/* Meal picker sheet */}
       {renderPicker()}
     </div>
   );
 }
 
-// ── Detail Panel sub-component ────────────────────────────────────────────────
+const TL_STAGGER_DELAY = 40;
+
+function TimelineWeek({
+  weekDates, today, getMealForDate, currentWeekMonday,
+  selectMode, selectedDates, onCellClick, onToggleSelect,
+  onRespin, grocerySelectMode, groceryDays, onGroceryToggle,
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '0 12px' }}>
+      {weekDates.map((date, idx) => {
+        const key = dateKey(date);
+        const isToday = isSameDay(date, today);
+        const isPast = date < today && !isToday;
+        const { meal, isCurrent, dow } = getMealForDate(date);
+        const isSpecial = meal && meal._special;
+        const isLocked = meal && meal._locked;
+        const isSelected = selectedDates.has(key);
+        const dayName = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][date.getDay()];
+
+        const isGroceryActive = grocerySelectMode && groceryDays.has(key);
+        const isGroceryExcluded = grocerySelectMode && meal && !meal._special && !groceryDays.has(key);
+
+        const classes = ['wv-tl-card'];
+        if (isToday) classes.push('tl-today');
+        if (!meal && !isPast) classes.push('tl-empty');
+        if (isPast && !isToday) classes.push('tl-past');
+        if (isSelected) classes.push('tl-selected');
+        if (isGroceryActive) classes.push('tl-grocery-active');
+        if (isGroceryExcluded) classes.push('tl-grocery-excluded');
+
+        return (
+          <motion.div
+            key={key}
+            data-datekey={key}
+            className={classes.join(' ')}
+            onClick={() => grocerySelectMode && meal && !meal._special ? onGroceryToggle(key) : onCellClick(date)}
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: isPast && !isToday ? 0.55 : 1, y: 0 }}
+            transition={{ duration: 0.3, delay: idx * TL_STAGGER_DELAY / 1000, ease: [0.23, 1, 0.32, 1] }}
+          >
+            <div className="wv-tl-dow">
+              <div className="wv-tl-dow-label">{dayName}</div>
+              <div className="wv-tl-dow-num">{date.getDate()}</div>
+            </div>
+
+            <div className="wv-tl-grocery-badge" aria-hidden="true">✓</div>
+
+            {meal && !isSpecial ? (
+              meal.imageUrl ? (
+                <img
+                  src={meal.imageUrl} alt=""
+                  className="wv-tl-thumb"
+                  onError={e => { e.target.style.display = 'none'; }}
+                />
+              ) : (
+                <div className="wv-tl-thumb-ph">
+                  {meal.name?.charAt(0)?.toUpperCase() || '🍽️'}
+                </div>
+              )
+            ) : isSpecial ? (
+              <div className="wv-tl-thumb-ph" style={{ fontSize: 26 }}>
+                {meal.icon}
+              </div>
+            ) : (
+              <div className="wv-tl-empty-ph">
+                <Plus size={18} color="var(--text-muted)" strokeWidth={2} />
+              </div>
+            )}
+
+            <div className="wv-tl-info">
+              {meal ? (
+                <>
+                  <div className="wv-tl-name">
+                    {isSpecial ? meal.name : meal.name}
+                    {isLocked && <span style={{ marginLeft: 6, fontSize: 11 }}>🔒</span>}
+                  </div>
+                  <div className="wv-tl-meta">
+                    {isSpecial ? 'Special day' : `${meal.ingredients?.length || 0} ingredients${meal.category ? ` · ${meal.category}` : ''}`}
+                  </div>
+                </>
+              ) : (
+                <div className="wv-tl-meta" style={{ fontSize: 12.5 }}>
+                  {isPast ? 'No meal planned' : 'Tap to add or spin'}
+                </div>
+              )}
+            </div>
+
+            {!selectMode && !isPast && !grocerySelectMode && (
+              meal ? (
+                <button
+                  className="wv-tl-action"
+                  onClick={(e) => { e.stopPropagation(); onCellClick(date); }}
+                  aria-label="Day options"
+                >
+                  <MoreVertical size={18} strokeWidth={2} />
+                </button>
+              ) : (
+                <button
+                  className="wv-tl-spin-chip"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (isCurrent) {
+                      onRespin(dow);
+                    } else {
+                      onCellClick(date);
+                    }
+                  }}
+                >
+                  <RefreshCw size={12} strokeWidth={2.5} /> Spin
+                </button>
+              )
+            )}
+
+            {selectMode && !isPast && (
+              <div style={{
+                width: 24, height: 24, borderRadius: 6, flexShrink: 0,
+                border: isSelected ? 'none' : '2px solid var(--border)',
+                background: isSelected ? 'var(--primary)' : 'transparent',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'all 0.15s ease',
+              }}>
+                {isSelected && <span style={{ color: 'white', fontSize: 14, fontWeight: 800 }}>✓</span>}
+              </div>
+            )}
+          </motion.div>
+        );
+      })}
+    </div>
+  );
+}
+
 function DetailPanel({ show, activeDate, today, getMealForDate, onClose, onToggleLock,
   onViewDetail, onRespin, onOpenPicker, onClearDay }) {
   const dragControls = useDragControls();
 
-  // ── Slide-down-to-dismiss: drag release handler ──────────────────────────
   const handleSheetDragEnd = useCallback((_e, info) => {
     if (info.offset.y > 100 || info.velocity.y > 500) {
       onClose();
@@ -853,7 +1279,6 @@ function DetailPanel({ show, activeDate, today, getMealForDate, onClose, onToggl
     <AnimatePresence>
       {show && (
       <>
-      {/* Scrim */}
       <div
         onClick={onClose}
         style={{
@@ -861,7 +1286,6 @@ function DetailPanel({ show, activeDate, today, getMealForDate, onClose, onToggl
           animation: 'wv-fadeIn 0.2s ease both',
         }}
       />
-      {/* Sheet */}
       <motion.div
         drag="y"
         dragListener={false}
@@ -884,7 +1308,6 @@ function DetailPanel({ show, activeDate, today, getMealForDate, onClose, onToggl
           maxHeight: '72vh',
           overflowY: 'auto',
         }}>
-        {/* Handle */}
         <div
           onPointerDown={(e) => dragControls.start(e)}
           style={{
@@ -894,7 +1317,6 @@ function DetailPanel({ show, activeDate, today, getMealForDate, onClose, onToggl
           }}
         />
 
-        {/* Header */}
         <div style={{
           display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
           padding: '14px 16px 8px',
@@ -931,10 +1353,8 @@ function DetailPanel({ show, activeDate, today, getMealForDate, onClose, onToggl
           }}>✕</button>
         </div>
 
-        {/* Content */}
         <div style={{ padding: '0 16px 24px' }}>
           {!meal ? (
-            /* Empty state — stagger-reveal, matches FridgeMode's fm-empty pattern */
             <motion.div
               className="wv-empty-state"
               variants={wvEmptyContainerVariants}
@@ -964,7 +1384,6 @@ function DetailPanel({ show, activeDate, today, getMealForDate, onClose, onToggl
               )}
             </motion.div>
           ) : isSpecial ? (
-            /* Special day */
             <div style={{ animation: 'wv-fadeIn 0.25s ease both' }}>
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 14,
@@ -981,9 +1400,7 @@ function DetailPanel({ show, activeDate, today, getMealForDate, onClose, onToggl
               )}
             </div>
           ) : (
-            /* Regular meal */
             <div style={{ animation: 'wv-fadeIn 0.25s ease both' }}>
-              {/* Meal card */}
               <div style={{
                 background: 'var(--surface)', borderRadius: 14, overflow: 'hidden',
                 marginBottom: 14,
@@ -995,7 +1412,6 @@ function DetailPanel({ show, activeDate, today, getMealForDate, onClose, onToggl
                       style={{ width: '100%', height: 160, objectFit: 'cover', display: 'block' }}
                       onError={e => e.target.style.display = 'none'}
                     />
-                    {/* Dark-glass title chip overlaid on the hero photo for legibility */}
                     <div style={{
                       position: 'absolute', left: 10, right: 10, bottom: 10,
                       display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
@@ -1048,7 +1464,6 @@ function DetailPanel({ show, activeDate, today, getMealForDate, onClose, onToggl
                 </div>
               </div>
 
-              {/* Action buttons grid */}
               {isCurrent && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   <button onClick={() => onViewDetail(meal)} style={OUTLINE_BTN}>
@@ -1082,7 +1497,6 @@ function DetailPanel({ show, activeDate, today, getMealForDate, onClose, onToggl
                 </div>
               )}
 
-              {/* Past week - show restore option */}
               {!isCurrent && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   <button onClick={() => onViewDetail(meal)} style={OUTLINE_BTN}>
@@ -1106,7 +1520,6 @@ function DetailPanel({ show, activeDate, today, getMealForDate, onClose, onToggl
   );
 }
 
-// ── Stat pill sub-component ───────────────────────────────────────────────────
 function StatPill({ icon, value, label, color }) {
   return (
     <div style={{ textAlign: 'center', minWidth: 48 }}>
@@ -1119,7 +1532,6 @@ function StatPill({ icon, value, label, color }) {
   );
 }
 
-// ── Shared button styles ──────────────────────────────────────────────────────
 const NAV_BTN = {
   width: 36, height: 36, borderRadius: '50%', border: 'none',
   background: 'var(--surface)', color: 'var(--primary)',
