@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import db, { importSeedMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getCookingLog, getWeekHistory, saveWeekToHistory, toggleRotation, addBatchQueueItems, getBatchQueueItems, updateBatchQueueItem, getLearnedAliases } from './db';
 import { SEED_MEALS } from './paprika_import_data';
@@ -17,18 +17,13 @@ import { startBatchImportEngine } from './batchImportEngine';
 import { extractMultipleUrls } from './recipeParser';
 import { categorizeIngredient, upgradeRecipeIngredients, setLearnedAliases } from './recipeSchema';
 import { seedEntities } from './utils/ingredientEntities';
-import InstagramZipImport from './components/InstagramZipImport';
-import FridgeMode from './components/FridgeMode';
 import CookMode from './components/CookMode';
 import MixMode from './components/MixMode';
 import FloatingVideoPlayer from './components/FloatingVideoPlayer';
 import { getMealVideoSource } from './lib/videoSource';
-import MealStats from './components/MealStats';
 import BarShelf from './components/BarShelf';
-import BarFridgeMode from './components/BarFridgeMode';
 import MealSpinner from './components/MealSpinner';
 import SyncQueue from './components/SyncQueue';
-import StorageManager from './components/StorageManager';
 import OfflineIndicator from './components/OfflineIndicator';
 import { ThemeSettings } from './components/ThemeProvider';
 import { isMobileDevice } from './isMobile';
@@ -36,9 +31,21 @@ import useOnlineStatus, { onOnlineStatusChange } from './hooks/useOnlineStatus';
 import useBackHandler from './hooks/useBackHandler';
 import useSwipeDismiss from './hooks/useSwipeDismiss';
 import { planWeek, pickForSlot, buildRecencyMap } from './lib/weekPlanner';
-import ExportSheet from './components/ExportSheet';
 import { renderRecipeExport, exportViaShare } from './utils/exportRenderer.js';
 import './App.css';
+
+// Code-split screens that aren't needed on first paint. Each is a modal/
+// overlay gated behind its own boolean state, so a brief Suspense fallback
+// (null — these all render as slide-up sheets/overlays, so a one-frame gap
+// before the sheet appears is unnoticeable) is a safe tradeoff for keeping
+// them out of the main bundle. InstagramZipImport in particular pulls in
+// jszip, which has no reason to load until a user actually opens ZIP import.
+const InstagramZipImport = lazy(() => import('./components/InstagramZipImport'));
+const FridgeMode = lazy(() => import('./components/FridgeMode'));
+const BarFridgeMode = lazy(() => import('./components/BarFridgeMode'));
+const MealStats = lazy(() => import('./components/MealStats'));
+const StorageManager = lazy(() => import('./components/StorageManager'));
+const ExportSheet = lazy(() => import('./components/ExportSheet'));
 
 // A-1: household dietary preference for Smart Auto-Plan (device-local).
 const DIETARY_PREF_KEY = 'spicehub_dietary_pref';
@@ -1115,10 +1122,12 @@ useEffect(() => {
                 aria-label="Close"
               >✕</button>
             </div>
-            <InstagramZipImport
-              onDone={() => { setShowZipImport(false); setShowBatchQueue(true); }}
-              onToast={showToast}
-            />
+            <Suspense fallback={null}>
+              <InstagramZipImport
+                onDone={() => { setShowZipImport(false); setShowBatchQueue(true); }}
+                onToast={showToast}
+              />
+            </Suspense>
           </div>
         </div>
       )}
@@ -1283,13 +1292,15 @@ useEffect(() => {
         )}
       </AnimatePresence>
       {exportSheet && (
-        <ExportSheet
-          mode={exportSheet.mode}
-          data={exportSheet.data}
-          recipes={exportSheet.recipes}
-          title={exportSheet.title}
-          onClose={() => setExportSheet(null)}
-        />
+        <Suspense fallback={null}>
+          <ExportSheet
+            mode={exportSheet.mode}
+            data={exportSheet.data}
+            recipes={exportSheet.recipes}
+            title={exportSheet.title}
+            onClose={() => setExportSheet(null)}
+          />
+        </Suspense>
       )}
       <AnimatePresence>
         {editDrink !== null && (
@@ -1320,12 +1331,14 @@ useEffect(() => {
       {/* ── New feature overlays ── */}
       <AnimatePresence>
         {showFridge && (
-          <FridgeMode
-            key="fridge-mode"
-            meals={meals}
-            onViewDetail={(meal) => { setShowFridge(false); setDetailItem(meal); }}
-            onClose={() => setShowFridge(false)}
-          />
+          <Suspense fallback={null}>
+            <FridgeMode
+              key="fridge-mode"
+              meals={meals}
+              onViewDetail={(meal) => { setShowFridge(false); setDetailItem(meal); }}
+              onClose={() => setShowFridge(false)}
+            />
+          </Suspense>
         )}
       </AnimatePresence>
       {showBarShelf && (
@@ -1339,13 +1352,15 @@ useEffect(() => {
       )}
       <AnimatePresence>
         {showBarFridge && (
-          <BarFridgeMode
-            key="bar-fridge-mode"
-            drinks={drinks}
-            onViewDetail={(drink) => { setShowBarFridge(false); setDetailItem(drink); }}
-            onClose={() => setShowBarFridge(false)}
-            onAddToGrocery={handleAddToGrocery}
-          />
+          <Suspense fallback={null}>
+            <BarFridgeMode
+              key="bar-fridge-mode"
+              drinks={drinks}
+              onViewDetail={(drink) => { setShowBarFridge(false); setDetailItem(drink); }}
+              onClose={() => setShowBarFridge(false)}
+              onAddToGrocery={handleAddToGrocery}
+            />
+          </Suspense>
         )}
       </AnimatePresence>
       <AnimatePresence>
@@ -1371,11 +1386,13 @@ useEffect(() => {
       </AnimatePresence>
 
       {showStats && (
-        <MealStats
-          meals={meals}
-          onClose={() => setShowStats(false)}
-          onViewDetail={(meal) => { setShowStats(false); setDetailItem(meal); }}
-        />
+        <Suspense fallback={null}>
+          <MealStats
+            meals={meals}
+            onClose={() => setShowStats(false)}
+            onViewDetail={(meal) => { setShowStats(false); setDetailItem(meal); }}
+          />
+        </Suspense>
       )}
       {storageWarning && (
         <div className="storage-warning-banner">
@@ -1389,10 +1406,12 @@ useEffect(() => {
           <div className="st-sheet" ref={storageSwipe.sheetRef} onClick={e => e.stopPropagation()}
             onTouchStart={storageSwipe.handleTouchStart} onTouchMove={storageSwipe.handleTouchMove} onTouchEnd={storageSwipe.handleTouchEnd}>
             <div className="st-handle" />
-            <StorageManager
-              onClose={() => setShowStorageManager(false)}
-              onToast={showToast}
-            />
+            <Suspense fallback={null}>
+              <StorageManager
+                onClose={() => setShowStorageManager(false)}
+                onToast={showToast}
+              />
+            </Suspense>
           </div>
         </div>
       )}
@@ -1469,24 +1488,24 @@ useEffect(() => {
           <p className="pia-message">{postImportActions.message}</p>
           <div className="pia-btns">
             <button className="pia-btn" onClick={handlePostAddToWeek}>
-              📅 Add to this week
+              ð Add to this week
             </button>
             <button className="pia-btn" onClick={handlePostAddToGrocery}>
-              🛒 Add to grocery
+              ð Add to grocery
             </button>
-            <button className="pia-close" onClick={() => setPostImportActions(null)} aria-label="Dismiss">✕</button>
+            <button className="pia-close" onClick={() => setPostImportActions(null)} aria-label="Dismiss">â</button>
           </div>
         </div>
       )}
 
       {toast && (
         <div className={`toast toast-${toast.type}`}>
-          <span>{toast.type === 'success' ? '✅' : toast.type === 'error' ? '❌' : 'ℹ️'}</span>
+          <span>{toast.type === 'success' ? 'â' : toast.type === 'error' ? 'â' : 'â¹ï¸'}</span>
           <span>{toast.message}</span>
         </div>
       )}
 
-      {/* ── Floating Picture-in-Picture video player (persists across views) ── */}
+      {/* ââ Floating Picture-in-Picture video player (persists across views) ââ */}
       <AnimatePresence>
         {pipVideo && (
           <FloatingVideoPlayer

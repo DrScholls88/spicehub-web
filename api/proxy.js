@@ -15,6 +15,43 @@ export const config = {
 // Sites known to require special handling
 const INSTAGRAM_HOST = /instagram\.com/i;
 
+/**
+ * SSRF guard. Edge Runtime has no `dns`/`net` modules, so this can't re-resolve
+ * a hostname and check the live IP the way the Node-based server/index.js does
+ * (see assertPublicHost there) — that means DNS-rebinding (a hostname that
+ * resolves to a public IP at check time but a private one at fetch time) is not
+ * fully closed here. What this DOES close: literal private/loopback/link-local
+ * hosts, and the decimal/octal/hex IP-literal tricks that a plain string-prefix
+ * check misses (e.g. `2130706433` == 127.0.0.1, `0x7f000001`, `017700000001`).
+ */
+function isBlockedHost(hostname) {
+  const h = String(hostname || '').toLowerCase();
+  if (!h || h === 'localhost' || h.endsWith('.local')) return true;
+  // Decimal / octal / hex encodings of an IP (bypass naive dotted-quad checks).
+  if (/^0x[0-9a-f]+$/i.test(h) || /^\d+$/.test(h) || /^0[0-7]+(\.[0-7]+)*$/.test(h)) return true;
+  // IPv6 loopback / link-local / unique-local / IPv4-mapped-private forms.
+  if (
+    h === '::1' || h === '[::1]' ||
+    h.startsWith('fe80:') || h.startsWith('fc') || h.startsWith('fd') ||
+    h.includes('::ffff:127.') || h.includes('::ffff:10.') || h.includes('::ffff:169.254.')
+  ) return true;
+  // IPv4 dotted-quad private/reserved ranges (correctly bounded 172.16-172.31,
+  // unlike a startsWith('172.2') chain which also matches public 172.2.x.x).
+  const m = h.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (m) {
+    const a = Number(m[1]);
+    const b = Number(m[2]);
+    if (
+      a === 127 || a === 10 || a === 0 ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      a >= 224
+    ) return true;
+  }
+  return false;
+}
+
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
@@ -126,6 +163,12 @@ export default async function handler(req) {
     }
     if (!['http:', 'https:'].includes(parsed.protocol)) {
       return new Response(JSON.stringify({ error: 'Only http/https URLs are allowed' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+      });
+    }
+    if (isBlockedHost(parsed.hostname)) {
+      return new Response(JSON.stringify({ error: 'Private addresses not allowed' }), {
         status: 403,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
@@ -321,21 +364,8 @@ export default async function handler(req) {
     });
   }
 
-  // Block SSRF
-  const hostname = parsedUrl.hostname;
-  if (
-    hostname === 'localhost' ||
-    hostname === '127.0.0.1' ||
-    hostname === '0.0.0.0' ||
-    hostname.startsWith('192.168.') ||
-    hostname.startsWith('10.') ||
-    hostname.startsWith('172.16.') || hostname.startsWith('172.17.') ||
-    hostname.startsWith('172.18.') || hostname.startsWith('172.19.') ||
-    hostname.startsWith('172.2') || hostname.startsWith('172.30.') ||
-    hostname.startsWith('172.31.') ||
-    hostname.startsWith('169.254.') ||
-    hostname.endsWith('.local')
-  ) {
+  // Block SSRF — see isBlockedHost() above for what this does/doesn't cover.
+  if (isBlockedHost(parsedUrl.hostname)) {
     return new Response(JSON.stringify({ error: 'Private addresses not allowed' }), {
       status: 403,
       headers: { 'Content-Type': 'application/json' },

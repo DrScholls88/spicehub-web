@@ -147,11 +147,14 @@ export default function PhotoGallery({ images = [], index = 0, open = false, onC
         maxSpreadZoom: 2,
         // Caption from title
         addCaptionHTMLFn: (item, captionEl) => {
+          // item.title comes from recipe/meal names, which originate from the
+          // import pipeline (arbitrary web/Instagram/video sources) — use
+          // textContent, not innerHTML, so it's always rendered as plain text.
           if (!item.title) {
-            captionEl.children[0].innerHTML = '';
+            captionEl.children[0].textContent = '';
             return false;
           }
-          captionEl.children[0].innerHTML = item.title;
+          captionEl.children[0].textContent = item.title;
           return true;
         },
       };
@@ -245,11 +248,12 @@ PhotoGallery.openSingle = async function openSingle(src, title) {
     },
     maxSpreadZoom: 2,
     addCaptionHTMLFn: (item, captionEl) => {
+      // Same reasoning as the main gallery above — plain text, not HTML.
       if (!item.title) {
-        captionEl.children[0].innerHTML = '';
+        captionEl.children[0].textContent = '';
         return false;
       }
-      captionEl.children[0].innerHTML = item.title;
+      captionEl.children[0].textContent = item.title;
       return true;
     },
   });
