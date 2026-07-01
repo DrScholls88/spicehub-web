@@ -126,13 +126,21 @@ VitePWA({
 build: {
     outDir: 'dist',
     sourcemap: true,
-    target: 'es2019', 
+    target: 'es2019',
     chunkSizeWarningLimit: 800,
     rollupOptions: {
       output: {
         entryFileNames: 'assets/[name]-[hash].js',
         chunkFileNames: 'assets/[name]-[hash].js',
-        assetFileNames: 'assets/[name]-[hash].[ext]'
+        assetFileNames: 'assets/[name]-[hash].[ext]',
+        // Split heavy, rarely-changing vendor code into its own long-lived
+        // chunks so it can be cached (immutable, 1yr) separately from app
+        // code that changes every build — and so it's not forced into the
+        // single main bundle React.lazy()'d screens still pull in eagerly.
+        manualChunks: {
+          'vendor-react': ['react', 'react-dom'],
+          'vendor-motion': ['framer-motion', 'motion'],
+        },
     }
   }
   },

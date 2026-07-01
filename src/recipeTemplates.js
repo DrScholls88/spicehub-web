@@ -52,6 +52,27 @@ function isTruthyForSection(value) {
 }
 
 /**
+ * safeUrl — validates a URL is http(s)/data before letting it flow into a raw
+ * (`{{{var}}}`) template slot like `src="{{{imageUrl}}}"` or `href="{{{...}}}"`.
+ * Recipe imageUrl/sourceUrl originate from the import pipeline (arbitrary web
+ * pages, Instagram captions, video metadata) and are NOT safe to trust as-is —
+ * without this, a crafted `imageUrl` like `x" onerror="alert(1)` would break
+ * out of the attribute. Escaping `&` would break legitimate query strings, so
+ * this validates the scheme and neutralizes quote characters instead of doing
+ * a blanket HTML-escape.
+ */
+export function safeUrl(u) {
+  if (!u) return '';
+  try {
+    const parsed = new URL(String(u), 'https://placeholder.invalid');
+    if (!['http:', 'https:', 'data:'].includes(parsed.protocol)) return '';
+    return String(u).replace(/"/g, '%22').replace(/'/g, '%27');
+  } catch {
+    return '';
+  }
+}
+
+/**
  * renderTemplate — minimal Mustache-compatible renderer.
  *
  * Supports:
@@ -420,7 +441,7 @@ export const TEMPLATES = {
     '{{#notes}}',
     '<div class="recipe-notes">',
     '  <div class="recipe-notes-heading">Notes</div>',
-    '  <p>{{{notes}}}</p>',
+    '  <p>{{notes}}</p>',
     '</div>',
     '{{/notes}}',
     '{{#sourceUrl}}<p class="recipe-source">Source: <a href="{{{sourceUrl}}}" itemprop="url">{{{sourceUrl}}}</a></p>{{/sourceUrl}}',
@@ -504,7 +525,7 @@ export const TEMPLATES = {
     '<ul>{{#ingredients}}<li>{{.}}</li>{{/ingredients}}</ul>',
     '<h2>Directions</h2>',
     '<ol>{{#directions}}<li>{{.}}</li>{{/directions}}</ol>',
-    '{{#notes}}<h2>Notes</h2><p class="notes">{{{notes}}}</p>{{/notes}}',
+    '{{#notes}}<h2>Notes</h2><p class="notes">{{notes}}</p>{{/notes}}',
     '{{#sourceUrl}}<p class="source">Source: <a href="{{{sourceUrl}}}">{{{sourceUrl}}}</a></p>{{/sourceUrl}}',
     '</body></html>',
   ].join('\n'),
@@ -526,7 +547,10 @@ export function renderRecipe(recipe, templateName = 'markdown') {
     ? 'drinkCard'
     : templateName;
   const tpl = TEMPLATES[autoName] || TEMPLATES.plain;
-  return renderTemplate(tpl, recipe || {});
+  const ctx = recipe
+    ? { ...recipe, imageUrl: safeUrl(recipe.imageUrl), sourceUrl: safeUrl(recipe.sourceUrl) }
+    : {};
+  return renderTemplate(tpl, ctx);
 }
 
 /**

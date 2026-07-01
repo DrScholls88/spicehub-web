@@ -8,8 +8,11 @@
 
 import express from 'express';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import path from 'path';
 import os from 'node:os';
+import dns from 'node:dns/promises';
+import net from 'node:net';
 import { fileURLToPath } from 'url';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -47,8 +50,112 @@ function resolveYtDlpBin() {
 export const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(cors());
+// CORS allowlist — driven by ALLOWED_ORIGINS (already wired up as a Render env
+// var, see server/render.yaml). Fails CLOSED (no cross-origin access) rather
+// than open when unset, so a forgotten config doesn't silently become "allow
+// everyone". Same-origin/non-browser requests (no Origin header, e.g. curl,
+// server-to-server) are always allowed through.
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('cors-not-allowed'));
+  },
+}));
 app.use(express.json({ limit: '1mb' }));
+
+// Rate limiting — cheap metadata/lookup routes get a generous budget; routes
+// that spawn subprocesses (yt-dlp/ffmpeg) or call the paid Gemini API get a
+// tight one, since both are directly abusable for cost/DoS with no auth layer
+// in front of them.
+const standardLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, error: 'rate-limited' },
+});
+const expensiveLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { ok: false, error: 'rate-limited' },
+});
+
+// -----------------------------------------------------------------------------
+// SSRF guard — every route below that fetches a user-supplied URL must call
+// assertPublicHost() after validHttpUrl() passes. Blocks loopback, private
+// (RFC1918), link-local/cloud-metadata (169.254.0.0/16), and numeric-literal
+// IP tricks (decimal/octal/hex) that would otherwise bypass a naive hostname
+// check. Resolves the hostname and checks the ACTUAL address(es) it points to,
+// rather than just pattern-matching the hostname string.
+// -----------------------------------------------------------------------------
+function isPrivateOrReservedIp(ip) {
+  const type = net.isIP(ip);
+  if (type === 4) {
+    const parts = ip.split('.').map(Number);
+    const [a, b] = parts;
+    if (parts.length !== 4 || parts.some((n) => Number.isNaN(n))) return true;
+    return (
+      a === 127 || a === 10 || a === 0 ||
+      (a === 169 && b === 254) || // link-local + cloud metadata (169.254.169.254)
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      a >= 224 // multicast/reserved
+    );
+  }
+  if (type === 6) {
+    const lower = ip.toLowerCase();
+    return (
+      lower === '::1' ||
+      lower.startsWith('fe80:') || // link-local
+      lower.startsWith('fc') || lower.startsWith('fd') || // unique local
+      lower.startsWith('::ffff:127.') ||
+      lower.startsWith('::ffff:10.') ||
+      lower.startsWith('::ffff:169.254.')
+    );
+  }
+  return true; // couldn't classify — fail closed
+}
+
+async function assertPublicHost(urlObj) {
+  const hostname = urlObj.hostname;
+  if (hostname === 'localhost' || hostname.endsWith('.local')) {
+    throw new Error('blocked-host');
+  }
+  // Reject numeric-looking hosts that aren't clean dotted-quad IPv4/IPv6 —
+  // blocks decimal (2130706433), octal (017700000001), and hex (0x7f000001)
+  // encodings of loopback/private addresses that would slip past a plain
+  // dotted-quad regex.
+  if (
+    /^0x[0-9a-f]+$/i.test(hostname) ||
+    /^\d+$/.test(hostname) ||
+    /^0[0-7]+(\.[0-7]+)*$/.test(hostname)
+  ) {
+    throw new Error('blocked-host');
+  }
+  const addresses = await dns.lookup(hostname, { all: true });
+  if (!addresses.length) throw new Error('blocked-host');
+  for (const { address } of addresses) {
+    if (isPrivateOrReservedIp(address)) throw new Error('blocked-host');
+  }
+}
+
+async function requireSafeUrl(candidate) {
+  const parsed = validHttpUrl(candidate);
+  if (!parsed) return { ok: false, error: 'invalid-url' };
+  try {
+    await assertPublicHost(parsed);
+  } catch {
+    return { ok: false, error: 'blocked-host' };
+  }
+  return { ok: true, parsed };
+}
 
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36',
@@ -271,10 +378,11 @@ app.get('/api/v2/ping', (_req, res) => {
   res.json({ ok: true, status: 'resource-server', clientFirst: true });
 });
 
-app.post('/api/resolve-url', async (req, res) => {
+app.post('/api/resolve-url', standardLimiter, async (req, res) => {
   const target = cleanUrl(req.body?.url);
-  const parsed = validHttpUrl(target);
-  if (!parsed) return res.status(400).json({ ok: false, error: 'invalid-url' });
+  const safe = await requireSafeUrl(target);
+  if (!safe.ok) return res.status(400).json({ ok: false, error: safe.error });
+  const { parsed } = safe;
   try {
     const response = await fetch(parsed.href, { method: 'HEAD', redirect: 'follow', headers: headersFor(parsed.href) });
     res.json({ ok: true, resolvedUrl: response.url || parsed.href });
@@ -283,10 +391,11 @@ app.post('/api/resolve-url', async (req, res) => {
   }
 });
 
-app.post('/api/extract-video', async (req, res) => {
+app.post('/api/extract-video', expensiveLimiter, async (req, res) => {
   const target = cleanUrl(req.body?.url);
-  const parsed = validHttpUrl(target);
-  if (!parsed) return res.status(400).json({ ok: false, error: 'invalid-url' });
+  const safe = await requireSafeUrl(target);
+  if (!safe.ok) return res.status(400).json({ ok: false, error: safe.error });
+  const { parsed } = safe;
 
   const result = await runYtDlpJson(parsed.href);
   if (!result.ok) return res.json({ ok: false, error: result.error });
@@ -315,10 +424,11 @@ app.post('/api/extract-video', async (req, res) => {
   });
 });
 
-app.post('/api/extract-url', async (req, res) => {
+app.post('/api/extract-url', standardLimiter, async (req, res) => {
   const target = cleanUrl(req.body?.url);
-  const parsed = validHttpUrl(target);
-  if (!parsed) return res.status(400).json({ ok: false, error: 'invalid-url' });
+  const safe = await requireSafeUrl(target);
+  if (!safe.ok) return res.status(400).json({ ok: false, error: safe.error });
+  const { parsed } = safe;
 
   try {
     const fetched = await fetchText(parsed.href, 25000);
@@ -347,7 +457,7 @@ app.post('/api/extract-url', async (req, res) => {
   }
 });
 
-app.post('/api/extract-instagram-agent', async (req, res) => {
+app.post('/api/extract-instagram-agent', standardLimiter, async (req, res) => {
   const target = cleanUrl(req.body?.url);
   const parsed = validHttpUrl(target);
   if (!parsed || !/instagram\.com$/i.test(parsed.hostname.replace(/^www\./, ''))) {
@@ -382,7 +492,7 @@ app.post('/api/extract-instagram-agent', async (req, res) => {
   return res.json({ ok: false, error: 'no-instagram-data' });
 });
 
-app.post('/api/structure-recipe', async (req, res) => {
+app.post('/api/structure-recipe', expensiveLimiter, async (req, res) => {
   const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_KEY;
   const rawText = String(req.body?.rawText || '').trim();
   if (!key) return res.status(503).json({ ok: false, error: 'gemini-not-configured' });
@@ -494,10 +604,11 @@ function runYtDlpSubtitles(url, timeoutMs = 70000) {
   });
 }
 
-app.post('/api/transcribe', async (req, res) => {
+app.post('/api/transcribe', expensiveLimiter, async (req, res) => {
   const target = cleanUrl(req.body?.url);
-  const parsed = validHttpUrl(target);
-  if (!parsed) return res.status(400).json({ ok: false, error: 'invalid-url' });
+  const safe = await requireSafeUrl(target);
+  if (!safe.ok) return res.status(400).json({ ok: false, error: safe.error });
+  const { parsed } = safe;
 
   // Step 1 — subtitles first (cheap path, no media download).
   const subs = await runYtDlpSubtitles(parsed.href);
@@ -673,11 +784,18 @@ app.post('/api/transcribe', async (req, res) => {
 // Serve temp audio files for browser-side Whisper (zero-cost fallback)
 app.get('/api/tmp-audio/:filename', (req, res) => {
   const { filename } = req.params;
-  // Only serve files created by our transcribe route
-  if (!filename.startsWith('spicehub-asr-') || !filename.endsWith('.wav')) {
+  // Strict allowlist: only our own generated names, no path separators or
+  // dot-dot segments possible (previously startsWith/endsWith checks alone
+  // let `spicehub-asr-../../../etc/passwd.wav` through path.join unsanitized).
+  if (!/^spicehub-asr-[a-zA-Z0-9_-]+\.wav$/.test(filename)) {
     return res.status(400).json({ error: 'invalid-filename' });
   }
   const filePath = path.join(os.tmpdir(), filename);
+  // Belt-and-suspenders: confirm the resolved path still lives inside tmpdir.
+  const resolvedTmp = path.resolve(os.tmpdir());
+  if (!path.resolve(filePath).startsWith(resolvedTmp + path.sep)) {
+    return res.status(400).json({ error: 'invalid-filename' });
+  }
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'audio-expired' });
   }
@@ -694,8 +812,21 @@ app.get('/api/tmp-audio/:filename', (req, res) => {
 });
 
 const distPath = path.join(__dirname, '../dist');
-app.use(express.static(distPath));
+app.use(express.static(distPath, {
+  // Vite hashes /assets/[name]-[hash].ext, so those are safe to cache
+  // immutably for a year. Everything else (notably index.html and sw.js)
+  // must stay no-cache so PWA updates (registerType: 'autoUpdate') roll out
+  // promptly instead of being stuck on a cached shell.
+  setHeaders(res, filePath) {
+    if (/[\\/]assets[\\/]/.test(filePath)) {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    } else {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  },
+}));
 app.get('*', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
   res.sendFile(path.join(distPath, 'index.html'));
 });
 

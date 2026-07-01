@@ -13,7 +13,7 @@
 //   exportViaShare(title, content)            → Promise<void>
 //   exportForPrint(htmlContent)               → void
 
-import { renderTemplate, renderRecipe, TEMPLATES } from '../recipeTemplates.js';
+import { renderTemplate, renderRecipe, TEMPLATES, safeUrl } from '../recipeTemplates.js';
 import { consolidateGroceries, normalizeIngredient } from './ingredientNormalizer.js';
 import { GROCERY_CATEGORIES } from '../recipeSchema.js';
 import { formatQuantity, formatUnit, formatFood } from './displayFormatter.js';
@@ -162,7 +162,7 @@ export function renderRecipeExport(recipe, options = {}) {
   // Build a context object with all template variables
   const ctx = {
     name: recipe.name || '',
-    imageUrl: recipe.imageUrl || recipe.image || '',
+    imageUrl: safeUrl(recipe.imageUrl || recipe.image || ''),
     ingredients: Array.isArray(recipe.ingredients) ? recipe.ingredients.filter(Boolean) : [],
     directions: Array.isArray(recipe.directions) ? recipe.directions.filter(Boolean) : [],
     // Flatten structured notes [{title, text}] to a single string for templates.
@@ -173,7 +173,7 @@ export function renderRecipeExport(recipe, options = {}) {
     cookTime: recipe.cookTime || '',
     servings: recipe.servings || '',
     categories: Array.isArray(recipe.categories) ? recipe.categories.filter(Boolean) : [],
-    sourceUrl: recipe.sourceUrl || recipe.link || '',
+    sourceUrl: safeUrl(recipe.sourceUrl || recipe.link || ''),
     description: recipe.description || '',
     rating_stars: recipe.rating_stars || '',
     // Pass through any extra fields the recipe might have
