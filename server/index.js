@@ -9,6 +9,7 @@
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
+import os from 'node:os';
 import { fileURLToPath } from 'url';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -426,11 +427,14 @@ app.post('/api/structure-recipe', async (req, res) => {
 // -----------------------------------------------------------------------------
 // Transcribes video-only recipes (no captions) so the transcript can feed the
 // client's captionToRecipe. This route does NOTHING unless ASR_ENDPOINT is set.
-// Strategy: (1) try yt-dlp subtitles first (cheap, no media download); (2) ONLY
-// if no usable subs exist, download an audio-only stream, transcode with ffmpeg,
-// and POST to a Whisper-compatible endpoint at ASR_ENDPOINT. No key/URL is ever
-// hardcoded — both come from server env (ASR_ENDPOINT, optional ASR_API_KEY).
-function asrEnabled() {
+// Zero-cost two-tier strategy:
+// (1) try yt-dlp subtitles first (cheap, no media download);
+// (2) if no usable subs, download audio + ffmpeg transcode to 16kHz WAV;
+// (3a) if ASR_ENDPOINT configured → POST WAV to external Whisper-compatible API;
+// (3b) otherwise → serve the WAV back to the browser for client-side Whisper.
+// No key/URL is ever hardcoded — env vars only (ASR_ENDPOINT, ASR_API_KEY).
+/** True when an external Whisper-compatible endpoint is configured. */
+function asrEndpointConfigured() {
   return Boolean(process.env.ASR_ENDPOINT);
 }
 
@@ -491,11 +495,6 @@ function runYtDlpSubtitles(url, timeoutMs = 70000) {
 }
 
 app.post('/api/transcribe', async (req, res) => {
-  // Hard env gate: when ASR is not configured, return 501 and change nothing.
-  if (!asrEnabled()) {
-    return res.status(501).json({ ok: false, error: 'asr-disabled' });
-  }
-
   const target = cleanUrl(req.body?.url);
   const parsed = validHttpUrl(target);
   if (!parsed) return res.status(400).json({ ok: false, error: 'invalid-url' });
@@ -511,36 +510,187 @@ app.post('/api/transcribe', async (req, res) => {
     });
   }
 
-  // Step 2 — no usable subtitles: fall back to audio download + ASR.
-  // SCAFFOLD: the audio→ffmpeg→Whisper-POST network path is intentionally a
-  // clearly-commented stub. It is wired only behind the ASR_ENDPOINT gate above
-  // and performs no work / makes no external calls until implemented.
+  // Step 2 — no usable subtitles: download audio + transcode + POST to ASR.
+  const tmpDir = os.tmpdir();
+  const stamp = `spicehub-asr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const rawAudioPath = path.join(tmpDir, `${stamp}-raw.%(ext)s`);
+  const wavPath = path.join(tmpDir, `${stamp}.wav`);
+
+  // Helper to silently remove temp files
+  const cleanup = () => {
+    for (const p of [wavPath]) {
+      try { fs.unlinkSync(p); } catch { /* ignore */ }
+    }
+    // yt-dlp output has the real extension filled in; glob-clean the prefix
+    try {
+      for (const f of fs.readdirSync(tmpDir)) {
+        if (f.startsWith(stamp)) {
+          try { fs.unlinkSync(path.join(tmpDir, f)); } catch { /* ignore */ }
+        }
+      }
+    } catch { /* ignore */ }
+  };
+
   try {
-    // TODO(asr): 1) yt-dlp -f bestaudio -x --audio-format <wav|mp3> to a temp file
-    //    (reuse spawn(bin, [...]) like runYtDlpJson; write to os.tmpdir()).
-    // TODO(asr): 2) Transcode/normalize with ffmpeg to 16kHz mono PCM/WAV
-    //    (spawn('ffmpeg', ['-i', inFile, '-ar', '16000', '-ac', '1', outFile])).
-    // TODO(asr): 3) POST the audio to the Whisper-compatible endpoint:
-    //    const endpoint = process.env.ASR_ENDPOINT;            // never hardcoded
-    //    const apiKey = process.env.ASR_API_KEY;               // optional, env-only
-    //    const form = new FormData();
-    //    form.append('file', new Blob([audioBuffer]), 'audio.wav');
-    //    form.append('model', process.env.ASR_MODEL || 'whisper-1');
-    //    const r = await fetch(endpoint, {
-    //      method: 'POST',
-    //      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
-    //      body: form,
-    //    });
-    //    const { text } = await r.json();
-    // TODO(asr): 4) Clean up temp files, then return the transcript below.
-    return res.status(501).json({
+    // 1) Download best audio stream with yt-dlp
+    const dlResult = await new Promise((resolve) => {
+      const bin = resolveYtDlpBin();
+      const child = spawn(bin, [
+        '-f', 'bestaudio/best',
+        '-x',
+        '--audio-format', 'wav',
+        '-o', rawAudioPath,
+        '--no-warnings',
+        '--no-playlist',
+        parsed.href,
+      ], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+
+      let stderr = '';
+      const timer = setTimeout(() => { child.kill(); resolve({ ok: false, error: 'audio-download-timeout' }); }, 120000);
+      child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+      child.on('error', (err) => { clearTimeout(timer); resolve({ ok: false, error: err.message }); });
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        resolve(code === 0 ? { ok: true } : { ok: false, error: stderr || `yt-dlp audio exit ${code}` });
+      });
+    });
+
+    if (!dlResult.ok) {
+      cleanup();
+      return res.status(422).json({ ok: false, error: dlResult.error, sourceUrl: parsed.href });
+    }
+
+    // Find the actual downloaded file (yt-dlp replaces %(ext)s with real ext)
+    const dlFiles = fs.readdirSync(tmpDir).filter((f) => f.startsWith(stamp) && f !== path.basename(wavPath));
+    const rawFile = dlFiles[0] ? path.join(tmpDir, dlFiles[0]) : null;
+    if (!rawFile || !fs.existsSync(rawFile)) {
+      cleanup();
+      return res.status(422).json({ ok: false, error: 'audio-file-not-found', sourceUrl: parsed.href });
+    }
+
+    // 2) Transcode to 16 kHz mono WAV with ffmpeg
+    const ffResult = await new Promise((resolve) => {
+      const child = spawn('ffmpeg', [
+        '-y', '-i', rawFile,
+        '-ar', '16000', '-ac', '1',
+        '-f', 'wav',
+        wavPath,
+      ], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+
+      let stderr = '';
+      const timer = setTimeout(() => { child.kill(); resolve({ ok: false, error: 'ffmpeg-timeout' }); }, 60000);
+      child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+      child.on('error', (err) => { clearTimeout(timer); resolve({ ok: false, error: `ffmpeg: ${err.message}` }); });
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        resolve(code === 0 ? { ok: true } : { ok: false, error: stderr.slice(-500) || `ffmpeg exit ${code}` });
+      });
+    });
+
+    if (!ffResult.ok || !fs.existsSync(wavPath)) {
+      cleanup();
+      return res.status(422).json({ ok: false, error: ffResult.error || 'transcode-failed', sourceUrl: parsed.href });
+    }
+
+    // 3) Branch: external ASR endpoint OR serve audio for browser Whisper
+    if (asrEndpointConfigured()) {
+      // ── External ASR endpoint (Whisper-compatible POST) ──
+      const endpoint = process.env.ASR_ENDPOINT;
+      const apiKey = process.env.ASR_API_KEY || '';
+      const modelName = process.env.ASR_MODEL || 'whisper-1';
+
+      const audioBuffer = fs.readFileSync(wavPath);
+      const blob = new Blob([audioBuffer], { type: 'audio/wav' });
+      const form = new FormData();
+      form.append('file', blob, 'audio.wav');
+      form.append('model', modelName);
+      form.append('response_format', 'verbose_json');
+
+      const headers = {};
+      if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+
+      const asrResp = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: form,
+      });
+
+      cleanup();
+
+      if (!asrResp.ok) {
+        const errText = await asrResp.text().catch(() => '');
+        return res.status(502).json({ ok: false, error: `asr-${asrResp.status}: ${errText.slice(0, 300)}` });
+      }
+
+      const asrData = await asrResp.json();
+      const transcript = asrData.text || '';
+
+      if (!transcript || transcript.length < 10) {
+        return res.json({ ok: false, error: 'asr-empty-transcript', sourceUrl: parsed.href });
+      }
+
+      return res.json({
+        ok: true,
+        transcript,
+        language: asrData.language || 'en',
+        duration: asrData.duration,
+        sourceUrl: parsed.href,
+        extractedVia: `asr-${modelName}`,
+      });
+    }
+
+    // ── No external ASR: serve the WAV for browser-side Whisper ──
+    // Keep the WAV alive (don't cleanup yet) — it will be served via
+    // /api/tmp-audio/:filename and auto-cleaned after download or timeout.
+    const wavFilename = `${stamp}.wav`;
+    // Clean up everything EXCEPT the WAV
+    try {
+      for (const f of fs.readdirSync(tmpDir)) {
+        if (f.startsWith(stamp) && f !== wavFilename) {
+          try { fs.unlinkSync(path.join(tmpDir, f)); } catch { /* ignore */ }
+        }
+      }
+    } catch { /* ignore */ }
+
+    // Schedule cleanup after 5 minutes in case browser never fetches
+    setTimeout(() => {
+      try { fs.unlinkSync(wavPath); } catch { /* ignore */ }
+    }, 5 * 60 * 1000);
+
+    return res.json({
       ok: false,
-      error: 'asr-audio-path-not-implemented',
+      audioUrl: `/api/tmp-audio/${wavFilename}`,
       sourceUrl: parsed.href,
+      extractedVia: 'none',
+      hint: 'audio-ready-for-browser',
     });
   } catch (err) {
+    cleanup();
     return res.status(502).json({ ok: false, error: err.message });
   }
+});
+
+// Serve temp audio files for browser-side Whisper (zero-cost fallback)
+app.get('/api/tmp-audio/:filename', (req, res) => {
+  const { filename } = req.params;
+  // Only serve files created by our transcribe route
+  if (!filename.startsWith('spicehub-asr-') || !filename.endsWith('.wav')) {
+    return res.status(400).json({ error: 'invalid-filename' });
+  }
+  const filePath = path.join(os.tmpdir(), filename);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'audio-expired' });
+  }
+  res.setHeader('Content-Type', 'audio/wav');
+  res.setHeader('Cache-Control', 'no-store');
+  const stream = fs.createReadStream(filePath);
+  stream.pipe(res);
+  stream.on('end', () => {
+    // Clean up after serving
+    setTimeout(() => {
+      try { fs.unlinkSync(filePath); } catch { /* ignore */ }
+    }, 10000);
+  });
 });
 
 const distPath = path.join(__dirname, '../dist');

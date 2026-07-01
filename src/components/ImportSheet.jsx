@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence, MotionConfig, useDragControls } from 'framer-motion';
-import { X, Sparkles, Check, ArrowLeft, Zap } from 'lucide-react';
+import { X, Sparkles, Check, ArrowLeft, Zap, Mic } from 'lucide-react';
 import './ImportSheet.css';
 import { hapticTap, hapticSuccess, hapticError } from '../haptics';
 import {
@@ -11,7 +11,9 @@ import {
   isSocialMediaUrl,
   getSocialPlatform,
   detectImportType,
+  transcribeVideoForRecipe,
 } from '../recipeParser.js';
+import { detectVideoSource } from '../lib/videoSource.js';
 import { cleanUrl } from '../api.js';
 import { ENGINE_PROMPT_VERSION } from '../recipeSchema.js';
 import { humanizeImportStatus } from '../importCopy.js';
@@ -400,6 +402,53 @@ export default function ImportSheet({
 
       if (controller.signal.aborted) return;
 
+      // ── Video transcription fallback ────────────────────────────────────
+      // When the standard caption/scrape pipeline fails on a video URL,
+      // try speech-to-text transcription before falling through to
+      // browserAssist or error. This catches recipe reels/shorts where the
+      // recipe is spoken, not written in the caption.
+      const isVideo = detectVideoSource(cleanU);
+      const captionWeak =
+        (result && result._needsBrowserAssist && result._emptyCaption) ||
+        (!result || (!result.title && !result.name && !(result.ingredients || []).length));
+
+      if (isVideo && captionWeak && !controller.signal.aborted) {
+        setProgressMsg('No caption found — transcribing video audio…');
+        setPipelineSteps(prev => {
+          const next = prev.map(s => ({ ...s, status: s.status === 'running' ? 'done' : s.status }));
+          next.push({ label: 'Transcribing audio', status: 'running' });
+          return next;
+        });
+
+        try {
+          const transcribeResult = await transcribeVideoForRecipe(cleanU, {
+            onProgress: (tier, msg) => {
+              if (!controller.signal.aborted) setProgressMsg(msg);
+            },
+            signal: controller.signal,
+            type: type || initialItemType,
+            imageUrl: result?.capturedImageUrl || '',
+          });
+
+          if (controller.signal.aborted) return;
+
+          if (transcribeResult) {
+            const tNorm = normalizeRecipeForReview(transcribeResult, type || initialItemType);
+            if (tNorm && (tNorm.title || tNorm.ingredients.length)) {
+              setPipelineSteps(prev => prev.map(s => ({ ...s, status: 'done' })));
+              setRecipe(tNorm);
+              setConfidence(computeReviewConfidence(tNorm));
+              setPhase('review');
+              return;
+            }
+          }
+        } catch (tErr) {
+          if (tErr.name === 'AbortError') return;
+          console.warn('[ImportSheet] Transcription fallback failed:', tErr.message);
+        }
+        // Transcription didn't yield a recipe — fall through to normal fallback
+      }
+
       if (result && result._needsBrowserAssist) {
         if (result._emptyCaption) {
           hapticError();
@@ -552,6 +601,71 @@ export default function ImportSheet({
       executePhotoImport(imageDataUrl, type);
     }
   }, [phase, executePhotoImport]);
+
+  // ── Execute Transcribe Import (standalone, for retry/button) ────────────
+  const executeTranscribeImport = useCallback(async (videoUrl, type) => {
+    const cleanU = cleanUrl(videoUrl || importUrl);
+    if (!cleanU) return;
+
+    if (abortRef.current) abortRef.current.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    setPhase('loading');
+    setError('');
+    setLoadingImage('');
+    setProgressMsg('Transcribing video audio…');
+    setPipelineSteps([
+      { label: 'Downloading audio', status: 'running' },
+      { label: 'Running speech-to-text', status: 'pending' },
+      { label: 'Organizing the recipe', status: 'pending' },
+    ]);
+
+    try {
+      const result = await transcribeVideoForRecipe(cleanU, {
+        onProgress: (tier, msg) => {
+          if (controller.signal.aborted) return;
+          setProgressMsg(msg);
+          setPipelineSteps(prev => {
+            const next = [...prev];
+            if (/download|audio|extract/i.test(msg)) {
+              next[0].status = 'running';
+            } else if (/whisper|model|transcrib/i.test(msg)) {
+              next[0].status = 'done';
+              next[1].status = 'running';
+            } else if (/struct|recipe|organiz|caption/i.test(msg)) {
+              next[0].status = 'done';
+              next[1].status = 'done';
+              next[2].status = 'running';
+            }
+            return next;
+          });
+        },
+        signal: controller.signal,
+        type: type || itemType || initialItemType,
+      });
+
+      if (controller.signal.aborted) return;
+
+      const normalized = normalizeRecipeForReview(result, type || itemType || initialItemType);
+      if (normalized && (normalized.title || normalized.ingredients.length)) {
+        setPipelineSteps(prev => prev.map(s => ({ ...s, status: 'done' })));
+        setRecipe(normalized);
+        setConfidence(computeReviewConfidence(normalized));
+        setPhase('review');
+      } else {
+        hapticError();
+        setError('Transcription finished but no recipe was found in the audio. Try pasting the recipe text instead.');
+        setPhase('input');
+      }
+    } catch (err) {
+      if (err.name === 'AbortError') return;
+      console.error('[ImportSheet] Transcribe import error:', err);
+      hapticError();
+      setError(err.message || 'Transcription failed.');
+      setPhase('input');
+    }
+  }, [importUrl, itemType, initialItemType]);
 
   // ── BrowserAssist recipe callback ────────────────────────────────────────
   const handleBrowserAssistRecipe = useCallback((extractedRecipe) => {
@@ -765,6 +879,15 @@ export default function ImportSheet({
                         >
                           Retry
                         </button>
+                        {detectVideoSource(importUrl) && (
+                          <button
+                            type="button"
+                            className="import-sheet-btn import-sheet-btn-secondary"
+                            onClick={() => executeTranscribeImport(importUrl, itemType)}
+                          >
+                            <Mic size={14} /> Transcribe Video
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="import-sheet-btn import-sheet-btn-ghost"
