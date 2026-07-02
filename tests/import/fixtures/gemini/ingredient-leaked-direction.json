@@ -1,0 +1,36 @@
+{
+  "name": "recorded: ingredient line leaked into directions (pancakes)",
+  "structured": {
+    "isRecipe": true,
+    "kind": "meal",
+    "title": "Lemon Ricotta Pancakes",
+    "servings": "4",
+    "ingredientGroups": [
+      { "section": "", "items": [
+        { "quantity": "1.5", "unit": "cup", "name": "all-purpose flour" },
+        { "quantity": "1", "unit": "cup", "name": "whole milk ricotta" },
+        { "quantity": "2", "unit": "", "name": "eggs" },
+        { "quantity": "0.75", "unit": "cup", "name": "milk" },
+        { "quantity": "2", "unit": "", "name": "lemons", "prep": "zested" },
+        { "quantity": "3", "unit": "tbsp", "name": "sugar" },
+        { "quantity": "2", "unit": "tsp", "name": "baking powder" }
+      ] },
+      { "section": "", "items": [] }
+    ],
+    "directions": [
+      "1 pinch of salt",
+      "Whisk the dry ingredients together in a large bowl.",
+      "Beat the eggs with ricotta, milk, lemon zest and juice in a second bowl.",
+      "Fold wet into dry without overmixing; lumps are fine.",
+      "Cook 1/4 cup portions in a buttered pan over medium-low, about 3 minutes per side.",
+      "Serve with honey and berries."
+    ],
+    "confidence": 0.78
+  },
+  "expect": {
+    "minIngredients": 7,
+    "minDirections": 5,
+    "minMoved": 1,
+    "mustNotBeDirection": "1 pinch of salt"
+  }
+}

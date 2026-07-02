@@ -1,0 +1,36 @@
+{
+  "name": "recorded: drink kind preserves glass/garnish/method (paloma negra)",
+  "structured": {
+    "isRecipe": true,
+    "kind": "drink",
+    "title": "Smoked Paloma Negra",
+    "glass": "highball",
+    "garnish": "grapefruit wedge",
+    "method": "shaken",
+    "ingredientGroups": [
+      { "section": "", "items": [
+        { "quantity": "2", "unit": "oz", "name": "mezcal" },
+        { "quantity": "0.75", "unit": "oz", "name": "fresh lime juice" },
+        { "quantity": "0.5", "unit": "oz", "name": "agave syrup" },
+        { "quantity": "2", "unit": "oz", "name": "grapefruit soda" },
+        { "quantity": "1", "unit": "dash", "name": "saline solution" },
+        { "quantity": "", "unit": "", "name": "Tajín", "prep": "for the rim" }
+      ] }
+    ],
+    "directions": [
+      "Rim a highball glass with Tajín.",
+      "Shake the mezcal, lime, agave and saline with ice.",
+      "Strain into the glass over fresh ice and top with grapefruit soda.",
+      "Garnish with a grapefruit wedge."
+    ],
+    "confidence": 0.94
+  },
+  "expect": {
+    "minIngredients": 6,
+    "minDirections": 4,
+    "maxMoved": 0,
+    "drink": true,
+    "glass": "highball",
+    "garnish": "grapefruit wedge"
+  }
+}
