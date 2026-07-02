@@ -18,10 +18,12 @@ import {
   ArrowDown,
   Trash2,
   X,
+  Crop,
 } from 'lucide-react';
 import { fuzzyResolveIngredient, normalizeIngredientForMatching, learnableAliasFrom, addLearnedAlias } from '../recipeSchema';
 import { saveLearnedAliases } from '../db';
 import PhotoGallery from './PhotoGallery';
+import DishPhotoCropper from './DishPhotoCropper';
 
 // Spring-like easing shared across review animations (spec §1)
 const SPRING_EASE = [0.32, 0.72, 0, 1];
@@ -334,7 +336,9 @@ function ListItem({
  *   onSave      — callback with final recipe + destination
  *   confidence  — extraction confidence score (0-1)
  */
-export default function ImportReview({ recipe, onChange, onSave, confidence, destination, setDestination }) {
+export default function ImportReview({ recipe, onChange, onSave, confidence, destination, setDestination, scanPages = null }) {
+  // Manual dish-photo re-crop (photo imports only — needs the original pages)
+  const [showCropper, setShowCropper] = useState(false);
   // destination / setDestination are controlled from ImportSheet;
   // fall back to local state when used standalone
   const [localDestination, setLocalDestination] = useState('library');
@@ -569,8 +573,12 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
       : null;
 
   // ── Extraction source + image-status chip (Instagram import diagnostics) ──
-  const SOURCE_LABELS = { apify: 'Apify', oembed: 'oEmbed', 'ig-json': 'IG JSON', embed: 'Embed', browser: 'Browser', video: 'Video' };
-  const sourceLabel = recipe._extractionSource ? (SOURCE_LABELS[recipe._extractionSource] || null) : null;
+  const SOURCE_LABELS = { apify: 'Apify', oembed: 'oEmbed', 'ig-json': 'IG JSON', embed: 'Embed', browser: 'Browser', video: 'Video', photo: 'Photo scan' };
+  const VISION_LABELS = { gemini: 'Gemini Vision', mistral: 'Mistral Vision', tesseract: 'On-device OCR' };
+  let sourceLabel = recipe._extractionSource ? (SOURCE_LABELS[recipe._extractionSource] || null) : null;
+  if (recipe._extractionSource === 'photo' && VISION_LABELS[recipe._visionEngine]) {
+    sourceLabel = `${sourceLabel} · ${VISION_LABELS[recipe._visionEngine]}`;
+  }
   const imageStatusLabel =
     recipe._imageStatus === 'data-url' ? 'image saved'
     : recipe._imageStatus === 'proxied' ? 'image via proxy'
@@ -683,7 +691,36 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
             placeholder="Recipe title"
           />
         </div>
+
+        {/* Manual dish-photo re-crop — only for photo scans (original pages on hand) */}
+        {Array.isArray(scanPages) && scanPages.length > 0 && (
+          <button
+            type="button"
+            className="review-hero-adjust"
+            onClick={(e) => { e.stopPropagation(); setShowCropper(true); }}
+            aria-label="Adjust recipe photo"
+          >
+            <Crop size={14} strokeWidth={2.5} />
+            {recipe.image ? 'Adjust photo' : 'Pick photo'}
+          </button>
+        )}
       </motion.div>
+
+      {/* Dish-photo cropper overlay */}
+      <AnimatePresence>
+        {showCropper && Array.isArray(scanPages) && scanPages.length > 0 && (
+          <DishPhotoCropper
+            pages={scanPages}
+            initialPage={Math.max(0, (recipe._dishPhotoBox?.page || 1) - 1)}
+            initialBox={recipe._dishPhotoBox?.box || null}
+            onApply={(dataUrl) => {
+              setShowCropper(false);
+              onChange({ ...recipe, image: dataUrl, imageUrl: dataUrl, _imageStatus: 'data-url' });
+            }}
+            onClose={() => setShowCropper(false)}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Engine metadata chip — muted, read-only; absent on older recipes */}
       {engineName && (

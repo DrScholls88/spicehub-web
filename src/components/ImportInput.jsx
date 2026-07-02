@@ -1,8 +1,9 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Pencil, Camera, FolderOpen, X as XIcon, Sparkles } from 'lucide-react';
+import { Pencil, X as XIcon, Sparkles } from 'lucide-react';
 import { isSocialMediaUrl, getSocialPlatform, detectImportType } from '../recipeParser.js';
 import { hapticLight } from '../haptics';
+import PhotoScanSession from './PhotoScanSession';
 
 // Spec §1: input area compresses to compact bar over 250ms, spring-like easing
 const COLLAPSE_TRANSITION = { duration: 0.25, ease: [0.32, 0.72, 0, 1] };
@@ -34,7 +35,9 @@ const TYPE_TOGGLE_TRANSITION = `background ${SH_SPRING} 0.15s, color ${SH_SPRING
  *   setItemType      — setter for itemType value
  *   onImport(url, type)        — URL import callback
  *   onPasteImport(text, type)  — paste text import callback
- *   onPhotoImport(dataUrl, type) — photo import callback
+ *   scanPages / setScanPages   — multi-page scan session state (lifted to
+ *                                ImportSheet so review-time re-crop can reuse
+ *                                the original pages)
  *   onReExpand()               — tap collapsed bar to expand
  *   initialUrl                 — pre-filled URL
  *   initialType                — 'meal' | 'drink'
@@ -53,7 +56,8 @@ export default function ImportInput({
   setItemType,
   onImport,
   onPasteImport,
-  onPhotoImport,
+  scanPages = [],
+  setScanPages,
   onReExpand,
   initialUrl = '',
   initialType = 'meal',
@@ -62,24 +66,28 @@ export default function ImportInput({
   const tab = activeTab;
   const setTab = setActiveTab;
 
-  const fileRef = useRef(null);
-  const cameraRef = useRef(null);
-
   // Local state for social platform chip detection
   const [socialDetected, setSocialDetected] = useState(null);
   // Smart ingestion: drag-over ring + auto-detected type disclosure
   const [dragOver, setDragOver] = useState(false);
   const [showTypeOverride, setShowTypeOverride] = useState(false);
+  // Files dropped/pasted outside the Photo tab, handed to PhotoScanSession
+  const [incomingFiles, setIncomingFiles] = useState(null);
 
   const looksLikeUrl = useCallback((s) => /^\s*https?:\/\/\S+/i.test(s || ''), []);
 
-  // Read an image File → dataURL → vision pipeline
-  const ingestImageFile = useCallback((file) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => onPhotoImport(reader.result, itemType);
-    reader.readAsDataURL(file);
-  }, [itemType, onPhotoImport]);
+  // Route dropped/pasted image or PDF files into the scan session. The
+  // session (via ImportSheet state) collects pages; extraction is one tap on
+  // the footer CTA — so "drop, then add the back of the card" just works.
+  const ingestMediaFiles = useCallback((files) => {
+    const media = Array.from(files || []).filter(
+      (f) => f.type?.startsWith('image/') || f.type === 'application/pdf' || /\.pdf$/i.test(f.name || ''),
+    );
+    if (!media.length) return false;
+    setTab('photo');
+    setIncomingFiles(media);
+    return true;
+  }, [setTab]);
 
   // Route an arbitrary string to the right mode: URL vs raw text
   const ingestText = useCallback((raw) => {
@@ -97,12 +105,16 @@ export default function ImportInput({
   // Smart paste anywhere in the ingestion zone — sniff clipboard payload type.
   const handleSmartPaste = useCallback((e) => {
     const items = e.clipboardData?.items || [];
+    const files = [];
     for (const it of items) {
-      if (it.kind === 'file' && it.type.startsWith('image/')) {
-        e.preventDefault();
-        ingestImageFile(it.getAsFile());
-        return;
+      if (it.kind === 'file') {
+        const f = it.getAsFile();
+        if (f) files.push(f);
       }
+    }
+    if (files.length && ingestMediaFiles(files)) {
+      e.preventDefault();
+      return;
     }
     const text = e.clipboardData?.getData('text') || '';
     // If a multi-line / non-URL blob lands in the URL field, reroute to paste.
@@ -111,17 +123,16 @@ export default function ImportInput({
       setTab('paste');
       setPasteText(text);
     }
-  }, [ingestImageFile, tab, looksLikeUrl, setTab, setPasteText]);
+  }, [ingestMediaFiles, tab, looksLikeUrl, setTab, setPasteText]);
 
-  // Unified drop zone — accept image files or dragged text/links.
+  // Unified drop zone — accept image/PDF files or dragged text/links.
   const handleDrop = useCallback((e) => {
     e.preventDefault();
     setDragOver(false);
-    const file = Array.from(e.dataTransfer?.files || []).find(f => f.type.startsWith('image/'));
-    if (file) { ingestImageFile(file); return; }
+    if (ingestMediaFiles(e.dataTransfer?.files)) return;
     const text = e.dataTransfer?.getData('text') || '';
     if (text) ingestText(text);
-  }, [ingestImageFile, ingestText]);
+  }, [ingestMediaFiles, ingestText]);
 
   // Detect social platform when URL changes
   useEffect(() => {
@@ -155,16 +166,6 @@ export default function ImportInput({
     }
   }, [handleUrlSubmit]);
 
-  const handlePhotoChange = useCallback((e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      onPhotoImport(reader.result, itemType);
-    };
-    reader.readAsDataURL(file);
-  }, [itemType, onPhotoImport]);
-
   // ── Collapsed bar ⇄ full form, cross-animated (AnimatePresence must stay
   //    mounted across the switch, so both branches live in one ternary) ─────
   return (
@@ -186,7 +187,9 @@ export default function ImportInput({
           >
             <span className={`import-input-collapsed-dot status-${status}`} />
             <span className="import-input-collapsed-url">
-              {url || pasteText?.slice(0, 60) || 'Edit input'}
+              {url
+                || pasteText?.slice(0, 60)
+                || (scanPages.length ? `Photo scan · ${scanPages.length} page${scanPages.length === 1 ? '' : 's'}` : 'Edit input')}
             </span>
             <span
               className="import-input-collapsed-edit"
@@ -305,44 +308,14 @@ export default function ImportInput({
                 </div>
               )}
 
-              {/* Photo tab */}
+              {/* Photo tab — multi-page scanner session */}
               {tab === 'photo' && (
                 <div className="import-input-photo-section">
-                  <div className="import-input-photo-btn-row">
-                    <button
-                      className="import-input-photo-btn"
-                      onClick={() => cameraRef.current?.click()}
-                      style={{ transition: `background ${SH_SPRING} 0.12s, transform 0.12s ${SH_SPRING}` }}
-                    >
-                      <Camera size={22} strokeWidth={2} />
-                      <span>Take Photo</span>
-                    </button>
-                    <button
-                      className="import-input-photo-btn"
-                      onClick={() => fileRef.current?.click()}
-                      style={{ transition: `background ${SH_SPRING} 0.12s, transform 0.12s ${SH_SPRING}` }}
-                    >
-                      <FolderOpen size={22} strokeWidth={2} />
-                      <span>Choose File</span>
-                    </button>
-                  </div>
-                  <p className="import-input-photo-hint">
-                    Upload a photo of a recipe (cookbook page, index card, screenshot)
-                  </p>
-                  <input
-                    ref={fileRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handlePhotoChange}
-                    style={{ display: 'none' }}
-                  />
-                  <input
-                    ref={cameraRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    onChange={handlePhotoChange}
-                    style={{ display: 'none' }}
+                  <PhotoScanSession
+                    pages={scanPages}
+                    setPages={setScanPages}
+                    incomingFiles={incomingFiles}
+                    onIncomingHandled={() => setIncomingFiles(null)}
                   />
                 </div>
               )}

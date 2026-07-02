@@ -448,6 +448,35 @@ export async function getQueuedRecipes() {
   return db.importQueue.where('status').anyOf(['pending', 'failed']).toArray();
 }
 
+/**
+ * queuePhotoUpgrade — after an OFFLINE photo import saved an on-device OCR
+ * draft, queue the compressed scan pages so processImportQueue can re-run the
+ * online vision tiers (Gemini → Mistral) on reconnect and merge the better
+ * extraction into the saved recipe. Pages are purged once the upgrade lands.
+ *
+ * @param {object} recipeData  the draft recipe as saved (needs .name)
+ * @param {string[]} scanPageDataUrls  compressed page data URLs, in order
+ * @param {'meal'|'drink'} itemType
+ */
+export async function queuePhotoUpgrade(recipeData, scanPageDataUrls, itemType = 'meal') {
+  if (!recipeData?.name || !Array.isArray(scanPageDataUrls) || scanPageDataUrls.length === 0) {
+    return { queueId: null };
+  }
+  const id = await db.importQueue.add({
+    url: `photo-scan:${Date.now()}`,
+    mode: 'photo-upgrade',
+    recipeData,
+    scanPages: scanPageDataUrls,
+    itemType,
+    targetName: recipeData.name,
+    status: 'pending',
+    error: null,
+    createdAt: new Date().toISOString(),
+    attemptCount: 0,
+  });
+  return { queueId: id };
+}
+
 function mergeRecipeData(existing, incoming) {
   return {
     ...existing,
@@ -472,6 +501,56 @@ export async function processImportQueue() {
 
     for (const item of queued) {
       try {
+        // ── Photo-upgrade entries: re-run the online vision tiers on the
+        //    stored scan pages and merge the improvement into the saved
+        //    recipe. Never adds a new meal (the draft was already saved).
+        if (item.mode === 'photo-upgrade') {
+          try {
+            // Dynamic import avoids a db.js ↔ recipeParser.js cycle.
+            const { importRecipeFromPages } = await import('./lib/photoImportEngine.js');
+            const pages = (item.scanPages || []).map((dataUrl, i) => ({ id: `q-${item.id}-${i}`, dataUrl }));
+            const improved = await importRecipeFromPages(pages, { type: item.itemType || 'meal' });
+
+            if (improved && !improved._ocrDraft) {
+              const target = await db.meals.where('name').equalsIgnoreCase(item.targetName).first();
+              if (target) {
+                await db.meals.update(target.id, {
+                  ...mergeRecipeData(target, {
+                    ...improved,
+                    name: improved.name || improved.title || target.name,
+                  }),
+                  // Vision found the real dish photo — it beats the page scan
+                  // (mergeRecipeData would otherwise keep the existing image).
+                  imageUrl: improved.imageUrl || target.imageUrl,
+                  sourceCaption: improved.sourceCaption || target.sourceCaption,
+                  confidence: improved.confidence ?? target.confidence,
+                  needsReview: false,
+                  _ocrDraft: false,
+                  _structuredVia: improved._structuredVia || target._structuredVia,
+                  _visionEngine: improved._visionEngine || target._visionEngine,
+                });
+              }
+              // Purge the heavy page payload on success (storage hygiene).
+              await db.importQueue.update(item.id, { status: 'done', error: null, scanPages: null });
+              succeeded++;
+            } else {
+              // Still offline / online tiers still down — leave pending.
+              throw new Error('Vision tiers unavailable — will retry');
+            }
+          } catch (err) {
+            failed++;
+            const newAttempt = (item.attemptCount || 0) + 1;
+            const willRetry = newAttempt < 5; // more patience than URL imports
+            await db.importQueue.update(item.id, {
+              status: willRetry ? 'pending' : 'failed',
+              error: err.message,
+              attemptCount: newAttempt,
+              ...(willRetry ? {} : { scanPages: null }), // don't hoard pages forever
+            });
+          }
+          continue;
+        }
+
         // Attempt Gemini re-processing if the offline visual parse had low confidence
         let recipeToSave = item.recipeData;
 

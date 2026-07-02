@@ -1730,3 +1730,351 @@
   color: var(--sh-accent, #e65100);
   border-color: var(--sh-accent, #e65100);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Photo Scan Session — multi-page scanner strip (2026-07 photo import)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.scan-session {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.scan-strip-wrap {
+  overflow: hidden;
+}
+
+.scan-strip-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 2px 6px;
+}
+
+.scan-strip-count {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text, #333);
+}
+
+.scan-strip-hint {
+  font-size: 0.72rem;
+  color: var(--text-light, #999);
+}
+
+.scan-strip {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 4px 2px 8px;
+  scrollbar-width: none;         /* matches .sh-carousel treatment */
+  -webkit-overflow-scrolling: touch;
+}
+.scan-strip::-webkit-scrollbar { display: none; }
+
+.scan-thumb {
+  position: relative;
+  flex: 0 0 auto;
+  width: 88px;
+  height: 116px;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--border, #e8e2d8);
+  background: var(--surface-2, #f5f0e8);
+  cursor: grab;
+  touch-action: pan-x;
+}
+.scan-thumb:active { cursor: grabbing; }
+
+.scan-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+
+.scan-thumb-num {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.scan-thumb-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+  padding: 0;
+  transition: background 120ms cubic-bezier(0.32, 0.72, 0, 1), transform 100ms;
+}
+.scan-thumb-remove:active { transform: scale(0.9); }
+
+.scan-thumb-add {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1.5px dashed var(--border, #d8d0c4);
+  background: transparent;
+  color: var(--text-muted, #8a8378);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 140ms cubic-bezier(0.32, 0.72, 0, 1), color 140ms;
+}
+.scan-thumb-add:hover {
+  border-color: var(--sh-accent, #e65100);
+  color: var(--sh-accent, #e65100);
+}
+
+.scan-session-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-muted, #8a8378);
+}
+.scan-session-note-busy { color: var(--sh-accent, #e65100); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Dish Photo Cropper — manual re-crop overlay (2026-07 photo import)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.dish-crop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200; /* above the import sheet */
+  display: flex;
+  flex-direction: column;
+  background: rgba(12, 10, 8, 0.92);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+.dish-crop-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: max(12px, env(safe-area-inset-top)) 16px 12px;
+  color: #fff;
+}
+.dish-crop-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.dish-crop-close {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  cursor: pointer;
+  padding: 0;
+}
+
+.dish-crop-stage {
+  position: relative;
+  flex: 1;
+  margin: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  touch-action: none; /* the crop rect owns all gestures here */
+}
+
+.dish-crop-canvas {
+  position: relative;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.dish-crop-canvas img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  pointer-events: none;
+}
+
+.dish-crop-shade {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}
+
+.dish-crop-rect {
+  position: absolute;
+  border: 2px solid #fff;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4), inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+  cursor: move;
+}
+
+/* Rule-of-thirds guides inside the crop rect */
+.dish-crop-rect::before,
+.dish-crop-rect::after {
+  content: '';
+  position: absolute;
+  pointer-events: none;
+  opacity: 0.35;
+}
+.dish-crop-rect::before {
+  top: 33.33%;
+  bottom: 33.33%;
+  left: 0;
+  right: 0;
+  border-top: 1px solid #fff;
+  border-bottom: 1px solid #fff;
+}
+.dish-crop-rect::after {
+  left: 33.33%;
+  right: 33.33%;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid #fff;
+  border-right: 1px solid #fff;
+}
+
+.dish-crop-handle {
+  position: absolute;
+  width: 44px;   /* generous touch target */
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: nwse-resize;
+}
+.dish-crop-handle::after {
+  content: '';
+  width: 18px;
+  height: 18px;
+  border: 3px solid #fff;
+  border-radius: 3px;
+}
+.dish-crop-handle-nw { top: -22px; left: -22px; cursor: nwse-resize; }
+.dish-crop-handle-nw::after { border-right: none; border-bottom: none; }
+.dish-crop-handle-ne { top: -22px; right: -22px; cursor: nesw-resize; }
+.dish-crop-handle-ne::after { border-left: none; border-bottom: none; }
+.dish-crop-handle-sw { bottom: -22px; left: -22px; cursor: nesw-resize; }
+.dish-crop-handle-sw::after { border-right: none; border-top: none; }
+.dish-crop-handle-se { bottom: -22px; right: -22px; cursor: nwse-resize; }
+.dish-crop-handle-se::after { border-left: none; border-top: none; }
+
+.dish-crop-pages {
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.dish-crop-pages::-webkit-scrollbar { display: none; }
+
+.dish-crop-page-thumb {
+  flex: 0 0 auto;
+  width: 44px;
+  height: 58px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  padding: 0;
+  background: none;
+  cursor: pointer;
+  opacity: 0.65;
+  transition: opacity 140ms, border-color 140ms;
+}
+.dish-crop-page-thumb.active {
+  border-color: var(--sh-accent, #e65100);
+  opacity: 1;
+}
+.dish-crop-page-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.dish-crop-footer {
+  display: flex;
+  gap: 10px;
+  padding: 14px 16px max(16px, env(safe-area-inset-bottom));
+}
+
+.dish-crop-btn {
+  flex: 1;
+  min-height: 48px;
+  border-radius: 14px;
+  border: none;
+  font-size: 0.92rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 100ms cubic-bezier(0.32, 0.72, 0, 1), opacity 140ms;
+}
+.dish-crop-btn:active { transform: scale(0.98); }
+.dish-crop-btn:disabled { opacity: 0.5; cursor: default; }
+
+.dish-crop-btn-ghost {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+.dish-crop-btn-primary {
+  background: var(--sh-accent, #e65100);
+  color: #fff;
+}
+
+/* "Adjust photo" chip on the review hero */
+.review-hero-adjust {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  transition: background 140ms cubic-bezier(0.32, 0.72, 0, 1), transform 100ms;
+}
+.review-hero-adjust:active { transform: scale(0.97); }
+.review-hero-adjust:hover { background: rgba(0, 0, 0, 0.72); }
