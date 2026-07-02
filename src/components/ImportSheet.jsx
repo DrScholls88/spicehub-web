@@ -147,7 +147,10 @@ export default function ImportSheet({
         .catch(() => {});
     };
     refresh();
-    const id = setInterval(refresh, 4000);
+    // The event listener below is the primary update path; this interval is
+    // just a rare fallback in case some queue mutation site fails to dispatch
+    // the event, so it doesn't need to poll every 4s.
+    const id = setInterval(refresh, 30000);
     window.addEventListener('spicehub:import-queue-updated', refresh);
     return () => {
       cancelled = true;

@@ -23,7 +23,11 @@ export default function SyncQueue({ onSyncComplete }) {
 
   useEffect(() => {
     loadQueue();
-    const interval = setInterval(loadQueue, 2000); // Poll every 2s
+    // This component only mounts while a sync is actually active (see
+    // `{isSyncing && <SyncQueue />}` in App.jsx), so it's a background status
+    // badge, not a live feed — no event dispatches on importQueue mutation
+    // exist yet, so this stays a poll, just less frequent than before.
+    const interval = setInterval(loadQueue, 5000);
     return () => clearInterval(interval);
   }, []);
 

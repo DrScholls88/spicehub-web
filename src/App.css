@@ -20369,3 +20369,345 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
     max-width: 50vw;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   ACCESSIBILITY — focus-visible states, skip target
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+/* Visible keyboard focus ring on every interactive element. Uses
+   :focus-visible so mouse/touch clicks don't get a ring, only keyboard
+   (and other non-pointer) focus does. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+[tabindex]:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Buttons that already have their own visible border/background sometimes
+   need a tighter ring so it doesn't look like a rendering glitch. */
+.hdr-btn:focus-visible,
+.pia-close:focus-visible,
+.sync-item-remove:focus-visible,
+.warning-close:focus-visible {
+  outline-offset: -2px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   LEGAL — ConsentGate, AgeGate, LegalDocument, LegalFooter
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.consentgate-backdrop,
+.agegate-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(20, 14, 8, 0.72);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-md);
+  overflow-y: auto;
+}
+
+.consentgate-sheet,
+.agegate-sheet {
+  background: var(--card);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  max-width: 440px;
+  width: 100%;
+  padding: var(--space-xl) var(--space-lg) var(--space-lg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.consentgate-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--primary);
+  margin-bottom: var(--space-xs);
+}
+
+.consentgate-title,
+.agegate-title {
+  font-size: 1.3rem;
+  font-weight: 800;
+  color: var(--text);
+  margin-bottom: var(--space-xs);
+}
+
+.consentgate-blurb,
+.agegate-paragraph {
+  color: var(--text-light);
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+.consentgate-links {
+  display: flex;
+  gap: var(--space-md);
+  margin: var(--space-sm) 0;
+  flex-wrap: wrap;
+}
+
+.consentgate-link {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-weight: 600;
+  font-size: 0.88rem;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: var(--space-xs) 0;
+  min-height: 32px;
+}
+
+.consentgate-checkbox-row,
+.agegate-checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  padding: var(--space-md) 0;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.consentgate-checkbox-row input[type="checkbox"],
+.agegate-checkbox-row input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  margin-top: 1px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.consentgate-accept-btn,
+.agegate-confirm-btn {
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  min-height: 48px;
+  font-weight: 700;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-spring), opacity var(--duration-fast);
+}
+
+.consentgate-accept-btn:disabled,
+.agegate-confirm-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.consentgate-accept-btn:not(:disabled):active,
+.agegate-confirm-btn:not(:disabled):active {
+  background: var(--primary-dark);
+}
+
+.consentgate-required-note {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  margin-top: var(--space-xs);
+}
+
+.agegate-icon {
+  font-size: 2.6rem;
+  text-align: center;
+  margin-bottom: var(--space-xs);
+}
+
+.agegate-title {
+  text-align: center;
+}
+
+.agegate-actions {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.agegate-cancel-btn {
+  flex: 1;
+  background: var(--surface);
+  color: var(--text);
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  min-height: 48px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.agegate-confirm-btn {
+  flex: 2;
+}
+
+/* ── LegalDocument viewer ── */
+.legaldoc-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10005;
+  background: rgba(20, 14, 8, 0.72);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.legaldoc-sheet {
+  background: var(--card);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 640px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (min-width: 640px) {
+  .legaldoc-backdrop {
+    align-items: center;
+  }
+  .legaldoc-sheet {
+    border-radius: var(--radius-lg);
+    max-height: 80vh;
+  }
+}
+
+.legaldoc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-md) var(--space-lg);
+  border-bottom: 1px solid var(--border);
+}
+
+.legaldoc-title {
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+.legaldoc-close {
+  background: var(--surface);
+  border: none;
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.legaldoc-body {
+  padding: var(--space-lg);
+  overflow-y: auto;
+}
+
+.legaldoc-version {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  margin-bottom: var(--space-md);
+}
+
+.legaldoc-section {
+  margin-bottom: var(--space-lg);
+}
+
+.legaldoc-section h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: var(--space-xs);
+}
+
+.legaldoc-section p {
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.55;
+  margin-bottom: var(--space-xs);
+}
+
+.legaldoc-license-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+
+.legaldoc-license-list li {
+  font-size: 0.88rem;
+  color: var(--text);
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--border);
+}
+
+.legaldoc-license-note {
+  color: var(--text-light);
+}
+
+.legaldoc-contact {
+  margin-top: var(--space-lg);
+  font-size: 0.85rem;
+  color: var(--text-light);
+}
+
+.legaldoc-contact a {
+  color: var(--primary);
+}
+
+/* ── LegalFooter ── */
+.legalfooter {
+  padding: var(--space-xl) var(--space-lg) calc(var(--space-2xl) + env(safe-area-inset-bottom, 0px));
+  text-align: center;
+}
+
+.legalfooter-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-sm);
+}
+
+.legalfooter-link {
+  background: none;
+  border: none;
+  color: var(--text-light);
+  font-size: 0.8rem;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: var(--space-xs);
+  min-height: 32px;
+}
+
+.legalfooter-sep {
+  color: var(--text-muted);
+}
+
+.legalfooter-copyright {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  max-width: 420px;
+  margin: 0 auto;
+}

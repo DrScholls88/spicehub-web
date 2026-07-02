@@ -50,6 +50,18 @@ function resolveYtDlpBin() {
 export const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Baseline security headers on every response — mirrors the header set
+// applied at the Vercel edge (see vercel.json) so this backend behaves the
+// same if it's ever hit directly rather than through the frontend's CDN.
+// Registered first so it covers API routes too, not just static serving.
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()');
+  next();
+});
+
 // CORS allowlist — driven by ALLOWED_ORIGINS (already wired up as a Render env
 // var, see server/render.yaml). Fails CLOSED (no cross-origin access) rather
 // than open when unset, so a forgotten config doesn't silently become "allow

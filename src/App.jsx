@@ -32,6 +32,10 @@ import useBackHandler from './hooks/useBackHandler';
 import useSwipeDismiss from './hooks/useSwipeDismiss';
 import { planWeek, pickForSlot, buildRecencyMap } from './lib/weekPlanner';
 import { renderRecipeExport, exportViaShare } from './utils/exportRenderer.js';
+import { compressRecipeImage } from './imageCompressor.js';
+import ConsentGate, { getStoredConsent } from './components/ConsentGate';
+import AgeGate, { isAgeVerified } from './components/AgeGate';
+import LegalFooter from './components/LegalFooter';
 import './App.css';
 
 // Code-split screens that aren't needed on first paint. Each is a modal/
@@ -150,6 +154,19 @@ export default function App() {
   const [batchReviewItem, setBatchReviewItem] = useState(null); // { item } opened in ImportSheet
   const [weekHistory, setWeekHistory] = useState([]); // past week plans
   const [isSyncing, setIsSyncing] = useState(false);
+
+  // ── Legal: clickwrap consent gate + Bar/Saloon age gate ─────────────────
+  const [consentAccepted, setConsentAccepted] = useState(() => getStoredConsent() !== null);
+  const [showAgeGate, setShowAgeGate] = useState(false);
+  // Wraps setTab so entering 'bar' the first time on this device is gated
+  // behind the Drink Responsibly confirmation. Every other tab passes through.
+  const navigateToTab = useCallback((target) => {
+    if (target === 'bar' && !isAgeVerified()) {
+      setShowAgeGate(true);
+      return;
+    }
+    setTab(target);
+  }, []);
 
   // ── I-1 Instagram ZIP import ──────────────────────────────────────────────
   const [showZipImport, setShowZipImport] = useState(false);
@@ -756,6 +773,7 @@ useEffect(() => {
 
   // ── Meal CRUD ─────────────────────────────────────────────────────────────────
   const saveMeal = useCallback(async (mealData) => {
+    mealData = await compressRecipeImage(mealData);
     if (mealData.id) { await db.meals.update(mealData.id, mealData); }
     else { await db.meals.add({ ...mealData, createdAt: new Date().toISOString() }); }
     await loadMeals();
@@ -789,6 +807,7 @@ useEffect(() => {
 
   // ── Drink CRUD ────────────────────────────────────────────────────────────────
   const saveDrink = useCallback(async (drinkData) => {
+    drinkData = await compressRecipeImage(drinkData);
     if (drinkData.id) { await db.drinks.update(drinkData.id, drinkData); }
     else { await db.drinks.add(drinkData); }
     await loadDrinks();
@@ -903,6 +922,12 @@ useEffect(() => {
     const target = destination || showImportFor;
     setShowImportFor(null);
     setSharedContent(null);
+
+    // Compress any large data: URL recipe images before they ever hit Dexie.
+    // No-op for recipes without a data: imageUrl or already-small ones — see
+    // compressRecipeImage in imageCompressor.js for why this only touches
+    // data: URLs (never triggers a fresh network fetch of a remote image).
+    imported = await Promise.all(imported.map((r) => compressRecipeImage(r)));
 
     const real = imported.filter(r => r.name);
 
@@ -1067,6 +1092,12 @@ useEffect(() => {
 
   if (loading) return <div className="loading-screen"><div className="spinner" /><p>Loading SpiceHub…</p></div>;
 
+  // Hard clickwrap gate — nothing else renders until the current
+  // LEGAL_VERSION has been accepted on this device (see ConsentGate.jsx).
+  if (!consentAccepted) {
+    return <ConsentGate onAccept={() => setConsentAccepted(true)} />;
+  }
+
   return (
     <div className="app">
       <OfflineIndicator
@@ -1089,12 +1120,12 @@ useEffect(() => {
           </button>
         </div>
         <div className="header-actions">
-          <button className="hdr-btn" onClick={() => setShowFridge(true)} title="What's in My Fridge?">🧊</button>
-          <button className="hdr-btn" onClick={() => setShowStats(true)} title="Meal Stats">📊</button>
+          <button className="hdr-btn" onClick={() => setShowFridge(true)} title="What's in My Fridge?" aria-label="What's in my fridge?">🧊</button>
+          <button className="hdr-btn" onClick={() => setShowStats(true)} title="Meal Stats" aria-label="Meal stats">📊</button>
           {/* I-1: Instagram saved-posts bulk import */}
-          <button className="hdr-btn" onClick={() => setShowZipImport(true)} title="Import Instagram saved posts (ZIP)">📦</button>
-          <button className="hdr-btn" onClick={() => setShowStorageManager(true)} title="Storage">💾</button>
-          <button className="hdr-btn" onClick={() => setShowSettings(true)} title="Settings">⚙️</button>
+          <button className="hdr-btn" onClick={() => setShowZipImport(true)} title="Import Instagram saved posts (ZIP)" aria-label="Import Instagram saved posts">📦</button>
+          <button className="hdr-btn" onClick={() => setShowStorageManager(true)} title="Storage" aria-label="Storage manager">💾</button>
+          <button className="hdr-btn" onClick={() => setShowSettings(true)} title="Settings" aria-label="Settings">⚙️</button>
         </div>
       </header>
 
@@ -1162,7 +1193,7 @@ useEffect(() => {
             meals={meals}
             drinks={drinks}
             rotationCount={rotationMeals.length}
-            onNavigate={setTab}
+            onNavigate={navigateToTab}
             onGenerate={generateWeek}
             onViewDetail={setDetailItem}
             onOpenFridge={() => setShowFridge(true)}
@@ -1171,6 +1202,7 @@ useEffect(() => {
             onInstallApp={handleInstallApp}
           />
         )}
+        {tab === 'home' && <LegalFooter />}
         {tab === 'week' && (
           <WeekView
             days={DAYS}
@@ -1246,23 +1278,23 @@ useEffect(() => {
 
       {/* ── Bottom Tab Bar (mobile-first) ── */}
       <nav className="tab-bar">
-        <button className={tab === 'home' ? 'active' : ''} onClick={() => setTab('home')}>
+        <button className={tab === 'home' ? 'active' : ''} onClick={() => setTab('home')} aria-current={tab === 'home' ? 'page' : undefined}>
           <span style={{ fontSize: 18 }}>🏠</span>
           <span>Home</span>
         </button>
-        <button className={tab === 'week' ? 'active' : ''} onClick={() => setTab('week')}>
+        <button className={tab === 'week' ? 'active' : ''} onClick={() => setTab('week')} aria-current={tab === 'week' ? 'page' : undefined}>
           <span style={{ fontSize: 18 }}>📅</span>
           <span>Plan</span>
         </button>
-        <button className={tab === 'library' ? 'active' : ''} onClick={() => setTab('library')}>
+        <button className={tab === 'library' ? 'active' : ''} onClick={() => setTab('library')} aria-current={tab === 'library' ? 'page' : undefined}>
           <span style={{ fontSize: 18 }}>🍳</span>
           <span>Meals</span>
         </button>
-        <button className={tab === 'bar' ? 'active bar-tab' : 'bar-tab'} onClick={() => setTab('bar')}>
+        <button className={tab === 'bar' ? 'active bar-tab' : 'bar-tab'} onClick={() => navigateToTab('bar')} aria-current={tab === 'bar' ? 'page' : undefined}>
           <span style={{ fontSize: 18 }}>🍹</span>
           <span>Bar</span>
         </button>
-        <button className={tab === 'grocery' ? 'active' : ''} onClick={() => { setTab('grocery'); if (groceryItems.length === 0 && weekPlan.some(Boolean)) buildGroceryList(); }}>
+        <button className={tab === 'grocery' ? 'active' : ''} onClick={() => { setTab('grocery'); if (groceryItems.length === 0 && weekPlan.some(Boolean)) buildGroceryList(); }} aria-current={tab === 'grocery' ? 'page' : undefined}>
           <span style={{ fontSize: 18 }}>🛒</span>
           <span>Shop</span>
         </button>
@@ -1445,12 +1477,24 @@ useEffect(() => {
                   <span>Add to Home Screen</span>
                 </button>
               </div>
+              <div className="st-section">
+                <h3>Legal</h3>
+                <LegalFooter />
+              </div>
               <div className="st-version-footer">
                 SpiceHub Meal Spinner · v{__SPICEHUB_VERSION__}
               </div>
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Drink Responsibly age gate — blocks first entry to Bar/Saloon ── */}
+      {showAgeGate && (
+        <AgeGate
+          onConfirm={() => { setShowAgeGate(false); setTab('bar'); }}
+          onCancel={() => setShowAgeGate(false)}
+        />
       )}
 
       {/* ── Batch Import Queue ── */}
@@ -1488,24 +1532,24 @@ useEffect(() => {
           <p className="pia-message">{postImportActions.message}</p>
           <div className="pia-btns">
             <button className="pia-btn" onClick={handlePostAddToWeek}>
-              ð Add to this week
+              📅 Add to this week
             </button>
             <button className="pia-btn" onClick={handlePostAddToGrocery}>
-              ð Add to grocery
+              🛒 Add to grocery
             </button>
-            <button className="pia-close" onClick={() => setPostImportActions(null)} aria-label="Dismiss">â</button>
+            <button className="pia-close" onClick={() => setPostImportActions(null)} aria-label="Dismiss">✕</button>
           </div>
         </div>
       )}
 
       {toast && (
         <div className={`toast toast-${toast.type}`}>
-          <span>{toast.type === 'success' ? 'â' : toast.type === 'error' ? 'â' : 'â¹ï¸'}</span>
+          <span>{toast.type === 'success' ? '✅' : toast.type === 'error' ? '❌' : 'ℹ️'}</span>
           <span>{toast.message}</span>
         </div>
       )}
 
-      {/* ââ Floating Picture-in-Picture video player (persists across views) ââ */}
+      {/* ── Floating Picture-in-Picture video player (persists across views) ── */}
       <AnimatePresence>
         {pipVideo && (
           <FloatingVideoPlayer

@@ -174,9 +174,42 @@ export async function saveLearnedAlias(entry) {
 }
 
 export async function saveLearnedAliases(list = []) {
-  for (const entry of Array.isArray(list) ? list : []) {
-    // eslint-disable-next-line no-await-in-loop
-    await saveLearnedAlias(entry);
+  // Batched version of saveLearnedAlias: previously this looped and did one
+  // `get` + one `put` per entry (2N IndexedDB round trips). Now it's a single
+  // bulkGet + single bulkPut regardless of list size. Duplicate `raw` values
+  // within the same list are merged locally so counts still increment
+  // correctly for each occurrence (matching the old sequential behavior).
+  const entries = (Array.isArray(list) ? list : [])
+    .map((entry) => {
+      if (!entry || !entry.raw || !entry.canonical) return null;
+      const raw = String(entry.raw).trim().toLowerCase();
+      if (!raw) return null;
+      return { raw, canonical: entry.canonical, aisle: entry.aisle || 'unknown', category: entry.category || '' };
+    })
+    .filter(Boolean);
+  if (!entries.length) return;
+
+  try {
+    const uniqueRaws = [...new Set(entries.map((e) => e.raw))];
+    const existingRows = await db.ingredientAliases.bulkGet(uniqueRaws);
+    const baseCounts = new Map(uniqueRaws.map((raw, i) => [raw, existingRows[i]?.count || 0]));
+
+    const now = Date.now();
+    const byRaw = new Map();
+    for (const entry of entries) {
+      const prevCount = byRaw.has(entry.raw) ? byRaw.get(entry.raw).count : baseCounts.get(entry.raw);
+      byRaw.set(entry.raw, {
+        raw: entry.raw,
+        canonical: entry.canonical,
+        aisle: entry.aisle,
+        category: entry.category,
+        count: prevCount + 1,
+        updatedAt: now,
+      });
+    }
+    await db.ingredientAliases.bulkPut([...byRaw.values()]);
+  } catch (e) {
+    console.warn('[SpiceHub DB] saveLearnedAliases failed:', e);
   }
 }
 
@@ -604,11 +637,9 @@ export async function getRotationMeals() {
 }
 
 export async function bulkSetRotation(mealIds, inRotation) {
-  await db.transaction('rw', db.meals, async () => {
-    for (const id of mealIds) {
-      await db.meals.update(id, { inRotation });
-    }
-  });
+  // Single indexed-scan write instead of one update() per id (N+1 writes).
+  if (!Array.isArray(mealIds) || mealIds.length === 0) return;
+  await db.meals.where('id').anyOf(mealIds).modify({ inRotation });
 }
 
 // ── Week History helpers ─────────────────────────────────────────────────────

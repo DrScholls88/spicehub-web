@@ -1,0 +1,492 @@
+{
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/App.jsx": {
+    "mtime": 1782946293.2227478,
+    "ast_hash": "b7338afb78e15d7eb799f1f54696c23c",
+    "semantic_hash": "b7338afb78e15d7eb799f1f54696c23c"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/__tests__/api.test.js": {
+    "mtime": 1780509913.5295255,
+    "ast_hash": "2fe2621bc9b135ba9bf4674af936b5f5",
+    "semantic_hash": "2fe2621bc9b135ba9bf4674af936b5f5"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/__tests__/db.batchQueue.test.js": {
+    "mtime": 1781499073.003508,
+    "ast_hash": "44d9d56507a4a6550916999824d8ef1c",
+    "semantic_hash": "44d9d56507a4a6550916999824d8ef1c"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/__tests__/recipeParser.deterministic.test.js": {
+    "mtime": 1782147911.0668244,
+    "ast_hash": "2d6a578e6b1c959506e0a9e20b62b156",
+    "semantic_hash": "2d6a578e6b1c959506e0a9e20b62b156"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/__tests__/recipeParser.directionTrash.test.js": {
+    "mtime": 1782220376.2099006,
+    "ast_hash": "946f449922e43255e3def4213bf40c4e",
+    "semantic_hash": "946f449922e43255e3def4213bf40c4e"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/__tests__/recipeParser.enforceDeterministicRules.test.js": {
+    "mtime": 1781892049.1441593,
+    "ast_hash": "f7ea4764d9423e56f0adc601520591cd",
+    "semantic_hash": "f7ea4764d9423e56f0adc601520591cd"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/__tests__/recipeParser.extractMultipleUrls.test.js": {
+    "mtime": 1781499033.8816366,
+    "ast_hash": "492b7d0c7b69a6ca37ba486fb1f3aff6",
+    "semantic_hash": "492b7d0c7b69a6ca37ba486fb1f3aff6"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/__tests__/recipeParser.regressionCorpus.test.js": {
+    "mtime": 1781892117.43849,
+    "ast_hash": "572fb33c5f3849fdea92cf775a95bf8f",
+    "semantic_hash": "572fb33c5f3849fdea92cf775a95bf8f"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/__tests__/recipeSchema.aliaslearning.test.js": {
+    "mtime": 1782212180.5005085,
+    "ast_hash": "427339b2fa7719e7dda01efb8bac3840",
+    "semantic_hash": "427339b2fa7719e7dda01efb8bac3840"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/__tests__/recipeSchema.crosscheck.test.js": {
+    "mtime": 1782147897.7610376,
+    "ast_hash": "e821527f344b37c62b827ee6ac5e23b0",
+    "semantic_hash": "e821527f344b37c62b827ee6ac5e23b0"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/__tests__/recipeSchema.fieldconfidence.test.js": {
+    "mtime": 1782209113.5223856,
+    "ast_hash": "8e0bebf69ff9ab83661801b877202c49",
+    "semantic_hash": "8e0bebf69ff9ab83661801b877202c49"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/__tests__/recipeSchema.fuzzy.test.js": {
+    "mtime": 1781896440.9651732,
+    "ast_hash": "15c93df824e9421b27860112fc331e4b",
+    "semantic_hash": "15c93df824e9421b27860112fc331e4b"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/__tests__/recipeSchema.structured.test.js": {
+    "mtime": 1782141021.020449,
+    "ast_hash": "7a4a48e7a7532845f89bf974048ae747",
+    "semantic_hash": "7a4a48e7a7532845f89bf974048ae747"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/__tests__/setup.js": {
+    "mtime": 1781498848.9704537,
+    "ast_hash": "7035b5fb111c3f171690284930491ac3",
+    "semantic_hash": "7035b5fb111c3f171690284930491ac3"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/__tests__/shaHex.test.js": {
+    "mtime": 1776388866.0239115,
+    "ast_hash": "3cd45841b43f041b0c4b46496cb68f75",
+    "semantic_hash": "3cd45841b43f041b0c4b46496cb68f75"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/__tests__/smoke.test.js": {
+    "mtime": 1776388866.0239115,
+    "ast_hash": "8c2601c51be068d89d6047bcdd10394d",
+    "semantic_hash": "8c2601c51be068d89d6047bcdd10394d"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/api.js": {
+    "mtime": 1781928930.3336987,
+    "ast_hash": "f1250adda7ed6d254438d771767437e2",
+    "semantic_hash": "f1250adda7ed6d254438d771767437e2"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/backgroundSync.js": {
+    "mtime": 1776388866.0406377,
+    "ast_hash": "fd83542a4f47de56b63ed4a70870eea9",
+    "semantic_hash": "fd83542a4f47de56b63ed4a70870eea9"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/batchImportEngine.js": {
+    "mtime": 1781586409.1037788,
+    "ast_hash": "de7222bfbe13579b80cfc45f485f8c6e",
+    "semantic_hash": "de7222bfbe13579b80cfc45f485f8c6e"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/AddEditMeal.jsx": {
+    "mtime": 1781415085.2451968,
+    "ast_hash": "ef176a28375111b9f3c5a7e204168712",
+    "semantic_hash": "ef176a28375111b9f3c5a7e204168712"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/BarFridgeMode.jsx": {
+    "mtime": 1781496998.707517,
+    "ast_hash": "aba03ac535f233e206ab72c9487f5341",
+    "semantic_hash": "aba03ac535f233e206ab72c9487f5341"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/BarLibrary.jsx": {
+    "mtime": 1782384386.989675,
+    "ast_hash": "e9f530b180ececb5681a30ab737e81d4",
+    "semantic_hash": "e9f530b180ececb5681a30ab737e81d4"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/BarShelf.jsx": {
+    "mtime": 1782384324.5699449,
+    "ast_hash": "9d88550faf3391d65cd973e0bdc34ca1",
+    "semantic_hash": "9d88550faf3391d65cd973e0bdc34ca1"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/BatchImportQueue.jsx": {
+    "mtime": 1781587045.8333423,
+    "ast_hash": "d5afee64ec7cd462a2da1e1599a8ec12",
+    "semantic_hash": "d5afee64ec7cd462a2da1e1599a8ec12"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/BrowserAssist.jsx": {
+    "mtime": 1782483174.7089157,
+    "ast_hash": "1a35c145d297cb3dad2a0ea56647aad9",
+    "semantic_hash": "1a35c145d297cb3dad2a0ea56647aad9"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/CookMode.jsx": {
+    "mtime": 1782456126.9215705,
+    "ast_hash": "18c318e283139be9e7e677afe483f893",
+    "semantic_hash": "18c318e283139be9e7e677afe483f893"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/ExportSheet.jsx": {
+    "mtime": 1782420663.941818,
+    "ast_hash": "a7323bf3597845bd2c36c8606255db48",
+    "semantic_hash": "a7323bf3597845bd2c36c8606255db48"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/FloatingVideoPlayer.jsx": {
+    "mtime": 1781874929.6972566,
+    "ast_hash": "31fb733a0a04c1faa86200698bf1fe66",
+    "semantic_hash": "31fb733a0a04c1faa86200698bf1fe66"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/FridgeMode.jsx": {
+    "mtime": 1781496987.790921,
+    "ast_hash": "0a6345d73e9162d9260ad804a24ba1aa",
+    "semantic_hash": "0a6345d73e9162d9260ad804a24ba1aa"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/GlowingEffect.jsx": {
+    "mtime": 1782484374.973492,
+    "ast_hash": "8e6599543da4540606664d5eb0053288",
+    "semantic_hash": "8e6599543da4540606664d5eb0053288"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/GroceryList.jsx": {
+    "mtime": 1782420849.906758,
+    "ast_hash": "47fcba5f35c09795e3d1b72c521c67e9",
+    "semantic_hash": "47fcba5f35c09795e3d1b72c521c67e9"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/ImportInput.jsx": {
+    "mtime": 1781843554.7976856,
+    "ast_hash": "857bf0e8b7609aa8d7534454c29108f9",
+    "semantic_hash": "857bf0e8b7609aa8d7534454c29108f9"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/ImportReview.jsx": {
+    "mtime": 1782453386.8739374,
+    "ast_hash": "8f402dd08058fb70aab745cc4f094793",
+    "semantic_hash": "8f402dd08058fb70aab745cc4f094793"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/ImportSheet.jsx": {
+    "mtime": 1782946377.3894386,
+    "ast_hash": "7d93115c0597bfe0ceac9ae72d5c445f",
+    "semantic_hash": "7d93115c0597bfe0ceac9ae72d5c445f"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/InstagramZipImport.jsx": {
+    "mtime": 1781568148.3368456,
+    "ast_hash": "41b88c0c0f6acb43b89c916178de975f",
+    "semantic_hash": "41b88c0c0f6acb43b89c916178de975f"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/LandingPage.jsx": {
+    "mtime": 1782794120.400915,
+    "ast_hash": "10d4a447eda9140c2208ed6dae11c275",
+    "semantic_hash": "10d4a447eda9140c2208ed6dae11c275"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/MealDetail.jsx": {
+    "mtime": 1782483657.1945014,
+    "ast_hash": "5718cca1897688a553bd0f9545007bbe",
+    "semantic_hash": "5718cca1897688a553bd0f9545007bbe"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/MealLibrary.jsx": {
+    "mtime": 1782355804.2894816,
+    "ast_hash": "c35a9366a5ac48fd1d9087ee2efcb545",
+    "semantic_hash": "c35a9366a5ac48fd1d9087ee2efcb545"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/MealSpinner.jsx": {
+    "mtime": 1781870142.1498744,
+    "ast_hash": "980d01d5b96ba385f85bd0f7a59f5bfe",
+    "semantic_hash": "980d01d5b96ba385f85bd0f7a59f5bfe"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/MealStats.jsx": {
+    "mtime": 1781414577.210489,
+    "ast_hash": "18540e7d5922e67067a5ce9dfbbf554e",
+    "semantic_hash": "18540e7d5922e67067a5ce9dfbbf554e"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/MixMode.jsx": {
+    "mtime": 1781496997.823876,
+    "ast_hash": "0414c03e53796c012b61aa1563d062e7",
+    "semantic_hash": "0414c03e53796c012b61aa1563d062e7"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/OfflineIndicator.jsx": {
+    "mtime": 1776388866.065054,
+    "ast_hash": "3019c3253840ff0fce1180ef920e8388",
+    "semantic_hash": "3019c3253840ff0fce1180ef920e8388"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/PhotoGallery.jsx": {
+    "mtime": 1782945888.4867842,
+    "ast_hash": "564d47f2e48ec82e80305ffd54a67b62",
+    "semantic_hash": "564d47f2e48ec82e80305ffd54a67b62"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/ReExtractSheet.jsx": {
+    "mtime": 1782133751.5096617,
+    "ast_hash": "b2851196da55c6fda0056299582caa78",
+    "semantic_hash": "b2851196da55c6fda0056299582caa78"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/SafeMediaImage.jsx": {
+    "mtime": 1780460357.716655,
+    "ast_hash": "f47406c1b4682d58e647217b11e1b7e8",
+    "semantic_hash": "f47406c1b4682d58e647217b11e1b7e8"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/SquigglyText.jsx": {
+    "mtime": 1782384315.0551944,
+    "ast_hash": "dad0f3e5b9b557fb02c011eceb092929",
+    "semantic_hash": "dad0f3e5b9b557fb02c011eceb092929"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/StorageManager.jsx": {
+    "mtime": 1776388866.065403,
+    "ast_hash": "f2baec2a9ead4c6a6265628c4209e726",
+    "semantic_hash": "f2baec2a9ead4c6a6265628c4209e726"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/StoreMode.jsx": {
+    "mtime": 1782140962.39678,
+    "ast_hash": "1621b1d8311f0d80b8e1e49885870400",
+    "semantic_hash": "1621b1d8311f0d80b8e1e49885870400"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/SyncQueue.jsx": {
+    "mtime": 1782946390.585106,
+    "ast_hash": "a7f12c2321a24a88264a6c50762e6d6f",
+    "semantic_hash": "a7f12c2321a24a88264a6c50762e6d6f"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/ThemeProvider.jsx": {
+    "mtime": 1776826172.9067438,
+    "ast_hash": "d8e7c80e7c0e106c78fcb27521dbd069",
+    "semantic_hash": "d8e7c80e7c0e106c78fcb27521dbd069"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/WeekView.jsx": {
+    "mtime": 1782821455.5918605,
+    "ast_hash": "2d2c63ccfa975d082de4bf1b5c005efd",
+    "semantic_hash": "2d2c63ccfa975d082de4bf1b5c005efd"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/data/ingredients/adverbs.json": {
+    "mtime": 1782387509.95041,
+    "ast_hash": "51abc98af3670ae93575128873c4581a",
+    "semantic_hash": "51abc98af3670ae93575128873c4581a"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/data/ingredients/amounts.json": {
+    "mtime": 1782387510.1466875,
+    "ast_hash": "021ba3d8a045e5f4b3ac7338f8682e6f",
+    "semantic_hash": "021ba3d8a045e5f4b3ac7338f8682e6f"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/data/ingredients/conversions.json": {
+    "mtime": 1782387510.093421,
+    "ast_hash": "e4d4d2bb366a9fd5aa06d9eace91354e",
+    "semantic_hash": "e4d4d2bb366a9fd5aa06d9eace91354e"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/data/ingredients/ingredients.json": {
+    "mtime": 1782387510.4800212,
+    "ast_hash": "7fb99377a6436d3fb6f17db7ac914fc1",
+    "semantic_hash": "7fb99377a6436d3fb6f17db7ac914fc1"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/data/ingredients/instructions.json": {
+    "mtime": 1782387510.0138652,
+    "ast_hash": "734a387ea58092dee406135391d3dffd",
+    "semantic_hash": "734a387ea58092dee406135391d3dffd"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/data/ingredients/language.json": {
+    "mtime": 1782387510.563945,
+    "ast_hash": "dcaba96c89c421bbe84f9f5fb2ae561f",
+    "semantic_hash": "dcaba96c89c421bbe84f9f5fb2ae561f"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/data/ingredients/measurements.json": {
+    "mtime": 1782387509.6234322,
+    "ast_hash": "3b4802fba9ba963b411a1bcba5bbf3d4",
+    "semantic_hash": "3b4802fba9ba963b411a1bcba5bbf3d4"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/data/ingredients/modifiers.json": {
+    "mtime": 1782387509.8488498,
+    "ast_hash": "5d1e5544c553bcf7f0909d0152d79d9a",
+    "semantic_hash": "5d1e5544c553bcf7f0909d0152d79d9a"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/data/ingredients/units.json": {
+    "mtime": 1782387509.7217894,
+    "ast_hash": "894c9082b7dcd2646b5bc5f5c9353ee4",
+    "semantic_hash": "894c9082b7dcd2646b5bc5f5c9353ee4"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/db.js": {
+    "mtime": 1782946456.4554982,
+    "ast_hash": "7c51f8903fc145f0e7e9fab0bb3eb6d3",
+    "semantic_hash": "7c51f8903fc145f0e7e9fab0bb3eb6d3"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/globals.d.ts": {
+    "mtime": 1776388866.065403,
+    "ast_hash": "c937b8e488a4ec2198250ce9d447a403",
+    "semantic_hash": "c937b8e488a4ec2198250ce9d447a403"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/haptics.js": {
+    "mtime": 1781564283.6547248,
+    "ast_hash": "55a45c9e296ceae60bd4a2ff78225f6d",
+    "semantic_hash": "55a45c9e296ceae60bd4a2ff78225f6d"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/hooks/useBackHandler.js": {
+    "mtime": 1776388866.065403,
+    "ast_hash": "84c25f0ef9ba11b0b860e777b79e0d8d",
+    "semantic_hash": "84c25f0ef9ba11b0b860e777b79e0d8d"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/hooks/useOnlineStatus.js": {
+    "mtime": 1776388866.065403,
+    "ast_hash": "88c072cbf024288df40697111ac49e92",
+    "semantic_hash": "88c072cbf024288df40697111ac49e92"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/hooks/useStorageQuota.js": {
+    "mtime": 1776388866.065403,
+    "ast_hash": "e619d93aa736a5cda3ced34f7ae4ace8",
+    "semantic_hash": "e619d93aa736a5cda3ced34f7ae4ace8"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/hooks/useSwipeDismiss.js": {
+    "mtime": 1776388866.0735545,
+    "ast_hash": "7406195301390edf519c9d6b4976d24c",
+    "semantic_hash": "7406195301390edf519c9d6b4976d24c"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/hooks/useYouTubeController.js": {
+    "mtime": 1781874707.3690372,
+    "ast_hash": "91f25b6e4a97e73be9b3aa2e338f135f",
+    "semantic_hash": "91f25b6e4a97e73be9b3aa2e338f135f"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/imageCompressor.js": {
+    "mtime": 1782946255.5454519,
+    "ast_hash": "d377932200b39033616e9f169572262f",
+    "semantic_hash": "d377932200b39033616e9f169572262f"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/importCopy.js": {
+    "mtime": 1781060197.4786236,
+    "ast_hash": "9c8c5de2333b7000ff349d838aa6a3e7",
+    "semantic_hash": "9c8c5de2333b7000ff349d838aa6a3e7"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/isMobile.js": {
+    "mtime": 1776388866.0735545,
+    "ast_hash": "ab72b8ac590f5f4b23e51cb0525f7786",
+    "semantic_hash": "ab72b8ac590f5f4b23e51cb0525f7786"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/lib/grokSender.draft.js": {
+    "mtime": 1781876359.2038069,
+    "ast_hash": "100db7b0f2c234f74c62061ee1e87421",
+    "semantic_hash": "100db7b0f2c234f74c62061ee1e87421"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/lib/photoswipe/photoswipe-ui-default.min.js": {
+    "mtime": 1782453228.8689425,
+    "ast_hash": "9517baca43cd4e9cb23ff337fbc1baa1",
+    "semantic_hash": "9517baca43cd4e9cb23ff337fbc1baa1"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/lib/photoswipe/photoswipe.min.js": {
+    "mtime": 1782453224.325853,
+    "ast_hash": "f5cd6479c4e4682545a9603e6b50c741",
+    "semantic_hash": "f5cd6479c4e4682545a9603e6b50c741"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/lib/transcriptionService.js": {
+    "mtime": 1782877569.1656463,
+    "ast_hash": "919ba8bc6eaa85d267f99d19a050adb7",
+    "semantic_hash": "919ba8bc6eaa85d267f99d19a050adb7"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/lib/videoSource.js": {
+    "mtime": 1781896556.1044998,
+    "ast_hash": "ee994c2368a654f8e3d70df9712e9ee8",
+    "semantic_hash": "ee994c2368a654f8e3d70df9712e9ee8"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/lib/weekPlanner.js": {
+    "mtime": 1781845925.8570993,
+    "ast_hash": "6cf083cc03c303fb8af4a952cb759776",
+    "semantic_hash": "6cf083cc03c303fb8af4a952cb759776"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/main.jsx": {
+    "mtime": 1777484363.8519943,
+    "ast_hash": "e0f188ad4b9d8677edad42c8af45d3cf",
+    "semantic_hash": "e0f188ad4b9d8677edad42c8af45d3cf"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/paprika_import_data.js": {
+    "mtime": 1782483194.9237485,
+    "ast_hash": "dc1cb5a736c32a6df144aa0c5fcf04fb",
+    "semantic_hash": "dc1cb5a736c32a6df144aa0c5fcf04fb"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/recipeParser.js": {
+    "mtime": 1782875276.0801878,
+    "ast_hash": "83aed04bccb9cedadabe2fded3309ee0",
+    "semantic_hash": "83aed04bccb9cedadabe2fded3309ee0"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/recipeSchema.js": {
+    "mtime": 1782483702.0029812,
+    "ast_hash": "370be7d325bd9694fa970e9bc99ddd2d",
+    "semantic_hash": "370be7d325bd9694fa970e9bc99ddd2d"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/recipeTemplates.js": {
+    "mtime": 1782880328.5201457,
+    "ast_hash": "a98afd3d47c18c6789da1f441bbeaa58",
+    "semantic_hash": "a98afd3d47c18c6789da1f441bbeaa58"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/scrapers/markdownConverter.js": {
+    "mtime": 1776388866.0735545,
+    "ast_hash": "a888b98b489897b94b0923271bea5edf",
+    "semantic_hash": "a888b98b489897b94b0923271bea5edf"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/scrapers/redditDiscovery.js": {
+    "mtime": 1776388866.0735545,
+    "ast_hash": "a454982c559f0ddbd81a0e1fd9dac912",
+    "semantic_hash": "a454982c559f0ddbd81a0e1fd9dac912"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/shaHex.js": {
+    "mtime": 1776388866.0735545,
+    "ast_hash": "0a8595ef27935071e35c0a464f2afcd2",
+    "semantic_hash": "0a8595ef27935071e35c0a464f2afcd2"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/storageManager.js": {
+    "mtime": 1776388866.0816934,
+    "ast_hash": "c037b840150e47984ef1a3624026a509",
+    "semantic_hash": "c037b840150e47984ef1a3624026a509"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/sw.js": {
+    "mtime": 1781234996.8357975,
+    "ast_hash": "78455a024207454e2c0c06951a6f9e70",
+    "semantic_hash": "78455a024207454e2c0c06951a6f9e70"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/sync.js": {
+    "mtime": 1776388866.0816934,
+    "ast_hash": "27d6ecd4e778e0e710486e813b188012",
+    "semantic_hash": "27d6ecd4e778e0e710486e813b188012"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/utils/displayFormatter.js": {
+    "mtime": 1782459571.1771076,
+    "ast_hash": "66eb13af6bf0ea1a741c2055e67f1531",
+    "semantic_hash": "66eb13af6bf0ea1a741c2055e67f1531"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/utils/exportRenderer.js": {
+    "mtime": 1782880226.992978,
+    "ast_hash": "c1ec2260ebfb02c23d8750a19f419830",
+    "semantic_hash": "c1ec2260ebfb02c23d8750a19f419830"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/utils/ingredientEntities.js": {
+    "mtime": 1782459572.5973647,
+    "ast_hash": "e4fe48708c23e58793d0e52a0d0c1a11",
+    "semantic_hash": "e4fe48708c23e58793d0e52a0d0c1a11"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/utils/ingredientNormalizer.js": {
+    "mtime": 1782387818.179083,
+    "ast_hash": "d5b1237ab874c914af7ead75cb6d2a4b",
+    "semantic_hash": "d5b1237ab874c914af7ead75cb6d2a4b"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/workers/whisperWorker.js": {
+    "mtime": 1782875122.321257,
+    "ast_hash": "79b232f01ff0e964c3d7e3a46e4598e5",
+    "semantic_hash": "79b232f01ff0e964c3d7e3a46e4598e5"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/.wizard-schema-note.md": {
+    "mtime": 1780147309.8959527,
+    "ast_hash": "58c7f1b72f9351270da32f3aba2fdc77",
+    "semantic_hash": "58c7f1b72f9351270da32f3aba2fdc77"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/components/_test_write.txt": {
+    "mtime": 1782796600.1640925,
+    "ast_hash": "d8e8fca2dc0f896fd7cb4cb0031ba249",
+    "semantic_hash": "d8e8fca2dc0f896fd7cb4cb0031ba249"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/assets/bartender_sprites.png": {
+    "mtime": 1776388866.0406377,
+    "ast_hash": "5648f34ba0698edf270f8d60718ca46b",
+    "semantic_hash": "5648f34ba0698edf270f8d60718ca46b"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/assets/react.svg": {
+    "mtime": 1776388866.0406377,
+    "ast_hash": "f0402b67b6ce880f65666bb49e841696",
+    "semantic_hash": "f0402b67b6ce880f65666bb49e841696"
+  },
+  "/sessions/funny-gracious-ptolemy/mnt/spicehub-web/src/lib/photoswipe/default-skin.svg": {
+    "mtime": 1782453224.3127267,
+    "ast_hash": "b257fa9c5ac8c515ac4d77a667ce2943",
+    "semantic_hash": "b257fa9c5ac8c515ac4d77a667ce2943"
+  }
+}
