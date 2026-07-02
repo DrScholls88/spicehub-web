@@ -1,41 +1,61 @@
-# Logs
-logs
+# Dependencies
+node_modules/
+
+# Production builds
+dist/
+build/
+.out/
+
+# Vite / Development
+.vite/
+vite.config.*.timestamp-*
+
+# Environment variables
+.env
+.env*.local
+.env*.production
+.vercel
+
+# Caches & Logs
+.cache/
+.eslintcache
+.stylelintcache
 *.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-lerna-debug.log*
 
-node_modules
-server/node_modules
-dist
-dist-ssr
-*.local
+# Python / Backend caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+celerybeat-schedule
 
-# Environment (local overrides)
-.env
-.env.local
-.env.*.local
+# AI Tooling folders (Claude, Agents, etc.)
+.agents/
+.claude/
+.graphify/
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+# Graphify output (anywhere)
+graphify-out/
+src/graphify-out/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+*.swo
 .DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+Thumbs.db
 
-.vercel
-.env*.local
+# Testing
+coverage/
+*.lcov
 
-.vercel
-.env*.local
-
-cookies.json
-
-# yt-dlp binary fetched at build time (render-build.sh)
-/bin/yt-dlp
+# Temporary / Misc
+.tmp/
+temp/
