@@ -1,0 +1,58 @@
+{
+  "name": "recorded: sectioned groups + structured notes + nutrition (birria)",
+  "structured": {
+    "isRecipe": true,
+    "kind": "meal",
+    "title": "Birria Tacos",
+    "description": "Braised chile-rich beef tacos with consommé for dipping.",
+    "recipeYield": "12 tacos",
+    "servings": "6",
+    "cookTime": "3 hours 30 minutes",
+    "cuisine": "Mexican",
+    "course": "Dinner",
+    "ingredientGroups": [
+      { "section": "Birria", "items": [
+        { "quantity": "3", "unit": "lb", "name": "chuck roast", "prep": "cut into large chunks" },
+        { "quantity": "4", "unit": "", "name": "dried guajillo chiles", "prep": "stemmed and seeded" },
+        { "quantity": "2", "unit": "", "name": "dried ancho chiles" },
+        { "quantity": "3", "unit": "", "name": "chiles de arbol" },
+        { "quantity": "1", "unit": "", "name": "white onion", "prep": "quartered" },
+        { "quantity": "6", "unit": "cloves", "name": "garlic" },
+        { "quantity": "1", "unit": "tbsp", "name": "Mexican oregano" },
+        { "quantity": "2", "unit": "tsp", "name": "cumin" },
+        { "quantity": "1", "unit": "", "name": "cinnamon stick" },
+        { "quantity": "4", "unit": "cup", "name": "beef stock" },
+        { "quantity": "2", "unit": "", "name": "bay leaves" }
+      ] },
+      { "section": "Tacos", "items": [
+        { "quantity": "", "unit": "", "name": "corn tortillas" },
+        { "quantity": "2", "unit": "cup", "name": "Oaxaca cheese", "prep": "shredded" },
+        { "quantity": "", "unit": "", "name": "white onion", "prep": "finely diced" },
+        { "quantity": "", "unit": "", "name": "fresh cilantro" },
+        { "quantity": "", "unit": "", "name": "lime wedges" }
+      ] }
+    ],
+    "directions": [
+      { "text": "Toast the chiles in a dry pan 30 seconds per side, then soak in hot water 15 minutes.", "ingredientRefs": ["dried guajillo chiles", "dried ancho chiles", "chiles de arbol"] },
+      { "text": "Blend the soaked chiles with onion, garlic, oregano, cumin and 1 cup of stock until smooth.", "ingredientRefs": ["white onion", "garlic", "Mexican oregano", "cumin", "beef stock"] },
+      { "text": "Sear the beef on all sides in a heavy pot.", "ingredientRefs": ["chuck roast"] },
+      { "text": "Pour the chile sauce over, add remaining stock, cinnamon and bay leaves. Braise covered at 300F for 3 hours until shreddable.", "ingredientRefs": ["beef stock", "cinnamon stick", "bay leaves"] },
+      { "text": "Shred the beef and reserve the consommé.", "ingredientRefs": [] },
+      { "text": "Dip tortillas in the consommé fat, fill with beef and cheese, and griddle until crispy.", "ingredientRefs": ["corn tortillas", "Oaxaca cheese"] },
+      { "text": "Serve with onion, cilantro, lime and a cup of consommé.", "ingredientRefs": ["white onion", "fresh cilantro", "lime wedges"] }
+    ],
+    "notes": [
+      { "title": "Consommé", "text": "Skim the fat before serving and save it for dipping tortillas." },
+      { "title": "Make ahead", "text": "Birria improves overnight; reheat gently in the consommé." }
+    ],
+    "nutrition": { "calories": "487 kcal", "proteinContent": "38 g" },
+    "confidence": 0.93
+  },
+  "expect": {
+    "minIngredients": 14,
+    "minDirections": 7,
+    "maxMoved": 0,
+    "minNotes": 2,
+    "titleContains": "Birria"
+  }
+}

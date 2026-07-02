@@ -1,0 +1,32 @@
+{
+  "name": "recorded: low-confidence transcript extraction flags review (pulled pork)",
+  "structured": {
+    "isRecipe": true,
+    "kind": "meal",
+    "title": "3 Ingredient Slow Cooker Pulled Pork",
+    "ingredientGroups": [
+      { "section": "", "items": [
+        { "quantity": "4", "unit": "lb", "name": "pork shoulder", "prep": "bone-in" },
+        { "quantity": "1", "unit": "can", "name": "chipotles in adobo" },
+        { "quantity": "1", "unit": "cup", "name": "orange juice" },
+        { "quantity": "", "unit": "", "name": "salt" }
+      ] }
+    ],
+    "directions": [
+      "Season the pork aggressively with salt on all sides and place in the slow cooker.",
+      "Blend the chipotles with the orange juice and pour over the pork.",
+      "Cook on low for 8 hours without opening the lid.",
+      "Shred the pork in its juices with two forks.",
+      "Spread on a sheet pan and broil 5 minutes for crispy edges."
+    ],
+    "notes": [ { "title": "Storage", "text": "Freezes well; reheat under the broiler to re-crisp." } ],
+    "confidence": 0.52,
+    "needsReview": true
+  },
+  "expect": {
+    "minIngredients": 4,
+    "minDirections": 5,
+    "confidenceBelow": 0.6,
+    "needsReview": true
+  }
+}

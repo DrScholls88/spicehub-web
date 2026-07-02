@@ -1,0 +1,34 @@
+{
+  "name": "recorded: model leaked social junk into notes (bagels)",
+  "knownGap": true,
+  "structured": {
+    "isRecipe": true,
+    "kind": "meal",
+    "title": "4 Ingredient Protein Bagels",
+    "recipeYield": "4 bagels",
+    "ingredientGroups": [
+      { "section": "", "items": [
+        { "quantity": "1", "unit": "cup", "name": "self-rising flour" },
+        { "quantity": "1", "unit": "cup", "name": "non-fat greek yogurt" },
+        { "quantity": "1", "unit": "", "name": "egg", "prep": "beaten" },
+        { "quantity": "", "unit": "", "name": "everything bagel seasoning" }
+      ] }
+    ],
+    "directions": [
+      "Preheat oven to 375F.",
+      "Mix flour and yogurt until a shaggy dough forms, then knead 2 minutes.",
+      "Divide into 4, roll into ropes and pinch into rings.",
+      "Brush with egg and coat generously with seasoning.",
+      "Bake 23 minutes until deep golden."
+    ],
+    "notes": [
+      { "title": "", "text": "Comment BAGEL below and I'll DM you the macros! Use code PROTEIN20 for 20% off my ebook, link in bio." }
+    ],
+    "confidence": 0.85
+  },
+  "expect": {
+    "minIngredients": 4,
+    "minDirections": 5,
+    "zeroJunkEverywhere": true
+  }
+}

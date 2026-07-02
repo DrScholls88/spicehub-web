@@ -13,6 +13,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
+    "test:corpus": "vitest run tests/import",
+    "test:live": "cross-env RUN_LIVE=1 vitest run tests/import/live",
     "test:watch": "vitest",
     "test:e2e": "playwright test tests/e2e"
   },

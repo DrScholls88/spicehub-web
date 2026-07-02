@@ -1,0 +1,38 @@
+{
+  "name": "recorded: unicode fraction quantities survive the pipeline (cookies)",
+  "structured": {
+    "isRecipe": true,
+    "kind": "meal",
+    "title": "Brown Butter Miso Cookies",
+    "recipeYield": "18 cookies",
+    "ingredientGroups": [
+      { "section": "", "items": [
+        { "quantity": "1", "unit": "cup", "name": "unsalted butter" },
+        { "quantity": "2¼", "unit": "cup", "name": "all-purpose flour" },
+        { "quantity": "½", "unit": "tsp", "name": "baking soda" },
+        { "quantity": "¾", "unit": "cup", "name": "dark brown sugar", "prep": "packed" },
+        { "quantity": "⅓", "unit": "cup", "name": "granulated sugar" },
+        { "quantity": "2", "unit": "tbsp", "name": "white miso paste" },
+        { "quantity": "1", "unit": "", "name": "egg plus 1 yolk" },
+        { "quantity": "1½", "unit": "tsp", "name": "vanilla extract" },
+        { "quantity": "⅔", "unit": "cup", "name": "chopped dark chocolate" },
+        { "quantity": "", "unit": "", "name": "flaky salt", "prep": "for topping" }
+      ] }
+    ],
+    "directions": [
+      "Brown the butter until nutty and amber, then cool 20 minutes.",
+      "Whisk flour and baking soda together.",
+      "Beat the cooled brown butter with both sugars and the miso for 2 minutes.",
+      "Add egg, yolk and vanilla, then mix in the dry ingredients.",
+      "Fold in the chocolate and chill the dough at least 1 hour.",
+      "Bake at 350F for 11 to 12 minutes and top with flaky salt while warm."
+    ],
+    "confidence": 0.9
+  },
+  "expect": {
+    "minIngredients": 10,
+    "minDirections": 6,
+    "maxMoved": 0,
+    "ingredientMustMatch": "flour"
+  }
+}
