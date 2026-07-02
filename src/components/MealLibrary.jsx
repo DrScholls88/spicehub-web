@@ -82,7 +82,61 @@ const CATEGORY_COLORS = {
   Snacks:     '#9b8fe0',
 };
 
-export const MEAL_CATEGORIES = ['All', '🔄 The Rotation', ...CATEGORY_OPTIONS];
+// Smart filters — computed views, not assignable categories (like Rotation).
+const FIVE_OR_LESS = '5️⃣ 5 Ingredients or Less';
+const QUICK_WEEKNIGHT = '⚡ Quick Weeknight';
+const QUICK_WEEKNIGHT_MAX_MIN = 30;
+
+export const MEAL_CATEGORIES = ['All', '🔄 The Rotation', FIVE_OR_LESS, QUICK_WEEKNIGHT, ...CATEGORY_OPTIONS];
+
+// Count ingredients from the structured list (source of truth) with a fallback
+// to the legacy array/string field for meals not yet upgraded.
+function getIngredientCount(meal) {
+  if (Array.isArray(meal.ingredientsStructured) && meal.ingredientsStructured.length) {
+    return meal.ingredientsStructured.length;
+  }
+  if (Array.isArray(meal.ingredients)) return meal.ingredients.length;
+  if (typeof meal.ingredients === 'string') {
+    return meal.ingredients.split(/\n|,/).map(s => s.trim()).filter(Boolean).length;
+  }
+  return 0;
+}
+
+// Parse a freeform time string ("15 min", "1 hr 30 min", "PT30M", "45") to minutes.
+function parseTimeToMinutes(str) {
+  if (!str) return null;
+  const s = String(str).trim();
+  if (!s) return null;
+  // ISO 8601 duration, e.g. PT1H30M
+  const iso = s.match(/^PT(?:(\d+)H)?(?:(\d+)M)?$/i);
+  if (iso) {
+    const h = parseInt(iso[1] || '0', 10);
+    const m = parseInt(iso[2] || '0', 10);
+    return h * 60 + m;
+  }
+  let total = 0;
+  const hrMatch = s.match(/(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h\b)/i);
+  if (hrMatch) total += parseFloat(hrMatch[1]) * 60;
+  const minMatch = s.match(/(\d+(?:\.\d+)?)\s*(?:minutes?|mins?|m\b)/i);
+  if (minMatch) total += parseFloat(minMatch[1]);
+  if (total > 0) return Math.round(total);
+  // Bare number — assume minutes
+  const bare = s.match(/^(\d+(?:\.\d+)?)$/);
+  if (bare) return Math.round(parseFloat(bare[1]));
+  return null;
+}
+
+// A meal counts as "Quick Weeknight" if its total (or prep+cook) time is
+// known and at or under QUICK_WEEKNIGHT_MAX_MIN. Meals with no time data
+// don't match — we'd rather under-promise than mislabel an unknown as quick.
+function getTotalMinutes(meal) {
+  const total = parseTimeToMinutes(meal.totalTime);
+  if (total != null) return total;
+  const prep = parseTimeToMinutes(meal.prepTime) || 0;
+  const cook = parseTimeToMinutes(meal.cookTime) || 0;
+  if (prep || cook) return prep + cook;
+  return null;
+}
 
 // Speed-dial action reveal: rise + fade, staggered from the main FAB
 const fabActionVariants = {
@@ -130,6 +184,11 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
     let matchCat;
     if (category === 'All') matchCat = true;
     else if (category === '🔄 The Rotation') matchCat = !!m.inRotation;
+    else if (category === FIVE_OR_LESS) matchCat = getIngredientCount(m) > 0 && getIngredientCount(m) <= 5;
+    else if (category === QUICK_WEEKNIGHT) {
+      const mins = getTotalMinutes(m);
+      matchCat = mins != null && mins <= QUICK_WEEKNIGHT_MAX_MIN;
+    }
     else matchCat = (m.category || 'Dinners').toLowerCase() === category.toLowerCase();
     return matchSearch && matchCat;
   });
@@ -704,7 +763,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                 onClick={() => { hapticLight(); setFabOpen(false); onImport?.(); }}
                 whileTap={{ scale: 0.94 }}
               >
-                <span className="ml-fab-action-label">Import from Web</span>
+                <span className="ml-fab-action-label">Import Recipe</span>
                 <span className="ml-fab-action-icon ml-fab-action-icon--import" aria-hidden="true">📥</span>
               </motion.button>
               <motion.button
@@ -987,7 +1046,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
             <div className="ml-sheet-options">
               <button className="ml-sheet-option" onClick={() => { onImport?.(); setShowOptionsSheet(false); }}>
                 <span className="ml-option-icon">📥</span>
-                <span>Import from URL / Spreadsheet</span>
+                <span>Import Recipe</span>
               </button>
               <button className="ml-sheet-option" onClick={handleBackup}>
                 <span className="ml-option-icon">📦</span>

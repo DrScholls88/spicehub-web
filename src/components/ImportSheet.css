@@ -528,20 +528,21 @@
   cursor: not-allowed;
 }
 
-/* ── Social detected card ───────────────────────────────────────────────── */
+/* ── Social detected card ───────────────────────────────────────────────────
+   Status indicator only — NOT a tap target. The single import action is the
+   sticky footer's "Auto-Parse & Import" button; this card just confirms
+   detection so the two never compete as duplicate CTAs. */
 .import-input-social-card {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 12px;
-  border: 1.5px solid var(--sh-border);
+  border: 1.5px solid var(--sh-accent);
   border-radius: var(--sh-radius);
   background: var(--sh-bg);
   margin-top: 10px;
-  cursor: pointer;
-  transition: border-color 150ms;
+  cursor: default;
 }
-.import-input-social-card:hover { border-color: var(--sh-accent); }
 
 .import-input-social-icon {
   width: 44px;
@@ -549,6 +550,9 @@
   border-radius: 12px;
   background: linear-gradient(135deg, #f09433, #dc2743, #bc1888);
   flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .import-input-social-meta {

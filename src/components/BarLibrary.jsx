@@ -659,7 +659,7 @@ export default function BarLibrary({
                 onClick={() => { hapticLight(); setFabOpen(false); onImport?.(); }}
                 whileTap={{ scale: 0.94 }}
               >
-                <span className="bl-fab-action-label">Import from Web</span>
+                <span className="bl-fab-action-label">Import Drink</span>
                 <span className="bl-fab-action-icon bl-fab-action-icon--import" aria-hidden="true">📥</span>
               </motion.button>
               <motion.button
