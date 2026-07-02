@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { motion, useDragControls } from 'framer-motion';
-import { parseFromUrl, isSocialMediaUrl, getSocialPlatform, parseCaption } from '../recipeParser';
+import { parseFromUrl, isSocialMediaUrl, getSocialPlatform } from '../recipeParser';
+import { importRecipeFromPages } from '../lib/photoImportEngine.js';
 
 // Auto-expand a textarea to fit its content (call on mount + onChange)
 function autoExpand(el) {
@@ -90,56 +91,39 @@ export default function AddEditMeal({
     setImporting(false);
   };
 
+  // Unified photo scan — same tiered pipeline as ImportSheet (Gemini vision →
+  // Mistral → on-device Tesseract), same engine templating, dish-photo grab.
   const handleOcrImport = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setImporting(true);
-    setImportProgress('Processing image...');
+    setImportProgress('Reading your photo…');
     setError('');
     try {
-      // Capture photo as recipe image
       const imageDataUrl = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result);
         reader.onerror = reject;
         reader.readAsDataURL(file);
       });
-      setImageUrl(imageDataUrl);
 
-      // Preprocess for better OCR
-      const processedImage = await preprocessImageForOCR(file);
-
-      const Tesseract = await import('tesseract.js');
-      setImportProgress('Reading text from image...');
-      const result = await Tesseract.recognize(processedImage, 'eng', {
-        logger: m => {
-          if (m.status === 'recognizing text') {
-            setImportProgress(`Reading text... ${Math.round((m.progress || 0) * 100)}%`);
-          }
+      const recipe = await importRecipeFromPages(
+        [{ id: `aem-${Date.now()}`, dataUrl: imageDataUrl, source: 'gallery' }],
+        {
+          type: isMealMode ? 'meal' : 'drink',
+          onProgress: (_stage, msg) => setImportProgress(msg),
         },
-      });
-      const ocrText = result.data.text?.trim();
-      if (!ocrText || ocrText.length < 10) {
-        setError('Could not read text from image. Try a clearer photo with good lighting.');
-      } else {
-        // Clean OCR artifacts
-        const cleanedText = cleanOcrText(ocrText);
-        const parsed = parseCaption(cleanedText);
-        if (parsed.title && parsed.title !== 'Imported Recipe') setName(parsed.title);
-        if (parsed.ingredients.length > 0) setIngredients(parsed.ingredients);
-        if (parsed.directions.length > 0) setDirections(parsed.directions);
-        if (parsed.ingredients.length === 0 && parsed.directions.length === 0) {
-          // Use improved heuristic classification
-          const lines = cleanedText.split('\n').map(l => l.trim()).filter(l => l.length > 2);
-          const ing = [], dir = [];
-          classifyOcrLines(lines, ing, dir);
-          if (ing.length > 0) setIngredients(ing);
-          if (dir.length > 0) setDirections(dir);
-        }
-        setShowImportUrl(false);
-      }
+      );
+
+      const title = (recipe.title || recipe.name || '').trim();
+      if (title && title !== 'Imported Recipe') setName(title);
+      if (recipe.ingredients?.length) setIngredients(recipe.ingredients);
+      if (recipe.directions?.length) setDirections(recipe.directions);
+      // Prefer the detected/cropped dish photo; the engine always returns one.
+      if (recipe.imageUrl) setImageUrl(recipe.imageUrl);
+      setShowImportUrl(false);
     } catch (err) {
-      setError('OCR failed: ' + (err.message || 'Unknown error'));
+      setError(err.message || 'Could not read a recipe from that photo. Try a clearer shot.');
     }
     setImporting(false);
     setImportProgress('');
@@ -508,80 +492,6 @@ export default function AddEditMeal({
   );
 }
 
-// ── OCR helpers (shared with ImportModal) ──────────────────────────────────────
-
-function preprocessImageForOCR(file) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      const TARGET_WIDTH = 2500;
-      let w = img.width, h = img.height;
-      if (w > TARGET_WIDTH || w < 800) {
-        const scale = TARGET_WIDTH / w;
-        w = TARGET_WIDTH;
-        h = Math.round(h * scale);
-      }
-      canvas.width = w;
-      canvas.height = h;
-      ctx.drawImage(img, 0, 0, w, h);
-      try {
-        const imageData = ctx.getImageData(0, 0, w, h);
-        const data = imageData.data;
-        for (let i = 0; i < data.length; i += 4) {
-          const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
-          const adjusted = Math.max(0, Math.min(255, ((gray - 128) * 1.5) + 128));
-          data[i] = adjusted; data[i + 1] = adjusted; data[i + 2] = adjusted;
-        }
-        ctx.putImageData(imageData, 0, 0);
-      } catch {}
-      resolve(canvas);
-    };
-    img.onerror = () => resolve(file);
-    img.src = URL.createObjectURL(file);
-  });
-}
-
-function cleanOcrText(text) {
-  return text
-    .replace(/\bl\b(?=\s*cup)/gi, '1')
-    .replace(/\|/g, 'l')
-    .replace(/  +/g, ' ')
-    .split('\n')
-    .filter(line => {
-      const trimmed = line.trim();
-      if (trimmed.length < 2) return false;
-      const alphaCount = (trimmed.match(/[a-zA-Z]/g) || []).length;
-      return alphaCount > trimmed.length * 0.3;
-    })
-    .join('\n');
-}
-
-function classifyOcrLines(lines, ingredients, directions) {
-  const UNIT_RE = /\b(cups?|tbsp|tsp|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|grams?|g\b|kg|ml|liters?|pinch|dash|cloves?|cans?|packages?|sticks?|slices?|bunch)\b/i;
-  const STARTS_WITH_NUM = /^[\d½¼¾⅓⅔⅛⅜⅝⅞]/;
-  const COOKING_VERB = /^(mix|stir|add|combine|pour|heat|cook|bake|fry|saut[eé]|chop|dice|preheat|whisk|blend|fold|season|serve|place|put|set|bring|let|cover|remove|transfer|slice|cut|grill|roast|simmer|boil|drain|prepare|sprinkle|drizzle|toss|marinate|melt|beat|knead|roll|spread|layer|garnish|broil|brush|coat|wash|peel|trim|top|reduce|brown|sear|steam|in a)\b/i;
-  const STEP_NUM = /^\d+[.):\s-]\s*/;
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    const hasUnit = UNIT_RE.test(trimmed);
-    const startsWithNum = STARTS_WITH_NUM.test(trimmed);
-    const hasCookingVerb = COOKING_VERB.test(trimmed);
-    const hasStepNum = STEP_NUM.test(trimmed);
-
-    if ((startsWithNum && hasUnit) || (trimmed.length < 50 && hasUnit && !hasCookingVerb)) {
-      ingredients.push(trimmed);
-    } else if (hasCookingVerb || hasStepNum || trimmed.length > 80) {
-      directions.push(trimmed);
-    } else if (startsWithNum && trimmed.length < 50) {
-      ingredients.push(trimmed);
-    } else if (trimmed.length > 40) {
-      directions.push(trimmed);
-    } else {
-      ingredients.push(trimmed);
-    }
-  }
-}
+// Legacy on-device OCR helpers (preprocessImageForOCR / cleanOcrText /
+// classifyOcrLines) moved into src/lib/photoImportEngine.js as the Tier-3
+// fallback of the unified pipeline — one code path for every photo import.

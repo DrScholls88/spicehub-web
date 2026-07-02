@@ -6,18 +6,18 @@ import { hapticTap, hapticSuccess, hapticError } from '../haptics';
 import {
   importRecipeFromUrl,
   captionToRecipe,
-  structureRecipeFromImage,
   scoreExtractionConfidence,
   isSocialMediaUrl,
   getSocialPlatform,
   detectImportType,
   transcribeVideoForRecipe,
 } from '../recipeParser.js';
+import { importRecipeFromPages, PhotoImportError } from '../lib/photoImportEngine.js';
 import { detectVideoSource } from '../lib/videoSource.js';
 import { cleanUrl } from '../api.js';
 import { ENGINE_PROMPT_VERSION } from '../recipeSchema.js';
 import { humanizeImportStatus } from '../importCopy.js';
-import db from '../db.js';
+import db, { queuePhotoUpgrade } from '../db.js';
 import useOnlineStatus from '../hooks/useOnlineStatus';
 import ImportInput from './ImportInput';
 import ImportReview from './ImportReview';
@@ -128,6 +128,9 @@ export default function ImportSheet({
   const [url, setUrl] = useState(sharedContent?.url || '');
   const [pasteText, setPasteText] = useState('');
   const [activeTab, setActiveTab] = useState('url');
+  // Multi-page scan session — lives here (not in ImportInput) because the
+  // original pages are needed again at review time for dish-photo re-cropping.
+  const [scanPages, setScanPages] = useState([]);
   const [destination, setDestination] = useState('library');
 
   // ── Modals & Banners state ──────────────────────────────────────────────
@@ -556,52 +559,87 @@ export default function ImportSheet({
     }
   }, [phase, executePasteImport]);
 
-  // ── Execute Photo Import ──────────────────────────────────────────────────
-  const executePhotoImport = useCallback(async (imageDataUrl, type) => {
-    if (!imageDataUrl) return;
+  // ── Execute Photo Import (multi-page, tiered vision pipeline) ────────────
+  const executePhotoImport = useCallback(async (pages, type) => {
+    if (!Array.isArray(pages) || pages.length === 0) return;
 
     if (abortRef.current) abortRef.current.abort();
-    abortRef.current = null;
+    const controller = new AbortController();
+    abortRef.current = controller;
 
-    setItemType(type || initialItemType);
+    const effectiveType = type || initialItemType;
+    setItemType(effectiveType);
     setPhase('loading');
-    setPipelineSteps([]);
     setError('');
     setLoadingImage('');
-    setProgressMsg('Reading your photo…');
+    setProgressMsg(pages.length > 1 ? `Reading ${pages.length} pages…` : 'Reading your photo…');
+    setPipelineSteps([
+      { label: pages.length > 1 ? `Reading pages (0/${pages.length})` : 'Reading your photo', status: 'running' },
+      { label: 'Organizing the recipe', status: 'pending' },
+      { label: 'Grabbing dish photo', status: 'pending' },
+    ]);
+
+    // Map engine stages onto the pipeline checklist.
+    const stageIndex = { prep: 0, transcribe: 0, structure: 1, photo: 2 };
+    const onProgress = (stage, msg) => {
+      if (controller.signal.aborted) return;
+      setProgressMsg(msg);
+      const idx = stageIndex[stage] ?? 0;
+      setPipelineSteps(prev => prev.map((s, i) => ({
+        ...s,
+        status: i < idx ? 'done' : i === idx ? 'running' : 'pending',
+      })));
+    };
 
     try {
-      const result = await structureRecipeFromImage(imageDataUrl, { type: type || initialItemType });
-      const normalized = normalizeRecipeForReview(result, type || initialItemType);
+      const result = await importRecipeFromPages(pages, {
+        type: effectiveType,
+        onProgress,
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
+
+      const normalized = normalizeRecipeForReview(result, effectiveType);
       if (normalized && (normalized.title || normalized.ingredients.length)) {
+        setPipelineSteps(prev => prev.map(s => ({ ...s, status: 'done' })));
         setRecipe(normalized);
         setConfidence(computeReviewConfidence(normalized));
         setPhase('review');
       } else {
         hapticError();
-        setError("We couldn't read a recipe in that photo. Try a brighter shot, or paste the text instead.");
+        setError("We couldn't read a recipe in that scan. Try a brighter shot, or paste the text instead.");
         setPhase('input');
       }
     } catch (err) {
+      if (err?.code === 'aborted' || err?.name === 'AbortError') return;
       console.error('[ImportSheet] Photo import error:', err);
       hapticError();
-      setError(err.message || 'Import failed.');
+      setError(
+        err instanceof PhotoImportError
+          ? err.message
+          : err.message || 'Photo import failed.',
+      );
       setPhase('input');
     }
   }, [initialItemType]);
 
-  const handlePhotoImport = useCallback(async (imageDataUrl, type) => {
+  // Accepts either the scan-session pages array or a single data URL (legacy
+  // drop/paste and share paths) — normalizes to the pages shape.
+  const handlePhotoImport = useCallback(async (pagesOrDataUrl, type) => {
+    const pages = typeof pagesOrDataUrl === 'string'
+      ? [{ id: `p-${Date.now()}`, dataUrl: pagesOrDataUrl, source: 'share' }]
+      : pagesOrDataUrl;
     if (phase === 'review' || lastReviewRef.current) {
       setConfirmImport({
         fn: () => {
           lastReviewRef.current = null;
           setConfirmImport(null);
-          executePhotoImport(imageDataUrl, type);
+          executePhotoImport(pages, type);
         },
         message: "This will replace the recipe you're reviewing."
       });
     } else {
-      executePhotoImport(imageDataUrl, type);
+      executePhotoImport(pages, type);
     }
   }, [phase, executePhotoImport]);
 
@@ -722,9 +760,19 @@ export default function ImportSheet({
     // Clear draft from IndexedDB
     const key = importUrl || (activeTab === 'paste' ? 'pasted-text' : activeTab === 'photo' ? 'photo-import' : 'pasted-text');
     db.importDrafts?.delete(key).catch(e => console.warn(e));
+
+    // Offline OCR draft → queue a background vision upgrade with the scanned
+    // pages. When connectivity returns, processImportQueue re-runs the online
+    // tiers and merges the better extraction into the saved recipe.
+    if (out._ocrDraft && scanPages.length > 0) {
+      queuePhotoUpgrade(out, scanPages.map(p => p.dataUrl), out.itemType || itemType)
+        .then(() => window.dispatchEvent(new Event('spicehub:import-queue-updated')))
+        .catch(e => console.warn('[ImportSheet] queuePhotoUpgrade failed:', e));
+    }
+
     hapticSuccess();
     onImport([out], destination);
-  }, [onImport, importUrl, activeTab, destination, capturedText, pasteText, confidence]);
+  }, [onImport, importUrl, activeTab, destination, capturedText, pasteText, confidence, scanPages, itemType]);
 
   // ── Re-expand input from collapsed state ─────────────────────────────────
   const handleReExpand = useCallback(() => {
@@ -936,7 +984,8 @@ export default function ImportSheet({
               setItemType={setItemType}
               onImport={handleUrlImport}
               onPasteImport={handlePasteImport}
-              onPhotoImport={handlePhotoImport}
+              scanPages={scanPages}
+              setScanPages={setScanPages}
               onReExpand={handleReExpand}
               initialUrl={sharedContent?.url || ''}
               initialType={initialItemType}
@@ -1102,6 +1151,7 @@ export default function ImportSheet({
                     confidence={confidence}
                     destination={destination}
                     setDestination={setDestination}
+                    scanPages={scanPages}
                   />
                 </motion.div>
               )}
@@ -1186,16 +1236,20 @@ export default function ImportSheet({
                         handleUrlImport(url, itemType);
                       } else if (activeTab === 'paste') {
                         handlePasteImport(pasteText, itemType);
+                      } else if (activeTab === 'photo') {
+                        handlePhotoImport(scanPages, itemType);
                       }
                     }}
                     disabled={
                       (activeTab === 'url' && !url.trim()) ||
                       (activeTab === 'paste' && !pasteText.trim()) ||
-                      activeTab === 'photo'
+                      (activeTab === 'photo' && scanPages.length === 0)
                     }
                   >
                     <Zap size={17} strokeWidth={2.5} aria-hidden="true" style={{ marginRight: 6, verticalAlign: '-3px' }} />
-                    Auto-Parse &amp; Import
+                    {activeTab === 'photo'
+                      ? `Extract Recipe${scanPages.length > 1 ? ` (${scanPages.length} pages)` : ''}`
+                      : 'Auto-Parse & Import'}
                   </button>
                 )}
                 {phase === 'loading' && (
