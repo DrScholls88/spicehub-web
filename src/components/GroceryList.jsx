@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { ShoppingCart, Search, X as XIcon } from 'lucide-react';
 import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-motion';
 import { saveStoreMemory as dbSaveStoreMemory, getStoreMemory as dbGetStoreMemory, addToBarInventory } from '../db';
@@ -831,30 +832,37 @@ function GroceryItem({ item, batchMode, isSelected, onToggleCheck, onToggleSelec
               {isAssigned ? '◈' : '◇'}
             </button>
             
-            {/* Quick picker overlay for this item */}
-            <AnimatePresence>
-            {pickerOpen && (
-              <>
-                <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="gl-picker-backdrop" style={{position:'fixed', zIndex: 90}} onClick={() => setPickerOpen(false)}></motion.div>
-                <motion.div initial={{opacity:0, scale:0.95}} animate={{opacity:1, scale:1}} exit={{opacity:0, scale:0.95}} className="gl-item-picker" style={{zIndex: 91, right: '40px', bottom: 'auto', top: '50%', transform: 'translateY(-50%)'}}>
-                  <div style={{fontSize: 12, fontWeight: 700, padding: '8px 12px', borderBottom: '1px solid var(--border)', color: 'var(--text-light)'}}>Assign Store</div>
-                  <button className="gl-picker-option" style={{ borderLeftColor: '#4caf50' }} onClick={() => { onMarkPantry(); setPickerOpen(false); }}>
-                    <span className="gl-store-logo-letter" style={{ background: '#4caf50', width: 20, height: 20, fontSize: 11 }}>✓</span> In Pantry
-                  </button>
-                  {stores.map(s => (
-                    <button key={s.id} className="gl-picker-option" style={{ borderLeftColor: s.color }} onClick={() => { onSetStore(s.id); setPickerOpen(false); }}>
-                      <StoreLogo store={s} size={20} /> {s.name}
-                    </button>
-                  ))}
-                  {isAssigned && (
-                    <button className="gl-picker-option gl-picker-unsort" onClick={() => { onSetStore(''); setPickerOpen(false); }}>
-                      ◇ Unsort
-                    </button>
-                  )}
-                </motion.div>
-              </>
+            {/* Quick picker overlay for this item — portaled to <body> so it
+                escapes the swipeable row's transform/overflow:hidden, which
+                was clipping it behind the list (previously z-index alone
+                couldn't fix this: the animated ancestor's transform creates
+                a new containing block for position:fixed descendants). */}
+            {createPortal(
+              <AnimatePresence>
+                {pickerOpen && (
+                  <>
+                    <motion.div key="backdrop" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="gl-picker-backdrop" style={{position:'fixed', zIndex: 900}} onClick={() => setPickerOpen(false)}></motion.div>
+                    <motion.div key="picker" initial={{opacity:0, scale:0.95}} animate={{opacity:1, scale:1}} exit={{opacity:0, scale:0.95}} className="gl-item-picker" style={{position: 'fixed', zIndex: 901, right: '40px', bottom: 'auto', top: '50%', transform: 'translateY(-50%)'}}>
+                      <div style={{fontSize: 12, fontWeight: 700, padding: '8px 12px', borderBottom: '1px solid var(--border)', color: 'var(--text-light)'}}>Assign Store</div>
+                      <button className="gl-picker-option" style={{ borderLeftColor: '#4caf50' }} onClick={() => { onMarkPantry(); setPickerOpen(false); }}>
+                        <span className="gl-store-logo-letter" style={{ background: '#4caf50', width: 20, height: 20, fontSize: 11 }}>✓</span> In Pantry
+                      </button>
+                      {stores.map(s => (
+                        <button key={s.id} className="gl-picker-option" style={{ borderLeftColor: s.color }} onClick={() => { onSetStore(s.id); setPickerOpen(false); }}>
+                          <StoreLogo store={s} size={20} /> {s.name}
+                        </button>
+                      ))}
+                      {isAssigned && (
+                        <button className="gl-picker-option gl-picker-unsort" onClick={() => { onSetStore(''); setPickerOpen(false); }}>
+                          ◇ Unsort
+                        </button>
+                      )}
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>,
+              document.body
             )}
-            </AnimatePresence>
           </div>
         )}
       </motion.div>

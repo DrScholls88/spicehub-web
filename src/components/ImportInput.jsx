@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Pencil, Camera, FolderOpen, X as XIcon } from 'lucide-react';
+import { Pencil, Camera, FolderOpen, X as XIcon, Sparkles } from 'lucide-react';
 import { isSocialMediaUrl, getSocialPlatform, detectImportType } from '../recipeParser.js';
 import { hapticLight } from '../haptics';
 
@@ -276,11 +276,16 @@ export default function ImportInput({
                     </AnimatePresence>
                   </div>
                   {socialDetected && (
-                    <div className="import-input-social-card" onClick={handleUrlSubmit}>
-                      <div className="import-input-social-icon" />
+                    // Status-only chip — the sole import action lives in the sticky
+                    // footer's "Auto-Parse & Import" button, so this never doubles
+                    // as a second tap target (previously it duplicated that button).
+                    <div className="import-input-social-card" aria-live="polite">
+                      <div className="import-input-social-icon">
+                        <Sparkles size={18} strokeWidth={2} color="#fff" />
+                      </div>
                       <div className="import-input-social-meta">
-                        <strong>{socialDetected}</strong>
-                        <small>Recipe detected — tap to import</small>
+                        <strong>{socialDetected} link detected</strong>
+                        <small>Ready — tap Auto-Parse &amp; Import below</small>
                       </div>
                     </div>
                   )}
