@@ -23,32 +23,10 @@ export function loadJsonFixture(...segments) {
 }
 
 // ── Zero-junk contract ───────────────────────────────────────────────────────
-// None of these may EVER appear in a final recipe's title, ingredients,
-// directions, or notes. (Hashtag/mention patterns are anchored to avoid
-// false positives like "bake @ 350" or measurement text.)
-export const JUNK_PATTERNS = [
-  { name: 'hashtag',            re: /#[a-z][a-z0-9_]{2,}/i },
-  { name: 'mention',            re: /@[a-z][a-z0-9_.]{2,}/i },
-  { name: 'link in bio',        re: /link in (my )?bio/i },
-  { name: 'follow bait',        re: /follow (me|us|@|for more)/i },
-  { name: 'save bait',          re: /save this (post|recipe|reel|one)/i },
-  { name: 'promo code',         re: /use (my )?code\b/i },
-  { name: 'dm bait',            re: /\bdm me\b/i },
-  { name: 'comment bait',       re: /comment ["'“”]?\w+["'“”]? (below|to get)/i },
-  { name: 'notification bait',  re: /turn on (post )?notifications/i },
-  { name: 'sponsor tag',        re: /\b(sponsored|#ad|paid partnership)\b/i },
-  { name: 'ebook promo',        re: /\b(my )?(ebook|e-book|meal plan) (is )?(out|available|link)/i },
-  { name: 'view counts',        re: /\b\d[\d,.]* (views|likes|followers)\b/i },
-];
-
-export function findJunk(text = '') {
-  if (!text) return null;
-  for (const p of JUNK_PATTERNS) {
-    const m = p.re.exec(text);
-    if (m) return { pattern: p.name, match: m[0] };
-  }
-  return null;
-}
+// SINGLE SOURCE: src/import/junk.js. The engine's acquisition-time cleaning,
+// the post-structuring enforcer, and these test assertions all share one list.
+export { JUNK_PATTERNS, findJunk } from '../../src/import/junk.js';
+import { findJunk } from '../../src/import/junk.js';
 
 /** Assert a final recipe object contains zero junk across all text surfaces. */
 export function assertZeroJunk(recipe, label = '') {

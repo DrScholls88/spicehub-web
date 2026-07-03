@@ -22,6 +22,8 @@ import useOnlineStatus from '../hooks/useOnlineStatus';
 import ImportInput from './ImportInput';
 import ImportReview from './ImportReview';
 import BrowserAssist from './BrowserAssist';
+import ImportTimeline from './import/ImportTimeline.jsx';
+import { advanceTimeline, INITIAL_TIMELINE } from '../import/progressMap.js';
 
 /**
  * normalizeRecipeForReview — single contract adapter between the import
@@ -165,7 +167,9 @@ export default function ImportSheet({
   // ── Loading state ────────────────────────────────────────────────────────
   const [elapsedTime, setElapsedTime] = useState(0);
   const [loadingImage, setLoadingImage] = useState('');
-  const [pipelineSteps, setPipelineSteps] = useState([]);
+  // Unified three-stage timeline: { stage: 0..2, chip: string|null }.
+  // Stages only advance forward within one import (progressMap.advanceTimeline).
+  const [timeline, setTimeline] = useState(INITIAL_TIMELINE);
 
   const abortRef = useRef(null);
   const browserAssistRef = useRef(null);
@@ -352,20 +356,7 @@ export default function ImportSheet({
     setError('');
     setLoadingImage('');
     setProgressMsg('Getting your recipe…');
-    if (isSocialMediaUrl(cleanU)) {
-      setPipelineSteps([
-        { label: 'Checking the video',     status: 'pending' },
-        { label: 'Grabbing the caption',   status: 'pending' },
-        { label: 'Reading the page',       status: 'pending' },
-        { label: 'Organizing the recipe',  status: 'pending' },
-      ]);
-    } else {
-      setPipelineSteps([
-        { label: 'Fetching recipe page',  status: 'pending' },
-        { label: 'Finding recipe data',   status: 'pending' },
-        { label: 'Structuring with AI',   status: 'pending' },
-      ]);
-    }
+    setTimeline(INITIAL_TIMELINE);
 
     try {
       const result = await importRecipeFromUrl(
@@ -373,35 +364,9 @@ export default function ImportSheet({
         (msg, metadata) => {
           if (controller.signal.aborted) return;
           setProgressMsg(humanizeImportStatus(msg));
-          if (metadata) {
-            if (metadata.imageUrl) setLoadingImage(metadata.imageUrl);
-            setPipelineSteps(prev => {
-              if (prev.length === 0) return prev;
-              const next = [...prev];
-              let activeIndex = -1;
-
-              if (prev.length === 4) {
-                // Social: Checking video / Grabbing caption / Reading page / Organizing recipe
-                if (/subtitle|transcript|asr|audio/i.test(msg)) activeIndex = 0;
-                else if (/caption|embed|oembed|instagram|reel|tiktok/i.test(msg)) activeIndex = 1;
-                else if (/browser|server|yt-dlp|puppeteer|headless|proxy|fetching page|page text/i.test(msg)) activeIndex = 2;
-                else if (/structur|gemini|\bai\b|markdown|parse/i.test(msg)) activeIndex = 3;
-              } else if (prev.length === 3) {
-                // Non-social: Fetching page / Finding recipe data / Structuring with AI
-                if (/fetch|http|request|scraping|crawl|loading|connecting/i.test(msg)) activeIndex = 0;
-                else if (/extract|schema|json.?ld|recipe|content|html|text|found/i.test(msg)) activeIndex = 1;
-                else if (/structur|gemini|\bai\b|markdown|parse|caption|organiz/i.test(msg)) activeIndex = 2;
-              }
-
-              if (activeIndex !== -1) {
-                for (let j = 0; j < activeIndex; j++) {
-                  if (next[j].status === 'pending' || next[j].status === 'running') next[j].status = 'done';
-                }
-                next[activeIndex].status = 'running';
-              }
-              return next;
-            });
-          }
+          // One mapper for every source type — raw message → stage + tier chip.
+          setTimeline(t => advanceTimeline(t, msg));
+          if (metadata?.imageUrl) setLoadingImage(metadata.imageUrl);
         },
         { type: type || initialItemType, signal: controller.signal },
       );
@@ -420,11 +385,7 @@ export default function ImportSheet({
 
       if (isVideo && captionWeak && !controller.signal.aborted) {
         setProgressMsg('No caption found — transcribing video audio…');
-        setPipelineSteps(prev => {
-          const next = prev.map(s => ({ ...s, status: s.status === 'running' ? 'done' : s.status }));
-          next.push({ label: 'Transcribing audio', status: 'running' });
-          return next;
-        });
+        setTimeline(t => ({ stage: Math.max(t.stage, 1), chip: 'Video audio' }));
 
         try {
           const transcribeResult = await transcribeVideoForRecipe(cleanU, {
@@ -441,7 +402,7 @@ export default function ImportSheet({
           if (transcribeResult) {
             const tNorm = normalizeRecipeForReview(transcribeResult, type || initialItemType);
             if (tNorm && (tNorm.title || tNorm.ingredients.length)) {
-              setPipelineSteps(prev => prev.map(s => ({ ...s, status: 'done' })));
+              setTimeline(t => ({ ...t, stage: 2 }));
               setRecipe(tNorm);
               setConfidence(computeReviewConfidence(tNorm));
               setPhase('review');
@@ -515,7 +476,7 @@ export default function ImportSheet({
 
     setItemType(type || initialItemType);
     setPhase('loading');
-    setPipelineSteps([]);
+    setTimeline({ stage: 2, chip: null });
     setError('');
     setLoadingImage('');
     setProgressMsg('Sorting ingredients from instructions…');
@@ -573,22 +534,16 @@ export default function ImportSheet({
     setError('');
     setLoadingImage('');
     setProgressMsg(pages.length > 1 ? `Reading ${pages.length} pages…` : 'Reading your photo…');
-    setPipelineSteps([
-      { label: pages.length > 1 ? `Reading pages (0/${pages.length})` : 'Reading your photo', status: 'running' },
-      { label: 'Organizing the recipe', status: 'pending' },
-      { label: 'Grabbing dish photo', status: 'pending' },
-    ]);
+    setTimeline({ stage: 0, chip: pages.length > 1 ? `${pages.length} pages` : 'Photo scan' });
 
-    // Map engine stages onto the pipeline checklist.
-    const stageIndex = { prep: 0, transcribe: 0, structure: 1, photo: 2 };
+    // Map engine stages onto the unified timeline:
+    // prep/transcribe = Fetching(0)+Understanding(1), structure/photo = Polishing(2).
+    const stageIndex = { prep: 0, transcribe: 1, structure: 2, photo: 2 };
     const onProgress = (stage, msg) => {
       if (controller.signal.aborted) return;
       setProgressMsg(msg);
       const idx = stageIndex[stage] ?? 0;
-      setPipelineSteps(prev => prev.map((s, i) => ({
-        ...s,
-        status: i < idx ? 'done' : i === idx ? 'running' : 'pending',
-      })));
+      setTimeline(t => ({ ...t, stage: Math.max(t.stage, idx) }));
     };
 
     try {
@@ -601,7 +556,7 @@ export default function ImportSheet({
 
       const normalized = normalizeRecipeForReview(result, effectiveType);
       if (normalized && (normalized.title || normalized.ingredients.length)) {
-        setPipelineSteps(prev => prev.map(s => ({ ...s, status: 'done' })));
+        setTimeline(t => ({ ...t, stage: 2 }));
         setRecipe(normalized);
         setConfidence(computeReviewConfidence(normalized));
         setPhase('review');
@@ -656,31 +611,14 @@ export default function ImportSheet({
     setError('');
     setLoadingImage('');
     setProgressMsg('Transcribing video audio…');
-    setPipelineSteps([
-      { label: 'Downloading audio', status: 'running' },
-      { label: 'Running speech-to-text', status: 'pending' },
-      { label: 'Organizing the recipe', status: 'pending' },
-    ]);
+    setTimeline({ stage: 0, chip: 'Video audio' });
 
     try {
       const result = await transcribeVideoForRecipe(cleanU, {
         onProgress: (tier, msg) => {
           if (controller.signal.aborted) return;
           setProgressMsg(msg);
-          setPipelineSteps(prev => {
-            const next = [...prev];
-            if (/download|audio|extract/i.test(msg)) {
-              next[0].status = 'running';
-            } else if (/whisper|model|transcrib/i.test(msg)) {
-              next[0].status = 'done';
-              next[1].status = 'running';
-            } else if (/struct|recipe|organiz|caption/i.test(msg)) {
-              next[0].status = 'done';
-              next[1].status = 'done';
-              next[2].status = 'running';
-            }
-            return next;
-          });
+          setTimeline(t => advanceTimeline(t, msg));
         },
         signal: controller.signal,
         type: type || itemType || initialItemType,
@@ -690,7 +628,7 @@ export default function ImportSheet({
 
       const normalized = normalizeRecipeForReview(result, type || itemType || initialItemType);
       if (normalized && (normalized.title || normalized.ingredients.length)) {
-        setPipelineSteps(prev => prev.map(s => ({ ...s, status: 'done' })));
+        setTimeline(t => ({ ...t, stage: 2 }));
         setRecipe(normalized);
         setConfidence(computeReviewConfidence(normalized));
         setPhase('review');
@@ -1044,50 +982,17 @@ export default function ImportSheet({
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.2 }}
                 >
-                  {/* Single progress vector: pulsing dot + humanized status line */}
-                  <div className="import-sheet-loading-status">
-                    <span className="import-sheet-progress-dot" aria-hidden="true" />
-                    <div className="import-sheet-loading-status-text">
-                      <AnimatePresence mode="popLayout" initial={false}>
-                        <motion.p
-                          key={progressMsg}
-                          className="import-sheet-progress-text"
-                          initial={{ opacity: 0, y: 6 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -6 }}
-                          transition={{ duration: 0.18 }}
-                        >
-                          {progressMsg}
-                        </motion.p>
-                      </AnimatePresence>
-                      {elapsedTime >= 8 && (
-                        <span className="import-sheet-progress-subtext">
-                          Still working — some sites are slow to share…
-                        </span>
-                      )}
-                    </div>
-                  </div>
+                  {/* Unified three-stage timeline: Fetching → Understanding → Polishing
+                      + tier chip + crossfading status line (spec §10). */}
+                  <ImportTimeline
+                    stage={timeline.stage}
+                    chip={timeline.chip}
+                    statusMsg={progressMsg}
+                    slow={elapsedTime >= 8}
+                  />
 
-                  {pipelineSteps.length > 0 ? (
-                    /* Social: Adopt BrowserAssist steps checklist for shared social loading component (Fix 10) */
-                    <div className="import-sheet-pipeline">
-                      <div className="import-sheet-steps">
-                        {pipelineSteps.map((step, i) => (
-                          <div key={i} className={`import-sheet-step import-sheet-step--${step.status}`}>
-                            <div className="import-sheet-step-node">
-                              {step.status === 'done' && <Check size={12} className="import-sheet-step-check" aria-hidden="true" />}
-                              {step.status === 'running' && <span className="import-sheet-step-spinner" />}
-                              {step.status === 'pending' && <span className="import-sheet-step-dot" />}
-                            </div>
-                            <span className="import-sheet-step-label">
-                              {step.label}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    /* Non-social / Blog: Shimmer skeleton of review layout (Fix 4) */
+                  {(
+                    /* Shimmer skeleton of the review layout below the timeline */
                     <div className="import-sheet-skeleton">
                       {/* Hero skeleton */}
                       <div className="review-hero skeleton">

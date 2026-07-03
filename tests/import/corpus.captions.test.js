@@ -13,11 +13,9 @@ import { loadFixture, findJunk, assertZeroJunk, assertCleanTitle } from './helpe
 const cap = (id) => loadFixture('captions', `${id}.txt`);
 
 describe('golden corpus — caption weakness detection', () => {
-  // KNOWN-GAP: a bait caption containing one food word ("pasta") passes the
-  // Tier-3 signal check today. The unified engine should treat "full recipe on
-  // the blog / link in bio" as a weakness override regardless of food words.
-  // This flips to passing when that lands (build-order step 3).
-  it.fails('[KNOWN-GAP] ig-weak-caption: "link in bio" bait is flagged weak', () => {
+  // PROMOTED 2026-07-02: the Tier-1.5 bait override (BAIT_ONLY_RE +
+  // countQuantityLines in isCaptionWeak) closed this gap.
+  it('ig-weak-caption: "link in bio" bait is flagged weak', () => {
     expect(isCaptionWeak(cap('ig-weak-caption'))).toBe(true);
   });
 
@@ -40,10 +38,9 @@ describe('golden corpus — caption cleaning strips social chrome', () => {
     expect(cleaned).toMatch(/chili crisp/i);
   });
 
-  // KNOWN-GAP: mid-caption promo prose ("use code X … link in bio") survives
-  // cleanSocialCaption today. Acquisition-time junk stripping in the unified
-  // engine must remove it. Flips to passing when that lands.
-  it.fails('[KNOWN-GAP] ig-promo-heavy: sponsor/promo lines are removed, recipe survives', () => {
+  // PROMOTED 2026-07-02: stripJunkLines (src/import/junk.js) now runs inside
+  // cleanSocialCaption and removes mid-caption promo prose.
+  it('ig-promo-heavy: sponsor/promo lines are removed, recipe survives', () => {
     const cleaned = cleanSocialCaption(cap('ig-promo-heavy'));
     expect(cleaned).toMatch(/self-rising flour/i);
     expect(cleaned).toMatch(/greek yogurt/i);

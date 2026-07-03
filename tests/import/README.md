@@ -13,6 +13,12 @@ tests/import/
   corpus.html.test.js     — parseHtml tiers: JSON-LD, @graph, WPRM, Tasty, microdata,
                             schema-less, JS-shell, >8K long-page truncation guard
   corpus.schema.test.js   — recorded RECIPE_SCHEMA outputs → thinFromStructured → enforce
+  corpus.junk.test.js     — the shared zero-junk module (src/import/junk.js)
+  corpus.extract.test.js  — /api/extract server parsing (same HTML fixtures, pure helpers)
+  corpus.contextpack.test.js — ContextPack sections/budgets, verifier mode, structurePack (stubbed net)
+  corpus.instagram.test.js — acquire/instagram race (injected fetchers) + images.js hero/vision gate
+  corpus.structure-server.test.js — /api/structure passthrough + step-5 "one brain" guards
+  corpus.progress.test.js — progressMap: engine messages → 3-stage timeline + tier chips
   live/corpus.live.test.js— opt-in real-Gemini end-to-end (never runs in CI)
   fixtures/
     captions/   9 real-world-shaped IG captions (clean, prose, cocktail, transcript,
@@ -31,13 +37,14 @@ tests/import/
 
 ## Rules
 
-1. **Zero-junk contract** lives in `helpers.js` (`JUNK_PATTERNS`). Acquisition-time
-   cleaning and the Gemini system instruction must mirror it when the unified
-   engine lands. Change it in one place only.
-2. **KNOWN-GAP tests** use `it.fails` to pin current missing behavior
-   (bait-caption weakness override, mid-caption promo stripping, junk leaked
-   into notes). When the engine gains the behavior, the test flips to failing
-   as "expected fail passed" — promote it to a normal `it` in the same commit.
+1. **Zero-junk contract** lives in `src/import/junk.js` (single source since
+   2026-07-02); `helpers.js` re-exports it, cleanSocialCaption strips with it,
+   and enforceDeterministicRules scrubs with it. Change it in one place only.
+2. **KNOWN-GAP tests** use `it.fails` to pin current missing behavior. When the
+   engine gains the behavior, the test flips to failing as "expected fail
+   passed" — promote it to a normal `it` in the same commit. (The original
+   three gaps — bait-caption weakness, mid-caption promo stripping, junk in
+   notes — were all fixed and promoted on 2026-07-02.)
 3. **Tolerant matchers**: assert counts (`minIngredients`) and key content
    (`mustContain`), never byte equality — the corpus should survive harmless
    wording changes and catch real regressions.
