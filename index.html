@@ -28,8 +28,13 @@
       - frame-ancestors is NOT enforced by this meta tag (browsers ignore it
         there per spec), it's set for real via HTTP response headers in
         vercel.json and server/index.js instead. Kept here as documentation.
+      - frame-src allows youtube-nocookie.com and instagram.com: the Floating
+        Picture-in-Picture player (FloatingVideoPlayer.jsx) embeds recipe
+        videos from these two origins via <iframe>. Without an explicit
+        frame-src, the directive falls back to default-src 'self' and the
+        browser silently blocks the embed ("This content is blocked").
     -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; media-src 'self' data: blob: https:; connect-src 'self' https: wss:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; media-src 'self' data: blob: https:; connect-src 'self' https: wss:; frame-src https://www.youtube-nocookie.com https://www.instagram.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
