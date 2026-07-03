@@ -518,17 +518,28 @@ export function parseManualCaption(captionText, sourceUrl) {
  */
 function _cleanTitle(title = '', ingredients = []) {
   let t = String(title).trim();
+  // Strip leading labels that leak from OCR/photo scans or scraped headers.
+  t = t.replace(/^(recipe|title|dish|name)\s*[:\-]\s*/i, '');
   // Strip trailing social patterns: "This Weeknight Win recipe is", "save this", "link in bio", etc.
   t = t.replace(/[!.]\s*(this|these|the|my|our|a|an)\s+(weeknight|easy|quick|best|amazing|perfect|simple|delicious|favorite|favourite|ultimate)\b.*$/i, '');
   // Strip trailing "recipe is/recipe that/recipe you" fragments
   t = t.replace(/\s+recipe\s+(is|that|you|for|with|I|we)\b.*$/i, '');
   // Strip trailing sentence fragments after the dish name (period/exclamation followed by promotional text)
   t = t.replace(/[!.]\s+(save|follow|link|comment|share|try|tag|check|click|tap|dm|get the|grab the)\b.*$/i, '');
+  // Strip "full/printable/written recipe (below|in bio|in comments|in caption|linked...)" clutter,
+  // with or without a leading sentence break and with or without wrapping parens.
+  t = t.replace(/\(?\s*(full |printable |written |complete )?recipe\s*(is\s*)?(below|above|in\s+(the\s+)?(bio|comments?|caption)|link(ed)?\s+in\s+bio|card\s+below)\)?\s*$/i, '');
+  t = t.replace(/\(?\s*swipe\s+(up\s+)?for\s+(the\s+)?recipe\)?\s*$/i, '');
   // Strip hashtags, @mentions, emojis
   t = t.replace(/#\w+/g, '').replace(/@\w+/g, '');
   t = t.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}\u{FE00}-\u{FEFF}]/gu, '');
+  // Collapse repeated punctuation ("!!!", "??", "..") left behind by stripped clutter.
+  t = t.replace(/([!?.,])\1+/g, '$1');
+  // Remove now-empty parens/brackets ("()", "[ ]") left behind by the strips above.
+  t = t.replace(/[([]\s*[)\]]/g, '');
   // Clean up trailing punctuation and whitespace
   t = t.replace(/[!.,;:\s]+$/, '').trim();
+  t = t.replace(/\s+/g, ' ').trim();
   // Truncate to 60 chars at a word boundary
   if (t.length > 60) t = t.substring(0, 60).replace(/\s\S+$/, '').trim();
   // Conversational-hook safeguard: only REPLACE the title with an ingredient-
@@ -553,11 +564,14 @@ const _CONVO_TITLE_RE = /\b(let'?s|lets take|my favorite|my favourite|back to|re
 // A title is "conversational" (and should be replaced) only when it reads like a
 // caption hook — NOT merely because it's long. The 60-char truncation above
 // already bounds length; a long-but-descriptive dish name is a valid title.
+// Threshold tightened from 14 -> 11 words: real dish names rarely run that long
+// ("Grandma's Slow-Braised Short Rib Ragu with Root Vegetables" is 8 words and
+// still passes), while lingering caption sentences reliably exceed it.
 function _isConversationalTitle(t) {
   if (!t) return false;
   if (_CONVO_TITLE_RE.test(t)) return true;
   // Extreme outlier only: very long AND ends without looking like a dish name.
-  return t.split(/\s+/).length > 14;
+  return t.split(/\s+/).length > 11;
 }
 
 /** Build a concise fallback title from the first couple of ingredient names. */

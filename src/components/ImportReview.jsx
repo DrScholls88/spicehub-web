@@ -683,12 +683,13 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
             )}
           </span>
         )}
-        <div className="review-hero-title-wrap">
+        <div className="review-hero-title-wrap" onClick={(e) => e.stopPropagation()}>
           <input
             className="review-hero-title"
             type="text"
             value={recipe.title || ''}
             onChange={(e) => updateField('title', e.target.value)}
+            onPointerDown={(e) => e.stopPropagation()}
             placeholder="Recipe title"
           />
         </div>
