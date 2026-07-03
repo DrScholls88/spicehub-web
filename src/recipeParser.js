@@ -7,7 +7,7 @@
  *   2. CORS PROXY    Ã¢â€ â€™ fallback if server unreachable (limited for social media)
  *   3. CAPTION TEXT  Ã¢â€ â€™ 4-pass heuristic parser (used internally on extracted captions)
  */
-import { cleanUrl, isInstagramCdnUrl, fetchHtmlViaProxy as fetchHtmlViaProxyFromApi, downloadImageAsDataUrl, fetchInstagramOEmbed, fetchInstagramJson, fetchInstagramJsonDetails, fetchInstagramViaApify, proxyImageUrl } from './api.js';
+import { cleanUrl, isInstagramCdnUrl, fetchHtmlViaProxy as fetchHtmlViaProxyFromApi, downloadImageAsDataUrl, proxyImageUrl } from './api.js';
 import { getCachedImport, setCachedImport } from './db.js';
 import { transcribeFromUrl, transcribeFromFile } from './lib/transcriptionService.js';
 import { isRedditUrl, isRedditPostUrl, tryRedditJson } from './scrapers/redditDiscovery.js';
@@ -23,6 +23,14 @@ import {
   annotateFieldConfidence,
 } from './recipeSchema.js';
 import { normalizeIngredient, resolveUnit } from './utils/ingredientNormalizer.js';
+// Unified import engine (2026-07 unification): shared zero-junk contract,
+// server acquisition, and ContextPack structuring. See tests/import/README.md.
+import { stripJunkLines, isJunkLine, BAIT_ONLY_RE, countQuantityLines } from './import/junk.js';
+import { acquireWebsitePack } from './import/acquire/website.js';
+import { acquireInstagramPack } from './import/acquire/instagram.js';
+import { selectHeroImage, persistCarousel } from './import/images.js';
+import { packHasCompleteCandidate, createContextPack } from './import/contextPack.js';
+import { structurePack, serverStructurePack } from './import/structure/gemini.js';
 
 // ── Null-byte sanitizer ─────────────────────────────────────────────────────
 // LLMs occasionally emit null bytes or control characters in JSON output.
@@ -364,6 +372,12 @@ export function cleanSocialCaption(text) {
   ];
   for (const re of BAIT_LINES) t = t.replace(new RegExp(re.source, re.flags + 'g'), '');
 
+  // 2.5 Zero-junk contract: drop whole lines that carry strong promo junk
+  // ANYWHERE in the line (mid-caption "use code X ... link in bio" prose that
+  // the anchored BAIT_LINES above cannot catch). Lines with real recipe
+  // signals (quantities/cooking verbs) are always preserved.
+  t = stripJunkLines(t);
+
   // 3. Strip "See more" / "Ã¢â‚¬Â¦ more" truncation artifacts
   t = t.replace(/\.{3,}\s*(more|see more|read more)\s*$/im, '');
   t = t.replace(/\s*[Ã¢â‚¬Â¦]\s*(more|see more)?\s*$/im, '');
@@ -460,6 +474,11 @@ export function isCaptionWeak(text) {
   // Tier 1 (revised): Junk only if both short AND signal-free
   // Old behaviour rejected all cleaned < 50 Ã¢â‚¬â€ too aggressive for "2 cups flour\nMix and fry"
   if (cleaned.length < 50 && !hasIngredientSignal && !hasDirectionSignal) return true;
+
+  // Tier 1.5 (bait override): "full recipe on the blog / link in bio" means the
+  // recipe is NOT here. A stray food word must not rescue a bait caption —
+  // require at least 2 quantified ingredient lines to overrule the bait phrase.
+  if (BAIT_ONLY_RE.test(text) && countQuantityLines(cleaned) < 2) return true;
 
   // Tier 2: Strong Ã¢â‚¬â€ both ingredient AND direction signals Ã¢â€ â€™ always good
   if (hasIngredientSignal && hasDirectionSignal) return false;
@@ -867,6 +886,14 @@ export function enforceDeterministicRules(input = {}) {
     Array.isArray(input.directions) ? input.directions : [],
   );
 
+  // Zero-junk contract: strip social-promo lines that leaked through the model
+  // into any list surface. Lines with real recipe signals are never touched.
+  reclass.ingredients = reclass.ingredients.filter((i) => !isJunkLine(i));
+  reclass.directions  = reclass.directions.filter((d) => !isJunkLine(d));
+  const scrubbedNotes = Array.isArray(input.notes)
+    ? input.notes.filter((n) => n && n.text && !isJunkLine(n.text))
+    : input.notes;
+
   const confidenceAdjustment = reclass.movedCount > 0
     ? -0.05 * Math.min(reclass.movedCount, 4)
     : 0;
@@ -893,6 +920,10 @@ export function enforceDeterministicRules(input = {}) {
     title: cleanedTitle,
     ingredients: reclass.ingredients,
     directions: reclass.directions,
+    notes: scrubbedNotes,
+    _notesFlat: Array.isArray(scrubbedNotes)
+      ? scrubbedNotes.map((n) => n.text).join('\n\n')
+      : (input._notesFlat || ''),
     confidence,
     needsReview: input.needsReview || reclass.movedCount > 2,
     _postProcessAudit: audit,
@@ -1177,8 +1208,19 @@ export async function structureWithAIClient(rawText, { title: hintTitle = '', im
   // ── Primary: cheap fast model ──────────────────────────────────────────────
   const primary = await geminiGenerateStructured(GEMINI_MODEL, contents, clientKey);
   if (primary.status || primary.error) {
-    console.warn(`[SpiceHub] Gemini schema ${primary.status ? 'HTTP ' + primary.status : 'error ' + primary.error} — falling back to legacy prompt`);
-    return _structureWithAIClientLegacy(rawText, { title: hintTitle, imageUrl, sourceUrl, type });
+    console.warn(`[SpiceHub] Gemini schema ${primary.status ? 'HTTP ' + primary.status : 'error ' + primary.error} — trying server structuring`);
+    // Step 5 (2026-07 unification): the legacy prose-prompt fallback is
+    // REMOVED. The fallback is the /api/structure passthrough — identical
+    // schema, identical rules, one brain wherever it runs.
+    const miniPack = createContextPack({
+      sourceUrl, sourceType: 'text', title: hintTitle,
+      caption: rawText.slice(0, 50000), acquiredVia: 'caption',
+    });
+    const structured = await serverStructurePack(miniPack, { type });
+    if (structured?.isRecipe) {
+      return finalizeAIRecipe(thinFromStructured(structured), { hintTitle, imageUrl, sourceUrl, via: 'gemini-pack:server' });
+    }
+    return null;
   }
   if (!primary.structured || !primary.structured.isRecipe) return null;
   const s = primary.structured;
@@ -1252,23 +1294,9 @@ async function _structureWithAIClientLegacy(rawText, { title: hintTitle = '', im
 export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal' } = {}) {
   if (!rawText || rawText.trim().length < 20) return null;
 
-  const xaiKey = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_XAI_API_KEY : null;
-  const provider = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_AI_PROVIDER : null;
-
-  // Grok is OFF by default (credit constraints). It stays fully wired and can be
-  // re-enabled instantly by setting VITE_AI_PROVIDER=grok. Until then, extraction
-  // runs on Gemini — which already gets every engine improvement (deterministic
-  // post-processor, confidence-driven escalation, fuzzy categorization).
-  if (provider === 'grok' && xaiKey) {
-    try {
-      const grokResult = await structureWithGrokClient(rawText, { title: hintTitle, imageUrl, sourceUrl, type });
-      if (grokResult && (grokResult.ingredients?.length || grokResult.directions?.length)) {
-        return grokResult;
-      }
-    } catch { /* fall through to Gemini */ }
-  }
-
-  // Try client-side Gemini next (faster, no backend roundtrip)
+  // Step 5 (2026-07 unification): the Grok alternate engine is REMOVED.
+  // One extraction brain — Gemini structured output — everywhere.
+  // Try client-side Gemini first (faster, no backend roundtrip)
   try {
     const clientResult = await structureWithAIClient(rawText, { title: hintTitle, imageUrl, sourceUrl, type });
     if (clientResult && (clientResult.ingredients?.length || clientResult.directions?.length)) {
@@ -3103,6 +3131,57 @@ async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signa
   //    3d. Turndown Ã¢â€ â€™ Gemini (HTML Ã¢â€ â€™ clean Markdown Ã¢â€ â€™ AI structuring)
   //    3e. Raw text Ã¢â€ â€™ Gemini (legacy fallback, coarser than Turndown)
 
+  // 3-pre: Unified server acquisition (/api/extract) — no CORS proxies, no
+  // client-side scraping. Complete structured-data candidates return directly
+  // (zero API cost); partial packs go to the single Gemini ContextPack path
+  // with reconciliation + verifier rules. Any failure falls through to the
+  // legacy client tiers below, so this tier can never make imports worse.
+  if (onProgress) onProgress('Extracting via SpiceHub server...');
+  let serverPack = null;
+  try {
+    serverPack = await acquireWebsitePack(url, { signal });
+  } catch { serverPack = null; }
+  if (serverPack) {
+    if (packHasCompleteCandidate(serverPack)) {
+      const c = serverPack.candidate;
+      return {
+        ...c,
+        name: c.name || serverPack.title,
+        imageUrl: c.imageUrl || serverPack.images[0]?.url || '',
+        link: url,
+        confidence: serverPack.confidence,
+        _contextPack: { provenance: serverPack.provenance, acquiredVia: serverPack.acquiredVia },
+        _extractedVia: 'extract:' + serverPack.acquiredVia,
+      };
+    }
+    if (serverPack.markdown && serverPack.markdown.length > 200) {
+      if (onProgress) onProgress('Structuring page content with AI...');
+      try {
+        const structured = await structurePack(serverPack, { type });
+        if (structured?.isRecipe) {
+          const packRecipe = finalizeAIRecipe(thinFromStructured(structured), {
+            hintTitle: serverPack.title,
+            imageUrl: serverPack.images[0]?.url || '',
+            sourceUrl: url,
+            via: 'gemini-pack:' + (structured._structureMode || 'extract'),
+          });
+          if (hasRecipeContent(packRecipe)) {
+            packRecipe._contextPack = {
+              provenance: [
+                ...serverPack.provenance,
+                ...(Array.isArray(structured.provenance) ? structured.provenance.map(p => ({ ...p, via: 'model:' + p.via })) : []),
+              ],
+              acquiredVia: serverPack.acquiredVia,
+            };
+            return packRecipe;
+          }
+        }
+      } catch (e) {
+        console.log('[SpiceHub] ContextPack structuring failed:', e?.message);
+      }
+    }
+  }
+
   console.log('[SpiceHub] Fetching recipe via CORS proxy...');
   if (onProgress) onProgress('Extracting recipe from page...');
 
@@ -4920,6 +4999,8 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
 
   // Track raw page text from embed as last-resort Gemini input
   let capturedRawPageText = '';
+  // Step 4: carousel image candidates captured across phases (persisted later)
+  let capturedImages = [];
 
   const persistCapturedImage = async (imageUrl = capturedImageUrl) => {
     if (!imageUrl || imageUrl.startsWith('data:')) return imageUrl || '';
@@ -4953,42 +5034,26 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   // ── Phases 0.25/0.5/0.75: parallel cheap extraction ────────────────────
   if (!capturedCaption) {
     progress(1, 'running', 'Trying multiple extraction methods…');
-    const scMatch = url.match(/\/(p|reel|tv)\/([A-Za-z0-9_-]+)/);
-    const shortcode = scMatch?.[2];
-    const cheapPhases = [
-      (async () => {
-        const d = await fetchInstagramViaApify(url);
-        if (!d?.caption || d.caption.length <= 30) throw new Error('apify-weak');
-        return { src: 'apify', caption: cleanSocialCaption(d.caption), img: d.displayUrl || '', title: d.ownerFullName || d.ownerUsername || '' };
-      })(),
-      (async () => {
-        const oe = await fetchInstagramOEmbed(url);
-        if (!oe?.html) throw new Error('oembed-empty');
-        const m = oe.html.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
-        if (!m) throw new Error('oembed-no-cap');
-        const raw = m[1].replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').trim();
-        if (raw.length <= 30) throw new Error('oembed-weak');
-        return { src: 'oembed', caption: cleanSocialCaption(raw), img: '', title: '' };
-      })(),
-      ...(shortcode ? [(async () => {
-        const det = await fetchInstagramJsonDetails(shortcode);
-        const cap = det?.caption || await fetchInstagramJson(shortcode);
-        if (!cap || cap.length <= 30) throw new Error('json-weak');
-        return { src: 'ig-json', caption: cleanSocialCaption(cap), img: det?.imageUrl || '', title: det?.title || '' };
-      })()] : []),
-    ];
+    // Step 4 (unified engine): the race lives in acquire/instagram.js now —
+    // Apify ∥ oEmbed ∥ ig-json plus the server /api/extract embed fallback,
+    // returning a ContextPack with raw caption + carousel candidates.
     try {
-      const w = await Promise.any(cheapPhases);
-      capturedCaption = w.caption;
-      capturedSource = w.src;
-      if (w.img && !capturedImageUrl) {
-        capturedImageUrl = w.img;
-        if (w.src === 'apify') {
-          try { const p = await downloadImageAsDataUrl(w.img, { timeoutMs: 15000 }); if (p) capturedImageUrl = p; } catch {}
+      const igPack = await acquireInstagramPack(url, { signal });
+      if (igPack?.caption) {
+        capturedCaption = cleanSocialCaption(igPack.caption);
+        capturedSource = igPack.acquiredVia;
+        capturedImages = igPack.images.map((im) => im.url).filter(Boolean);
+        if (!capturedImageUrl && capturedImages[0]) {
+          capturedImageUrl = capturedImages[0];
+          if (igPack.acquiredVia === 'apify') {
+            try { const p = await downloadImageAsDataUrl(capturedImages[0], { timeoutMs: 15000 }); if (p) capturedImageUrl = p; } catch { /* keep raw url */ }
+          }
         }
+        if (igPack.title && !capturedTitle) capturedTitle = igPack.title;
+        progress(1, 'done', capturedSource + ': caption (' + capturedCaption.length + ' chars)');
+      } else {
+        progress(1, 'done', 'Quick extraction failed — trying embed…');
       }
-      if (w.title && !capturedTitle) capturedTitle = w.title;
-      progress(1, 'done', w.src + ': caption (' + capturedCaption.length + ' chars)');
     } catch {
       progress(1, 'done', 'Quick extraction failed — trying embed…');
     }
@@ -5146,8 +5211,20 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
         // Now: block on inlining the bytes to a data URL (downloadImageAsDataUrl
         // has a server-proxy cascade); if that fails, route the raw URL through
         // the display proxy so the <img> still renders instead of 403-ing.
+        // Step 4: vision-gated hero selection when the post gave us no direct
+        // image (video-only reels). Heuristics are free; at most ONE vision call.
+        if (!capturedImageUrl && capturedImages.length) {
+          try {
+            const hero = await selectHeroImage(capturedImages, { persistFn: persistCapturedImage, useVision: !!videoRecipe });
+            if (hero) capturedImageUrl = hero.dataUrl || hero.url;
+          } catch { /* resolveDisplayableImage still runs below */ }
+        }
         const { url: resolvedImageUrl, status: imageStatus } =
           await resolveDisplayableImage(capturedImageUrl || recipe.imageUrl || '', persistCapturedImage);
+        // Step 4: persist the whole carousel (≤6, data URLs) so the review
+        // screen can offer a cover picker and nothing 403s later.
+        let carouselImages = [];
+        try { carouselImages = await persistCarousel(capturedImages, persistCapturedImage); } catch { /* optional */ }
         const finalRecipe = {
           ...recipe,
           name: recipe.name && recipe.name.trim() && !/^(recipe|imported|untitled)$/i.test(recipe.name.trim())
@@ -5155,6 +5232,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
             : generateTitleFromIngredients(recipe.ingredients, type),
           imageUrl: resolvedImageUrl,
           _imageStatus: imageStatus,
+          _carouselImages: carouselImages,
           _extractionSource: capturedSource || (videoRecipe ? 'video' : ''),
           extractedVia: videoRecipe ? 'yt-dlp+ai' : 'caption-ai',
           sourceUrl: url,

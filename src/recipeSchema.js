@@ -825,7 +825,7 @@ export const RECIPE_SCHEMA = {
 // ledger compares a recipe's stored `engineVersion` against this value to offer
 // "improve" re-runs that re-send the cached caption (no re-scrape, no Apify cost).
 // Format: YYYY.MM.patch — human-readable and monotonically comparable as a string.
-export const ENGINE_PROMPT_VERSION = '2026.06.3';
+export const ENGINE_PROMPT_VERSION = '2026.07.1';
 
 // -----------------------------------------------------------------------------
 // 9. SHARED SYSTEM INSTRUCTION (used identically by text / server / vision)

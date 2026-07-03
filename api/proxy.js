@@ -274,11 +274,19 @@ export default async function handler(req) {
         });
       }
       const post = items[0];
+      // Carousel support (import unification step 4): Sidecar images + child posts.
+      const carousel = [
+        ...(Array.isArray(post.images) ? post.images : []),
+        ...(Array.isArray(post.childPosts)
+          ? post.childPosts.map((c) => c?.displayUrl || c?.imageUrl || '').filter(Boolean)
+          : []),
+      ].filter((u, i, a) => u && a.indexOf(u) === i).slice(0, 6);
       // Return a normalized subset — keep payload small
       const result = {
         ok: true,
         caption: post.caption || '',
         displayUrl: post.displayUrl || '',
+        images: carousel,
         videoUrl: post.videoUrl || '',
         ownerUsername: post.ownerUsername || '',
         ownerFullName: post.ownerFullName || '',

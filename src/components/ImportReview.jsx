@@ -24,6 +24,7 @@ import { fuzzyResolveIngredient, normalizeIngredientForMatching, learnableAliasF
 import { saveLearnedAliases } from '../db';
 import PhotoGallery from './PhotoGallery';
 import DishPhotoCropper from './DishPhotoCropper';
+import CoverPicker from './import/CoverPicker.jsx';
 
 // Spring-like easing shared across review animations (spec §1)
 const SPRING_EASE = [0.32, 0.72, 0, 1];
@@ -721,6 +722,10 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
           />
         )}
       </AnimatePresence>
+
+      {/* Carousel cover picker — appears only when the import captured
+          multiple photos (_carouselImages from images.js, ≤6 data URLs) */}
+      <CoverPicker recipe={recipe} onChange={onChange} />
 
       {/* Engine metadata chip — muted, read-only; absent on older recipes */}
       {engineName && (

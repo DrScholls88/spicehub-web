@@ -1,0 +1,169 @@
+/* ── ImportTimeline ─────────────────────────────────────────────────────────
+   Three-stage import progress. Motion rules:
+   - rail fill + node scale animate via framer springs (interruptible)
+   - the active node's breathing is pure CSS (off main thread)
+   - only transform/opacity are animated                                     */
+
+.itl {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 2px 0;
+}
+
+/* Rail + nodes ------------------------------------------------------------ */
+.itl-rail-row {
+  position: relative;
+  padding: 0 10px;
+}
+
+.itl-rail {
+  position: absolute;
+  left: 22px;
+  right: 22px;
+  top: 9px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--border-soft, rgba(120, 113, 108, 0.22));
+  overflow: hidden;
+}
+
+.itl-rail-fill {
+  position: absolute;
+  inset: 0;
+  transform-origin: left center;
+  background: var(--accent, #e0733d);
+  border-radius: 1px;
+  will-change: transform;
+}
+
+.itl-nodes {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+}
+
+.itl-node-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  min-width: 64px;
+}
+
+.itl-node {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--surface-raised, #fff);
+  border: 2px solid var(--border-soft, rgba(120, 113, 108, 0.28));
+  transition: border-color 200ms ease, background-color 200ms ease;
+}
+
+.itl-node-core {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border-soft, rgba(120, 113, 108, 0.45));
+  transition: background-color 200ms ease;
+}
+
+.itl-node--active .itl-node {
+  border-color: var(--accent, #e0733d);
+}
+.itl-node--active .itl-node-core {
+  background: var(--accent, #e0733d);
+  animation: itl-breathe 1.6s cubic-bezier(0.77, 0, 0.175, 1) infinite;
+}
+
+.itl-node--done .itl-node {
+  border-color: var(--accent, #e0733d);
+  background: var(--accent, #e0733d);
+}
+.itl-node-check {
+  color: #fff;
+  display: grid;
+  place-items: center;
+}
+
+.itl-node--error .itl-node {
+  border-color: var(--danger, #d4553a);
+}
+.itl-node--error .itl-node-core {
+  background: var(--danger, #d4553a);
+  animation: none;
+}
+
+.itl-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary, #a8a29e);
+  transition: color 200ms ease;
+}
+.itl-node--active .itl-label,
+.itl-node--done .itl-label {
+  color: var(--text-primary, #292524);
+}
+.itl-node--error .itl-label {
+  color: var(--danger, #d4553a);
+}
+
+@keyframes itl-breathe {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(1.45); opacity: 0.75; }
+}
+
+/* Status row ---------------------------------------------------------------- */
+.itl-status-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-height: 34px;
+}
+
+.itl-chip {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  color: var(--accent, #e0733d);
+  background: color-mix(in srgb, var(--accent, #e0733d) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent, #e0733d) 26%, transparent);
+  white-space: nowrap;
+  margin-top: 1px;
+}
+
+.itl-status-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.itl-msg {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-secondary, #57534e);
+  overflow-wrap: anywhere;
+}
+.itl-msg--error {
+  color: var(--danger, #d4553a);
+  font-weight: 550;
+}
+
+.itl-subtext {
+  font-size: 11.5px;
+  color: var(--text-tertiary, #a8a29e);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .itl-node--active .itl-node-core {
+    animation: none;
+  }
+}
