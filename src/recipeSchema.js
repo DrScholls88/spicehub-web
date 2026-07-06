@@ -228,6 +228,11 @@ const DEPARTMENT_TO_AISLE = {
   'Bakery': 'bakery',
   'Frozen': 'frozen',
   'Other': 'unknown',
+  'Spirits': 'spirits',
+  'Beer & Wine': 'beer-wine',
+  'Bitters & Syrups': 'bitters-syrups',
+  'Mixers & Juices': 'mixers-juices',
+  'Garnish': 'garnish',
 };
 
 /** Replace the whole learned-alias map (called once at startup from Dexie). */
@@ -276,8 +281,17 @@ export function learnableAliasFrom(importedName = '', editedLine = '') {
 // -----------------------------------------------------------------------------
 // The LLM classifies each ingredient at ingestion (RECIPE_SCHEMA item.category);
 // categorizeIngredient() is the keyword fallback for legacy/heuristic paths.
+// Meal departments + bar departments in one enum. Bar categories are only ever
+// assigned when the recipe kind is 'drink' (see categorizeIngredient's `kind`
+// param and the CATEGORY prompt instruction below) — meal categorization is
+// completely unaffected by this addition.
 export const GROCERY_CATEGORIES = [
   'Produce', 'Meat & Seafood', 'Dairy', 'Pantry', 'Frozen', 'Bakery', 'Other',
+  'Spirits', 'Beer & Wine', 'Bitters & Syrups', 'Mixers & Juices', 'Garnish',
+];
+// Bar-only subset, useful for UI code that wants to walk just the bar departments.
+export const BAR_GROCERY_CATEGORIES = [
+  'Spirits', 'Beer & Wine', 'Bitters & Syrups', 'Mixers & Juices', 'Garnish',
 ];
 
 const CATEGORY_KEYWORDS = {
@@ -293,10 +307,22 @@ const CATEGORY_KEYWORDS = {
  * Keyword fallback categorizer — returns one of GROCERY_CATEGORIES. Order
  * matters: Frozen beats Produce ("frozen peas"), proteins beat Pantry
  * ("chicken stock" is Pantry though — stock/broth checked first).
+ *
+ * @param {string} name
+ * @param {'meal'|'drink'} [kind='meal'] — when 'drink', bar-specific
+ *   categories (Spirits, Beer & Wine, Bitters & Syrups, Mixers & Juices,
+ *   Garnish) are tried FIRST via categorizeBarIngredient, falling back to the
+ *   generic meal keywords below for anything that isn't bar vocabulary (ice,
+ *   sugar, water, etc.). Meal callers are completely unaffected — `kind`
+ *   defaults to 'meal', which never touches the bar categorizer.
  */
-export function categorizeIngredient(name = '') {
+export function categorizeIngredient(name = '', kind = 'meal') {
   const s = String(name).toLowerCase();
   if (!s.trim()) return 'Other';
+  if (kind === 'drink') {
+    const barCategory = categorizeBarIngredient(s);
+    if (barCategory) return barCategory;
+  }
   // Pantry liquids made FROM proteins/produce ("chicken stock", "tomato paste")
   if (/\b(stock|broth|paste|powder|sauce|canned|can of|dried|juice)\b/.test(s) && CATEGORY_KEYWORDS['Pantry'].test(s)) return 'Pantry';
   if (CATEGORY_KEYWORDS['Frozen'].test(s)) return 'Frozen';
@@ -425,18 +451,128 @@ export function sectionLabelFrom(line = '') {
 // 6. DRINK DETECTION VOCABULARY (centralized; replaces inline SPIRITS/etc.)
 // -----------------------------------------------------------------------------
 export const SPIRITS = [
-  'vodka', 'gin', 'rum', 'white rum', 'dark rum', 'spiced rum', 'tequila',
-  'mezcal', 'whiskey', 'whisky', 'bourbon', 'rye', 'scotch', 'brandy',
-  'cognac', 'armagnac', 'pisco', 'cachaça', 'cachaca', 'soju', 'sake',
-  'absinthe', 'aquavit',
+  // Generic types
+  'vodka', 'gin', 'rum', 'white rum', 'dark rum', 'spiced rum', 'gold rum',
+  'coconut rum', 'overproof rum', 'tequila', 'blanco tequila', 'reposado tequila',
+  'añejo tequila', 'anejo tequila', 'mezcal', 'whiskey', 'whisky', 'bourbon',
+  'rye', 'rye whiskey', 'scotch', 'scotch whisky', 'irish whiskey', 'canadian whisky',
+  'brandy', 'cognac', 'armagnac', 'pisco', 'cachaça', 'cachaca', 'soju', 'sake',
+  'absinthe', 'aquavit', 'grappa', 'moonshine', 'grain alcohol', 'everclear',
+  // Vodka brands
+  'absolut', 'grey goose', 'tito\'s', 'titos', 'smirnoff', 'ciroc', 'belvedere',
+  'stolichnaya', 'stoli', 'ketel one', 'skyy', 'chopin', 'svedka', 'new amsterdam vodka',
+  'three olives', 'pinnacle vodka',
+  // Gin brands
+  'tanqueray', 'bombay sapphire', "hendrick's", 'hendricks', 'beefeater',
+  'aviation gin', 'plymouth gin', "bulldog gin", 'gordon\'s gin', 'gordons gin',
+  'the botanist', 'roku gin', 'sipsmith',
+  // Rum brands
+  'bacardi', 'captain morgan', 'malibu', 'mount gay', 'appleton estate',
+  'kraken rum', 'diplomatico', 'plantation rum', 'gosling\'s', 'goslings',
+  'sailor jerry', 'ronrico', 'myers\'s rum', 'myers rum',
+  // Tequila / mezcal brands
+  'jose cuervo', 'patron', 'don julio', 'casamigos', 'espolon', 'herradura',
+  'del maguey', 'sauza', 'milagro', '1800 tequila', 'hornitos', 'clase azul',
+  'olmeca', 'el jimador',
+  // Whiskey / bourbon / scotch / rye brands
+  'jim beam', 'jack daniel\'s', 'jack daniels', 'maker\'s mark', 'makers mark',
+  'woodford reserve', 'buffalo trace', 'bulleit', 'wild turkey', 'crown royal',
+  'jameson', 'johnnie walker', 'johnny walker', 'glenlivet', 'the glenlivet',
+  'macallan', 'the macallan', 'chivas regal', 'knob creek', 'four roses',
+  'wild turkey 101', 'evan williams', 'old forester', 'basil hayden',
+  'elijah craig', 'glenfiddich', 'balvenie', 'laphroaig', 'talisker',
+  'canadian club', 'seagram\'s', 'seagrams', 'dewar\'s', 'dewars',
+  'famous grouse', 'redbreast', 'tullamore dew', 'bushmills', 'high west',
+  // Brandy / cognac brands
+  'hennessy', 'rémy martin', 'remy martin', 'courvoisier', 'e&j', 'e & j',
+  'martell', 'christian brothers',
 ];
 export const LIQUEURS = [
-  'vermouth', 'sweet vermouth', 'dry vermouth', 'aperol', 'campari',
-  'triple sec', 'cointreau', 'grand marnier', 'amaretto', 'kahlua',
-  'baileys', 'chambord', 'st germain', 'st-germain', 'curaçao', 'curacao',
-  'maraschino', 'chartreuse', 'fernet', 'amaro', 'limoncello', 'midori',
-  'frangelico', 'drambuie', 'cynar', 'lillet', 'crème de', 'creme de',
+  'vermouth', 'sweet vermouth', 'dry vermouth', 'blanc vermouth', 'aperol',
+  'campari', 'triple sec', 'cointreau', 'grand marnier', 'amaretto',
+  'disaronno', 'kahlua', 'kahlúa', 'baileys', "bailey's", 'irish cream',
+  'chambord', 'st germain', 'st-germain', 'st. germain', 'elderflower liqueur',
+  'curaçao', 'curacao', 'blue curacao', 'maraschino', 'maraschino liqueur',
+  'chartreuse', 'green chartreuse', 'yellow chartreuse', 'fernet', 'fernet-branca',
+  'fernet branca', 'amaro', 'averna', 'montenegro', 'limoncello', 'midori',
+  'frangelico', 'drambuie', 'cynar', 'suze', 'lillet', 'lillet blanc',
+  'crème de', 'creme de', 'creme de cacao', 'creme de menthe', 'creme de cassis',
+  'creme de violette', 'creme de banane', 'licor 43', 'galliano', 'sambuca',
+  'goldschläger', 'goldschlager', 'jägermeister', 'jagermeister', 'pama',
+  'chartreuse verte', 'benedictine', 'bénédictine', 'cherry heering',
+  'tia maria', 'advocaat', 'hpnotiq', 'strega', 'nocello', 'pimm\'s', 'pimms',
 ];
+// Bitters — dashed into cocktails; a small dose but a distinct shopping category.
+export const BITTERS = [
+  'angostura bitters', 'angostura', 'peychaud\'s bitters', 'peychauds bitters',
+  'peychaud\'s', 'orange bitters', 'chocolate bitters', 'aromatic bitters',
+  'celery bitters', 'grapefruit bitters', 'lavender bitters', 'walnut bitters',
+  'regan\'s orange bitters', 'regans orange bitters', 'fee brothers bitters',
+  'fee brothers', 'bittermens', 'bitters',
+];
+// Syrups & sweeteners — the "pantry" of a home bar.
+export const SYRUPS = [
+  'simple syrup', 'rich simple syrup', 'demerara syrup', 'honey syrup',
+  'agave nectar', 'agave syrup', 'grenadine', 'orgeat', 'falernum',
+  'cane syrup', 'cinnamon syrup', 'ginger syrup', 'vanilla syrup',
+  'raspberry syrup', 'passion fruit syrup', 'gomme syrup', 'gum syrup',
+];
+// Mixers & juices — the non-alcoholic volume in a cocktail.
+export const MIXERS = [
+  'tonic water', 'club soda', 'soda water', 'seltzer', 'seltzer water',
+  'sparkling water', 'ginger beer', 'ginger ale', 'cola', 'coca-cola', 'coke',
+  'sprite', 'lemon-lime soda', 'cranberry juice', 'pineapple juice',
+  'orange juice', 'lime juice', 'lemon juice', 'grapefruit juice',
+  'tomato juice', 'clamato', 'pomegranate juice', 'sour mix',
+  'sweet and sour mix', 'coconut cream', 'coconut milk', 'cream of coconut',
+  'egg white', 'heavy cream', 'half and half', 'whole milk',
+];
+// Garnish — the finishing touch, usually a separate shopping trip section.
+export const GARNISHES = [
+  'maraschino cherry', 'cocktail onion', 'olive', 'lime wheel', 'lime wedge',
+  'lime twist', 'lemon wheel', 'lemon wedge', 'lemon twist', 'orange peel',
+  'orange wheel', 'orange twist', 'mint sprig', 'mint leaves', 'cinnamon stick',
+  'celery stalk', 'rosemary sprig', 'basil leaf', 'edible flower', 'sugar rim',
+  'salt rim', 'tajin rim', 'brandied cherry', 'cocktail pick', 'lime', 'lemon',
+];
+// Wine & beer — fermented, not distilled; its own aisle at any bottle shop.
+export const WINE_BEER = [
+  'prosecco', 'champagne', 'cava', 'sparkling wine', 'red wine', 'white wine',
+  'rosé', 'rose wine', 'port', 'port wine', 'sherry', 'sherry wine', 'madeira',
+  'beer', 'lager', 'ipa', 'stout', 'pilsner', 'ale', 'pale ale', 'cider',
+  'hard cider', 'wheat beer', 'sangria', 'wine cooler',
+];
+
+// Escape a term for safe use inside a RegExp, matched on whole-word/phrase
+// boundaries so short entries ("gin", "port") don't false-positive inside
+// unrelated words ("ginger beer", "portobello").
+function _barTermRegex(term) {
+  const esc = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`\\b${esc}\\b`, 'i');
+}
+function _matchesAnyBarTerm(s, list) {
+  return list.some((term) => _barTermRegex(term).test(s));
+}
+
+/**
+ * categorizeBarIngredient — bar/cocktail-specific department classifier.
+ * Checked BEFORE the generic meal keyword categorizer whenever a recipe's
+ * kind is 'drink' (see categorizeIngredient). Order matters: garnish and
+ * mixer phrases are checked first so multi-word terms like "ginger beer" or
+ * "lime wheel" win over a loose single-word spirit match.
+ * @param {string} s — already-lowercased ingredient text
+ * @returns {string|null} one of BAR_GROCERY_CATEGORIES, or null when nothing
+ *   bar-specific matched (caller falls back to the generic categorizer).
+ */
+export function categorizeBarIngredient(s = '') {
+  if (!s || !s.trim()) return null;
+  if (_matchesAnyBarTerm(s, GARNISHES)) return 'Garnish';
+  if (_matchesAnyBarTerm(s, BITTERS) || _matchesAnyBarTerm(s, SYRUPS)) return 'Bitters & Syrups';
+  if (_matchesAnyBarTerm(s, MIXERS)) return 'Mixers & Juices';
+  if (_matchesAnyBarTerm(s, WINE_BEER)) return 'Beer & Wine';
+  if (_matchesAnyBarTerm(s, SPIRITS) || _matchesAnyBarTerm(s, LIQUEURS)) return 'Spirits';
+  return null;
+}
 export const COCKTAIL_ACTIONS = [
   'shake', 'shaken', 'stir', 'stirred', 'strain', 'double strain',
   'muddle', 'muddled', 'build', 'built', 'top with', 'top up', 'float',
@@ -880,12 +1016,22 @@ export const SYSTEM_INSTRUCTION = [
   "`dishType` to a short lowercase dish descriptor (e.g. \"pasta\", \"soup\", \"taco\"). Set",
   "`cuisine` when evident.",
   "",
-  "CATEGORY. Set each ingredient's `category` to its grocery-store department: Produce,",
-  "Meat & Seafood, Dairy, Pantry, Frozen, Bakery, or Other. Fresh vegetables/fruits/herbs ->",
-  "Produce; raw meat/fish -> Meat & Seafood; milk/cheese/eggs/butter -> Dairy; dry goods,",
-  "oils, spices, canned items, condiments, and alcohol -> Pantry; frozen items -> Frozen;",
-  "bread/tortillas -> Bakery. Derived products follow their shelf form: chicken STOCK is",
-  "Pantry, not Meat & Seafood.",
+  "CATEGORY. For kind=\"meal\", set each ingredient's `category` to its grocery-store",
+  "department: Produce, Meat & Seafood, Dairy, Pantry, Frozen, Bakery, or Other. Fresh",
+  "vegetables/fruits/herbs -> Produce; raw meat/fish -> Meat & Seafood; milk/cheese/eggs/",
+  "butter -> Dairy; dry goods, oils, spices, canned items, and condiments -> Pantry; frozen",
+  "items -> Frozen; bread/tortillas -> Bakery. Derived products follow their shelf form:",
+  "chicken STOCK is Pantry, not Meat & Seafood.",
+  "",
+  "For kind=\"drink\", use the bar departments instead: Spirits (base liquors AND liqueurs/",
+  "cordials — vodka, gin, rum, tequila, mezcal, whiskey, brandy, triple sec, amaretto,",
+  "campari, aperol, and named liquor brands like Tito's or Jameson), Beer & Wine (beer,",
+  "cider, still/sparkling wine, champagne, prosecco), \"Bitters & Syrups\" (Angostura/",
+  "Peychaud's/orange bitters, simple syrup, grenadine, orgeat, agave nectar), \"Mixers &",
+  "Juices\" (tonic, soda water, ginger beer, cola, fruit juices, cream, egg white), and",
+  "Garnish (citrus wheels/twists, maraschino cherry, cocktail onion, mint sprig, cinnamon",
+  "stick). Never use the meal departments (Produce, Meat & Seafood, Bakery, Frozen) for a",
+  "drink's ingredients.",
   "",
   "TRASH. NEVER emit as ingredients: scaling strings (\"1x 2x 3x\"), bare section labels",
   "(\"Topping\", \"Garnish:\"), header remnants (\"Ingredients (serves 4)\"), or any line that is",
@@ -1088,7 +1234,7 @@ export function flattenIngredientGroups(groups = []) {
  * [{ text, category }] in the same order/filtering as flattenIngredientGroups.
  * category comes from the LLM when present, else the keyword fallback.
  */
-export function ingredientMetaFromGroups(groups = []) {
+export function ingredientMetaFromGroups(groups = [], kind = 'meal') {
   const out = [];
   for (const g of groups || []) {
     const section = (g.section || '').trim();
@@ -1099,7 +1245,7 @@ export function ingredientMetaFromGroups(groups = []) {
       if (section) line = `${line} (${section})`;
       const category = GROCERY_CATEGORIES.includes(item.category)
         ? item.category
-        : categorizeIngredient(item.name || line);
+        : categorizeIngredient(item.name || line, kind);
       out.push({ text: line, category });
     }
   }
@@ -1117,14 +1263,14 @@ export function thinFromStructured(structured = {}) {
   // FROM it so they can never drift apart. The two derived fields are
   // byte-identical to the old flattenIngredientGroups / ingredientMetaFromGroups
   // output (pinned by recipeSchema.structured.test.js).
-  const structuredItems = structuredFromGroups(structured.ingredientGroups);
+  const structuredItems = structuredFromGroups(structured.ingredientGroups, kind);
   const base = {
     title: (structured.title || '').trim(),
     // Spec A: persisted structured ingredients (additive; never throws).
     ingredientsStructured: structuredItems,
     ingredients: flatIngredientsFromStructured(structuredItems),
     // Phase G: department metadata for grocery routing (non-breaking sidecar)
-    _ingredientMeta: metaFromStructured(structuredItems),
+    _ingredientMeta: metaFromStructured(structuredItems, kind),
     // Directions: accept both new structured format {text, ingredientRefs} and
     // legacy flat string[] for backward compatibility.
     directions: Array.isArray(structured.directions)
@@ -1290,14 +1436,14 @@ export function parseIngredientLine(line = '') {
 }
 
 /** Build a structured Item from a raw RECIPE_SCHEMA item + its section label. */
-export function structuredItemFromRaw(rawItem = {}, section = '') {
+export function structuredItemFromRaw(rawItem = {}, section = '', kind = 'meal') {
   const it = rawItem || {};
   const sec = section ? String(section).trim() : '';
   const displayLine = ingredientItemToString(it);
   const withSection = sec ? `${displayLine} (${sec})` : displayLine;
   const category = GROCERY_CATEGORIES.includes(it.category)
     ? it.category
-    : categorizeIngredient(it.name || withSection);
+    : categorizeIngredient(it.name || withSection, kind);
   const rawUnit = (it.unit || '').toString().trim();
   return {
     ref: makeIngredientRef(),
@@ -1317,7 +1463,7 @@ export function structuredItemFromRaw(rawItem = {}, section = '') {
  * SAME derived line, as flattenIngredientGroups — so the structured array and
  * the derived flat array stay exactly 1:1.
  */
-export function structuredFromGroups(groups = []) {
+export function structuredFromGroups(groups = [], kind = 'meal') {
   const out = [];
   for (const g of groups || []) {
     const section = g && g.section ? String(g.section).trim() : '';
@@ -1325,7 +1471,7 @@ export function structuredFromGroups(groups = []) {
       const line = ingredientItemToString(item);
       if (!line) continue;
       if (isTrashIngredientLine(line)) continue;
-      out.push(structuredItemFromRaw(item, section));
+      out.push(structuredItemFromRaw(item, section, kind));
     }
   }
   return out;
@@ -1351,7 +1497,7 @@ export function flatIngredientsFromStructured(items = []) {
  * Derive the _ingredientMeta sidecar from Item[]. MUST equal
  * ingredientMetaFromGroups(groups).
  */
-export function metaFromStructured(items = []) {
+export function metaFromStructured(items = [], kind = 'meal') {
   const out = [];
   for (const it of items || []) {
     if (!it) continue;
@@ -1361,7 +1507,7 @@ export function metaFromStructured(items = []) {
     const text = sec ? `${base} (${sec})` : base;
     const category = GROCERY_CATEGORIES.includes(it.category)
       ? it.category
-      : categorizeIngredient(it.name || text);
+      : categorizeIngredient(it.name || text, kind);
     out.push({ text, category });
   }
   return out;
@@ -1372,7 +1518,7 @@ export function metaFromStructured(items = []) {
  * Strips a trailing "(section)" only when it matches the known section vocab,
  * so organic parentheticals like "(optional)" survive in the name.
  */
-export function upgradeFlatIngredient(str = '', category = '') {
+export function upgradeFlatIngredient(str = '', category = '', kind = 'meal') {
   const raw = String(str == null ? '' : str).trim();
   let section = '';
   let core = raw;
@@ -1384,7 +1530,7 @@ export function upgradeFlatIngredient(str = '', category = '') {
   const parsed = parseIngredientLine(core);
   const cat = GROCERY_CATEGORIES.includes(category)
     ? category
-    : categorizeIngredient(parsed.name || core);
+    : categorizeIngredient(parsed.name || core, kind);
   return {
     ref: makeIngredientRef(),
     quantity: parsed.quantity,
@@ -1415,9 +1561,10 @@ export function upgradeRecipeIngredients(recipe = {}) {
   for (const m of meta) {
     if (m && m.text) metaMap[String(m.text).toLowerCase().trim()] = m.category || '';
   }
+  const kind = (recipe.type || recipe.itemType || recipe._type) === 'drink' ? 'drink' : 'meal';
   const structured = ingredients.map((line) => {
     const cat = metaMap[String(line).toLowerCase().trim()] || '';
-    return upgradeFlatIngredient(line, cat);
+    return upgradeFlatIngredient(line, cat, kind);
   });
   return { ...recipe, ingredientsStructured: structured };
 }
@@ -1757,10 +1904,12 @@ export default {
   normalizeFraction, wordToNumber,
   INGREDIENT_ALIASES, resolveIngredientAlias,
   normalizeIngredientForMatching, fuzzyResolveIngredient,
-  GROCERY_CATEGORIES, categorizeIngredient, isTrashIngredientLine,
+  GROCERY_CATEGORIES, BAR_GROCERY_CATEGORIES, categorizeIngredient, categorizeBarIngredient,
+  isTrashIngredientLine,
   COURSE, DISH_TYPE, CUISINE, DIETARY_TAGS,
   SECTION_HEADERS, isSectionHeader, sectionLabelFrom,
-  SPIRITS, LIQUEURS, COCKTAIL_ACTIONS, GLASSWARE, DRINK_METHODS, detectKindHeuristic,
+  SPIRITS, LIQUEURS, BITTERS, SYRUPS, MIXERS, GARNISHES, WINE_BEER,
+  COCKTAIL_ACTIONS, GLASSWARE, DRINK_METHODS, detectKindHeuristic,
   DISPLAY_SCHEMA, RECIPE_SCHEMA, SYSTEM_INSTRUCTION, EXEMPLARS, buildFewShotContents,
   ingredientItemToString, flattenIngredientGroups, ingredientMetaFromGroups, thinFromStructured,
   // Spec A — structured ingredient model

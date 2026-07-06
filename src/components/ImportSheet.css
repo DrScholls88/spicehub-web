@@ -94,6 +94,19 @@
 }
 
 .import-sheet {
+  /* Token bridge: ImportTimeline and CoverPicker are authored against the
+     generic --accent / --danger / --surface / --text names. Left unmapped,
+     they inherit the app's global --accent (green #2e7d32) and render the
+     progress rail, active node, "via" chip and cover-picker ring green —
+     clashing with the orange import CTA directly below. Alias them onto the
+     sheet's brand palette so they stay on-brand in both light and dark. */
+  --accent: var(--sh-accent);
+  --danger: var(--sh-danger);
+  --surface-raised: var(--sh-surface);
+  --surface-sunken: var(--sh-surface);
+  --text-primary: var(--sh-text);
+  --text-secondary: var(--sh-text-secondary);
+  --text-tertiary: var(--sh-text-muted);
   position: relative;
   width: 100%;
   max-width: 480px;
@@ -939,6 +952,16 @@
 }
 
 /* ── F.6: sticky tab-basket hybrid ──────────────────────────────────────── */
+/* One-line import provenance summary (source / engine / photo status).
+   Muted and quiet — sits out of the main reading path under the hero. */
+.review-import-details {
+  margin: 0;
+  padding: 6px 12px 0;
+  font-size: var(--sh-fs-xs);
+  line-height: 1.5;
+  color: var(--sh-text-muted);
+}
+
 .review-tabs {
   position: sticky;
   top: 0;
@@ -975,8 +998,18 @@
   color: var(--sh-accent);
 }
 
-/* Drop target highlight while a row is dragged over the inactive tab */
+/* Labelled drop target on the inactive tab while any row is mid-drag —
+   teaches the cross-list move gesture. Dashed = "you can drop here". */
+.review-tab.drop-target {
+  border-style: dashed;
+  border-color: var(--sh-accent);
+  color: var(--sh-accent);
+  font-size: 13px;
+}
+
+/* Stronger confirm once the row is actually hovering the target tab */
 .review-tab.drag-over {
+  border-style: solid;
   border-color: var(--sh-accent);
   background: var(--sh-accent-bg-strong);
   color: var(--sh-accent);

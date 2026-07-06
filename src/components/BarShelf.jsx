@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useReducer, useRef } from 'react';
-import { motion, AnimatePresence, useMotionValue, useAnimation } from 'framer-motion';
+import { motion, AnimatePresence, useMotionValue, useAnimation, useReducedMotion, useDragControls, animate } from 'framer-motion';
 import useBackHandler from '../hooks/useBackHandler';
 import { getBarInventory, addToBarInventory } from '../db';
 import SquigglyText from './SquigglyText';
@@ -1246,7 +1246,11 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
   // ── Framer Motion bartender position (motion value for drag compatibility) ──
   // Home base is 78% of bar width — initialized to 260 (≈78% × 340px default)
   const xMV = useMotionValue(260);
+  const yMV = useMotionValue(0);                 // vertical fling for the ragdoll toss
   const bartenderControls = useAnimation(); // for rotate during toss
+  const bartenderDragControls = useDragControls(); // long-press → programmatic drag start
+  const dragActiveRef = useRef(false);           // true between drag start and end
+  const prefersReducedMotion = useReducedMotion();
 
   // ── Synced state for quips/lantern positioning (cheaper than transform reads) ─
   const [bartenderX, setBartenderX] = useState(260);
@@ -1387,6 +1391,27 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
     return () => clearInterval(id);
   }, []);
 
+  // ── P4: pause ambient loops when the tab is hidden (battery / jank) ─────────
+  const [sceneHidden, setSceneHidden] = useState(false);
+  useEffect(() => {
+    const onVis = () => setSceneHidden(document.hidden);
+    document.addEventListener('visibilitychange', onVis);
+    return () => document.removeEventListener('visibilitychange', onVis);
+  }, []);
+
+  // Ambient motion runs only when the user hasn't asked for reduced motion AND
+  // the scene is actually on screen. Gates the wander / door / dog / pour loops.
+  const ambientOK = !prefersReducedMotion && !sceneHidden;
+
+  // ── P3: one-time hint strip teaching the saloon's hidden interactions ──────
+  const [showTips, setShowTips] = useState(() => {
+    try { return !localStorage.getItem('bs-tips-seen'); } catch { return false; }
+  });
+  const dismissTips = useCallback(() => {
+    setShowTips(false);
+    try { localStorage.setItem('bs-tips-seen', '1'); } catch { /* private mode */ }
+  }, []);
+
   // ── Screen shake helper ───────────────────────────────────────────────────
   const triggerCabinetShake = useCallback(() => {
     setShowImpactFlash(true);
@@ -1403,18 +1428,29 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
   const handleBartenderPointerDown = useCallback((e) => {
     e.stopPropagation();
     if (selectedDrink || isFlyingRef.current) return;
+    // Persist the native pointer event so we can hand it to dragControls when
+    // the long-press fires — React synthetic events are safe to hold in React 17+.
+    const nativeEvt = e.nativeEvent || e;
     longPressTimerRef.current = setTimeout(() => {
       isGrabbedRef.current = true; setIsGrabbed(true);
       cancelAnimationFrame(animationRef.current); // freeze any walk
       setBartenderState('surprised');
       if (navigator.vibrate) navigator.vibrate([30, 10, 30]);
+      // Begin dragging from the still-held pointer. Without this, framer-motion
+      // never attaches the drag (drag was disabled at pointerdown), so the
+      // bartender could be "grabbed" but never thrown. dragControls.start()
+      // captures the in-progress pointer so a flick produces real velocity.
+      try { bartenderDragControls.start(nativeEvt); } catch { /* pointer already released */ }
     }, 480);
-  }, [selectedDrink, isFlying]);
+  }, [selectedDrink, bartenderDragControls]);
 
   const handleBartenderPointerUp = useCallback(() => {
     clearTimeout(longPressTimerRef.current);
     if (!isGrabbedRef.current) return;
-    // Soft release without throw — return home
+    // If a drag session is live, let onDragEnd own the release (it reads the
+    // fling velocity). Only handle the release here as a fallback for the rare
+    // case where the drag never attached.
+    if (dragActiveRef.current) return;
     isGrabbedRef.current = false; setIsGrabbed(false);
     setBartenderState('walking');
     setFacingRight(false);
@@ -1438,6 +1474,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
 
   const handleBartenderDragEnd = useCallback(async (event, info) => {
     clearTimeout(longPressTimerRef.current);
+    dragActiveRef.current = false;
     const speed = Math.sqrt(info.velocity.x ** 2 + info.velocity.y ** 2);
 
     if (speed > 180 && isGrabbedRef.current) {
@@ -1449,21 +1486,45 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
       wasDraggedRef.current = true;
 
       const spinDir = info.velocity.x >= 0 ? 1 : -1;
-      const spins = Math.min(Math.max(Math.round(speed / 200), 1), 4);
+      const spins   = Math.min(Math.max(Math.round(speed / 200), 1), 4);
 
-      // Spin animation via bartenderControls on the inner motion.div
-      await bartenderControls.start({
-        rotate: 360 * spins * spinDir,
-        transition: { duration: 0.65, ease: [0.16, 1, 0.3, 1] },
-      });
-      // Brief pause at landing
-      await new Promise(r => setTimeout(r, 180));
+      // ── Ballistic ragdoll launch ──────────────────────────────────────────
+      // Fling him along the throw vector (not just spin in place): translate
+      // xMV/yMV to a landing spot inside the stage while the inner div tumbles.
+      const stageW   = constraintsRef.current?.clientWidth || barTopRef.current?.clientWidth || 360;
+      const startX   = xMV.get();
+      // Throw distance scales with speed; clamp so he always lands on-screen.
+      const dist     = Math.min(Math.max(speed * 0.28, 90), stageW * 0.75);
+      const landX    = Math.max(6, Math.min(stageW - 60, startX + spinDir * dist));
+      // Arc height also scales with throw strength.
+      const lift     = -Math.min(60 + speed * 0.12, 170);
+
+      if (prefersReducedMotion) {
+        // Reduced motion: no spin/arc — just settle him at the landing spot.
+        await animate(xMV, landX, { duration: 0.28, ease: 'easeOut' }).finished;
+      } else {
+        await Promise.all([
+          animate(xMV, landX, { duration: 0.62, ease: [0.16, 1, 0.3, 1] }).finished,
+          animate(yMV, [0, lift, 0], { duration: 0.62, times: [0, 0.42, 1], ease: ['easeOut', 'easeIn'] }).finished,
+          bartenderControls.start({
+            rotate: 360 * spins * spinDir,
+            transition: { duration: 0.62, ease: [0.16, 1, 0.3, 1] },
+          }),
+        ]);
+        // Small bounce settle on landing
+        triggerCabinetShake();
+        await new Promise(r => setTimeout(r, 160));
+      }
+
       setFlyScream(false);
+      yMV.set(0);
 
-      // Reset rotation
+      // Reset rotation (spring settle; instant under reduced motion)
       await bartenderControls.start({
         rotate: 0,
-        transition: { type: 'spring', stiffness: 180, damping: 18 },
+        transition: prefersReducedMotion
+          ? { duration: 0 }
+          : { type: 'spring', stiffness: 180, damping: 18 },
       });
 
       // Clear flying ref BEFORE walk call so walkTo guard allows passage
@@ -1485,10 +1546,11 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
       isGrabbedRef.current = false; setIsGrabbed(false);
       isFlyingRef.current  = false; setIsFlying(false);
       setFlyScream(false);
+      yMV.set(0);
       setBartenderState('walking');
       walkToRef.current?.(homeX(), () => { setBartenderState('idle'); setFacingRight(true); });
     }
-  }, [bartenderControls]);
+  }, [bartenderControls, prefersReducedMotion, xMV, yMV, triggerCabinetShake]);
 
   // ── Tap bartender 5× for joke — also completes Secret Pour sequence ──────
   const handleBartenderTap = useCallback(() => {
@@ -1746,7 +1808,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
 
   // ── Bartender wander (12–25 s idle → picks new waypoint) ───────────────────
   useEffect(() => {
-    if (bartenderState !== 'idle' || selectedDrink) {
+    if (!ambientOK || bartenderState !== 'idle' || selectedDrink) {
       clearTimeout(wanderTimerRef.current);
       return;
     }
@@ -1761,10 +1823,11 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
       walkToRef.current?.(targetX, () => setBartenderState('idle'));
     }, delay);
     return () => clearTimeout(wanderTimerRef.current);
-  }, [bartenderState, selectedDrink]);
+  }, [ambientOK, bartenderState, selectedDrink]);
 
   // ── Saloon door (20–60 s — opens, holds 1.5 s, swings back) ────────────────
   useEffect(() => {
+    if (!ambientOK) { clearTimeout(doorTimerRef.current); return; }
     const schedule = () => {
       doorTimerRef.current = setTimeout(() => {
         dispatch({ type: 'DOOR_OPEN' });
@@ -1776,10 +1839,11 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
     };
     schedule();
     return () => clearTimeout(doorTimerRef.current);
-  }, []);
+  }, [ambientOK]);
 
   // ── Pixel dog tail wag (15–45 s intervals) ──────────────────────────────────
   useEffect(() => {
+    if (!ambientOK) { clearTimeout(dogTimerRef.current); return; }
     const schedule = () => {
       dogTimerRef.current = setTimeout(() => {
         dispatch({ type: 'DOG_WAG' });
@@ -1791,11 +1855,11 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
     };
     schedule();
     return () => clearTimeout(dogTimerRef.current);
-  }, []);
+  }, [ambientOK]);
 
   // ── Secret pour (1 % chance per 60–120 s window, only when idle) ────────────
   useEffect(() => {
-    if (bartenderState !== 'idle' || selectedDrink) return;
+    if (!ambientOK || bartenderState !== 'idle' || selectedDrink) return;
     const delay = 60000 + Math.random() * 60000;
     pourTimerRef.current = setTimeout(() => {
       if (Math.random() < 0.01) {
@@ -1804,7 +1868,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
       }
     }, delay);
     return () => clearTimeout(pourTimerRef.current);
-  }, [bartenderState, selectedDrink]);
+  }, [ambientOK, bartenderState, selectedDrink]);
 
   // ── Filtering logic (Stool Navigation) ────────────────────────────────────
   // For cocktail/mocktail: show ALL bottles but dim non-matching ones (thematic bar look).
@@ -2302,6 +2366,14 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
           )}
         </div>
 
+        {/* First-run hints — teaches the hidden interactions (dismissed forever) */}
+        {showTips && (
+          <div className="bs-tips-banner" role="note">
+            <p>Tap the chalkboard, bounty board, tip jar &amp; sign to interact. Long-press the bartender to grab — then flick to toss him!</p>
+            <button className="bs-tips-dismiss" onClick={dismissTips} aria-label="Dismiss tips">OK</button>
+          </div>
+        )}
+
         {/* ═══ 3-LAYER SALOON STAGE ═══ */}
         <div className="saloon-stage" ref={(el) => { barTopRef.current = el; constraintsRef.current = el; }}>
 
@@ -2425,16 +2497,20 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
             <motion.div
               style={{
                 x: xMV,
+                y: yMV,
                 position: 'absolute',
                 bottom: '14px', /* raised 14px so arm aligns with bartop counter top */
-                zIndex: isGrabbed ? 50 : 2,
+                zIndex: isGrabbed || isFlying ? 50 : 2,
                 touchAction: 'none',
                 cursor: isGrabbed ? 'grabbing' : 'grab',
               }}
-              drag={isGrabbed}
+              drag
+              dragListener={false}
+              dragControls={bartenderDragControls}
               dragConstraints={constraintsRef}
-              dragElastic={0.12}
+              dragElastic={0.18}
               dragMomentum={false}
+              onDragStart={() => { dragActiveRef.current = true; }}
               onDragEnd={handleBartenderDragEnd}
             >
               {/* Inner motion.div handles rotation during toss */}
