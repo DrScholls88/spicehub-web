@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { ChefHat, UtensilsCrossed } from 'lucide-react';
+import { ChefHat, UtensilsCrossed, MoreHorizontal, Play, Sparkles, Heart, Repeat, Clock, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { downloadMealsFile, importMealsFromJson, shareMealsFile } from '../sync';
 import { toggleRotation, bulkSetRotation } from '../db';
@@ -620,7 +620,6 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                 selectMode && selectedIds.has(meal.id) ? 'ml-tile-selected' : '',
                 meal.status === 'failed' ? 'ml-tile-failed' : '',
               ].filter(Boolean).join(' ')}
-              style={{ borderLeft: `3px solid ${CATEGORY_COLORS[meal.category || 'Dinners'] || '#ccc'}` }}
               onClick={() => handleTileClick(meal)}
               onTouchStart={e => selectMode ? handleLongPressSelect(meal, e) : handleTouchStart(meal, e)}
               onTouchMove={handleTouchMove}
@@ -647,8 +646,8 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                   className="ml-tile-img"
                   phClass="ml-tile-placeholder"
                 />
-                {meal.isFavorite && <span className="ml-tile-fav">❤️</span>}
-                {meal.inRotation && <span className="ml-tile-rotation">🔄</span>}
+                {meal.isFavorite && <span className="ml-tile-fav"><Heart size={15} fill="#e53935" color="#e53935" aria-label="Favorite" /></span>}
+                {meal.inRotation && <span className="ml-tile-rotation"><Repeat size={13} strokeWidth={2.5} aria-label="In rotation" /></span>}
                 {meal.category && meal.category !== 'Dinners' && (
                   <span className="ml-tile-cat">{meal.category}</span>
                 )}
@@ -661,7 +660,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                     onClick={e => { e.stopPropagation(); hapticLight(); setReExtractMeal(meal); }}
                     onTouchEnd={e => e.stopPropagation()}
                   >
-                    <span aria-hidden="true">✨</span> Improve
+                    <Sparkles size={13} strokeWidth={2.5} aria-hidden="true" /> Improve
                   </button>
                 )}
                 {/* ⋯ menu button — always visible, bottom-right of image */}
@@ -672,7 +671,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                     onClick={e => { e.stopPropagation(); hapticLight(); setQuickPreview(meal); }}
                     onTouchEnd={e => e.stopPropagation()}
                   >
-                    ⋯
+                    <MoreHorizontal size={18} strokeWidth={2.5} />
                   </button>
                 )}
                 {/* PiP: play video badge — only on cards with a YouTube/Instagram source */}
@@ -687,7 +686,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                       onClick={e => { e.stopPropagation(); hapticLight(); onPlayVideo(meal); }}
                       onTouchEnd={e => e.stopPropagation()}
                     >
-                      <span className="ml-tile-play-tri" aria-hidden="true">▶</span>
+                      <Play size={14} fill="#fff" color="#fff" aria-hidden="true" />
                     </button>
                   );
                 })()}
@@ -695,13 +694,23 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
 
               {/* Info row */}
               <div className="ml-tile-info">
-                <motion.span className="ml-tile-name" layoutId={`ml-card-title-${meal.id}`}>{meal.name || 'Untitled Recipe'}</motion.span>
+                <motion.span className="ml-tile-name" layoutId={`ml-card-title-${meal.id}`}>
+                  {/* Category color as a small dot, not a card side-stripe */}
+                  <span
+                    className="ml-tile-cat-dot"
+                    style={{ background: CATEGORY_COLORS[meal.category || 'Dinners'] || '#ccc' }}
+                    aria-hidden="true"
+                  />
+                  {meal.name || 'Untitled Recipe'}
+                </motion.span>
                 <span className="ml-tile-meta">
-                  {meal.status === 'processing'
-                    ? '⏳ Import in progress…'
-                    : meal.status === 'failed'
-                    ? '⚠️ Import failed — tap to delete'
-                    : `${(meal.ingredients || []).length} ing · ${(meal.directions || []).length} steps`}
+                  {meal.status === 'processing' ? (
+                    <><Clock size={12} strokeWidth={2.5} style={{ verticalAlign: '-2px' }} /> Import in progress…</>
+                  ) : meal.status === 'failed' ? (
+                    <><AlertTriangle size={12} strokeWidth={2.5} style={{ verticalAlign: '-2px' }} /> Import failed — tap to delete</>
+                  ) : (
+                    `${(meal.ingredients || []).length} ing · ${(meal.directions || []).length} steps`
+                  )}
                 </span>
                 {formatAddedDate(meal.importedAt || meal.createdAt || meal.created) && (
                   <span

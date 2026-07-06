@@ -135,6 +135,14 @@ export default function ImportSheet({
   const [scanPages, setScanPages] = useState([]);
   const [destination, setDestination] = useState('library');
 
+  // Single source of truth for the IndexedDB draft key. Autosave, save-cleanup
+  // and discard all derive the key the same way — so a draft can't be written
+  // under one key and orphaned because another site computed a different one.
+  const draftKey = useCallback(
+    () => importUrl || (activeTab === 'photo' ? 'photo-import' : 'pasted-text'),
+    [importUrl, activeTab],
+  );
+
   // ── Modals & Banners state ──────────────────────────────────────────────
   const [showDiscardConfirm, setShowDiscardConfirm] = useState(false);
   const [confirmImport, setConfirmImport] = useState(null);
@@ -290,7 +298,7 @@ export default function ImportSheet({
   // ── Auto-save draft on review changes ─────────────────────────────────────
   useEffect(() => {
     if (phase === 'review' && recipe) {
-      const key = importUrl || (activeTab === 'paste' ? 'pasted-text' : activeTab === 'photo' ? 'photo-import' : 'pasted-text');
+      const key = draftKey();
       db.importDrafts?.put({
         url: key,
         recipe,
@@ -298,7 +306,7 @@ export default function ImportSheet({
         timestamp: Date.now()
       }).catch(e => console.warn(e));
     }
-  }, [recipe, confidence, phase, importUrl, activeTab]);
+  }, [recipe, confidence, phase, importUrl, activeTab, draftKey]);
 
   // ── Loading Timer ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -450,7 +458,10 @@ export default function ImportSheet({
   const handleUrlImport = useCallback(async (rawUrl, type) => {
     if (!navigator.onLine) {
       hapticError();
-      setError("You're offline. We'll import this as soon as you're back — or paste the recipe text now.");
+      // Link imports need a live connection to fetch the page — we can't queue a
+      // bare URL for later (the offline queue only re-runs already-parsed recipes
+      // and on-device photo scans). Point the user at the path that works offline.
+      setError("You're offline — link imports need a connection. Paste the recipe text and we'll sort it right now.");
       return;
     }
     if (phase === 'review' || lastReviewRef.current) {
@@ -696,7 +707,7 @@ export default function ImportSheet({
       extractedAt: finalRecipe.extractedAt || new Date().toISOString(),
     };
     // Clear draft from IndexedDB
-    const key = importUrl || (activeTab === 'paste' ? 'pasted-text' : activeTab === 'photo' ? 'photo-import' : 'pasted-text');
+    const key = draftKey();
     db.importDrafts?.delete(key).catch(e => console.warn(e));
 
     // Offline OCR draft → queue a background vision upgrade with the scanned
@@ -710,7 +721,7 @@ export default function ImportSheet({
 
     hapticSuccess();
     onImport([out], destination);
-  }, [onImport, importUrl, activeTab, destination, capturedText, pasteText, confidence, scanPages, itemType]);
+  }, [onImport, importUrl, activeTab, destination, capturedText, pasteText, confidence, scanPages, itemType, draftKey]);
 
   // ── Re-expand input from collapsed state ─────────────────────────────────
   const handleReExpand = useCallback(() => {
@@ -1026,18 +1037,8 @@ export default function ImportSheet({
                     </div>
                   )}
 
-                  {/* Continue in background inline button */}
-                  {elapsedTime >= 25 && (
-                    <motion.button
-                      type="button"
-                      className="import-sheet-btn-in-body-background"
-                      onClick={() => setBackgrounded(true)}
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                    >
-                      <Zap size={16} /> Continue in background
-                  </motion.button>
-                  )}
+                  {/* Backgrounding lives in the sticky footer during loading —
+                      no duplicate in-body button (was shown after 25s). */}
                 </motion.div>
               )}
 
@@ -1105,8 +1106,7 @@ export default function ImportSheet({
                   className="import-sheet-btn import-sheet-btn-danger"
                   onClick={() => {
                     setShowDiscardConfirm(false);
-                    const key = importUrl || (activeTab === 'paste' ? 'pasted-text' : activeTab === 'photo' ? 'photo-import' : 'pasted-text');
-                    db.importDrafts?.delete(key).catch(e => console.warn(e));
+                    db.importDrafts?.delete(draftKey()).catch(e => console.warn(e));
                     onClose();
                   }}
                 >

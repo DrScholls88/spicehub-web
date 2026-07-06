@@ -15,6 +15,12 @@ const DEPT_EMOJI = {
   'Frozen':         '🧊',
   'Bakery':         '🍞',
   'Other':          '🛒',
+  // Bar departments (drink imports only — see recipeSchema.js categorizeBarIngredient)
+  'Spirits':           '🥃',
+  'Beer & Wine':       '🍷',
+  'Bitters & Syrups':  '🧪',
+  'Mixers & Juices':   '🥤',
+  'Garnish':           '🍒',
 };
 
 const STORES = [

@@ -1380,7 +1380,7 @@ export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl
 // identical to an LLM result, tagged _structuredVia: 'deterministic'.
 
 /** Map one raw ingredient line to a RECIPE_SCHEMA item via parse-ingredient. */
-function _detItemFromLine(line) {
+function _detItemFromLine(line, kind = 'meal') {
   const raw = String(line || '').trim();
   let parsed = {};
   try {
@@ -1394,7 +1394,7 @@ function _detItemFromLine(line) {
   const quantity = parsed.quantity != null ? String(parsed.quantity) : '';
   const rawUnit = parsed.unitOfMeasure || '';
   const unit = canonicalizeUnit(rawUnit) || rawUnit || '';
-  return { quantity, unit, name, prep, category: categorizeIngredient(name || raw) };
+  return { quantity, unit, name, prep, category: categorizeIngredient(name || raw, kind) };
 }
 
 /**
@@ -1422,7 +1422,7 @@ export function structureDeterministic(caption, { type = 'meal', imageUrl = '', 
       continue;
     }
     if (isTrashIngredientLine(line)) continue;
-    current.items.push(_detItemFromLine(line));
+    current.items.push(_detItemFromLine(line, kind));
   }
   const ingredientGroups = groups.filter((g) => g.items.length);
   if (ingredientGroups.length === 0 && dirs.length === 0) return null;
@@ -5353,6 +5353,15 @@ export function detectImportType(url = '', initialText = '') {
     'jigger', 'muddle', 'shaker', 'bartender', 'mixology', 'highball',
     'old fashioned', 'negroni', 'margarita', 'martini', 'daiquiri', 'mojito',
     'aperitivo', 'digestif', 'nightcap',
+    // Popular liquor brand names — a caption/URL that names a brand without
+    // any generic cocktail word ("Tito's soda", "Hendrick's & tonic") should
+    // still route to the drink pipeline.
+    "tito's", 'titos vodka', 'grey goose', 'jameson', "hendrick's", 'hendricks gin',
+    'patron', 'don julio', 'casamigos', 'jack daniels', "jack daniel's",
+    "maker's mark", 'makers mark', 'woodford reserve', 'crown royal',
+    'johnnie walker', 'captain morgan', 'malibu rum', 'bacardi', 'baileys irish cream',
+    'cointreau', 'grand marnier', 'st-germain', 'st germain', 'fernet-branca',
+    'jägermeister', 'jagermeister', 'ciroc', 'bombay sapphire', 'tanqueray',
   ];
   if (DRINK_STRONG.some(w => haystack.includes(w))) return 'drink';
 

@@ -56,10 +56,11 @@ export function looksMisplacedIngredient(line) {
 export function engineLabel(structuredVia) {
   if (!structuredVia || typeof structuredVia !== 'string') return null;
   const v = structuredVia.toLowerCase();
-  if (v.startsWith('grok')) return 'Grok';
-  if (v.startsWith('gemini')) return 'Gemini';
-  if (v.startsWith('server')) return 'Server';
-  if (v.startsWith('heuristic')) return 'Basic parser';
+  // Plain-language: cooks don't need the model name, just how it was read.
+  if (v.startsWith('grok')) return 'Smart import';
+  if (v.startsWith('gemini')) return 'Smart import';
+  if (v.startsWith('server')) return 'Smart import';
+  if (v.startsWith('heuristic')) return 'Quick import';
   return null;
 }
 
@@ -348,6 +349,7 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
   // F.6: sticky tab-basket hybrid — one list visible at a time
   const [activeTab, setActiveTab] = useState('ingredients'); // 'ingredients' | 'directions'
   const [tabDragOver, setTabDragOver] = useState(null); // tab key being hovered during cross-list drag
+  const [rowDragging, setRowDragging] = useState(false); // a row handle is mid-drag → cue the other tab as a drop target
 
   const isDrink = recipe?.type === 'drink' || recipe?.itemType === 'drink';
 
@@ -473,6 +475,7 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
 
   // ── Cross-list drag hit-testing (Fix 1) ─────────────────────────────────
   const handleHandleDrag = useCallback((listName, index, info) => {
+    setRowDragging(true);
     const otherList = listName === 'ingredients' ? 'directions' : 'ingredients';
     const otherTabEl = tabRefs[otherList]?.current;
     if (!otherTabEl) return;
@@ -495,6 +498,7 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
       moveRowToOtherList(listName, otherList, index);
     }
     setTabDragOver(null);
+    setRowDragging(false);
   }, [tabRefs, moveRowToOtherList]);
 
   // ── Misplaced-ingredient flags (steps that look like ingredient lines) ───
@@ -530,8 +534,9 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
 
   // ── Confidence chip — honest badge: visible flags override raw score ─────
   const hasFlags = flaggedSteps.length > 0;
-  const confLabel = hasFlags ? 'Review needed'
-    : confidence >= 0.7 ? 'High' : confidence >= 0.4 ? 'Medium' : 'Low';
+  // Plain-language confidence — one signal, no raw percentage to second-guess.
+  const confLabel = hasFlags ? 'Give this a look'
+    : confidence >= 0.7 ? 'Looks good' : confidence >= 0.4 ? 'Worth a check' : 'Worth a review';
 
   // ── Save destinations ────────────────────────────────────────────────────
   const destinations = isDrink
@@ -568,23 +573,20 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
   const correctionCount =
     (typeof audit?.movedCount === 'number' ? audit.movedCount : 0)
     + (typeof audit?.filteredCount === 'number' ? audit.filteredCount : 0);
-  const engineConfPct =
-    typeof recipe.confidence === 'number'
-      ? Math.round(recipe.confidence * 100)
-      : null;
 
   // ── Extraction source + image-status chip (Instagram import diagnostics) ──
-  const SOURCE_LABELS = { apify: 'Apify', oembed: 'oEmbed', 'ig-json': 'IG JSON', embed: 'Embed', browser: 'Browser', video: 'Video', photo: 'Photo scan' };
-  const VISION_LABELS = { gemini: 'Gemini Vision', mistral: 'Mistral Vision', tesseract: 'On-device OCR' };
+  // Plain-language source labels — no scraper/brand jargon (Apify, oEmbed, IG JSON…).
+  const SOURCE_LABELS = { apify: 'Instagram', oembed: 'Instagram', 'ig-json': 'Instagram', embed: 'Instagram', browser: 'Web page', video: 'Video', photo: 'Photo' };
+  const VISION_LABELS = { gemini: 'read in the cloud', mistral: 'read in the cloud', tesseract: 'read on your device' };
   let sourceLabel = recipe._extractionSource ? (SOURCE_LABELS[recipe._extractionSource] || null) : null;
   if (recipe._extractionSource === 'photo' && VISION_LABELS[recipe._visionEngine]) {
     sourceLabel = `${sourceLabel} · ${VISION_LABELS[recipe._visionEngine]}`;
   }
   const imageStatusLabel =
-    recipe._imageStatus === 'data-url' ? 'image saved'
-    : recipe._imageStatus === 'proxied' ? 'image via proxy'
-    : recipe._imageStatus === 'raw' ? 'image unverified'
-    : recipe._imageStatus === 'none' ? 'no image'
+    recipe._imageStatus === 'data-url' ? 'photo saved'
+    : recipe._imageStatus === 'proxied' ? 'photo saved'
+    : recipe._imageStatus === 'raw' ? 'photo not saved yet'
+    : recipe._imageStatus === 'none' ? 'no photo'
     : null;
 
   // ── Normalization hints (read-only) ─────────────────────────────────────
@@ -650,6 +652,19 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
     [recipe?.ingredients, hintsForLine],
   );
 
+  // ── Import details — one plain-language line, replacing the old stack of
+  //    engine / source / image / normalization strips. Still visible, but no
+  //    longer four separate muted blocks pushing the recipe down the page.
+  const importDetailParts = [
+    sourceLabel ? `From ${sourceLabel}` : null,
+    engineName || null,
+    imageStatusLabel || null,
+    correctionCount > 0 ? `tidied ${correctionCount} line${correctionCount === 1 ? '' : 's'}` : null,
+    normalizationHints.length > 0
+      ? `matched ${normalizationHints.length} ingredient name${normalizationHints.length === 1 ? '' : 's'}`
+      : null,
+  ].filter(Boolean);
+
   return (
     <div className="import-review">
       {/* Hero image + title + confidence */}
@@ -671,11 +686,11 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
           <span className={`review-confidence review-confidence-${confLevel}`}>
             {hasFlags ? (
               <>
-                <AlertTriangle size={13} strokeWidth={2} /> Review needed
+                <AlertTriangle size={13} strokeWidth={2} /> {confLabel}
               </>
             ) : confidence != null ? (
               <>
-                {confLabel} {Math.round(confidence * 100)}%
+                {confLabel}
                 {lowFieldCount > 0 ? ` · ${lowFieldCount} to check` : ''}
               </>
             ) : (
@@ -728,93 +743,13 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
           multiple photos (_carouselImages from images.js, ≤6 data URLs) */}
       <CoverPicker recipe={recipe} onChange={onChange} />
 
-      {/* Engine metadata chip — muted, read-only; absent on older recipes */}
-      {engineName && (
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            gap: 6,
-            padding: '6px 12px 0',
-            fontSize: '0.72rem',
-            color: 'var(--text-light)',
-          }}
-        >
-          <span
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4,
-              padding: '2px 8px',
-              borderRadius: 999,
-              border: '1px solid var(--border)',
-              fontWeight: 600,
-              lineHeight: 1.4,
-            }}
-          >
-            {engineName}
-            {engineConfPct != null && (
-              <span style={{ opacity: 0.75, fontWeight: 500 }}>· {engineConfPct}%</span>
-            )}
-          </span>
-          {correctionCount > 0 && (
-            <span style={{ opacity: 0.8 }}>
-              {correctionCount} correction{correctionCount === 1 ? '' : 's'} applied
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* Extraction source + image status — muted, read-only (Instagram imports) */}
-      {(sourceLabel || imageStatusLabel) && (
-        <div
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            gap: 6,
-            padding: '2px 12px 0',
-            fontSize: '0.72rem',
-            color: 'var(--text-light)',
-          }}
-        >
-          {sourceLabel && (
-            <span>Source: <strong style={{ fontWeight: 600 }}>{sourceLabel}</strong></span>
-          )}
-          {imageStatusLabel && (
-            <span style={{ opacity: 0.8 }}>{sourceLabel ? '· ' : ''}{imageStatusLabel}</span>
-          )}
-        </div>
-      )}
-
-      {/* Normalization hints — muted, read-only; show how messy imported
-          ingredient names map to cleaner canonical forms. Renders nothing
-          when no ingredient fuzzy-resolves to a meaningful canonical. */}
-      {normalizationHints.length > 0 && (
-        <div
-          style={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 2,
-            padding: '4px 12px 0',
-            fontSize: '0.72rem',
-            color: 'var(--text-light)',
-            lineHeight: 1.5,
-          }}
-        >
-          {normalizationHints.slice(0, 3).map((h) => (
-            <span key={h.original}>
-              Normalized: <strong style={{ color: 'var(--primary)', fontWeight: 600 }}>{h.canonical}</strong>
-              {typeof h.score === 'number' && (
-                <span style={{ opacity: 0.75 }}> ({Math.round(h.score * 100)}%)</span>
-              )}
-            </span>
-          ))}
-          {normalizationHints.length > 3 && (
-            <span style={{ opacity: 0.7 }}>+{normalizationHints.length - 3} more</span>
-          )}
-        </div>
+      {/* Import details — one muted, read-only line summarizing how this recipe
+          was brought in. Consolidates the former engine / source / image /
+          normalization strips. Renders nothing on older recipes with no metadata. */}
+      {importDetailParts.length > 0 && (
+        <p className="review-import-details">
+          {importDetailParts.join(' · ')}
+        </p>
       )}
 
       {/* F.6: sticky segmented tabs with live counters.
@@ -824,26 +759,34 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
         {[
           { key: 'ingredients', label: 'Ingredients', icon: <Carrot size={16} strokeWidth={2} /> },
           { key: 'directions', label: 'Steps', icon: <ClipboardList size={16} strokeWidth={2} /> },
-        ].map((t) => (
-          <button
-            key={t.key}
-            ref={tabRefs[t.key]}
-            className={`review-tab${activeTab === t.key ? ' active' : ''}${tabDragOver === t.key ? ' drag-over' : ''}${t.key === 'directions' && hasFlags ? ' flagged' : ''}`}
-            onClick={() => setActiveTab(t.key)}
-          >
-            {t.icon}
-            {t.label}
-            <motion.span
-              key={(recipe[t.key] || []).length}
-              className="review-tab-count"
-              initial={{ scale: 1.4, opacity: 0.5 }}
-              animate={{ scale: 1, opacity: 1 }}
-              transition={{ duration: 0.2 }}
+        ].map((t) => {
+          // While a row is being dragged, the *other* tab becomes a labelled
+          // drop target — teaching the "drag a row onto the other list" gesture
+          // that was previously invisible.
+          const isDropTarget = rowDragging && t.key !== activeTab;
+          return (
+            <button
+              key={t.key}
+              ref={tabRefs[t.key]}
+              className={`review-tab${activeTab === t.key ? ' active' : ''}${tabDragOver === t.key ? ' drag-over' : ''}${isDropTarget ? ' drop-target' : ''}${t.key === 'directions' && hasFlags ? ' flagged' : ''}`}
+              onClick={() => setActiveTab(t.key)}
             >
-              {(recipe[t.key] || []).length}
-            </motion.span>
-          </button>
-        ))}
+              {t.icon}
+              {isDropTarget ? 'Drop to move here' : t.label}
+              {!isDropTarget && (
+                <motion.span
+                  key={(recipe[t.key] || []).length}
+                  className="review-tab-count"
+                  initial={{ scale: 1.4, opacity: 0.5 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  {(recipe[t.key] || []).length}
+                </motion.span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* Active list */}

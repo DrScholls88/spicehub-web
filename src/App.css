@@ -5269,6 +5269,28 @@ body {
 }
 
 /* ── Tile ⋯ action menu button (bottom-right of image) ── */
+/* Category color as a small dot on the name row — replaces the old
+   3px card side-stripe (an AI-slop tell). */
+.ml-tile-cat-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+/* Expand small overlay controls to a ~44px touch target without enlarging
+   the visible glyph — invisible hit area via ::before. Mobile-first floor. */
+.ml-tile-menu-btn::before,
+.ml-tile-play::before,
+.ml-tile-improve::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
+
 .ml-tile-menu-btn {
   position: absolute;
   bottom: 6px;
@@ -7653,12 +7675,13 @@ body {
 
 .bl-search-input {
   width: 100%;
-  padding: 10px 14px;
+  min-height: 44px;
+  padding: 11px 14px;
   border: 1.5px solid var(--border);
   border-radius: 10px;
   background: var(--card);
   color: var(--text);
-  font-size: 14px;
+  font-size: 16px; /* 16px stops iOS Safari zooming the page on focus */
   box-sizing: border-box;
   outline: none;
   transition: border-color 0.15s;
@@ -11743,6 +11766,53 @@ body {
 
 .bs-topbar::-webkit-scrollbar { display: none; }
 
+/* Reduced motion: keep the saloon scene, calm the perpetual ambient motion
+   (lantern flicker, steam, shelf wobble, glows, shakes, happy-hour pulses).
+   The bartender's JS wander/dog/door loops are gated separately via ambientOK. */
+@media (prefers-reduced-motion: reduce) {
+  .bs-container .saloon-bg *,
+  .bs-container .lantern-glow,
+  .bs-container [class*="bs-shelf-wobble"],
+  .bs-container .bs-backbar-glow,
+  .bs-container .bs-ambient-left,
+  .bs-container .bs-ambient-right,
+  .bs-container .bs-glow,
+  .bs-container .bs-secret-flash,
+  .bs-happy-hour,
+  .bs-tipsy,
+  .bs-cabinet-shake {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* First-run hint strip — teaches the saloon's hidden interactions */
+.bs-tips-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 10px 0;
+  padding: 8px 10px;
+  border: 2px solid #ffd700;
+  background: rgba(10, 4, 20, 0.85);
+  color: #ffe9a8;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  line-height: 1.7;
+}
+.bs-tips-banner p { margin: 0; flex: 1; }
+.bs-tips-dismiss {
+  flex-shrink: 0;
+  min-width: 44px;
+  min-height: 44px;
+  background: none;
+  border: 2px solid #ffd700;
+  color: #ffd700;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  cursor: pointer;
+}
+
 /* Prevent buttons from collapsing on narrow viewports */
 .bs-topbar .hdr-btn,
 .bs-topbar button {
@@ -11760,7 +11830,7 @@ body {
   font-family: 'Press Start 2P', monospace;
   -webkit-tap-highlight-color: transparent;
   /* Bigger touch target */
-  min-height: 40px;
+  min-height: 44px;
   min-width: 72px;
 }
 
@@ -11783,7 +11853,7 @@ body {
   font-size: 14px;
   cursor: pointer;
   font-family: 'Press Start 2P', monospace;
-  min-height: 40px;
+  min-height: 44px;
   min-width: 52px;
   border-radius: 0;
   transition: background 0.15s;
@@ -11796,7 +11866,7 @@ body {
 }
 
 .bs-import-label {
-  font-size: 6px;
+  font-size: 8px; /* Press Start 2P floor for legibility (was 6px) */
   color: #ff4081;
   letter-spacing: 0.5px;
 }
@@ -11814,7 +11884,7 @@ body {
   font-size: 14px;
   cursor: pointer;
   font-family: 'Press Start 2P', monospace;
-  min-height: 40px;
+  min-height: 44px;
   min-width: 52px;
   border-radius: 0;
   transition: background 0.15s, transform 0.15s, box-shadow 0.2s;
@@ -11838,7 +11908,7 @@ body {
 
 .bs-chiptune-label,
 .bs-fillshelf-label {
-  font-size: 5px;
+  font-size: 8px; /* Press Start 2P floor for legibility (was 5px) */
   letter-spacing: 0.5px;
 }
 
@@ -11855,7 +11925,7 @@ body {
   font-size: 14px;
   cursor: pointer;
   font-family: 'Press Start 2P', monospace;
-  min-height: 40px;
+  min-height: 44px;
   min-width: 52px;
   border-radius: 0;
   transition: background 0.15s, box-shadow 0.3s;
@@ -11866,7 +11936,7 @@ body {
   transform: scale(0.96);
 }
 .bs-surprise-label {
-  font-size: 5px;
+  font-size: 8px; /* Press Start 2P floor for legibility (was 5px) */
   color: #ffd700;
   letter-spacing: 0.5px;
 }
