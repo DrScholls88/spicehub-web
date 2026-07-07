@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import db, { importSeedMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getCookingLog, getWeekHistory, saveWeekToHistory, toggleRotation, addBatchQueueItems, getBatchQueueItems, updateBatchQueueItem, getLearnedAliases } from './db';
-import { SEED_MEALS } from './paprika_import_data';
+import db, { importSeedMeals, removeStarterKitMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getCookingLog, getWeekHistory, saveWeekToHistory, toggleRotation, addBatchQueueItems, getBatchQueueItems, updateBatchQueueItem, getLearnedAliases } from './db';
+import { buildStarterKitMeals } from './data/starterKitMeals';
 import { checkStorageQuota, checkAndRecommendCleanup } from './storageManager';
 import { initializeBackgroundSync } from './backgroundSync';
 import WeekView from './components/WeekView';
@@ -365,6 +365,34 @@ export default function App() {
       .catch(err => console.warn('Failed to check storage quota:', err));
   }, [loadMeals, loadDrinks]);
 
+  // ── Starter Kit auto-seed ─────────────────────────────────────────────────
+  // Gemini UX audit (2026-07-06): a brand-new install with 0 saved meals is a
+  // trust-breaker — the Spin CTA has nothing to work with and the dashboard
+  // looks broken rather than empty-by-design. On first-ever run (no meals yet,
+  // never seeded before on this device) we silently pre-load Brian's own
+  // Starter Kit recipes (data/starterKitMeals.js) so the library is populated
+  // immediately. Runs once per device via a localStorage flag; importSeedMeals
+  // also dedups by name, so this can never double-seed or clobber real data.
+  useEffect(() => {
+    if (loading) return; // wait for the initial db.meals.toArray() load to resolve
+    if (meals.length > 0) return;
+    if (localStorage.getItem('spicehub-starter-kit-seeded')) return;
+    localStorage.setItem('spicehub-starter-kit-seeded', '1');
+
+    importSeedMeals(buildStarterKitMeals())
+      .then(({ imported }) => {
+        if (imported > 0) {
+          loadMeals();
+          showToast(`Added ${imported} starter recipes to get you cooking 🍳`, 'success', 3500);
+        }
+      })
+      .catch(err => {
+        console.warn('[SpiceHub] Starter Kit seed failed (non-fatal):', err);
+        // Allow a retry on next load instead of permanently giving up.
+        localStorage.removeItem('spicehub-starter-kit-seeded');
+      });
+  }, [loading, meals.length, loadMeals, showToast]);
+
   // ── Batch Import Engine bootstrap ────────────────────────────────────────
   useEffect(() => {
     startBatchImportEngine();
@@ -642,12 +670,24 @@ useEffect(() => {
 
   // ── Week plan ─────────────────────────────────────────────────────────────────
   const generateWeek = useCallback(() => {
+    // Gemini UX audit (2026-07-06): a blocking browser alert() with no next
+    // step was the "0 meals → can't spin" trust-breaker. Route to the Library
+    // instead, where the existing empty-state CTA ("Import a Recipe") already
+    // handles onboarding — no need to duplicate that flow here.
     if (meals.length < 5) {
-      alert('Need at least 5 meals to generate a week!');
+      const remaining = 5 - meals.length;
+      showToast(
+        meals.length === 0
+          ? 'Add a few meals to start spinning 🎲'
+          : `Add ${remaining} more meal${remaining === 1 ? '' : 's'} to spin a full week`,
+        'info',
+        3200
+      );
+      navigateToTab('library');
       return;
     }
     setShowSpinner(true);
-  }, [meals]);
+  }, [meals, showToast, navigateToTab]);
 
   const handleSpinnerCompleteForDates = useCallback(async (pairs) => {
     // pairs = [{date: Date, meal: mealObj}] — one entry per spinner slot
@@ -785,6 +825,15 @@ useEffect(() => {
     setWeekPlan(prev => prev.map(m => m?.id === id ? null : m));
     await loadMeals();
   }, [loadMeals]);
+
+  const handleRemoveStarterKit = useCallback(async () => {
+    const removed = await removeStarterKitMeals();
+    await loadMeals();
+    showToast(
+      removed > 0 ? `Removed ${removed} starter recipe${removed === 1 ? '' : 's'}` : 'No starter recipes to remove',
+      removed > 0 ? 'success' : 'info'
+    );
+  }, [loadMeals, showToast]);
 
   const toggleFavorite = useCallback(async (meal) => {
     await db.meals.update(meal.id, { isFavorite: !meal.isFavorite });
@@ -1477,6 +1526,18 @@ useEffect(() => {
                   <span>Add to Home Screen</span>
                 </button>
               </div>
+              {meals.some(m => m.starterKit) && (
+                <div className="st-section">
+                  <h3>Starter Kit</h3>
+                  <p style={{ fontSize: '13px', color: 'var(--text-light)', margin: '0 0 10px' }}>
+                    {meals.filter(m => m.starterKit).length} starter recipe{meals.filter(m => m.starterKit).length === 1 ? '' : 's'} pre-loaded to help you get going.
+                  </p>
+                  <button className="st-install-btn" onClick={handleRemoveStarterKit}>
+                    <span className="st-install-icon">🧹</span>
+                    <span>Remove Starter Kit Recipes</span>
+                  </button>
+                </div>
+              )}
               <div className="st-section">
                 <h3>Legal</h3>
                 <LegalFooter />

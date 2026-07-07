@@ -811,6 +811,22 @@ export async function importSeedMeals(seedMeals) {
   }
 }
 
+// Bulk-removes the "Starter Kit" pre-seeded recipes (see data/starterKitMeals.js).
+// Only touches meals explicitly tagged starterKit:true — never a user's own
+// imports or manually-added recipes. Returns the number removed.
+export async function removeStarterKitMeals() {
+  try {
+    const ids = await db.meals.filter(m => m.starterKit === true).primaryKeys();
+    if (ids.length > 0) {
+      await db.meals.bulkDelete(ids);
+    }
+    return ids.length;
+  } catch (error) {
+    console.error('[SpiceHub DB] removeStarterKitMeals failed:', error);
+    throw new Error('Failed to remove starter kit recipes. Your data is safe — try again.');
+  }
+}
+
 export async function safeGetMeal(id) {
   try {
     return await db.meals.get(id);
