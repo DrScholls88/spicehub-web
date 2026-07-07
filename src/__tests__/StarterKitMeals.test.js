@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { STARTER_KIT_MEALS, buildStarterKitMeals } from '../data/StarterKitMeals.js';
+import { STARTER_KIT_MEALS, buildStarterKitMeals } from '../data/starterKitMeals.js';
 
 describe('StarterKitMeals seed pack', () => {
   it('exports reviewed meal-shaped seed data instead of legacy Paprika rows', () => {

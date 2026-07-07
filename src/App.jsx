@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import db, { importSeedMeals, removeStarterKitMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getCookingLog, getWeekHistory, saveWeekToHistory, toggleRotation, addBatchQueueItems, getBatchQueueItems, updateBatchQueueItem, getLearnedAliases } from './db';
-import { buildStarterKitMeals } from './data/StarterKitMeals';
+import { buildStarterKitMeals } from './data/starterKitMeals';
 import { checkStorageQuota, checkAndRecommendCleanup } from './storageManager';
 import { initializeBackgroundSync } from './backgroundSync';
 import WeekView from './components/WeekView';
@@ -378,7 +378,7 @@ export default function App() {
   // trust-breaker — the Spin CTA has nothing to work with and the dashboard
   // looks broken rather than empty-by-design. On first-ever run (no meals yet,
   // never seeded before on this device) we silently pre-load Brian's own
-  // Starter Kit recipes (data/StarterKitMeals.js) so the library is populated
+  // Starter Kit recipes (data/starterKitMeals.js) so the library is populated
   // immediately. Runs once per device via a localStorage flag; importSeedMeals
   // also dedups by name, so this can never double-seed or clobber real data.
   useEffect(() => {
