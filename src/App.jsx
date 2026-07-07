@@ -319,10 +319,10 @@ export default function App() {
   }, [dismissSentinel]);
 
   // Quick import helper. The LandingPage import tray that used to call this was
-  // removed (declutter), but the handler is retained for other/future import
-  // entry points — item type (meal vs drink) is auto-detected downstream by the
-  // import engine, so we open the meals sheet.
-  // eslint-disable-next-line no-unused-vars
+  // removed (declutter). Now used by MealLibrary's Discover Recipes flow
+  // (DiscoverRecipes.jsx) to hand off a selected Reddit post URL straight into
+  // the standard ImportSheet review — item type (meal vs drink) is
+  // auto-detected downstream by the import engine, so we open the meals sheet.
   const handleQuickImport = useCallback((url) => {
     if (!url) return;
     setImportModalKey(k => k + 1);
@@ -1290,6 +1290,7 @@ useEffect(() => {
             onShare={shareItem}
             onExport={(item) => openExportSheet('recipe', item)}
             onImport={() => { setImportModalKey(k => k + 1); setShowImportFor('meals'); }}
+            onImportUrl={handleQuickImport}
             onReload={loadMeals}
             onToast={showToast}
             onToggleFavorite={toggleFavorite}

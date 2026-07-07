@@ -7,6 +7,7 @@ import db from '../db';
 import useBackHandler from '../hooks/useBackHandler';
 import SafeMediaImage from './SafeMediaImage';
 import ReExtractSheet from './ReExtractSheet';
+import DiscoverRecipes from './DiscoverRecipes';
 import { hapticLight, hapticSuccess } from '../haptics';
 import { getMealVideoSource } from '../lib/videoSource';
 
@@ -144,12 +145,13 @@ const fabActionVariants = {
   open: { opacity: 1, y: 0, scale: 1, transition: { type: 'spring', stiffness: 420, damping: 26 } },
 };
 
-export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDetail, onShare, onImport, onReload, onToast, onToggleFavorite, onRate, onPlayVideo }) {
+export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDetail, onShare, onImport, onImportUrl, onReload, onToast, onToggleFavorite, onRate, onPlayVideo }) {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [showOptionsSheet, setShowOptionsSheet] = useState(false);
   const [fabOpen, setFabOpen] = useState(false); // speed-dial: + expands to add/import
+  const [showDiscover, setShowDiscover] = useState(false); // Discover Recipes overlay
   const [reExtractMeal, setReExtractMeal] = useState(null); // I-5: meal being re-extracted
   const [quickPreview, setQuickPreview] = useState(null); // meal object for popup
   const [selectMode, setSelectMode] = useState(false);
@@ -469,6 +471,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
   useBackHandler(fabOpen, () => setFabOpen(false), 'meal-fab');
   useBackHandler(!!reExtractMeal, () => setReExtractMeal(null), 'meal-reextract');
   useBackHandler(!!quickPreview, () => setQuickPreview(null), 'meal-quickpreview');
+  useBackHandler(showDiscover, () => setShowDiscover(false), 'meal-discover');
 
   // ── Escape key closes the expandable card (desktop / keyboard) ──────────────
   useEffect(() => {
@@ -785,6 +788,15 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                 <span className="ml-fab-action-label">Create Manual Recipe</span>
                 <span className="ml-fab-action-icon ml-fab-action-icon--add" aria-hidden="true">✏️</span>
               </motion.button>
+              <motion.button
+                className="ml-fab-action"
+                variants={fabActionVariants}
+                onClick={() => { hapticLight(); setFabOpen(false); setShowDiscover(true); }}
+                whileTap={{ scale: 0.94 }}
+              >
+                <span className="ml-fab-action-label">Discover Recipes</span>
+                <span className="ml-fab-action-icon ml-fab-action-icon--discover" aria-hidden="true">🔎</span>
+              </motion.button>
             </motion.div>
           )}
         </AnimatePresence>
@@ -820,6 +832,20 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
               setReExtractMeal(null);
               await onReload?.();
               onToast?.('Recipe improved ✨');
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ── Discover Recipes (Reddit browse-and-import) ── */}
+      <AnimatePresence>
+        {showDiscover && (
+          <DiscoverRecipes
+            key="discover-recipes"
+            onClose={() => setShowDiscover(false)}
+            onSelectUrl={(url) => {
+              setShowDiscover(false);
+              onImportUrl?.(url);
             }}
           />
         )}
