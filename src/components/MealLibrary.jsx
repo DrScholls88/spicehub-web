@@ -704,6 +704,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                   {meal.name || 'Untitled Recipe'}
                 </motion.span>
                 <span className="ml-tile-meta">
+                  {meal.starterKit && <span className="ml-tile-starter">Starter</span>}
                   {meal.status === 'processing' ? (
                     <><Clock size={12} strokeWidth={2.5} style={{ verticalAlign: '-2px' }} /> Import in progress…</>
                   ) : meal.status === 'failed' ? (

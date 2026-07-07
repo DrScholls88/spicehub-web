@@ -947,7 +947,12 @@ export default function LandingPage({
         {/* Tagline — concise value prop */}
         <div style={STYLES.tagline}>Your meals, gamified.</div>
 
-        {/* Primary CTA — Spin the Week (full width) */}
+        {/* Primary CTA — Spin the Week (full width). Gemini UX audit
+            (2026-07-06): with 0 saved meals, "Spin the Week" is a dead end —
+            the button label itself should say what to do next. Clicking
+            always works (App.jsx generateWeek routes to the Library with a
+            toast when there aren't enough meals yet), this is just honest
+            labeling of what will happen. */}
         <motion.button
           className={`btn-primary${!hasAnyMeal ? ' spin-pulse' : ''}`}
           onClick={onGenerate}
@@ -957,11 +962,17 @@ export default function LandingPage({
           animate="rest"
           style={STYLES.spinBtnFull}
         >
-          Spin the Week{' '}
-          <motion.span
-            variants={diceVariants}
-            style={{ display: 'inline-block', transformOrigin: 'center' }}
-          >🎲</motion.span>
+          {meals.length === 0 ? (
+            'Add Meals to Spin'
+          ) : (
+            <>
+              Spin the Week{' '}
+              <motion.span
+                variants={diceVariants}
+                style={{ display: 'inline-block', transformOrigin: 'center' }}
+              >🎲</motion.span>
+            </>
+          )}
         </motion.button>
       </motion.div>
 

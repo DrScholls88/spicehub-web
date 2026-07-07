@@ -5207,6 +5207,27 @@ body {
 }
 .ml-tile-improve:active { transform: scale(0.92); }
 
+/* Starter Kit badge — small muted chip in the tile meta row */
+.ml-tile-starter {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  background: var(--surface-2, #f0f0f0);
+  color: var(--text-light, #888);
+  border: 1px solid var(--border, #e0e0e0);
+  vertical-align: middle;
+}
+[data-theme="dark"] .ml-tile-starter {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.6);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
 /* Category badge on tile */
 .ml-tile-cat {
   position: absolute;
