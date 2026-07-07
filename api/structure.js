@@ -100,7 +100,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ ok: false, reason: 'post-only' });
 
-  const apiKey = process.env.GOOGLE_AI_KEY || process.env.VITE_GOOGLE_AI_KEY;
+  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.VITE_GOOGLE_AI_KEY;
   if (!apiKey) return res.status(503).json({ ok: false, reason: 'no-server-key' });
 
   const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || 'unknown';

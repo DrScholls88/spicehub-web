@@ -13,6 +13,21 @@
 export async function compressImageUrl(imageUrl, options = {}) {
   const { maxWidth = 400, maxHeight = 400, quality = 0.7, format = 'image/webp' } = options;
 
+  // data:/blob: URLs are already directly usable as an <img src> — no network
+  // request is needed to decode them. This isn't just an optimization: the
+  // app's CSP (connect-src 'self' https: wss:) does not list `data:`, so
+  // fetch()ing a data: URL is blocked outright. The photo-import pipeline
+  // hands this function a data: URL for every camera/gallery photo, so this
+  // path is required for that pipeline to work at all, not just faster.
+  if (imageUrl.startsWith('data:') || imageUrl.startsWith('blob:')) {
+    try {
+      return await compressFromImageSrc(imageUrl, { maxWidth, maxHeight, quality, format });
+    } catch (error) {
+      console.warn('[ImageCompressor] Failed to decode/compress:', error);
+      return null;
+    }
+  }
+
   try {
     const response = await fetch(imageUrl, { mode: 'cors' });
     if (!response.ok) return null;
@@ -29,6 +44,22 @@ export async function compressImageUrl(imageUrl, options = {}) {
  * Compress a Blob to a smaller base64 data URL using canvas.
  */
 export async function compressBlob(blob, options = {}) {
+  const objectUrl = URL.createObjectURL(blob);
+  try {
+    return await compressFromImageSrc(objectUrl, options);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+/**
+ * compressFromImageSrc — shared canvas-resize core. `src` must already be
+ * directly usable as an <img> src (data:, blob:, or object URL) — this makes
+ * no network request itself, so it's CSP-legal under connect-src regardless
+ * of how strict that directive is (img-src is what governs it, and that
+ * already allows data: blob:).
+ */
+async function compressFromImageSrc(src, options = {}) {
   const { maxWidth = 400, maxHeight = 400, quality = 0.7, format = 'image/webp' } = options;
 
   return new Promise((resolve) => {
@@ -58,7 +89,7 @@ export async function compressBlob(blob, options = {}) {
     };
     img.onerror = () => resolve(null);
     img.crossOrigin = 'anonymous';
-    img.src = URL.createObjectURL(blob);
+    img.src = src;
   });
 }
 

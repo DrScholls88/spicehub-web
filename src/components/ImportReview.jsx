@@ -588,6 +588,12 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
     : recipe._imageStatus === 'raw' ? 'photo not saved yet'
     : recipe._imageStatus === 'none' ? 'no photo'
     : null;
+  // Cloud vision failed before this fell back to on-device OCR (Component 3,
+  // 2026-07-07-photo-import-csp-fix-design.md) — say why in the same
+  // plain-language diagnostics line, no HTTP codes or engine names.
+  const visionErrorLabel = recipe._visionError
+    ? (recipe._visionError.status === 429 ? 'cloud reading was busy' : 'cloud reading failed')
+    : null;
 
   // ── Normalization hints (read-only) ─────────────────────────────────────
   // For each imported ingredient string, surface how its messy name maps to a
@@ -659,6 +665,7 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
     sourceLabel ? `From ${sourceLabel}` : null,
     engineName || null,
     imageStatusLabel || null,
+    visionErrorLabel || null,
     correctionCount > 0 ? `tidied ${correctionCount} line${correctionCount === 1 ? '' : 's'}` : null,
     normalizationHints.length > 0
       ? `matched ${normalizationHints.length} ingredient name${normalizationHints.length === 1 ? '' : 's'}`

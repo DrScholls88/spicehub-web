@@ -64,15 +64,22 @@ VitePWA({
       srcDir: 'src',
       swSrc: 'sw.js',
       swDest: 'dist/sw.js',           // ← Changed: output to dist/ so Vercel serves it correctly
+      // NOTE: strategy is 'injectManifest' (we own sw.js), so precache options
+      // belong under `injectManifest`, NOT `workbox` — the `workbox` key only
+      // applies to the 'generateSW' strategy and is silently ignored here.
+      // (This is exactly what caused the build to fail: the size limit and
+      // globPatterns below used to live under `workbox` and had no effect,
+      // so workbox-build's real defaults applied — 2MiB cap, and a glob that
+      // didn't even match .wasm/.gz — until the self-hosted Tesseract assets
+      // in public/tesseract/ (~4MB .wasm.js loaders, 2.9MB .wasm, 2MB .gz)
+      // tripped the real 2MiB default.
       injectManifest: {
-        // Minimal & safe for Vite 7
         injectionPoint: 'self.__WB_MANIFEST',
-      },
-      workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,webp}'],
-        cleanupOutdatedCaches: true,    // Clears old broken caches after deploy
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,webp,wasm,gz}'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
       },
+      // cleanupOutdatedCaches is called directly in sw.js (workbox-precaching
+      // import) — no vite-plugin-pwa `workbox` block needed for it.
     }),
   ],
   server: {

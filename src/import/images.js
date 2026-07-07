@@ -42,12 +42,53 @@ export function gateImageHeuristics(url = '') {
  * a wrongly rejected photo hurts more than a mediocre one).
  */
 export async function visionValidateDishPhoto(imageDataUrl, { clientKey: keyOverride } = {}) {
+  if (!imageDataUrl?.startsWith('data:image/')) return null;
+  const base64 = imageDataUrl.split(',')[1];
+  if (!base64) return null;
+
+  const body = JSON.stringify({
+    contents: [{
+      parts: [
+        { inlineData: { mimeType: 'image/jpeg', data: base64 } },
+        {
+          text:
+            'Answer with exactly one word. Is this image primarily a photo of food, ' +
+            'a drink, or a plated dish (YES), or is it primarily text, a recipe card ' +
+            'screenshot, a logo, a watermark, or a person/profile picture (NO)?',
+        },
+      ],
+    }],
+    generationConfig: { temperature: 0, maxOutputTokens: 4 },
+  });
+
+  const parseVerdict = (data) => {
+    const answer = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toUpperCase() || '';
+    if (answer.startsWith('YES')) return true;
+    if (answer.startsWith('NO')) return false;
+    return null;
+  };
+
+  // Server proxy first — keeps the Gemini key out of the client bundle
+  // (docs/superpowers/specs/2026-07-07-photo-import-csp-fix-design.md,
+  // "Out of scope" §1). Works even without a client key, so the old
+  // `!clientKey → return null` early-out is gone; the client key below is
+  // now purely a fallback for when the proxy itself is unreachable.
+  try {
+    const res = await fetch(`/api/vision?model=${VISION_MODEL}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      signal: AbortSignal.timeout(VISION_TIMEOUT_MS),
+    });
+    if (res.ok) return parseVerdict(await res.json());
+  } catch {
+    /* fall through to the client-key path below */
+  }
+
   const clientKey =
     keyOverride ||
     (typeof import.meta !== 'undefined' ? import.meta.env?.VITE_GOOGLE_AI_KEY : null);
-  if (!clientKey || !imageDataUrl?.startsWith('data:image/')) return null;
-  const base64 = imageDataUrl.split(',')[1];
-  if (!base64) return null;
+  if (!clientKey) return null;
 
   try {
     const res = await fetch(
@@ -55,29 +96,12 @@ export async function visionValidateDishPhoto(imageDataUrl, { clientKey: keyOver
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              { inlineData: { mimeType: 'image/jpeg', data: base64 } },
-              {
-                text:
-                  'Answer with exactly one word. Is this image primarily a photo of food, ' +
-                  'a drink, or a plated dish (YES), or is it primarily text, a recipe card ' +
-                  'screenshot, a logo, a watermark, or a person/profile picture (NO)?',
-              },
-            ],
-          }],
-          generationConfig: { temperature: 0, maxOutputTokens: 4 },
-        }),
+        body,
         signal: AbortSignal.timeout(VISION_TIMEOUT_MS),
       },
     );
     if (!res.ok) return null;
-    const data = await res.json();
-    const answer = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toUpperCase() || '';
-    if (answer.startsWith('YES')) return true;
-    if (answer.startsWith('NO')) return false;
-    return null;
+    return parseVerdict(await res.json());
   } catch {
     return null;
   }
