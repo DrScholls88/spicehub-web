@@ -9,16 +9,16 @@ Source: `GeminiAnalysisMealPack.md` (39/100 friction score audit + follow-up Q&A
 
 ## P1 — Empty state / first-run experience (biggest gap vs. current code)
 
-3. **Spin button has no "0 meals" guard.** Checked `App.jsx` / `MealSpinner.jsx` — no `savedMeals.length === 0` disabled/redirect logic found. Action: disable/relabel the Spin CTA to "Add Meals to Spin" and route to Quick Import when the library is empty, per the doc's pseudo-code.
-4. **No starter-kit / pre-seeded recipes.** Confirmed no seed data, no `source: "starter-kit"` field, no first-run bundle exists anywhere in the codebase. Action: build a ~5-10 recipe JSON bundle, seed it into a new user's Dexie store once, tag with a `source` field so it can be bulk-hidden/deleted later. Decide whether to reuse the "Summer Favorites" content already shown on the landing page or curate separately (open question from the doc).
-5. **Progressive "fill your fridge" indicator.** Not built. Lower priority than #3/#4 — only worth doing once the empty-state redirect exists, otherwise it's decoration with nothing to unlock.
+3. ✅ **DONE (2026-07-07).** Spin button "0 meals" guard. `generateWeek` (App.jsx) no longer shows a blocking `alert()`; under 5 meals it toasts and routes to Library. LandingPage CTA relabels to "Add Meals to Spin" at 0 meals.
+4. ✅ **DONE (2026-07-07).** Starter kit. Turned out `paprika_import_data.js` already held 32 of Brian's real saved recipes, imported into App.jsx but never used — same dead-code pattern as #6. Wired those (not invented filler) via `src/data/starterKitMeals.js`; auto-seeds once per device, tagged `starterKit:true`, removable from Settings.
+5. **Progressive "fill your fridge" indicator.** Not built. Lower priority — only worth doing once the empty-state redirect exists (now does), still decoration with nothing new to unlock.
 
 ## P2 — Discovery / import architecture
 
-6. **`redditDiscovery.js` exists but is fully unwired.** This is the biggest finding: the scraper (Reddit `.json` trick, no-auth, tiered post-vs-subreddit handling) is already written but no component imports it — there's no UI entry point. Action: this is a near-complete version of the "on-demand Discover" flow the doc proposes. Wire it into a dedicated Search/Import surface (e.g. a "+"/Discover affordance in Meal Library) instead of building new scraping logic.
-7. **"Dual-library" / offline-first boundary.** Already the architecture (Dexie is source of truth, `Spin` never touches network) — no action needed, just confirm the new Discover surface doesn't regress this by keeping it clearly a separate, online-only overlay.
-8. **Offline queuing gap for on-demand imports.** Per existing memory: pasted-URL imports can't be queued offline (no re-fetch path). If the Discover flow is reachable while offline, it needs an explicit "you're offline, try again when connected" state rather than a silent failure — don't let this slip through as the doc assumes networked import always works.
-9. **Curated "Discover" categories vs. open search.** Doc recommends 3-5 static curated categories over a Reddit-style feed. Action: decide category set (e.g. Quick Weeknight, Healthy Summer, Low-Carb) — this is a product decision, not just engineering, worth a quick call before building.
+6. ✅ **DONE (2026-07-07).** `redditDiscovery.js` wired up. Turned out single-post Reddit URL import already worked (recipeParser.js already routed reddit.com URLs through `tryRedditJson`) — the actual gap was `discoverRedditRecipes()` (subreddit browsing) having zero callers. Built `DiscoverRecipes.jsx`, a new speed-dial FAB action in Meal Library with 5 curated category chips (see #9). Selecting a result hands the URL to the existing `handleQuickImport` → ImportSheet pipeline — no parallel import path.
+7. **"Dual-library" / offline-first boundary.** Preserved — Discover only reads from network on open, never touches Dexie directly.
+8. ✅ **Addressed as part of #6.** DiscoverRecipes shows an explicit "needs an internet connection" state (checks `navigator.onLine`) instead of a silent failure.
+9. ✅ **Resolved as part of #6.** 5 curated categories: Quick Weeknight (r/EatCheapAndHealthy), Comfort Food (r/recipes), Vegetarian & Vegan (r/veganrecipes), Meal Prep (r/MealPrepSunday), Baking & Sweets (r/Baking). Revisit the subreddit list if any turn out low-quality in practice.
 
 ## P3 — Dashboard density / conversion polish
 
@@ -34,4 +34,4 @@ Source: `GeminiAnalysisMealPack.md` (39/100 friction score audit + follow-up Q&A
 
 ## Suggested sequencing
 
-Start with #3 + #4 together (empty-state guard + starter kit) since they solve the same underlying "0 meals" failure the doc calls a trust-breaker, then #6 (wire up the dormant Reddit scraper — highest leverage per line of new code), then the P0 accessibility items, then P3 polish.
+~~Start with #3 + #4~~ ~~then #6~~ — both done 2026-07-07. Next up: the P0 accessibility items (#1 focus states, #2 checkbox copy), then P3 polish (#11–13).
