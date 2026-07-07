@@ -811,7 +811,7 @@ export async function importSeedMeals(seedMeals) {
   }
 }
 
-// Bulk-removes the "Starter Kit" pre-seeded recipes (see data/starterKitMeals.js).
+// Bulk-removes the "Starter Kit" pre-seeded recipes (see data/StarterKitMeals.js).
 // Only touches meals explicitly tagged starterKit:true — never a user's own
 // imports or manually-added recipes. Returns the number removed.
 export async function removeStarterKitMeals() {

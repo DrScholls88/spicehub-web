@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import db, { importSeedMeals, removeStarterKitMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getCookingLog, getWeekHistory, saveWeekToHistory, toggleRotation, addBatchQueueItems, getBatchQueueItems, updateBatchQueueItem, getLearnedAliases } from './db';
-import { buildStarterKitMeals } from './data/starterKitMeals';
+import { buildStarterKitMeals } from './data/StarterKitMeals';
 import { checkStorageQuota, checkAndRecommendCleanup } from './storageManager';
 import { initializeBackgroundSync } from './backgroundSync';
 import WeekView from './components/WeekView';
@@ -166,6 +166,14 @@ export default function App() {
       return;
     }
     setTab(target);
+  }, []);
+
+  const handleBrandHome = useCallback(() => {
+    setTab('home');
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      document.querySelector('.main-content')?.scrollTo?.({ top: 0, behavior: 'smooth' });
+    });
   }, []);
 
   // ── I-1 Instagram ZIP import ──────────────────────────────────────────────
@@ -370,7 +378,7 @@ export default function App() {
   // trust-breaker — the Spin CTA has nothing to work with and the dashboard
   // looks broken rather than empty-by-design. On first-ever run (no meals yet,
   // never seeded before on this device) we silently pre-load Brian's own
-  // Starter Kit recipes (data/starterKitMeals.js) so the library is populated
+  // Starter Kit recipes (data/StarterKitMeals.js) so the library is populated
   // immediately. Runs once per device via a localStorage flag; importSeedMeals
   // also dedups by name, so this can never double-seed or clobber real data.
   useEffect(() => {
@@ -1155,9 +1163,19 @@ useEffect(() => {
       />
 
       <header className="app-header">
-        <div className="app-brand">
-          <span className="app-brand-mark" aria-hidden="true">🌶️</span>
-          <h1>SpiceHub</h1>
+        <div className="app-brand-wrap">
+          <h1 className="app-brand-title">
+            <button
+              type="button"
+              className="app-brand"
+              onClick={handleBrandHome}
+              aria-label="Go to SpiceHub landing page"
+              aria-current={tab === 'home' ? 'page' : undefined}
+            >
+              <span className="app-brand-mark" aria-hidden="true">🌶️</span>
+              <span className="app-brand-name">SpiceHub</span>
+            </button>
+          </h1>
           <button
             type="button"
             className="app-build-badge"

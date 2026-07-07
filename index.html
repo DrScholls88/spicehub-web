@@ -6,35 +6,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="theme-color" content="#e65100" />
     <!--
-      Content-Security-Policy (defense-in-depth against XSS, layered on top of
-      the escaping/sanitization fixes in recipeTemplates.js/exportRenderer.js
-      and PhotoGallery.jsx). Notes on the choices below:
-      - script-src has no 'unsafe-inline'/'unsafe-eval': this is the directive
-        that actually blocks injected script execution. Everything else here
-        is secondary.
-      - style-src keeps 'unsafe-inline': React sets inline style properties via
-        the CSSOM (not HTML attribute parsing, so it isn't itself an XSS vector
-        the way inline scripts are), and the exported recipe HTML previews
-        (ExportSheet.jsx) embed style blocks for print/card layouts.
-      - img-src/media-src allow https/blob broadly because recipe photos and
-        videos are hotlinked from arbitrary source sites/Instagram CDNs by
-        design, that's the app's core function, not a vulnerability, since
-        img/video tags can't execute script.
-      - connect-src allows https broadly because the import pipeline talks to
-        several external hosts (Render-hosted backend, Gemini API, image/video
-        proxies) that can change independently of this file; script-src being
-        locked down is the primary control against exfiltration via injected
-        fetch calls.
-      - frame-ancestors is NOT enforced by this meta tag (browsers ignore it
-        there per spec), it's set for real via HTTP response headers in
-        vercel.json and server/index.js instead. Kept here as documentation.
-      - frame-src allows youtube-nocookie.com and instagram.com: the Floating
-        Picture-in-Picture player (FloatingVideoPlayer.jsx) embeds recipe
-        videos from these two origins via <iframe>. Without an explicit
-        frame-src, the directive falls back to default-src 'self' and the
-        browser silently blocks the embed ("This content is blocked").
+      Content-Security-Policy: enforced via HTTP response header in
+      vercel.json (see the `headers` block, source "/(.*)"), not here.
+      A <meta http-equiv="Content-Security-Policy"> tag was previously
+      duplicated in this file; dropped 2026-07-07 per
+      docs/superpowers/specs/2026-07-07-photo-import-csp-fix-design.md
+      Component 4 — the header form is the single source of truth, avoids
+      drift between two copies, and supports frame-ancestors (which browsers
+      silently ignore when set via <meta>, so the old copy here was legally
+      inert for that directive). No directive values changed.
     -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com; media-src 'self' data: blob: https:; connect-src 'self' https: wss:; frame-src https://www.youtube-nocookie.com https://www.instagram.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />

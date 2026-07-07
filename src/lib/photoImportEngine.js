@@ -48,7 +48,7 @@ const CROP_MAX_ASPECT = 2.5;
 export class PhotoImportError extends Error {
   /**
    * @param {string} code    'no-pages' | 'nothing-readable' | 'aborted' |
-   *                         'structure-failed'
+   *                         'structure-failed' | 'rate-limited'
    * @param {string} message user-facing message
    */
   constructor(code, message) {
@@ -322,31 +322,99 @@ Bounding box coordinates are integers normalized to 0-1000 relative to that page
 Use contentType "dish-photo" only when the image is JUST a photo of food/drink with no recipe text.`;
 }
 
+// ── 429 / rate-limit handling ───────────────────────────────────────────────
+// Shared by both online vision tiers (spec Component 3): on a non-OK response
+// we read the body (truncated) and attach status/detail/retryAfterMs to the
+// thrown error so the caller can report the REAL reason instead of a generic
+// failure. A 429 specifically gets exactly one backoff-then-retry, bounded so
+// the whole tier (original attempt + wait + retry) still fits inside the
+// existing VISION_TIMEOUT_MS budget rather than doubling it.
+const RETRY_WAIT_CAP_MS = 3000;
+
+function sleep(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(_abortError()); return; }
+    const t = setTimeout(resolve, ms);
+    signal?.addEventListener('abort', () => { clearTimeout(t); reject(_abortError()); }, { once: true });
+  });
+}
+
+function _abortError() {
+  const e = new Error('The operation was aborted.');
+  e.name = 'AbortError';
+  return e;
+}
+
+/** Extract a retry delay in ms from a Retry-After header or Gemini's
+ * RetryInfo `retryDelay` (e.g. "19s") in the response body. Returns null when
+ * neither is present/parseable — callers fall back to a fixed cap. */
+function parseRetryAfterMs(res, bodyText) {
+  const header = res.headers?.get?.('Retry-After');
+  if (header) {
+    const secs = Number(header);
+    if (Number.isFinite(secs)) return secs * 1000;
+  }
+  if (bodyText) {
+    const m = bodyText.match(/"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/);
+    if (m) return Math.round(parseFloat(m[1]) * 1000);
+  }
+  return null;
+}
+
+/**
+ * fetchVisionTier — POST with one backoff-retry on 429. Both fetch attempts
+ * share a single deadline (one withTimeout signal) so a retry can't push the
+ * tier past its normal VISION_TIMEOUT_MS budget.
+ */
+async function fetchVisionTier(url, init, signal) {
+  const requestSignal = withTimeout(signal, VISION_TIMEOUT_MS);
+  let res = await fetch(url, { ...init, signal: requestSignal });
+
+  if (res.status === 429) {
+    const bodyText = await res.text().catch(() => '');
+    const retryAfterMs = parseRetryAfterMs(res, bodyText);
+    await sleep(Math.min(retryAfterMs ?? RETRY_WAIT_CAP_MS, RETRY_WAIT_CAP_MS), requestSignal);
+    res = await fetch(url, { ...init, signal: requestSignal });
+  }
+
+  if (!res.ok) {
+    const bodyText = await res.text().catch(() => '');
+    const err = new Error(`Vision HTTP ${res.status}`);
+    err.status = res.status;
+    err.detail = bodyText.slice(0, 300);
+    err.retryAfterMs = parseRetryAfterMs(res, bodyText);
+    throw err;
+  }
+  return res;
+}
+
 // ── Tier 1: Gemini (all pages, one call) ───────────────────────────────────
 
 async function transcribeWithGemini(uploadPages, { signal } = {}) {
-  const key = GEMINI_KEY();
-  if (!key) throw new Error('Gemini key missing');
-
-  const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_VISION_MODEL()}:generateContent?key=${key}`;
   const parts = uploadPages.map((dataUrl) => ({
     inlineData: { mimeType: 'image/jpeg', data: dataUrl.split(',')[1] || '' },
   }));
   parts.push({ text: buildVisionPrompt(uploadPages.length) });
-
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts }],
-      generationConfig: { temperature: 0.1, responseMimeType: 'application/json' },
-    }),
-    signal: withTimeout(signal, VISION_TIMEOUT_MS),
+  const body = JSON.stringify({
+    contents: [{ parts }],
+    generationConfig: { temperature: 0.1, responseMimeType: 'application/json' },
   });
-  if (!res.ok) {
-    const err = new Error(`Gemini vision HTTP ${res.status}`);
-    err.status = res.status;
-    throw err;
+  const init = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body };
+
+  // Server proxy first — keeps the Gemini key out of the client bundle
+  // (docs/superpowers/specs/2026-07-07-photo-import-csp-fix-design.md,
+  // "Out of scope" §1). api/vision.js forwards status/body/Retry-After
+  // untouched, so fetchVisionTier's 429 handling behaves the same either way.
+  let res;
+  try {
+    res = await fetchVisionTier(`/api/vision?model=${GEMINI_VISION_MODEL()}`, init, signal);
+  } catch (proxyErr) {
+    if (proxyErr.name === 'AbortError') throw proxyErr;
+    const key = GEMINI_KEY();
+    if (!key) throw proxyErr; // no client fallback available — surface the proxy's reason
+    console.warn('[PhotoImport] /api/vision proxy failed, falling back to client key:', proxyErr.message);
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_VISION_MODEL()}:generateContent?key=${key}`;
+    res = await fetchVisionTier(endpoint, init, signal);
   }
   const data = await res.json();
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -364,7 +432,7 @@ async function transcribeWithMistral(uploadPages, { signal } = {}) {
   const content = uploadPages.map((dataUrl) => ({ type: 'image_url', image_url: dataUrl }));
   content.push({ type: 'text', text: buildVisionPrompt(uploadPages.length) });
 
-  const res = await fetch('https://api.mistral.ai/v1/chat/completions', {
+  const res = await fetchVisionTier('https://api.mistral.ai/v1/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -376,13 +444,7 @@ async function transcribeWithMistral(uploadPages, { signal } = {}) {
       response_format: { type: 'json_object' },
       messages: [{ role: 'user', content }],
     }),
-    signal: withTimeout(signal, VISION_TIMEOUT_MS),
-  });
-  if (!res.ok) {
-    const err = new Error(`Mistral vision HTTP ${res.status}`);
-    err.status = res.status;
-    throw err;
-  }
+  }, signal);
   const data = await res.json();
   const text = data?.choices?.[0]?.message?.content;
   const contract = parseVisionContract(text, uploadPages.length);
@@ -400,6 +462,14 @@ async function transcribeWithTesseract(pages, { onProgress } = {}) {
     try {
       const canvas = await preprocessForOCR(pages[i].dataUrl);
       const result = await Tesseract.recognize(canvas, 'eng', {
+        // Self-hosted under public/tesseract/ (see docs/superpowers/specs/
+        // 2026-07-07-photo-import-csp-fix-design.md Component 2). The CSP's
+        // script-src 'self' / worker-src 'self' blob: block loading
+        // worker.min.js from jsdelivr, so this must never load from a CDN —
+        // that also makes on-device OCR work fully offline.
+        workerPath: '/tesseract/worker.min.js',
+        corePath: '/tesseract/',
+        langPath: '/tesseract/',
         logger: (m) => {
           if (m.status === 'recognizing text') {
             onProgress?.(
@@ -435,13 +505,19 @@ function withTimeout(signal, ms) {
  */
 export async function transcribePagesOnline(uploadPages, { signal, onProgress } = {}) {
   let tier1Error = null;
-  if (GEMINI_KEY()) {
+  let tier2Error = null;
+  // No more GEMINI_KEY() gate: transcribeWithGemini tries the /api/vision
+  // server proxy first, which works even when no client key is configured
+  // (the whole point of the proxy — see "Out of scope" §1 in
+  // 2026-07-07-photo-import-csp-fix-design.md, now implemented).
+  {
     onProgress?.('transcribe', `Reading ${uploadPages.length > 1 ? `${uploadPages.length} pages` : 'your photo'} with Gemini…`);
     try {
       return await transcribeWithGemini(uploadPages, { signal });
     } catch (err) {
       if (err.name === 'AbortError') throw err;
       tier1Error = err;
+      tier1Error.engine = 'gemini';
       console.warn('[PhotoImport] Gemini tier failed:', err.message);
     }
   }
@@ -451,10 +527,18 @@ export async function transcribePagesOnline(uploadPages, { signal, onProgress } 
       return await transcribeWithMistral(uploadPages, { signal });
     } catch (err) {
       if (err.name === 'AbortError') throw err;
+      // Previously only console.warn'd and dropped — the caller had no way to
+      // know Mistral's specific failure reason when it was the last tier
+      // tried. Capture it the same way as tier 1 (spec Component 3).
+      tier2Error = err;
+      tier2Error.engine = 'mistral';
       console.warn('[PhotoImport] Mistral tier failed:', err.message);
     }
   }
-  throw tier1Error || new Error('No online vision tier available');
+  // Prefer the LAST tier's failure reason — it's the more recent/relevant one.
+  const finalError = tier2Error || tier1Error || new Error('No online vision tier available');
+  if (!finalError.engine) finalError.engine = 'vision';
+  throw finalError;
 }
 
 // ── Main entry point ────────────────────────────────────────────────────────
@@ -470,7 +554,8 @@ export async function transcribePagesOnline(uploadPages, { signal, onProgress } 
  * @param {AbortSignal} [opts.signal]
  * @returns {Promise<object>} structured recipe (captionToRecipe shape) plus:
  *        sourceCaption, _visionEngine, _extractionSource, _ocrDraft,
- *        _dishPhotoBox, _scanPageCount, imageUrl/image, _imageStatus
+ *        _dishPhotoBox, _scanPageCount, imageUrl/image, _imageStatus,
+ *        _visionError (present only when cloud tiers failed before OCR ran)
  * @throws {PhotoImportError}
  */
 export async function importRecipeFromPages(pages, { type = 'meal', onProgress, signal } = {}) {
@@ -489,6 +574,11 @@ export async function importRecipeFromPages(pages, { type = 'meal', onProgress, 
 
   // Stage 2 — transcribe (tiered)
   let contract = null;
+  // Set only when ALL online tiers failed — carries the real reason (spec
+  // Component 3) so we can (a) tell a genuine 429 apart from truly unreadable
+  // content below, and (b) attach it to a successful Tesseract-draft result
+  // so the review UI can say why cloud reading didn't happen.
+  let visionError = null;
   const online = typeof navigator === 'undefined' || navigator.onLine !== false;
   if (online) {
     try {
@@ -496,6 +586,7 @@ export async function importRecipeFromPages(pages, { type = 'meal', onProgress, 
     } catch (err) {
       if (err.name === 'AbortError') throw new PhotoImportError('aborted', 'Import cancelled.');
       console.warn('[PhotoImport] All online tiers failed — falling back to on-device OCR.');
+      visionError = { engine: err.engine || 'vision', status: err.status ?? null, detail: err.detail || err.message || '' };
     }
   }
   if (!contract) {
@@ -506,6 +597,12 @@ export async function importRecipeFromPages(pages, { type = 'meal', onProgress, 
   const transcript = joinPageTranscripts(contract.pages);
   const isDishPhotoOnly = contract.contentType === 'dish-photo';
   if (transcript.length < MIN_TRANSCRIPT_CHARS && !isDishPhotoOnly) {
+    if (visionError?.status === 429) {
+      throw new PhotoImportError(
+        'rate-limited',
+        'Recipe photo reading is busy right now — try again in a moment, or paste the text instead.',
+      );
+    }
     throw new PhotoImportError(
       'nothing-readable',
       "We couldn't read a recipe in " +
@@ -578,6 +675,13 @@ export async function importRecipeFromPages(pages, { type = 'meal', onProgress, 
   recipe._ocrDraft = contract.engine === 'tesseract';
   recipe._dishPhotoBox = contract.dishPhoto || null;
   recipe._scanPageCount = pages.length;
+  if (visionError) {
+    // Cloud tiers failed but Tesseract still produced a readable draft — carry
+    // the real reason so the review UI can say why (Component 3, spec
+    // 2026-07-07-photo-import-csp-fix-design.md), instead of silently
+    // degrading to on-device OCR with no explanation.
+    recipe._visionError = visionError;
+  }
   if (recipe._ocrDraft) {
     // Honest badge: on-device OCR drafts always warrant review.
     recipe.confidence = Math.min(typeof recipe.confidence === 'number' ? recipe.confidence : 0.45, 0.45);
