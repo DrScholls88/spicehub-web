@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
-import { motion, useDragControls } from 'framer-motion';
-import { getBarInventory, addToBarInventory, removeFromBarInventory } from '../db';
+import { motion, AnimatePresence, useDragControls } from 'framer-motion';
+import { getBarInventoryRecords, addToBarInventory, removeFromBarInventory, updateBarBottle } from '../db';
+import { matchDrink, pickSurprise, categorizeBottle } from '../lib/barMatch';
 
 /**
  * "What's on My Shelf?" — the bar version of Fridge Mode.
@@ -16,37 +17,69 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose, onAddToGr
     }
   }, [onClose]);
   const [inputValue, setInputValue] = useState('');
-  const [shelfItems, setShelfItems] = useState([]);
+  const [shelfRecords, setShelfRecords] = useState([]); // full bottle records
   const [matchMode, setMatchMode] = useState('best'); // 'best' | 'strict'
   const [loaded, setLoaded] = useState(false);
+  const [editingBottle, setEditingBottle] = useState(null); // record being edited
+  const [partyMode, setPartyMode] = useState(false); // read-only guest/kiosk view
+
+  // Flat canonical-name list drives the match engine.
+  const shelfItems = useMemo(() => shelfRecords.map(r => r.ingredient), [shelfRecords]);
 
   // Load persistent inventory on mount
   useEffect(() => {
-    getBarInventory().then(items => {
-      setShelfItems(items);
+    getBarInventoryRecords().then(records => {
+      setShelfRecords(records);
       setLoaded(true);
     });
   }, []);
 
-  // Persist adds/removes to IndexedDB
+  const hasItem = useCallback(
+    (name) => shelfRecords.some(r => r.ingredient === name),
+    [shelfRecords]
+  );
+
+  // Persist adds/removes to IndexedDB (optimistic local record for instant UI)
+  const addByName = useCallback((rawName) => {
+    const clean = String(rawName || '').trim().toLowerCase();
+    if (!clean || hasItem(clean)) return;
+    const optimistic = {
+      ingredient: clean,
+      displayName: clean,
+      category: categorizeBottle(clean) || null,
+    };
+    setShelfRecords(prev => [...prev, optimistic]);
+    addToBarInventory(clean);
+  }, [hasItem]);
+
   const addItem = useCallback((val) => {
-    const clean = (val || inputValue).trim().toLowerCase();
-    if (clean && !shelfItems.includes(clean)) {
-      setShelfItems(prev => [...prev, clean]);
-      addToBarInventory(clean);
-    }
+    addByName(val || inputValue);
     setInputValue('');
-  }, [inputValue, shelfItems]);
+  }, [addByName, inputValue]);
+
+  const quickAdd = useCallback((item) => addByName(item), [addByName]);
 
   const removeItem = useCallback((item) => {
-    setShelfItems(prev => prev.filter(i => i !== item));
+    setShelfRecords(prev => prev.filter(r => r.ingredient !== item));
     removeFromBarInventory(item);
   }, []);
 
   const clearAll = useCallback(() => {
-    shelfItems.forEach(item => removeFromBarInventory(item));
-    setShelfItems([]);
-  }, [shelfItems]);
+    shelfRecords.forEach(r => removeFromBarInventory(r.ingredient));
+    setShelfRecords([]);
+  }, [shelfRecords]);
+
+  // Save edits from the bottle edit sheet.
+  const saveBottle = useCallback((ingredient, patch) => {
+    setShelfRecords(prev => prev.map(r => (r.ingredient === ingredient ? { ...r, ...patch } : r)));
+    updateBarBottle(ingredient, patch);
+    setEditingBottle(null);
+  }, []);
+
+  // Exit party mode behind a confirm so guests can't leave by accident.
+  const exitParty = useCallback(() => {
+    if (window.confirm('Exit Party Mode?')) setPartyMode(false);
+  }, []);
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'Enter') { e.preventDefault(); addItem(); }
@@ -60,60 +93,42 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose, onAddToGr
     'cranberry juice', 'club soda', 'grenadine', 'sugar',
   ];
 
-  const quickAdd = useCallback((item) => {
-    if (!shelfItems.includes(item)) {
-      setShelfItems(prev => [...prev, item]);
-      addToBarInventory(item);
-    }
-  }, [shelfItems]);
-
-  // Score each drink by how many ingredients match what's on the shelf
+  // Score each drink with the deterministic barMatch engine (alias + category
+  // aware, with derivable-ingredient inference). Replaces the old naive
+  // substring scan that false-matched things like "ice" against "juice".
   const scoredDrinks = useMemo(() => {
     if (shelfItems.length === 0) return [];
 
     return drinks
       .map(drink => {
-        const totalIngredients = drink.ingredients?.length || 0;
-        if (totalIngredients === 0) return null;
-        let matched = 0;
-        const matchedIngredients = [];
-        const missingIngredients = [];
-
-        drink.ingredients.forEach(ing => {
-          const ingLower = ing.toLowerCase();
-          const isMatch = shelfItems.some(shelfItem =>
-            ingLower.includes(shelfItem) || shelfItem.includes(ingLower.split(' ').pop())
-          );
-          if (isMatch) {
-            matched++;
-            matchedIngredients.push(ing);
-          } else {
-            missingIngredients.push(ing);
-          }
-        });
-
-        const score = matched / totalIngredients;
-        return {
-          drink,
-          score,
-          matched,
-          total: totalIngredients,
-          missing: totalIngredients - matched,
-          matchedIngredients,
-          missingIngredients,
-        };
+        const match = matchDrink(drink, shelfItems);
+        if (match.total === 0) return null;
+        return { drink, match };
       })
       .filter(Boolean)
-      .filter(s => s.matched > 0)
-      .sort((a, b) => b.score - a.score || a.missing - b.missing);
+      // Keep anything with at least one real or derivable match.
+      .filter(s => s.match.matchedCount > 0 || s.match.derivable.length > 0)
+      .sort((a, b) =>
+        b.match.score - a.match.score || a.match.missing.length - b.match.missing.length
+      );
   }, [drinks, shelfItems]);
 
-  const filteredResults = matchMode === 'strict'
-    ? scoredDrinks.filter(s => s.missing <= 1)
+  // Party mode always shows only makeable drinks (ready + almost), regardless of toggle.
+  const filteredResults = (partyMode || matchMode === 'strict')
+    ? scoredDrinks.filter(s => s.match.tier === 'ready' || s.match.tier === 'almost')
     : scoredDrinks;
 
-  const perfectMatches = scoredDrinks.filter(s => s.missing === 0).length;
-  const closeMatches = scoredDrinks.filter(s => s.missing > 0 && s.missing <= 2).length;
+  const perfectMatches = scoredDrinks.filter(s => s.match.tier === 'ready').length;
+  const closeMatches = scoredDrinks.filter(s => s.match.tier === 'almost').length;
+
+  // "Surprise me" — jump straight to a random makeable drink.
+  const surpriseMe = useCallback(() => {
+    const pick = pickSurprise(scoredDrinks);
+    if (pick) {
+      if (navigator.vibrate) navigator.vibrate([20, 15, 30]);
+      onViewDetail(pick.drink);
+    }
+  }, [scoredDrinks, onViewDetail]);
 
   const bfmEmptyContainerVariants = {
     hidden: {},
@@ -125,76 +140,108 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose, onAddToGr
   };
 
   return (
-    <div className="bfm-overlay" onClick={onClose}>
-      <motion.div className="bfm-sheet" onClick={e => e.stopPropagation()}
-        drag="y" dragListener={false} dragControls={dragControls}
+    <div className="bfm-overlay" onClick={partyMode ? undefined : onClose}>
+      <motion.div className={`bfm-sheet ${partyMode ? 'bfm-party' : ''}`} onClick={e => e.stopPropagation()}
+        drag={partyMode ? false : 'y'} dragListener={false} dragControls={dragControls}
         dragConstraints={{ top: 0, bottom: 0 }} dragElastic={{ top: 0, bottom: 0.5 }}
         dragTransition={{ bounceStiffness: 600, bounceDamping: 30 }}
-        onDragEnd={handleSheetDragEnd}
+        onDragEnd={partyMode ? undefined : handleSheetDragEnd}
         initial={{ y: '100%' }} animate={{ y: 0 }} exit={{ y: '100%' }}
         transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}>
-        <div className="bfm-handle" aria-hidden="true" onPointerDown={(e) => dragControls.start(e)} />
+        {!partyMode && (
+          <div className="bfm-handle" aria-hidden="true" onPointerDown={(e) => dragControls.start(e)} />
+        )}
 
         {/* Header */}
         <div className="bfm-header">
           <div className="bfm-title-row">
-            <span className="bfm-icon">🍸</span>
+            <span className="bfm-icon">{partyMode ? '🎉' : '🍸'}</span>
             <div>
-              <h2 className="bfm-title">What's on My Shelf?</h2>
+              <h2 className="bfm-title">{partyMode ? 'Party Menu' : "What's on My Shelf?"}</h2>
               <p className="bfm-subtitle">
-                {loaded && shelfItems.length > 0
-                  ? `${shelfItems.length} items saved`
-                  : 'Add spirits & mixers you have'}
+                {partyMode
+                  ? `${perfectMatches} ready to pour`
+                  : loaded && shelfItems.length > 0
+                    ? `${shelfItems.length} items saved`
+                    : 'Add spirits & mixers you have'}
               </p>
             </div>
           </div>
-          <button className="bfm-close" onClick={onClose}>✕</button>
-        </div>
-
-        {/* Input */}
-        <div className="bfm-input-zone">
-          <div className="bfm-input-row">
-            <input
-              type="text"
-              className="bfm-input"
-              placeholder="Type a spirit or mixer..."
-              value={inputValue}
-              onChange={e => setInputValue(e.target.value)}
-              onKeyDown={handleKeyDown}
-              autoFocus
-            />
-            <button className="bfm-add-btn" onClick={() => addItem()} disabled={!inputValue.trim()}>
-              Add
-            </button>
-          </div>
-        </div>
-
-        {/* Quick-add chips */}
-        <div className="bfm-quick-section">
-          <span className="bfm-quick-label">{shelfItems.length === 0 ? 'Common bottles:' : 'Quick add:'}</span>
-          <div className="bfm-quick-chips">
-            {QUICK_ADDS.filter(item => !shelfItems.includes(item)).slice(0, 12).map(item => (
+          <div className="bfm-header-actions">
+            {!partyMode && shelfItems.length > 0 && (
               <button
-                key={item}
-                className="bfm-quick-chip"
-                onClick={() => quickAdd(item)}
+                className="bfm-party-btn"
+                onClick={() => setPartyMode(true)}
+                title="Read-only menu for guests"
               >
-                + {item}
+                👥 Party
               </button>
-            ))}
+            )}
+            {partyMode
+              ? <button className="bfm-close" onClick={exitParty} title="Exit Party Mode">Exit</button>
+              : <button className="bfm-close" onClick={onClose}>✕</button>}
           </div>
         </div>
 
-        {/* Shelf items */}
-        {shelfItems.length > 0 && (
+        {/* Input (hidden in party mode) */}
+        {!partyMode && (
+          <div className="bfm-input-zone">
+            <div className="bfm-input-row">
+              <input
+                type="text"
+                className="bfm-input"
+                placeholder="Type a spirit or mixer..."
+                value={inputValue}
+                onChange={e => setInputValue(e.target.value)}
+                onKeyDown={handleKeyDown}
+                autoFocus
+              />
+              <button className="bfm-add-btn" onClick={() => addItem()} disabled={!inputValue.trim()}>
+                Add
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Quick-add chips (hidden in party mode) */}
+        {!partyMode && (
+          <div className="bfm-quick-section">
+            <span className="bfm-quick-label">{shelfItems.length === 0 ? 'Common bottles:' : 'Quick add:'}</span>
+            <div className="bfm-quick-chips">
+              {QUICK_ADDS.filter(item => !hasItem(item)).slice(0, 12).map(item => (
+                <button
+                  key={item}
+                  className="bfm-quick-chip"
+                  onClick={() => quickAdd(item)}
+                >
+                  + {item}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Shelf items (editable chips; hidden in party mode) */}
+        {!partyMode && shelfRecords.length > 0 && (
           <div className="bfm-shelf-items">
             <div className="bfm-shelf-chips">
-              {shelfItems.map(item => (
-                <span key={item} className="bfm-shelf-chip">
-                  {item}
-                  <button className="bfm-chip-remove" onClick={() => removeItem(item)}>✕</button>
-                </span>
-              ))}
+              {shelfRecords.map(rec => {
+                const sub = rec.brand || rec.subcategory;
+                return (
+                  <span key={rec.ingredient} className="bfm-shelf-chip">
+                    <button
+                      type="button"
+                      className="bfm-chip-label"
+                      onClick={() => setEditingBottle(rec)}
+                      title="Edit bottle details"
+                    >
+                      {rec.displayName || rec.ingredient}
+                      {sub && <span className="bfm-chip-sub"> · {sub}</span>}
+                    </button>
+                    <button className="bfm-chip-remove" onClick={() => removeItem(rec.ingredient)}>✕</button>
+                  </span>
+                );
+              })}
             </div>
             <button className="bfm-clear-all" onClick={clearAll}>Clear all</button>
           </div>
@@ -215,20 +262,27 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose, onAddToGr
                 </span>
               )}
             </div>
-            <div className="bfm-mode-toggle">
-              <button
-                className={`bfm-mode-btn ${matchMode === 'best' ? 'active' : ''}`}
-                onClick={() => setMatchMode('best')}
-              >
-                All
+            {!partyMode && (
+              <div className="bfm-mode-toggle">
+                <button
+                  className={`bfm-mode-btn ${matchMode === 'best' ? 'active' : ''}`}
+                  onClick={() => setMatchMode('best')}
+                >
+                  All
+                </button>
+                <button
+                  className={`bfm-mode-btn ${matchMode === 'strict' ? 'active' : ''}`}
+                  onClick={() => setMatchMode('strict')}
+                >
+                  Ready
+                </button>
+              </div>
+            )}
+            {scoredDrinks.length > 0 && (
+              <button className="bfm-surprise-btn" onClick={surpriseMe} title="Pour something at random">
+                🎲 Surprise me
               </button>
-              <button
-                className={`bfm-mode-btn ${matchMode === 'strict' ? 'active' : ''}`}
-                onClick={() => setMatchMode('strict')}
-              >
-                Ready
-              </button>
-            </div>
+            )}
           </div>
         )}
 
@@ -248,10 +302,13 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose, onAddToGr
               <motion.p variants={bfmEmptyItemVariants}>No cocktails match your bottles. Try adding more spirits or mixers!</motion.p>
             </motion.div>
           ) : (
-            filteredResults.map(({ drink, score, matched, total, missing, missingIngredients }) => (
+            filteredResults.map(({ drink, match }) => {
+              const { matchedCount, total, missing, derivable, score, tier } = match;
+              const missingCount = missing.length;
+              return (
               <div
                 key={drink.id}
-                className={`bfm-result-card ${missing === 0 ? 'bfm-perfect' : ''}`}
+                className={`bfm-result-card ${tier === 'ready' ? 'bfm-perfect' : ''}`}
                 onClick={() => onViewDetail(drink)}
               >
                 <div className="bfm-result-img-zone">
@@ -260,32 +317,37 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose, onAddToGr
                   ) : (
                     <div className="bfm-result-img-ph">🍹</div>
                   )}
-                  <div className={`bfm-score-badge ${missing === 0 ? 'perfect' : missing <= 1 ? 'close' : 'partial'}`}>
+                  <div className={`bfm-score-badge ${tier === 'ready' ? 'perfect' : tier === 'almost' ? 'close' : 'partial'}`}>
                     {Math.round(score * 100)}%
                   </div>
                 </div>
                 <div className="bfm-result-info">
                   <h4 className="bfm-result-name">{drink.name}</h4>
                   <p className="bfm-result-match">
-                    <span className="bfm-match-good">{matched}/{total} ingredients</span>
-                    {missing > 0 && (
-                      <span className="bfm-match-missing"> · {missing} missing</span>
+                    <span className="bfm-match-good">{matchedCount}/{total} ingredients</span>
+                    {missingCount > 0 && (
+                      <span className="bfm-match-missing"> · {missingCount} missing</span>
                     )}
                   </p>
-                  {missing > 0 && missing <= 3 && (
+                  {derivable.length > 0 && (
+                    <p className="bfm-derivable-list">
+                      🧪 You can make: {derivable.map(d => d.result).slice(0, 2).join(', ')}
+                    </p>
+                  )}
+                  {missingCount > 0 && missingCount <= 3 && (
                     <p className="bfm-missing-list">
-                      Need: {missingIngredients.slice(0, 3).join(', ')}
+                      Need: {missing.slice(0, 3).join(', ')}
                     </p>
                   )}
                 </div>
                 <div className="bfm-result-actions">
-                  {missing === 0 && <span className="bfm-ready-badge">Pour it!</span>}
-                  {missing > 0 && missing <= 3 && onAddToGrocery && (
+                  {tier === 'ready' && <span className="bfm-ready-badge">Pour it!</span>}
+                  {!partyMode && missingCount > 0 && missingCount <= 3 && onAddToGrocery && (
                     <button
                       className="bfm-quest-add-btn"
                       onClick={(e) => {
                         e.stopPropagation();
-                        onAddToGrocery(missingIngredients.map(ing => ({
+                        onAddToGrocery(missing.map(ing => ({
                           name: ing,
                           tag: 'bar-quest',
                           questDrinkId: drink.id,
@@ -300,8 +362,80 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose, onAddToGr
                   )}
                 </div>
               </div>
-            ))
+              );
+            })
           )}
+        </div>
+
+        {/* Bottle edit sheet */}
+        <AnimatePresence>
+          {editingBottle && (
+            <BottleEditSheet
+              key={editingBottle.ingredient}
+              record={editingBottle}
+              onSave={saveBottle}
+              onClose={() => setEditingBottle(null)}
+            />
+          )}
+        </AnimatePresence>
+      </motion.div>
+    </div>
+  );
+}
+
+// ── Bottle edit sheet ─────────────────────────────────────────────────────────
+// Lets the user attach brand, subcategory, quantity and tasting notes to a
+// bottle. Writes through updateBarBottle (via the parent's onSave).
+function BottleEditSheet({ record, onSave, onClose }) {
+  const [brand, setBrand] = useState(record.brand || '');
+  const [subcategory, setSubcategory] = useState(record.subcategory || '');
+  const [qty, setQty] = useState(record.qty || '');
+  const [notes, setNotes] = useState(record.notes || '');
+
+  const handleSave = () => {
+    onSave(record.ingredient, {
+      brand: brand.trim() || undefined,
+      subcategory: subcategory.trim() || undefined,
+      qty: qty.trim() || undefined,
+      notes: notes.trim() || undefined,
+    });
+  };
+
+  return (
+    <div className="bfm-edit-overlay" onClick={onClose}>
+      <motion.div
+        className="bfm-edit-sheet"
+        onClick={e => e.stopPropagation()}
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 24 }}
+        transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
+      >
+        <div className="bfm-edit-header">
+          <h3 className="bfm-edit-title">{record.displayName || record.ingredient}</h3>
+          {record.category && <span className="bfm-edit-cat">{record.category}</span>}
+        </div>
+
+        <label className="bfm-edit-field">
+          <span>Brand</span>
+          <input type="text" value={brand} onChange={e => setBrand(e.target.value)} placeholder="e.g. Tanqueray" />
+        </label>
+        <label className="bfm-edit-field">
+          <span>Style / subcategory</span>
+          <input type="text" value={subcategory} onChange={e => setSubcategory(e.target.value)} placeholder="e.g. London Dry" />
+        </label>
+        <label className="bfm-edit-field">
+          <span>Quantity</span>
+          <input type="text" value={qty} onChange={e => setQty(e.target.value)} placeholder="e.g. ¾ bottle" />
+        </label>
+        <label className="bfm-edit-field">
+          <span>Notes</span>
+          <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={2} placeholder="Tasting notes, where to buy…" />
+        </label>
+
+        <div className="bfm-edit-actions">
+          <button className="bfm-edit-cancel" onClick={onClose}>Cancel</button>
+          <button className="bfm-edit-save" onClick={handleSave}>Save</button>
         </div>
       </motion.div>
     </div>

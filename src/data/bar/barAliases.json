@@ -1,0 +1,16 @@
+{
+  "_comment": "Exact-equivalent synonym groups. Every member of a group is treated as the same ingredient (first entry is canonical). Unlike category matching, these are true synonyms, not substitutions.",
+  "groups": [
+    ["simple syrup", "sugar syrup", "simple sugar syrup"],
+    ["soda water", "club soda", "seltzer", "sparkling water"],
+    ["lime juice", "fresh lime juice", "juice of lime", "fresh lime"],
+    ["lemon juice", "fresh lemon juice", "juice of lemon", "fresh lemon"],
+    ["orange juice", "fresh orange juice", "oj"],
+    ["ginger beer", "ginger ale"],
+    ["triple sec", "orange liqueur", "cointreau"],
+    ["whiskey", "whisky"],
+    ["superfine sugar", "caster sugar", "granulated sugar", "sugar"],
+    ["egg white", "aquafaba"],
+    ["grenadine", "pomegranate syrup"]
+  ]
+}

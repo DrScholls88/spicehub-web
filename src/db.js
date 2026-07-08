@@ -1,6 +1,7 @@
 import Dexie from 'dexie';
 import { buildStructuredFields } from './recipeParser';
 import { upgradeRecipeIngredients } from './recipeSchema';
+import { categorizeBottle } from './lib/barMatch';
 
 const db = new Dexie('SpiceHubDB');
 
@@ -142,6 +143,28 @@ db.version(16).stores({
   return Promise.all([meals, drinks]);
 });
 
+// v17: Granular bar inventory. The `barInventory` primary key stays `ingredient`
+// (canonical lowercase name), so this is an additive migration — existing rows
+// gain `displayName` + inferred `category`; brand/subcategory/qty/notes stay
+// undefined until the user edits a bottle. Legacy callers that expect a plain
+// name list keep working via getBarInventory(); the new UI uses
+// getBarInventoryRecords().
+db.version(17).stores({
+  barInventory: 'ingredient',
+}).upgrade(tx => {
+  return tx.table('barInventory').toCollection().modify(row => {
+    if (!row || typeof row.ingredient !== 'string') return;
+    if (row.displayName === undefined) row.displayName = row.ingredient;
+    if (row.category === undefined) {
+      try {
+        row.category = categorizeBottle(row.ingredient) || null;
+      } catch {
+        row.category = null;
+      }
+    }
+  });
+});
+
 export default db;
 
 // ── Learned alias helpers (Spec D) ────────────────────────────────────────────
@@ -214,7 +237,10 @@ export async function saveLearnedAliases(list = []) {
 }
 
 // ── Bar Inventory helpers ─────────────────────────────────────────────────────
+// Records: { ingredient(PK/canonical), displayName, category, subcategory, brand, qty, notes, addedAt }
 export async function getBarInventory() {
+  // Legacy signature: returns canonical name strings. Kept for callers that only
+  // need the flat list (matching, quick checks).
   try {
     const items = await db.barInventory.toArray();
     return items.map(i => i.ingredient);
@@ -224,13 +250,58 @@ export async function getBarInventory() {
   }
 }
 
-export async function addToBarInventory(ingredient) {
-  const key = ingredient.toLowerCase().trim();
+export async function getBarInventoryRecords() {
+  // Full bottle records for the richer inventory UI.
+  try {
+    return await db.barInventory.toArray();
+  } catch (e) {
+    console.warn('[SpiceHub DB] getBarInventoryRecords failed:', e);
+    return [];
+  }
+}
+
+export async function addToBarInventory(ingredient, meta = {}) {
+  const key = String(ingredient || '').toLowerCase().trim();
   if (!key) return;
   try {
-    await db.barInventory.put({ ingredient: key, addedAt: new Date().toISOString() });
+    const existing = await db.barInventory.get(key);
+    let category = meta.category;
+    if (category === undefined) {
+      // Preserve an existing category; otherwise infer from the name.
+      category = existing?.category;
+      if (category === undefined) {
+        try { category = categorizeBottle(key) || null; } catch { category = null; }
+      }
+    }
+    await db.barInventory.put({
+      ingredient: key,
+      displayName: meta.displayName ?? existing?.displayName ?? key,
+      category,
+      subcategory: meta.subcategory ?? existing?.subcategory,
+      brand: meta.brand ?? existing?.brand,
+      qty: meta.qty ?? existing?.qty,
+      notes: meta.notes ?? existing?.notes,
+      addedAt: existing?.addedAt ?? new Date().toISOString(),
+    });
   } catch (e) {
     console.warn('[SpiceHub DB] addToBarInventory failed:', e);
+  }
+}
+
+export async function updateBarBottle(ingredient, patch = {}) {
+  const key = String(ingredient || '').toLowerCase().trim();
+  if (!key) return;
+  try {
+    const existing = await db.barInventory.get(key);
+    if (!existing) return;
+    const allowed = ['displayName', 'category', 'subcategory', 'brand', 'qty', 'notes'];
+    const next = { ...existing };
+    for (const field of allowed) {
+      if (field in patch) next[field] = patch[field];
+    }
+    await db.barInventory.put(next);
+  } catch (e) {
+    console.warn('[SpiceHub DB] updateBarBottle failed:', e);
   }
 }
 

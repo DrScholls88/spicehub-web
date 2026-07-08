@@ -1,0 +1,11 @@
+{
+  "_comment": "Ingredients a user can make from other shelf items. If all `from` components are on the shelf, the `result` is flagged 'derivable' rather than 'missing'. `hint` is shown in the UI.",
+  "derived": [
+    { "result": "simple syrup", "from": ["sugar", "water"], "hint": "stir sugar into warm water" },
+    { "result": "sour mix", "from": ["lemon juice", "simple syrup"], "hint": "equal parts lemon juice and simple syrup" },
+    { "result": "sweet and sour", "from": ["lemon juice", "lime juice", "sugar"], "hint": "citrus juice plus sugar" },
+    { "result": "grenadine", "from": ["pomegranate juice", "sugar"], "hint": "reduce pomegranate juice with sugar" },
+    { "result": "honey syrup", "from": ["honey", "water"], "hint": "thin honey with warm water" },
+    { "result": "whipped cream", "from": ["heavy cream", "sugar"], "hint": "whip cream with a little sugar" }
+  ]
+}

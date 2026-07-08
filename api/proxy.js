@@ -14,6 +14,7 @@ export const config = {
 
 // Sites known to require special handling
 const INSTAGRAM_HOST = /instagram\.com/i;
+const REDDIT_HOST = /(^|\.)reddit\.com$/i;
 
 /**
  * SSRF guard. Edge Runtime has no `dns`/`net` modules, so this can't re-resolve
@@ -77,6 +78,7 @@ function cleanUrl(input = '') {
  */
 function buildHeaders(targetUrl) {
   const isInsta = INSTAGRAM_HOST.test(targetUrl);
+  const isRedditJson = REDDIT_HOST.test(new URL(targetUrl).hostname || '') && /\.json(\?|$)/.test(targetUrl);
   // Rotate UA every ~15 minutes to break bot-wall fingerprinting
   const ua = USER_AGENTS[Math.floor(Date.now() / 900000) % USER_AGENTS.length];
 
@@ -100,6 +102,21 @@ function buildHeaders(targetUrl) {
     base['sec-ch-ua'] = '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"';
     base['sec-ch-ua-mobile'] = '?0';
     base['sec-ch-ua-platform'] = '"Windows"';
+  }
+
+  if (isRedditJson) {
+    // A .json API endpoint being requested with an HTML-page Accept header
+    // (and page-navigation Sec-Fetch-* hints) is itself an inconsistent
+    // fingerprint. Send a plain, honest JSON-fetch header set instead — this
+    // doesn't guarantee Reddit won't still block known cloud-provider IP
+    // ranges (that's IP-based, not header-based, and no header change can
+    // fix it), but an inconsistent Accept/Sec-Fetch combo is one more signal
+    // bot detection can key on for free, so there's no reason to send it.
+    base['Accept'] = 'application/json, text/plain, */*';
+    base['Sec-Fetch-Dest'] = 'empty';
+    base['Sec-Fetch-Mode'] = 'cors';
+    delete base['Upgrade-Insecure-Requests'];
+    delete base['Sec-Fetch-User'];
   }
 
   return base;
