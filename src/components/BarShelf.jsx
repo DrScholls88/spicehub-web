@@ -1212,8 +1212,8 @@ function PixelSlidingMug({ fromX, toX, onDone }) {
 }
 
 // ── Saloon stage constants ─────────────────────────────────────────────────────
-// Bartender home is at 80% right — opens left/center for chalkboard + tip jar
-const WAYPOINTS = { left: 0.10, center: 0.42, home: 0.78 };
+// Bartender home is mid-bar (slightly left so the centred door peeks out)
+const WAYPOINTS = { left: 0.18, center: 0.34, home: 0.46 };
 
 // ── Saloon reducer ─────────────────────────────────────────────────────────────
 const initialSaloonState = {
@@ -1253,11 +1253,11 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
   const prefersReducedMotion = useReducedMotion();
 
   // ── Synced state for quips/lantern positioning (cheaper than transform reads) ─
-  const [bartenderX, setBartenderX] = useState(260);
+  const [bartenderX, setBartenderX] = useState(130);
 
-  // ── Bartender home X: 78% of bar width, re-read on every use ─────────────
+  // ── Bartender home X: mid-bar (46% of width), re-read on every use ─────────
   const homeX = useCallback(
-    () => (barTopRef.current?.clientWidth || 340) * 0.78 - 30,
+    () => (barTopRef.current?.clientWidth || 340) * 0.46 - 30,
     []
   );
 
@@ -2398,40 +2398,45 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
             <div className="bs-ambient-right" />
           </div>
 
-          {/* ── LAYER 1.5: Back wall boards — chalkboard & bounty board ── */}
-          {/* Sits between saloon-bg (z:1) and saloon-mid (z:2) */}
-          <div className="saloon-boards">
-            <WallChalkboard
-              specialDrink={specialDrink}
-              onClick={handleChalkClick}
-            />
-            <WallBountyBoard
-              bounties={bounties}
-              onClickBounty={handleBountyClick}
-            />
-          </div>
-
-          {/* ── Return doorway → My Bar (only when arrived from My Bar flow) ── */}
-          {onExitToMyBar && (
-            <motion.button
-              className="saloon-exit-door"
-              onClick={() => { if (navigator.vibrate) navigator.vibrate(15); onExitToMyBar(); }}
-              aria-label="Back to My Bar"
-              title="Back to My Bar"
-              initial={{ opacity: 0, x: -14 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ type: 'spring', stiffness: 260, damping: 24, delay: 0.4 }}
-              whileTap={{ scale: 0.94 }}
-            >
-              <span className="saloon-exit-arch" aria-hidden="true">
-                <span className="saloon-exit-glow" aria-hidden="true" />
-              </span>
-              <span className="saloon-exit-label">‹ MY BAR</span>
-            </motion.button>
-          )}
-
-          {/* ── LAYER 2: Mid — shelves, bartender, shingle ── */}
+          {/* ── LAYER 2: Mid — shelves, wall boards, door, bartender, shingle ──
+              Boards + door live INSIDE mid (not as a separate layer) so their
+              z-index can be interleaved: shelves (1) < boards & door (2) <
+              bartender (3). The bar counter (saloon-fg) still paints over the
+              bottom of the door so it reads as standing behind the bar. */}
           <div className="saloon-mid">
+            {/* Back-wall boards — chalkboard & bounty board */}
+            <div className="saloon-boards">
+              <WallChalkboard
+                specialDrink={specialDrink}
+                onClick={handleChalkClick}
+              />
+              <WallBountyBoard
+                bounties={bounties}
+                onClickBounty={handleBountyClick}
+              />
+            </div>
+
+            {/* Full-height return door → My Bar, tucked behind the bar counter */}
+            {onExitToMyBar && (
+              <motion.button
+                className="saloon-exit-door"
+                onClick={() => { if (navigator.vibrate) navigator.vibrate(15); onExitToMyBar(); }}
+                aria-label="Back to My Bar"
+                title="Back to My Bar"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ type: 'spring', stiffness: 260, damping: 24, delay: 0.4 }}
+                whileHover={{ filter: 'brightness(1.12)' }}
+                whileTap={{ scale: 0.97 }}
+              >
+                <span className="saloon-exit-lintel" aria-hidden="true">‹ MY BAR</span>
+                <span className="saloon-exit-panel" aria-hidden="true">
+                  <span className="saloon-exit-glow" aria-hidden="true" />
+                  <span className="saloon-exit-knob" aria-hidden="true" />
+                </span>
+              </motion.button>
+            )}
+
             {/* Lantern glow tracks bartender with spring lag */}
             <div
               className="lantern-glow"

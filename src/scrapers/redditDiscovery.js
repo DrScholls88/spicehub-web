@@ -1,33 +1,44 @@
 /**
- * SpiceHub — Reddit Discovery Scraper (Zero-Auth)
+ * SpiceHub — Reddit Discovery Scraper
  *
- * Strategy: Reddit's `.json` endpoint trick.
- * Any reddit.com URL + `?raw_json=1` (or + `.json`) returns full structured JSON
- * without authentication. Unauthenticated rate limit is ~60 req/min per IP.
+ * Strategy: Reddit's `.json` endpoint shape (same path structure whether
+ * fetched anonymously from www.reddit.com or authenticated from
+ * oauth.reddit.com) — `?raw_json=1` keeps Unicode from being HTML-entity-
+ * encoded either way.
  *
  * Tier hierarchy:
  *   1. Specific post URL → .json endpoint → extract recipe from selftext / title
  *   2. Subreddit discovery → /r/{sub}/new.json → surface recipe links for import
  *
- * Zero-cost: No Reddit API key, no OAuth, no Apify, no Firecrawl.
+ * AUTH HISTORY (read before changing fetchRedditJson):
+ *   - Originally zero-auth: anonymous fetches to www.reddit.com/*.json.
+ *   - 2026-07-07: fixed a CORS/proxy-cascade bug (fetchJsonViaProxy below),
+ *     but prod logs (2026-07-08) kept showing 403s AT THE PROXY LEVEL — Reddit
+ *     is blocking anonymous/unauthenticated requests from cloud/datacenter IP
+ *     ranges (including Vercel's), which no header tuning can fix.
+ *   - 2026-07-08: added api/reddit.js — a server-side OAuth2 app-only
+ *     (client_credentials) proxy. This is Reddit's officially sanctioned path
+ *     for automated read access and is now the PRIMARY server attempt in
+ *     fetchRedditJson below. Requires the site owner to register a Reddit
+ *     "script" app and set REDDIT_CLIENT_ID/REDDIT_CLIENT_SECRET on Vercel
+ *     (see api/reddit.js's header comment) — until that's done, api/reddit.js
+ *     returns 503 and this file falls back to the old anonymous proxy
+ *     cascade, which may still 403.
  *
- * CORS note: Reddit's docs claim `.json` endpoints allow any-origin browser
- * requests, but in practice (observed 2026-07-07 prod logs) Reddit does NOT
- * send an Access-Control-Allow-Origin header for this app's origin — the
- * direct fetch below is kept as a fast opportunistic first try (it fails
- * near-instantly on a CORS block, it doesn't eat the timeout budget), but the
- * real path is the server-side proxy cascade, since CORS is a browser-only
- * restriction and server-to-server requests aren't subject to it at all.
+ * CORS note: the direct browser fetch attempt below is kept as a fast
+ * opportunistic first try (it fails near-instantly on a CORS block, so it
+ * doesn't eat the timeout budget) — CORS is a browser-only restriction, so
+ * server-to-server requests (api/reddit.js, or the old proxy cascade) aren't
+ * subject to it at all regardless of what Reddit's CORS headers say.
  *
- * Deliberately NOT reusing the generic fetchHtmlViaProxy() from api.js here:
- * that helper is tuned for scraping HTML pages (bot-wall regexes, a
- * >1000-char gate, a `!text.includes('"error"')` heuristic that can
- * false-positive on legitimate JSON containing that substring) and stacks
- * its OWN internal-proxy-then-7-public-proxies cascade on top of whatever
- * the caller already tried — for Reddit that produced up to ~60s of worst-
- * case latency across nested timeout budgets before ever reaching the
- * "no recipes found" fallback. fetchJsonViaProxy() below is a small,
- * JSON-specific, tightly time-bounded cascade instead.
+ * Deliberately NOT reusing the generic fetchHtmlViaProxy() from api.js for
+ * the anonymous fallback: that helper is tuned for scraping HTML pages
+ * (bot-wall regexes, a >1000-char gate, a `!text.includes('"error"')`
+ * heuristic that can false-positive on legitimate JSON containing that
+ * substring) and stacks its OWN internal-proxy-then-7-public-proxies cascade
+ * on top of whatever the caller already tried — for Reddit that produced up
+ * to ~60s of worst-case latency across nested timeout budgets. fetchJsonViaProxy()
+ * below is a small, JSON-specific, tightly time-bounded cascade instead.
  */
 
 import { fetchJsonViaProxy } from '../api.js';
@@ -65,15 +76,44 @@ export function isRedditPostUrl(url) {
 // ─── Core fetch helper ────────────────────────────────────────────────────────
 
 /**
- * Fetch Reddit JSON with direct browser fetch first, server-side proxy
- * cascade fallback. Adds required `raw_json=1` param so Unicode isn't
+ * Attempt a fetch through our OAuth2-authenticated Reddit proxy (api/reddit.js).
+ * Returns the parsed JSON on success, or null on ANY failure (not configured,
+ * bad credentials, network error, non-2xx, invalid JSON) so the caller can
+ * fall through to the next tier without needing to distinguish why.
+ */
+async function fetchViaRedditOAuth(url, timeoutMs) {
+  const path = url.pathname + url.search; // e.g. /r/recipes/new.json?raw_json=1&limit=25
+  const proxyUrl = `/api/reddit?path=${encodeURIComponent(path)}`;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const resp = await fetch(proxyUrl, { signal: ctrl.signal, headers: { Accept: 'application/json' } });
+    clearTimeout(timer);
+    if (!resp.ok) {
+      console.log(`[reddit] OAuth proxy returned ${resp.status} — trying anonymous cascade`);
+      return null;
+    }
+    const text = await resp.text();
+    if (!text) return null;
+    return JSON.parse(text);
+  } catch (e) {
+    clearTimeout(timer);
+    console.log(`[reddit] OAuth proxy failed (${e.message}) — trying anonymous cascade`);
+    return null;
+  }
+}
+
+/**
+ * Fetch Reddit JSON: direct browser fetch first, then our OAuth-authenticated
+ * proxy (the reliable path — see the AUTH HISTORY note atop this file), then
+ * the old anonymous proxy cascade as a last resort for before OAuth is
+ * configured. Adds required `raw_json=1` param so Unicode isn't
  * HTML-entity-encoded.
  *
- * timeoutMs is a PER-ATTEMPT budget, not a total — direct fetch gets one
- * attempt at this timeout, then fetchJsonViaProxy gets up to 3 attempts at
- * this same per-attempt timeout. Kept short (default 6s) because a CORS
- * block or a proxy timing out should fail fast, not eat the whole budget a
- * "Discover" browsing UI can reasonably keep someone waiting on.
+ * timeoutMs is a PER-ATTEMPT budget, not a total — each tier gets its own
+ * attempt(s) at this same per-attempt timeout. Kept short (default 6s)
+ * because a CORS block or a proxy timing out should fail fast, not eat the
+ * whole budget a "Discover" browsing UI can reasonably keep someone waiting on.
  */
 export async function fetchRedditJson(redditJsonUrl, timeoutMs = 6000) {
   const url = new URL(redditJsonUrl);
@@ -101,13 +141,19 @@ export async function fetchRedditJson(redditJsonUrl, timeoutMs = 6000) {
       return json;
     }
   } catch (e) {
-    console.log(`[reddit] Direct fetch failed (${e.message}) — trying proxy cascade`);
+    console.log(`[reddit] Direct fetch failed (${e.message}) — trying OAuth proxy`);
   }
 
-  // Attempt 2: server-side proxy cascade. CORS is a browser-only
+  // Attempt 2: our OAuth2-authenticated proxy — the sanctioned, reliable
+  // path (see AUTH HISTORY above). Falls through to attempt 3 on ANY failure,
+  // including "not configured yet" (503).
+  const oauthResult = await fetchViaRedditOAuth(url, timeoutMs);
+  if (oauthResult) return oauthResult;
+
+  // Attempt 3: last-resort anonymous proxy cascade. CORS is a browser-only
   // restriction — a server (our /api/proxy Vercel fn, or a public proxy)
-  // fetching Reddit isn't subject to it at all, so this is the reliable path
-  // whenever Reddit doesn't grant this origin direct access.
+  // fetching Reddit isn't subject to it at all — but Reddit may still block
+  // this tier by IP regardless of CORS/headers (that's why attempt 2 exists).
   return fetchJsonViaProxy(fullUrl, timeoutMs);
 }
 
