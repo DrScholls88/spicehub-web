@@ -1239,7 +1239,7 @@ function saloonReducer(state, action) {
 // ══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ══════════════════════════════════════════════════════════════════════════════
-export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAddToGrocery }) {
+export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAddToGrocery, onExitToMyBar }) {
   // ── Reducer for discrete mode transitions ──────────────────────────────────
   const [saloon, dispatch] = useReducer(saloonReducer, initialSaloonState);
 
@@ -2410,6 +2410,25 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
               onClickBounty={handleBountyClick}
             />
           </div>
+
+          {/* ── Return doorway → My Bar (only when arrived from My Bar flow) ── */}
+          {onExitToMyBar && (
+            <motion.button
+              className="saloon-exit-door"
+              onClick={() => { if (navigator.vibrate) navigator.vibrate(15); onExitToMyBar(); }}
+              aria-label="Back to My Bar"
+              title="Back to My Bar"
+              initial={{ opacity: 0, x: -14 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ type: 'spring', stiffness: 260, damping: 24, delay: 0.4 }}
+              whileTap={{ scale: 0.94 }}
+            >
+              <span className="saloon-exit-arch" aria-hidden="true">
+                <span className="saloon-exit-glow" aria-hidden="true" />
+              </span>
+              <span className="saloon-exit-label">‹ MY BAR</span>
+            </motion.button>
+          )}
 
           {/* ── LAYER 2: Mid — shelves, bartender, shingle ── */}
           <div className="saloon-mid">

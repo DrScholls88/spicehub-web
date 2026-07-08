@@ -114,14 +114,36 @@ export async function fetchRedditJson(redditJsonUrl, timeoutMs = 6000) {
 // ─── Post extraction ──────────────────────────────────────────────────────────
 
 /**
+ * Reddit gallery posts (is_gallery: true) carry their photos in
+ * gallery_data.items (ordered media IDs) + media_metadata (per-ID size
+ * variants) instead of the single `preview.images[0]` a normal post has.
+ * Returns an ordered array of full-resolution image URLs (may be empty).
+ */
+function extractGalleryImages(post) {
+  if (!post?.gallery_data?.items?.length || !post?.media_metadata) return [];
+  const urls = [];
+  for (const item of post.gallery_data.items) {
+    const meta = post.media_metadata[item.media_id];
+    if (!meta || meta.status !== 'valid') continue;
+    // s = source (highest res); p = ordered preview sizes, smallest→largest.
+    const src = meta.s?.u || meta.s?.gif || meta.p?.[meta.p.length - 1]?.u;
+    if (src) urls.push(String(src).replace(/&amp;/g, '&'));
+  }
+  return urls;
+}
+
+/**
  * Given a specific Reddit post URL, extract recipe content via the .json endpoint.
  *
  * The .json response structure for a comments page is:
  *   [ listing(post), listing(comments) ]
  *   listing.data.children[0].data = { title, selftext, url, thumbnail, ... }
  *
- * Returns a partial recipe object { name, rawText, imageUrl, link, _extractedVia }
- * or null on failure.
+ * Returns a partial recipe object
+ *   { name, rawText, imageUrl, images, link, _extractedVia }
+ * or null on failure. `images` is the full ordered list of candidate photo
+ * URLs (gallery posts can have several; normal posts have 0 or 1) so the
+ * caller can offer a cover picker instead of only ever seeing one photo.
  *
  * NOTE: This returns rawText (not structured ingredients/directions) intentionally.
  * The caller (recipeParser.parseFromUrl) should pass rawText to structureWithAI or
@@ -156,25 +178,39 @@ export async function extractRedditPost(url) {
   const post = postListing?.data?.children?.[0]?.data;
   if (!post) return null;
 
-  const { title = '', selftext = '', url: postUrl, thumbnail, preview } = post;
+  const { title = '', selftext = '', url: postUrl, crosspost_parent_list: crosspostParents } = post;
+
+  // Crossposts often carry no body/media of their own — the real recipe
+  // content (selftext + photos) lives on the original post being shared.
+  // Fall back to it when the visible post has nothing of its own to extract.
+  const hasOwnContent = !!(selftext || post.is_gallery || post.preview);
+  const mediaSource = (!hasOwnContent && crosspostParents?.[0]) ? crosspostParents[0] : post;
+  const effectiveSelftext = mediaSource.selftext || selftext;
+  const { thumbnail, preview } = mediaSource;
 
   // Reconstruct full Reddit URL (handles old.reddit.com links etc.)
   const canonicalUrl = postUrl?.includes('reddit.com')
     ? postUrl
     : `https://www.reddit.com${new URL(url).pathname}`;
 
-  // Extract best image
+  // Extract image(s). Gallery posts (is_gallery) can have several photos —
+  // e.g. an ingredients shot + the plated dish — surfaced as `images` below
+  // so the review screen can offer a cover picker instead of guessing one.
+  const galleryImages = mediaSource.is_gallery ? extractGalleryImages(mediaSource) : [];
   let imageUrl = '';
-  // Preview images from Reddit's own CDN (highest quality available)
-  if (preview?.images?.[0]?.source?.url) {
+  if (galleryImages.length > 0) {
+    imageUrl = galleryImages[0];
+  } else if (preview?.images?.[0]?.source?.url) {
+    // Preview images from Reddit's own CDN (highest quality available)
     imageUrl = preview.images[0].source.url.replace(/&amp;/g, '&');
   } else if (thumbnail && thumbnail !== 'self' && thumbnail !== 'default' && thumbnail.startsWith('http')) {
     imageUrl = thumbnail;
   }
+  const images = galleryImages.length > 0 ? galleryImages : (imageUrl ? [imageUrl] : []);
 
   // The selftext is the body of the post — it contains the recipe in Markdown already
   // Reddit already stores post bodies as Markdown, so no Turndown needed.
-  const rawText = [title, selftext].filter(Boolean).join('\n\n');
+  const rawText = [title, effectiveSelftext].filter(Boolean).join('\n\n');
 
   if (!rawText || rawText.trim().length < 20) {
     console.log('[reddit] Post has no usable text content');
@@ -187,6 +223,7 @@ export async function extractRedditPost(url) {
     name: title || 'Reddit Recipe',
     rawText,
     imageUrl,
+    images,
     link: canonicalUrl || url,
     _extractedVia: 'reddit-json',
     _isMarkdown: true, // Reddit selftext is already Markdown
@@ -244,6 +281,7 @@ export async function discoverRedditRecipes(subreddit = 'recipes', sort = 'new',
   return posts;
 }
 
+
 // ─── Full extraction pipeline ─────────────────────────────────────────────────
 
 /**
@@ -293,6 +331,7 @@ export async function tryRedditJson(url, onProgress) {
     rawText: postData.rawText,
     name: postData.name,
     imageUrl: postData.imageUrl,
+    images: postData.images,
     link: postData.link || url,
     _extractedVia: 'reddit-json',
     _isMarkdown: true,

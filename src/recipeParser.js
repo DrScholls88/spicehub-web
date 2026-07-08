@@ -2983,7 +2983,7 @@ async function tryMarkdownExtraction(html, sourceUrl, { type = 'meal' } = {}) {
 async function structureRedditRecipe(redditData, onProgress) {
   if (!redditData || !redditData.rawText) return null;
 
-  const { rawText, name: rawName, imageUrl, link } = redditData;
+  const { rawText, name: rawName, imageUrl, images, link } = redditData;
   const title = cleanTitle(rawName || '');
 
   if (onProgress) onProgress('Structuring Reddit recipe...');
@@ -3002,6 +3002,7 @@ async function structureRedditRecipe(redditData, onProgress) {
       ingredients: parsed.ingredients.length > 0 ? parsed.ingredients : [],
       directions: parsed.directions.length > 0 ? parsed.directions : [],
       imageUrl: imageUrl || '',
+      images: images || [],
       link: link || '',
       _extractedVia: 'reddit-heuristic',
     };
@@ -3011,10 +3012,49 @@ async function structureRedditRecipe(redditData, onProgress) {
   if (onProgress) onProgress('Using AI to structure Reddit recipe...');
   const aiResult = await structureWithAIClient(rawText, { title, imageUrl, sourceUrl: link });
   if (aiResult) {
-    return { ...aiResult, link, _extractedVia: 'reddit-ai' };
+    return { ...aiResult, link, images: images || [], _extractedVia: 'reddit-ai' };
   }
 
   return null;
+}
+
+/**
+ * Persist a Reddit-sourced recipe's photo(s) to data: URLs so they survive
+ * fully offline. preview.redd.it / i.redd.it links otherwise only render
+ * while online (constitution: "state must sync optimistically; all user
+ * actions are queued and persisted locally before hitting the network").
+ *
+ * Reuses the SAME generic helpers importFromInstagram uses for its own
+ * captured images (downloadImageAsDataUrl, persistCarousel) rather than
+ * duplicating persistence logic — the hero photo becomes imageUrl (a data:
+ * URL when the fetch succeeds, else the original remote URL so SafeMediaImage
+ * can still render/proxy it), and any extra gallery photos become
+ * _carouselImages so ImportReview's existing CoverPicker picks them up for
+ * free (it already reads that field for Instagram carousels).
+ */
+async function persistRedditImages(structured) {
+  const { images, ...rest } = structured;
+  const persistOne = (u) => downloadImageAsDataUrl(u, { timeoutMs: 12000 });
+
+  let imageUrl = rest.imageUrl || '';
+  if (imageUrl && !imageUrl.startsWith('data:')) {
+    try {
+      const dataUrl = await persistOne(imageUrl);
+      if (dataUrl) imageUrl = dataUrl;
+    } catch { /* keep the remote URL — SafeMediaImage's proxy/fallback still renders it */ }
+  }
+
+  let carouselImages = [];
+  if (Array.isArray(images) && images.length > 0) {
+    try { carouselImages = await persistCarousel(images, persistOne); } catch { /* optional */ }
+  }
+
+  return {
+    ...rest,
+    imageUrl,
+    _imageStatus: imageUrl.startsWith('data:') ? 'data-url' : (rest.imageUrl ? 'remote' : 'none'),
+    _carouselImages: carouselImages,
+  };
 }
 
 /**
@@ -3082,7 +3122,8 @@ async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signa
       // Text post with recipe content Ã¢â‚¬â€ structure it
       const structured = await structureRedditRecipe(redditData, onProgress);
       if (structured && (structured.ingredients?.length > 0 || structured.directions?.length > 0)) {
-        return structured;
+        if (onProgress) onProgress('Saving recipe photo...');
+        return await persistRedditImages(structured);
       }
     }
 
