@@ -550,6 +550,158 @@
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
+   Discover Feature Card — premium entry point to Discover Recipes
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.discover-feature-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  margin-bottom: 24px;
+  padding: 18px 18px 18px 16px;
+  border: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  border-radius: calc(var(--radius) + 6px);
+  background: color-mix(in srgb, var(--card) 82%, transparent);
+  backdrop-filter: blur(14px) saturate(1.25);
+  -webkit-backdrop-filter: blur(14px) saturate(1.25);
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.07),
+              inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: box-shadow 260ms cubic-bezier(0.32, 0.72, 0, 1),
+              border-color 260ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.discover-feature-card:hover {
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12),
+              inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  border-color: color-mix(in srgb, var(--primary) 35%, var(--border));
+}
+
+.discover-feature-card:active {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1),
+              inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+/* Ambient glow orb — slow pulse, GPU-safe (transform + opacity only) */
+.discover-card-glow {
+  position: absolute;
+  top: 50%;
+  right: -30px;
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--primary) 55%, transparent) 0%, transparent 72%);
+  transform: translateY(-50%);
+  filter: blur(4px);
+  opacity: 0.45;
+  pointer-events: none;
+  animation: discoverGlowPulse 5s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+@keyframes discoverGlowPulse {
+  0%, 100% { opacity: 0.35; transform: translateY(-50%) scale(1); }
+  50%      { opacity: 0.6;  transform: translateY(-50%) scale(1.12); }
+}
+
+/* Double-bezel icon badge — outer soft ring + inner gradient core */
+.discover-card-badge {
+  position: relative;
+  flex-shrink: 0;
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18px;
+  background: linear-gradient(135deg, var(--primary), var(--primary-light, var(--primary)));
+  color: #fff;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.35),
+              0 6px 16px color-mix(in srgb, var(--primary) 40%, transparent);
+  transition: transform 320ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.discover-card-badge-ring {
+  position: absolute;
+  inset: -6px;
+  border-radius: 22px;
+  border: 1.5px solid color-mix(in srgb, var(--primary) 30%, transparent);
+  pointer-events: none;
+}
+
+.discover-feature-card:hover .discover-card-badge {
+  transform: rotate(-6deg) scale(1.05);
+}
+
+.discover-card-text {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.discover-card-eyebrow {
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--primary);
+}
+
+.discover-card-title {
+  font-size: 15.5px;
+  font-weight: 800;
+  color: var(--text);
+  line-height: 1.25;
+}
+
+.discover-card-subtitle {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted, var(--text-light));
+  line-height: 1.35;
+}
+
+.discover-card-arrow {
+  position: relative;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  color: var(--text-light);
+  transition: transform 320ms cubic-bezier(0.32, 0.72, 0, 1),
+              background 260ms cubic-bezier(0.32, 0.72, 0, 1),
+              color 260ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.discover-feature-card:hover .discover-card-arrow {
+  transform: translateX(2px);
+  background: var(--primary);
+  color: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .discover-card-glow {
+    animation: none;
+  }
+  .discover-card-badge,
+  .discover-card-arrow {
+    transition: none;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
    Install Banner
    ───────────────────────────────────────────────────────────────────────────── */
 

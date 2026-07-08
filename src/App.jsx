@@ -13,6 +13,7 @@ import MealDetail from './components/MealDetail';
 import AddEditMeal from './components/AddEditMeal';
 import ImportSheet from './components/ImportSheet';
 import BatchImportQueue, { BatchQueuePill } from './components/BatchImportQueue';
+import DiscoverRecipes from './components/DiscoverRecipes';
 import { startBatchImportEngine } from './batchImportEngine';
 import { extractMultipleUrls } from './recipeParser';
 import { categorizeIngredient, upgradeRecipeIngredients, setLearnedAliases } from './recipeSchema';
@@ -22,6 +23,7 @@ import MixMode from './components/MixMode';
 import FloatingVideoPlayer from './components/FloatingVideoPlayer';
 import { getMealVideoSource } from './lib/videoSource';
 import BarShelf from './components/BarShelf';
+import RoomTransition from './components/RoomTransition';
 import MealSpinner from './components/MealSpinner';
 import SyncQueue from './components/SyncQueue';
 import OfflineIndicator from './components/OfflineIndicator';
@@ -141,6 +143,22 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showBarShelf, setShowBarShelf] = useState(false);
   const [showBarFridge, setShowBarFridge] = useState(false);
+  // ── Room trip: animated "walk through the doorway" between My Bar & Saloon ──
+  const [roomTrip, setRoomTrip] = useState(null); // 'toSaloon' | 'toMyBar' | null
+  const roomTripBusy = useRef(false);
+  const tripBetweenRooms = useCallback((target) => {
+    if (roomTripBusy.current) return; // ignore re-taps mid-trip
+    roomTripBusy.current = true;
+    setRoomTrip(target);
+    // Swap the underlying overlays at the veil's opaque apex so the cut is hidden.
+    setTimeout(() => {
+      if (target === 'toSaloon') { setShowBarFridge(false); setShowBarShelf(true); }
+      else { setShowBarShelf(false); setShowBarFridge(true); }
+    }, 400);
+    // End the trip once the veil has receded.
+    setTimeout(() => { setRoomTrip(null); roomTripBusy.current = false; }, 850);
+  }, []);
+  const [showDiscover, setShowDiscover] = useState(false); // Discover Recipes overlay (Landing entry point)
   const [showSpinner, setShowSpinner] = useState(false);
   const [cookingStats, setCookingStats] = useState({ streak: 0, totalCooked: 0, topMeal: null });
   const [queuedOps, setQueuedOps] = useState(0);
@@ -199,6 +217,7 @@ export default function App() {
   useBackHandler(showFridge, () => setShowFridge(false), 'fridge');
   useBackHandler(showBarShelf, () => setShowBarShelf(false), 'bar-shelf');
   useBackHandler(showBarFridge, () => setShowBarFridge(false), 'bar-fridge');
+  useBackHandler(showDiscover, () => setShowDiscover(false), 'discover-landing');
   useBackHandler(!!cookModeMeal, () => setCookModeMeal(null), 'cook-mode');
   // Floating video PiP: mobile back / back-gesture closes the player instead of
   // navigating away from the app.
@@ -1265,6 +1284,7 @@ useEffect(() => {
             onViewDetail={setDetailItem}
             onOpenFridge={() => setShowFridge(true)}
             onOpenStats={() => setShowStats(true)}
+            onOpenDiscover={() => setShowDiscover(true)}
             canInstall={!!deferredPrompt}
             onInstallApp={handleInstallApp}
           />
@@ -1448,6 +1468,7 @@ useEffect(() => {
           onClose={() => setShowBarShelf(false)}
           onImport={() => { setImportModalKey(k => k + 1); setShowImportFor('drinks'); }}
           onAddToGrocery={handleAddToGrocery}
+          onExitToMyBar={() => tripBetweenRooms('toMyBar')}
         />
       )}
       <AnimatePresence>
@@ -1459,8 +1480,25 @@ useEffect(() => {
               onViewDetail={(drink) => { setShowBarFridge(false); setDetailItem(drink); }}
               onClose={() => setShowBarFridge(false)}
               onAddToGrocery={handleAddToGrocery}
+              onOpenSaloon={() => tripBetweenRooms('toSaloon')}
             />
           </Suspense>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {roomTrip && <RoomTransition key="room-trip" trip={roomTrip} />}
+      </AnimatePresence>
+      {/* ── Discover Recipes (Reddit browse-and-import) — Landing entry point ── */}
+      <AnimatePresence>
+        {showDiscover && (
+          <DiscoverRecipes
+            key="discover-recipes-landing"
+            onClose={() => setShowDiscover(false)}
+            onSelectUrl={(url) => {
+              setShowDiscover(false);
+              handleQuickImport(url);
+            }}
+          />
         )}
       </AnimatePresence>
       <AnimatePresence>
