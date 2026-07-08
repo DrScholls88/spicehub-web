@@ -214,6 +214,58 @@ export async function fetchHtmlViaProxy(url, timeoutMs = 30000) {
 }
 
 /**
+ * Fetch + parse a JSON API endpoint via a small, tightly time-bounded proxy
+ * cascade. Deliberately separate from fetchHtmlViaProxy(): that helper's
+ * success heuristics (bot-wall regexes, a >1000-char gate, a
+ * `!text.includes('"error"')` check) are tuned for scraping HTML pages and
+ * can misfire on legitimate JSON — and it internally chains its own
+ * internal-proxy + up to 7 public proxies, which stacked on top of a
+ * caller's own retry logic produced worst-case latency in the tens of
+ * seconds (observed with Reddit's discovery JSON endpoints).
+ *
+ * Total worst case here is bounded to roughly 3 × perAttemptTimeout, not the
+ * unbounded cascade fetchHtmlViaProxy produces.
+ *
+ * @param {string} targetUrl - the JSON API URL to fetch (already fully formed)
+ * @param {number} [timeoutMs=6000] - per-attempt timeout
+ * @returns {Promise<object|Array|null>} parsed JSON, or null if every attempt failed
+ */
+export async function fetchJsonViaProxy(targetUrl, timeoutMs = 6000) {
+  const attempts = [
+    () => `/api/proxy?url=${encodeURIComponent(targetUrl)}`,
+    () => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(targetUrl)}`,
+    () => `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
+  ];
+
+  for (const makeUrl of attempts) {
+    const proxyUrl = makeUrl();
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+      const resp = await fetch(proxyUrl, {
+        signal: ctrl.signal,
+        headers: { Accept: 'application/json' },
+      });
+      clearTimeout(timer);
+      if (!resp.ok) {
+        console.log(`[fetchJsonViaProxy] ${proxyUrl.split('/')[2] || proxyUrl.split('?')[0]} returned ${resp.status}`);
+        continue;
+      }
+      const text = await resp.text();
+      if (!text) continue;
+      const parsed = JSON.parse(text);
+      console.log(`[fetchJsonViaProxy] ✅ succeeded via ${proxyUrl.split('/')[2] || proxyUrl.split('?')[0]}`);
+      return parsed;
+    } catch (err) {
+      console.log(`[fetchJsonViaProxy] attempt failed (${err.message}) — trying next`);
+    }
+  }
+
+  console.warn('[fetchJsonViaProxy] ❌ All attempts failed for:', targetUrl);
+  return null;
+}
+
+/**
  * Proxy an image URL through CORS proxy (for displaying images that block cross-origin).
  * Returns a proxied URL string that can be used as an <img> src.
  */

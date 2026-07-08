@@ -11,12 +11,26 @@
  *
  * Zero-cost: No Reddit API key, no OAuth, no Apify, no Firecrawl.
  *
- * CORS note: Reddit allows browser-to-reddit.com requests from any origin on
- * `.json` endpoints. Direct fetch works in modern browsers. CORS proxy used as
- * fallback for environments that block it (e.g. restrictive CSP on some proxies).
+ * CORS note: Reddit's docs claim `.json` endpoints allow any-origin browser
+ * requests, but in practice (observed 2026-07-07 prod logs) Reddit does NOT
+ * send an Access-Control-Allow-Origin header for this app's origin — the
+ * direct fetch below is kept as a fast opportunistic first try (it fails
+ * near-instantly on a CORS block, it doesn't eat the timeout budget), but the
+ * real path is the server-side proxy cascade, since CORS is a browser-only
+ * restriction and server-to-server requests aren't subject to it at all.
+ *
+ * Deliberately NOT reusing the generic fetchHtmlViaProxy() from api.js here:
+ * that helper is tuned for scraping HTML pages (bot-wall regexes, a
+ * >1000-char gate, a `!text.includes('"error"')` heuristic that can
+ * false-positive on legitimate JSON containing that substring) and stacks
+ * its OWN internal-proxy-then-7-public-proxies cascade on top of whatever
+ * the caller already tried — for Reddit that produced up to ~60s of worst-
+ * case latency across nested timeout budgets before ever reaching the
+ * "no recipes found" fallback. fetchJsonViaProxy() below is a small,
+ * JSON-specific, tightly time-bounded cascade instead.
  */
 
-import { fetchHtmlViaProxy } from '../api.js';
+import { fetchJsonViaProxy } from '../api.js';
 
 // ─── Detectors ────────────────────────────────────────────────────────────────
 
@@ -51,15 +65,25 @@ export function isRedditPostUrl(url) {
 // ─── Core fetch helper ────────────────────────────────────────────────────────
 
 /**
- * Fetch Reddit JSON with direct browser fetch first, CORS proxy fallback.
- * Adds required `raw_json=1` param so Unicode isn't HTML-entity-encoded.
+ * Fetch Reddit JSON with direct browser fetch first, server-side proxy
+ * cascade fallback. Adds required `raw_json=1` param so Unicode isn't
+ * HTML-entity-encoded.
+ *
+ * timeoutMs is a PER-ATTEMPT budget, not a total — direct fetch gets one
+ * attempt at this timeout, then fetchJsonViaProxy gets up to 3 attempts at
+ * this same per-attempt timeout. Kept short (default 6s) because a CORS
+ * block or a proxy timing out should fail fast, not eat the whole budget a
+ * "Discover" browsing UI can reasonably keep someone waiting on.
  */
-async function fetchRedditJson(redditJsonUrl, timeoutMs = 12000) {
+export async function fetchRedditJson(redditJsonUrl, timeoutMs = 6000) {
   const url = new URL(redditJsonUrl);
   url.searchParams.set('raw_json', '1');
   const fullUrl = url.toString();
 
-  // Attempt 1: direct browser fetch (Reddit allows cross-origin on .json endpoints)
+  // Attempt 1: direct browser fetch. Kept as a fast opportunistic try — when
+  // Reddit doesn't grant CORS for this origin the browser rejects as soon as
+  // response headers arrive, not after the full timeout, so this is cheap
+  // even when it fails. See the CORS note atop this file.
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -77,20 +101,14 @@ async function fetchRedditJson(redditJsonUrl, timeoutMs = 12000) {
       return json;
     }
   } catch (e) {
-    console.log(`[reddit] Direct fetch failed (${e.message}) — trying CORS proxy`);
+    console.log(`[reddit] Direct fetch failed (${e.message}) — trying proxy cascade`);
   }
 
-  // Attempt 2: CORS proxy fallback (returns text, we parse as JSON)
-  try {
-    const proxied = await fetchHtmlViaProxy(fullUrl, timeoutMs);
-    if (proxied && proxied.trim().startsWith('[') || proxied?.trim().startsWith('{')) {
-      return JSON.parse(proxied);
-    }
-  } catch (e) {
-    console.log(`[reddit] CORS proxy JSON parse failed: ${e.message}`);
-  }
-
-  return null;
+  // Attempt 2: server-side proxy cascade. CORS is a browser-only
+  // restriction — a server (our /api/proxy Vercel fn, or a public proxy)
+  // fetching Reddit isn't subject to it at all, so this is the reliable path
+  // whenever Reddit doesn't grant this origin direct access.
+  return fetchJsonViaProxy(fullUrl, timeoutMs);
 }
 
 // ─── Post extraction ──────────────────────────────────────────────────────────

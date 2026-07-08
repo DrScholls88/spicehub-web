@@ -1,0 +1,45 @@
+{
+  "_comment": "Canonical spirit/mixer categories. `members` are keyword forms that map into the category; `interchangeable` categories let any member satisfy a drink ingredient of another member (a home-bar 'close enough' convenience). Used by categorizeBottle() and category-level matching in barMatch.js.",
+  "categories": {
+    "whiskey": {
+      "members": ["whiskey", "whisky", "bourbon", "rye", "scotch", "irish whiskey", "tennessee whiskey"],
+      "interchangeable": true
+    },
+    "rum": {
+      "members": ["rum", "white rum", "light rum", "dark rum", "spiced rum", "aged rum", "gold rum", "bacardi"],
+      "interchangeable": true
+    },
+    "gin": {
+      "members": ["gin", "london dry gin", "london dry", "old tom gin", "plymouth gin"],
+      "interchangeable": true
+    },
+    "vodka": {
+      "members": ["vodka", "citrus vodka", "vanilla vodka"],
+      "interchangeable": true
+    },
+    "tequila": {
+      "members": ["tequila", "blanco tequila", "silver tequila", "reposado tequila", "reposado", "anejo tequila", "anejo", "mezcal"],
+      "interchangeable": true
+    },
+    "brandy": {
+      "members": ["brandy", "cognac", "armagnac", "calvados", "pisco"],
+      "interchangeable": false
+    },
+    "vermouth": {
+      "members": ["vermouth", "dry vermouth", "sweet vermouth", "red vermouth", "white vermouth"],
+      "interchangeable": false
+    },
+    "orange liqueur": {
+      "members": ["triple sec", "cointreau", "curacao", "curaçao", "blue curacao", "grand marnier", "orange liqueur"],
+      "interchangeable": true
+    },
+    "bitters": {
+      "members": ["bitters", "angostura", "angostura bitters", "peychaud's", "peychauds", "orange bitters"],
+      "interchangeable": true
+    },
+    "soda": {
+      "members": ["soda water", "club soda", "seltzer", "sparkling water", "carbonated water"],
+      "interchangeable": true
+    }
+  }
+}

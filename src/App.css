@@ -13894,6 +13894,197 @@ body {
   border-color: #7b1fa2;
 }
 
+.bfm-results-summary {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bfm-surprise-btn {
+  padding: 6px 14px;
+  border: 1px solid #7b1fa2;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #7b1fa2, #9c27b0);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.bfm-surprise-btn:active {
+  transform: scale(0.96);
+  box-shadow: 0 0 0 3px rgba(123, 31, 162, 0.2);
+}
+
+.bfm-derivable-list {
+  font-size: 11px;
+  font-weight: 600;
+  color: #2e7d32;
+  margin: 2px 0 0;
+}
+
+/* Header actions + Party Mode toggle */
+.bfm-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bfm-party-btn {
+  padding: 6px 12px;
+  border: 1px solid #7b1fa2;
+  border-radius: 999px;
+  background: transparent;
+  color: #7b1fa2;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Editable shelf chips */
+.bfm-shelf-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.bfm-chip-label {
+  border: none;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bfm-chip-sub {
+  opacity: 0.6;
+  font-weight: 600;
+}
+
+/* Party / Kiosk read-only mode */
+.bfm-sheet.bfm-party .bfm-result-card {
+  padding: 14px;
+}
+
+.bfm-sheet.bfm-party .bfm-result-name {
+  font-size: 17px;
+}
+
+.bfm-sheet.bfm-party .bfm-result-img,
+.bfm-sheet.bfm-party .bfm-result-img-ph {
+  width: 68px;
+  height: 68px;
+}
+
+/* Bottle edit sheet */
+.bfm-edit-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 20;
+  border-radius: inherit;
+}
+
+.bfm-edit-sheet {
+  width: 100%;
+  max-width: 520px;
+  background: #241236;
+  color: #f5f0ff;
+  border-radius: 18px 18px 0 0;
+  padding: 20px 20px calc(20px + env(safe-area-inset-bottom));
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.45);
+}
+
+.bfm-edit-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.bfm-edit-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  text-transform: capitalize;
+  color: #f5f0ff;
+}
+
+.bfm-edit-cat {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(123, 31, 162, 0.12);
+  color: #7b1fa2;
+  text-transform: capitalize;
+}
+
+.bfm-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.bfm-edit-field > span {
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(245, 240, 255, 0.7);
+}
+
+.bfm-edit-field input,
+.bfm-edit-field textarea {
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 15px;
+  color: #f5f0ff;
+  resize: vertical;
+}
+
+.bfm-edit-field input::placeholder,
+.bfm-edit-field textarea::placeholder {
+  color: rgba(245, 240, 255, 0.4);
+}
+
+.bfm-edit-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.bfm-edit-cancel,
+.bfm-edit-save {
+  flex: 1;
+  padding: 12px;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bfm-edit-cancel {
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: transparent;
+  color: #f5f0ff;
+}
+
+.bfm-edit-save {
+  border: none;
+  background: linear-gradient(135deg, #7b1fa2, #9c27b0);
+  color: #fff;
+}
+
 /* Results */
 .bfm-results {
   flex: 1;
