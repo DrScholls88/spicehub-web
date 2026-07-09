@@ -3,6 +3,7 @@ import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import { getBarInventoryRecords, addToBarInventory, removeFromBarInventory, updateBarBottle } from '../db';
 import { matchDrink, pickSurprise, categorizeBottle } from '../lib/barMatch';
 import { IngredientSprite } from '../lib/barSprites.jsx';
+import IngredientCatalog from './IngredientCatalog';
 
 /**
  * "My Bar" — retro pixel-art bar inventory (formerly the "What's on My Shelf?"
@@ -29,6 +30,7 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose, onAddToGr
   const [editingBottle, setEditingBottle] = useState(null); // record being edited
   const [partyMode, setPartyMode] = useState(false); // read-only guest/kiosk view
   const [showDrinks, setShowDrinks] = useState(false); // slide-up makeable panel
+  const [showCatalog, setShowCatalog] = useState(false); // browse premade ingredients
 
   // Flat canonical-name list drives the match engine.
   const shelfItems = useMemo(() => shelfRecords.map(r => r.ingredient), [shelfRecords]);
@@ -227,7 +229,10 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose, onAddToGr
               </button>
             </div>
             <div className="mybar-quick">
-              {QUICK_ADDS.filter(item => !hasItem(item)).slice(0, 10).map(item => (
+              <button className="mybar-browse-chip" onClick={() => setShowCatalog(true)}>
+                🍾 Browse ingredients
+              </button>
+              {QUICK_ADDS.filter(item => !hasItem(item)).slice(0, 8).map(item => (
                 <button key={item} className="mybar-quick-chip" onClick={() => quickAdd(item)}>
                   + {item}
                 </button>
@@ -412,6 +417,19 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose, onAddToGr
               record={editingBottle}
               onSave={saveBottle}
               onClose={() => setEditingBottle(null)}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* Browse premade ingredients */}
+        <AnimatePresence>
+          {showCatalog && (
+            <IngredientCatalog
+              key="ingredient-catalog"
+              stocked={new Set(shelfItems)}
+              onAdd={addByName}
+              onRemove={removeItem}
+              onClose={() => setShowCatalog(false)}
             />
           )}
         </AnimatePresence>

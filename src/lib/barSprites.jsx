@@ -15,6 +15,11 @@ import { canonicalizeIngredient } from './barMatch';
 const P = {
   gin:      { body: '#c8e6c9', label: '#388e3c', cap: '#555555', accent: '#a5d6a7' },
   vodka:    { body: '#c8d8e4', label: '#2196f3', cap: '#666666', accent: '#e3f2fd' },
+  amaro:    { body: '#c0392b', label: '#7b241c', cap: '#5b1a12', accent: '#e6796b' },
+  cream:    { body: '#e8dcc0', label: '#a1887f', cap: '#8d6e63', accent: '#fff8e1' },
+  coffee:   { body: '#4e342e', label: '#ffcc02', cap: '#3e2723', accent: '#795548' },
+  berry:    { body: '#8e44ad', label: '#e1bee7', cap: '#5b2c6f', accent: '#ce93d8' },
+  herbal:   { body: '#4e9a51', label: '#1b5e20', cap: '#2e7d32', accent: '#a5d6a7' },
   rum:      { body: '#8d6e63', label: '#ffcc02', cap: '#4e342e', accent: '#a1887f' },
   whiskey:  { body: '#a1887f', label: '#ff8f00', cap: '#5d4037', accent: '#d7ccc8' },
   tequila:  { body: '#fff9c4', label: '#f57f17', cap: '#827717', accent: '#fff59d' },
@@ -76,13 +81,42 @@ const TABLE = [
   { kw: ['rum', 'bacardi', 'cachaca'], kind: 'bottle', shape: 'round', palette: P.rum },
   { kw: ['cognac', 'brandy', 'armagnac', 'pisco', 'calvados'], kind: 'bottle', shape: 'round', palette: P.brandy },
   { kw: ['dry vermouth', 'sweet vermouth', 'vermouth'], kind: 'bottle', shape: 'tall', palette: P.vermouth },
-  { kw: ['triple sec', 'cointreau', 'curacao', 'curaçao', 'grand marnier', 'orange liqueur', 'liqueur', 'kahlua', 'baileys', 'amaretto', 'aperol', 'campari', 'chartreuse'], kind: 'bottle', shape: 'round', palette: P.liqueur },
+  // Named liqueur families first (more specific palettes), then generic liqueur
+  { kw: ['campari', 'aperol', 'amaro', 'fernet', 'aperitivo', 'negroni', 'select'], kind: 'bottle', shape: 'round', palette: P.amaro },
+  { kw: ['baileys', 'irish cream', 'cream liqueur', 'rumchata'], kind: 'bottle', shape: 'round', palette: P.cream },
+  { kw: ['kahlua', 'coffee liqueur', 'espresso', 'cold brew', 'coffee', 'tia maria'], kind: 'bottle', shape: 'round', palette: P.coffee },
+  { kw: ['chambord', 'cassis', 'creme de cassis', 'crème de cassis', 'raspberry liqueur', 'sloe gin', 'crème de violette', 'creme de violette'], kind: 'bottle', shape: 'round', palette: P.berry },
+  { kw: ['midori', 'melon liqueur', 'chartreuse', 'benedictine', 'bénédictine', 'absinthe', 'creme de menthe', 'crème de menthe', 'green chartreuse', 'herbsaint'], kind: 'bottle', shape: 'tall', palette: P.herbal },
+  { kw: ['triple sec', 'cointreau', 'curacao', 'curaçao', 'grand marnier', 'orange liqueur', 'liqueur', 'amaretto', 'st-germain', 'st germain', 'elderflower liqueur', 'limoncello', 'frangelico', 'drambuie', 'sambuca', 'schnapps'], kind: 'bottle', shape: 'round', palette: P.liqueur },
   { kw: ['angostura', 'bitters', "peychaud's", 'peychauds'], kind: 'bottle', shape: 'mini', palette: P.bitters },
   { kw: ['champagne', 'prosecco', 'sparkling wine', 'wine', 'sherry', 'port'], kind: 'bottle', shape: 'wine', palette: P.wine },
   { kw: ['beer', 'ale', 'lager', 'stout', 'ipa', 'cider'], kind: 'bottle', shape: 'beer', palette: P.beer },
 ];
 
-const GENERIC = { kind: 'bottle', shape: 'round', palette: P.generic };
+// Deterministic variety for ingredients no keyword matches: hash the name to a
+// stable palette + bottle shape, so a "vast" catalog of unknowns still renders
+// as a colourful, varied shelf rather than a wall of identical bottles.
+const GENERIC_PALETTES = [
+  P.generic, P.rum, P.whiskey, P.liqueur, P.vermouth, P.brandy,
+  P.gin, P.vodka, P.wine, P.bitters, P.amaro, P.berry, P.herbal, P.tequila,
+];
+const GENERIC_SHAPES = ['round', 'tall', 'square', 'mini'];
+
+function hashStr(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+function genericSpec(seed) {
+  const h = hashStr(seed || 'x');
+  return {
+    kind: 'bottle',
+    shape: GENERIC_SHAPES[h % GENERIC_SHAPES.length],
+    palette: GENERIC_PALETTES[h % GENERIC_PALETTES.length],
+    glow: false,
+  };
+}
 
 function normalize(str) {
   return String(str || '')
@@ -115,7 +149,7 @@ export function spriteSpec(name) {
       }
     }
   }
-  return { ...GENERIC, glow: false };
+  return genericSpec(canon || raw);
 }
 
 // ── SVG renderers per kind ────────────────────────────────────────────────────

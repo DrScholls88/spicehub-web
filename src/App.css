@@ -13159,7 +13159,7 @@ body {
 /* Container moves with the bartender via translateX */
 .bs-quips-layer {
   position: absolute;
-  bottom: 180px; /* raised to clear bartender hat */
+  bottom: 238px; /* floats well above the bartender's hat — clears sprite + door */
   left: 0;
   width: 120px;  /* mirrors bartender SVG width */
   z-index: 100;
@@ -13988,10 +13988,10 @@ body {
    doorway you'd walk through. z-index handled by `.saloon-mid .saloon-exit-door`. */
 .saloon-exit-door {
   position: absolute;
-  left: calc(50% - 34px);   /* centred on the back wall, behind the bartender */
-  bottom: 56px;             /* lower ~50px sits behind the bar counter */
-  width: 68px;
-  height: 178px;
+  left: 9%;                 /* left side of the back wall, clear of the bartender */
+  bottom: 54px;             /* lower part sits behind the bar counter */
+  width: 84px;
+  height: 198px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -14173,6 +14173,143 @@ body {
   cursor: pointer;
   white-space: nowrap;
 }
+.mybar-browse-chip {
+  flex: 0 0 auto;
+  border: 1px solid #ffe082;
+  background: rgba(255, 224, 130, 0.14);
+  color: #ffe082;
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* ── Ingredient catalog (browse premade ingredients) ── */
+.cat-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1500;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.cat-sheet {
+  position: relative;
+  width: 100%;
+  max-width: 600px;
+  height: 88vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: linear-gradient(180deg, #1a0a2e 0%, #241236 100%);
+  color: #f5f0ff;
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.5);
+}
+.cat-handle { width: 36px; height: 4px; border-radius: 2px; background: #555; margin: 8px auto 4px; flex-shrink: 0; }
+.cat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 18px 8px;
+  flex-shrink: 0;
+}
+.cat-title { margin: 0; font-size: 18px; font-weight: 800; color: #ffe082; }
+.cat-sub { margin: 2px 0 0; font-size: 12px; color: rgba(245, 240, 255, 0.6); }
+.cat-done {
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: transparent;
+  color: #f5f0ff;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+}
+.cat-search-row { position: relative; padding: 0 18px 8px; flex-shrink: 0; }
+.cat-search {
+  width: 100%;
+  padding: 10px 34px 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #f5f0ff;
+  font-size: 14px;
+}
+.cat-search::placeholder { color: rgba(245, 240, 255, 0.4); }
+.cat-search-clear {
+  position: absolute;
+  right: 26px;
+  top: 8px;
+  border: none;
+  background: transparent;
+  color: rgba(245, 240, 255, 0.6);
+  font-size: 14px;
+  cursor: pointer;
+}
+.cat-scroll {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 4px 14px calc(20px + env(safe-area-inset-bottom));
+}
+.cat-section { margin-bottom: 14px; }
+.cat-section-title {
+  margin: 8px 4px;
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(245, 240, 255, 0.85);
+  letter-spacing: 0.5px;
+}
+.cat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+  gap: 8px;
+}
+.cat-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #f5f0ff;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.cat-tile--on { border-color: #39ff14; background: rgba(57, 255, 20, 0.1); }
+.cat-tile-sprite { height: 44px; display: flex; align-items: flex-end; }
+.cat-tile-name {
+  font-size: 9px;
+  line-height: 1.15;
+  text-align: center;
+  text-transform: capitalize;
+  color: rgba(245, 240, 255, 0.85);
+  max-width: 72px;
+}
+.cat-tile-check {
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: #39ff14;
+  color: #0a2e05;
+  font-size: 10px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cat-empty { text-align: center; padding: 40px 20px; color: rgba(245, 240, 255, 0.7); }
+.cat-empty-icon { font-size: 40px; display: block; margin-bottom: 10px; }
 
 /* Scene */
 .mybar-scene {
@@ -17984,10 +18121,11 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   position: absolute;
   left: 4%;
   top: auto;
-  bottom: 122px; /* anchor near bar counter (110px surface + 12px gap) */
-  width: 30%;
-  max-width: 138px;
-  min-width: 96px;
+  bottom: 178px; /* higher on the wall — recedes into the backdrop */
+  width: 21%;
+  max-width: 102px;
+  min-width: 76px;
+  opacity: 0.82;
   background: transparent;
   border: none;
   padding: 0;
@@ -18027,7 +18165,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 
 .chalk-header {
   font-family: 'Press Start 2P', monospace;
-  font-size: 9px;
+  font-size: 7px;
   color: #ffffff;
   text-align: center;
   line-height: 1.6;
@@ -18045,7 +18183,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 
 .chalk-drink-name {
   font-family: 'Press Start 2P', monospace;
-  font-size: 8px;
+  font-size: 7px;
   color: #fff2a8;
   text-align: center;
   text-shadow:
@@ -18059,8 +18197,8 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 
 .chalk-ingredients {
   font-family: 'Press Start 2P', monospace;
-  font-size: 6px;
-  color: rgba(255,253,231,0.92);
+  font-size: 5px;
+  color: rgba(255,253,231,0.88);
   text-align: center;
   margin-top: 5px;
   line-height: 1.8;
@@ -18087,10 +18225,11 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   position: absolute;
   right: 4%;
   top: auto;
-  bottom: 122px; /* anchor near bar counter, matching chalkboard */
-  width: 30%;
-  max-width: 132px;
-  min-width: 92px;
+  bottom: 178px; /* matches chalkboard — higher, recedes into backdrop */
+  width: 21%;
+  max-width: 100px;
+  min-width: 74px;
+  opacity: 0.82;
   background: transparent;
   border: none;
   padding: 0;
@@ -18100,7 +18239,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 
 .bounty-board-header {
   font-family: 'Press Start 2P', monospace;
-  font-size: 8px;
+  font-size: 7px;
   color: #ffd700;
   text-align: center;
   background: #1a0800; /* near-black so text blazes */
@@ -18147,7 +18286,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 
 .bounty-poster-label {
   font-family: 'Press Start 2P', monospace;
-  font-size: 6px;
+  font-size: 5px;
   color: #6b0000; /* deep blood red on amber — high contrast */
   letter-spacing: 1px;
   border-bottom: 1px solid rgba(60,20,0,0.5);
@@ -18159,7 +18298,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 
 .bounty-ingredient {
   font-family: 'Press Start 2P', monospace;
-  font-size: 8px;
+  font-size: 6px;
   color: #1a0800; /* near-black ink — maximum readability on amber */
   word-break: break-all;
   line-height: 1.5;
@@ -18170,7 +18309,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 
 .bounty-reward {
   font-family: 'Press Start 2P', monospace;
-  font-size: 5px;
+  font-size: 4px;
   color: #3a1e00; /* dark ink — readable against bright amber */
   line-height: 1.9;
   margin-top: 3px;
