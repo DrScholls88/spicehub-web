@@ -40,6 +40,41 @@ export function createContextPack(fields = {}) {
   };
 }
 
+/**
+ * Build a ContextPack from a raw caption (and optional transcript) — the seam
+ * that lets the caption/paste/Instagram paths share the single structurePack
+ * brain instead of the legacy 8k `structureWithAIClient`. `caption` and
+ * `transcript` land in their labeled sections; a hero `imageUrl` (if any) is
+ * carried as the first image so finalize can resolve it.
+ */
+export function packFromCaption({
+  caption = '',
+  transcript = null,
+  title = '',
+  sourceUrl = '',
+  imageUrl = '',
+  images = null,
+  sourceType = 'text',
+  acquiredVia = '',
+  confidence = 0.5,
+} = {}) {
+  const imgs = Array.isArray(images)
+    ? images
+    : imageUrl
+      ? [{ url: imageUrl, kind: 'hero' }]
+      : [];
+  return createContextPack({
+    sourceType,
+    sourceUrl,
+    title,
+    caption: caption && caption.trim() ? caption : null,
+    transcript: transcript && String(transcript).trim() ? transcript : null,
+    images: imgs,
+    acquiredVia: acquiredVia || (sourceType === 'instagram' ? 'caption' : 'text'),
+    confidence,
+  });
+}
+
 /** Append a provenance entry (field origin + optional 0–1 confidence). */
 export function addProvenance(pack, field, via, confidence) {
   pack.provenance.push(

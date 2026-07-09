@@ -55,6 +55,23 @@ export const VERIFIER_RULES = [
 ].join('\n');
 
 /**
+ * IG_RECONCILIATION — appended ONLY for Instagram packs (sourceType === 'instagram').
+ * Reels pair a written caption with a spoken transcript; the caption's lists are
+ * authoritative, the transcript backfills gaps, and neither may invent.
+ */
+export const IG_RECONCILIATION = [
+  'INSTAGRAM REEL RULES.',
+  '- The CAPTION is authoritative for ingredient lists and measured quantities.',
+  '  Prefer numbered/bulleted lists in the CAPTION over anything spoken.',
+  '- Use the TRANSCRIPT only to FILL missing steps or amounts the caption omits,',
+  '  and to order steps. Never invent quantities or steps not supported by either.',
+  '- Do not double-count: if the same step appears in both CAPTION and TRANSCRIPT,',
+  '  emit it once.',
+  '- Strip music credits, "original audio", @handles, #hashtags, timestamps, and',
+  '  "link in bio" / "recipe in comments" CTAs from every field.',
+].join('\n');
+
+/**
  * PACK_RESPONSE_SCHEMA — RECIPE_SCHEMA plus an optional provenance array so
  * the model reports which source each major field came from (auditable,
  * feeds ImportReview badges). Additive: consumers that ignore it are safe.
@@ -115,10 +132,11 @@ export function buildPackContents(pack, { type = 'meal' } = {}) {
  * result contract: { structured } | { status } | { failed } | { error }.
  * Never throws.
  */
-export async function geminiPackRequest(model, contents, clientKey, { mode = 'extract' } = {}) {
+export async function geminiPackRequest(model, contents, clientKey, { mode = 'extract', sourceType = null } = {}) {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${clientKey}`;
   const systemParts = [{ text: SYSTEM_INSTRUCTION }, { text: RECONCILIATION_RULES }];
   if (mode === 'verify') systemParts.push({ text: VERIFIER_RULES });
+  if (sourceType === 'instagram') systemParts.push({ text: IG_RECONCILIATION });
 
   try {
     const res = await fetch(endpoint, {
@@ -192,8 +210,9 @@ export async function structurePack(pack, { type = 'meal', clientKey: keyOverrid
   if (!clientKey) return serverStructurePack(pack, { type, signal });
 
   const { contents, mode, kind } = buildPackContents(pack, { type });
+  const sourceType = pack.sourceType || null;
 
-  const primary = await geminiPackRequest(GEMINI_MODEL, contents, clientKey, { mode });
+  const primary = await geminiPackRequest(GEMINI_MODEL, contents, clientKey, { mode, sourceType });
   if (primary.status || primary.error || primary.failed) {
     console.warn(
       `[SpiceHub] structurePack ${primary.status ? 'HTTP ' + primary.status : primary.error || 'empty'} (${GEMINI_MODEL})`,
@@ -208,7 +227,7 @@ export async function structurePack(pack, { type = 'meal', clientKey: keyOverrid
   const lowConfidence = typeof best.confidence === 'number' && best.confidence < GEMINI_CONFIDENCE_FLOOR;
   if (lowConfidence && GEMINI_MODEL_FLAGSHIP && GEMINI_MODEL_FLAGSHIP !== GEMINI_MODEL) {
     console.log(`[SpiceHub] structurePack escalating to ${GEMINI_MODEL_FLAGSHIP} (confidence ${best.confidence})`);
-    const esc = await geminiPackRequest(GEMINI_MODEL_FLAGSHIP, contents, clientKey, { mode });
+    const esc = await geminiPackRequest(GEMINI_MODEL_FLAGSHIP, contents, clientKey, { mode, sourceType });
     if (esc.structured?.isRecipe && (esc.structured.confidence ?? 0) > (best.confidence ?? 0)) {
       best = esc.structured;
       best._structureMode = mode;
