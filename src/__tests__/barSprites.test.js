@@ -52,11 +52,20 @@ describe('spriteSpec — non-bottle kinds', () => {
 });
 
 describe('spriteSpec — totality & determinism', () => {
-  it('unknown ingredients fall back to a generic bottle', () => {
-    expect(spriteSpec('unicorn dust')).toMatchObject({ kind: 'bottle', shape: 'round' });
+  it('unknown ingredients fall back to a (varied) bottle', () => {
+    const u = spriteSpec('unicorn dust');
+    expect(u.kind).toBe('bottle');
+    expect(['round', 'tall', 'square', 'mini']).toContain(u.shape);
     expect(spriteSpec('')).toMatchObject({ kind: 'bottle' });
     expect(spriteSpec(null)).toMatchObject({ kind: 'bottle' });
     expect(spriteSpec(undefined)).toMatchObject({ kind: 'bottle' });
+  });
+
+  it('gives different unknown ingredients different sprites (variety)', () => {
+    const a = spriteSpec('zzz mystery one');
+    const b = spriteSpec('qqq mystery two');
+    // Not guaranteed different, but the hash should spread most pairs apart.
+    expect(a.palette.body === b.palette.body && a.shape === b.shape).toBe(false);
   });
 
   it('is deterministic and carries a full palette', () => {
