@@ -29,7 +29,7 @@ import { stripJunkLines, isJunkLine, BAIT_ONLY_RE, countQuantityLines } from './
 import { acquireWebsitePack } from './import/acquire/website.js';
 import { acquireInstagramPack } from './import/acquire/instagram.js';
 import { selectHeroImage, persistCarousel } from './import/images.js';
-import { packHasCompleteCandidate, createContextPack } from './import/contextPack.js';
+import { packHasCompleteCandidate, createContextPack, packFromCaption } from './import/contextPack.js';
 import { structurePack, serverStructurePack } from './import/structure/gemini.js';
 
 // ── Null-byte sanitizer ─────────────────────────────────────────────────────
@@ -1444,14 +1444,74 @@ export function structureDeterministic(caption, { type = 'meal', imageUrl = '', 
   return finalizeAIRecipe(thin, { hintTitle: parsed.title || '', imageUrl, sourceUrl, via: 'deterministic' });
 }
 
-export async function captionToRecipe(captionText, { title = '', imageUrl = '', sourceUrl = '', type = 'meal' } = {}) {
-  if (!captionText || captionText.trim().length < 20) return null;
+// Dev flag: force the ContextPack path only (skip the legacy structureWithAI
+// fallback) so tests/dev can prove the pack path in isolation. Default off →
+// pack-then-legacy, which can never make imports worse.
+const IMPORT_PACK_ONLY =
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_IMPORT_PACK_ONLY === '1') || false;
+
+// Spec C cross-check, shared by the pack + legacy caption paths: reconcile the
+// LLM qty/unit split against a deterministic local parse of the same text; fill
+// empty fields, flag disagreements, re-score confidence. Best-effort — never
+// overrides populated LLM values and never throws.
+function _applyCaptionCrossCheck(result, textForAI, type) {
+  try {
+    const det = structureDeterministic(textForAI, { type });
+    const detItems = det?.ingredientsStructured;
+    if (Array.isArray(detItems) && detItems.length && Array.isArray(result.ingredientsStructured)) {
+      const xc = crossCheckStructured(result.ingredientsStructured, detItems, { fillGaps: true });
+      result.ingredientsStructured = annotateFieldConfidence(xc.items);
+      result._crossCheckAudit = xc.audit;
+      if (xc.audit.disagreements > 0) {
+        result.needsReview = true;
+        if (typeof result.confidence === 'number') {
+          result.confidence = Math.max(0, result.confidence - 0.03 * Math.min(xc.audit.disagreements, 4));
+        }
+      }
+      if (xc.audit.filled || xc.audit.disagreements) {
+        console.log(`[SpiceHub] Cross-check: ${xc.audit.filled} filled, ${xc.audit.disagreements} disagreements (${xc.audit.matched}/${result.ingredientsStructured.length} matched)`);
+      }
+    }
+  } catch { /* cross-check is best-effort */ }
+  return result;
+}
+
+export async function captionToRecipe(captionText, { title = '', imageUrl = '', sourceUrl = '', type = 'meal', transcript = null, sourceType = 'text' } = {}) {
+  const hasCaption = !!(captionText && captionText.trim().length >= 20);
+  const hasTranscript = !!(transcript && String(transcript).trim().length >= 20);
+  if (!hasCaption && !hasTranscript) return null;
 
   // ReciME-style: aggressively clean social chrome before sending to AI
-  const cleanedCaption = cleanSocialCaption(captionText);
-  const textForAI = cleanedCaption.length >= 20 ? cleanedCaption : captionText;
+  const cleanedCaption = cleanSocialCaption(captionText || '');
+  const textForAI = cleanedCaption.length >= 20 ? cleanedCaption : (captionText || '');
 
-  // Try Gemini AI structuring first (most reliable for social media captions)
+  // ── Unified pack path (highest quality): one Gemini brain via structurePack
+  // — 50k budget, reconciliation, verifier. Merges caption + transcript into a
+  // single labeled ContextPack. On empty/failure it falls through to the legacy
+  // structureWithAI path below, so this is strictly additive. ──
+  try {
+    const pack = packFromCaption({ caption: textForAI, transcript, title, sourceUrl, imageUrl, sourceType });
+    const structured = await structurePack(pack, { type });
+    if (structured?.isRecipe) {
+      const packRecipe = finalizeAIRecipe(thinFromStructured(structured), {
+        hintTitle: title,
+        imageUrl,
+        sourceUrl,
+        via: 'gemini-pack:' + (structured._structureMode || 'extract'),
+      });
+      if (hasRecipeContent(packRecipe)) {
+        const xchecked = _applyCaptionCrossCheck(packRecipe, textForAI || String(transcript || ''), type);
+        xchecked._structuredVia = xchecked._structuredVia || 'gemini-pack';
+        return xchecked;
+      }
+    }
+  } catch (e) {
+    console.log('[SpiceHub] captionToRecipe pack path failed:', e?.message);
+  }
+
+  if (IMPORT_PACK_ONLY) return null; // dev: don't fall through to legacy
+
+  // ── Legacy fallback: structureWithAI (8k) then heuristic parse (unchanged) ──
   try {
     const aiResult = await structureWithAI(textForAI, { title, imageUrl, sourceUrl, type });
     if (aiResult) {
@@ -1461,29 +1521,7 @@ export async function captionToRecipe(captionText, { title = '', imageUrl = '', 
       // finalizeAIRecipe — don't clobber it with a generic 'gemini'.
       if (hasRealIngs || hasRealDirs) {
         const result = { ...aiResult, _structuredVia: aiResult._structuredVia || 'gemini' };
-        // Spec C: cross-check the LLM's qty/unit split against a deterministic
-        // local parse of the same text. Flag disagreements + fill empty fields;
-        // never override populated LLM values. Best-effort — never blocks import.
-        try {
-          const det = structureDeterministic(textForAI, { type });
-          const detItems = det?.ingredientsStructured;
-          if (Array.isArray(detItems) && detItems.length && Array.isArray(result.ingredientsStructured)) {
-            const xc = crossCheckStructured(result.ingredientsStructured, detItems, { fillGaps: true });
-            // Spec B: re-score per-field confidence now that _xcheck is set.
-            result.ingredientsStructured = annotateFieldConfidence(xc.items);
-            result._crossCheckAudit = xc.audit;
-            if (xc.audit.disagreements > 0) {
-              result.needsReview = true;
-              if (typeof result.confidence === 'number') {
-                result.confidence = Math.max(0, result.confidence - 0.03 * Math.min(xc.audit.disagreements, 4));
-              }
-            }
-            if (xc.audit.filled || xc.audit.disagreements) {
-              console.log(`[SpiceHub] Cross-check: ${xc.audit.filled} filled, ${xc.audit.disagreements} disagreements (${xc.audit.matched}/${result.ingredientsStructured.length} matched)`);
-            }
-          }
-        } catch { /* cross-check is best-effort */ }
-        return result;
+        return _applyCaptionCrossCheck(result, textForAI, type);
       }
     }
   } catch { /* fall through to heuristic */ }
@@ -5256,7 +5294,27 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
       progress(3, 'running', '✨ Structuring recipe with Gemini…');
     }
     try {
-      const recipe = cleanStructuredSocialRecipe(await captionToRecipe(textForGemini, { title: capturedTitle, imageUrl: capturedImageUrl, sourceUrl: url, type }));
+      // Route IG through the unified pack brain, labeled 'instagram' so the
+      // IG-specific reconciliation addendum engages. When a distinct video
+      // transcript exists alongside a real caption, pass it as the labeled
+      // TRANSCRIPT section (deduped: only when it isn't already the caption text
+      // — today's acquire ordering usually folds transcript into the caption).
+      const igTranscript =
+        videoRecipe && videoRecipe._hasSubtitles && capturedCaption?.trim().length >= 20
+          ? recipeToText(videoRecipe)
+          : null;
+      const igTranscriptForPack =
+        igTranscript && igTranscript.trim() && igTranscript.trim() !== textForGemini.trim()
+          ? igTranscript
+          : null;
+      const recipe = cleanStructuredSocialRecipe(await captionToRecipe(textForGemini, {
+        title: capturedTitle,
+        imageUrl: capturedImageUrl,
+        sourceUrl: url,
+        type,
+        sourceType: 'instagram',
+        transcript: igTranscriptForPack,
+      }));
       // Use OR: accept if EITHER ingredients OR directions is non-placeholder
       if (recipe && (!isPlaceholder(recipe.ingredients) || !isPlaceholder(recipe.directions))) {
         progress(3, 'done', 'Recipe structured successfully!');

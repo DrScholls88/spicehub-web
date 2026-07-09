@@ -9,6 +9,7 @@ import {
   addProvenance,
   packHasCompleteCandidate,
   buildPackSections,
+  packFromCaption,
   PACK_BUDGET,
 } from '../../src/import/contextPack.js';
 import {
@@ -17,6 +18,7 @@ import {
   sanitizeModelJson,
   RECONCILIATION_RULES,
   VERIFIER_RULES,
+  IG_RECONCILIATION,
   PACK_RESPONSE_SCHEMA,
 } from '../../src/import/structure/gemini.js';
 import { packFromExtractResponse } from '../../src/import/acquire/website.js';
@@ -76,6 +78,68 @@ describe('contextPack — section building and budgets', () => {
     expect(text.length).toBeLessThanOrEqual(PACK_BUDGET.total + 2000); // labels/separators margin
     expect(text).toMatch(/RECIPE HEAD MARKER/);        // head survives
     expect(text).toMatch(/"name": "Budget Test"/);     // JSON-LD never dropped
+  });
+});
+
+describe('contextPack — packFromCaption (caption/IG unification)', () => {
+  it('builds a pack from caption + transcript with a hero image and sourceType', () => {
+    const p = packFromCaption({
+      caption: 'INGREDIENTS:\n2 oz gin',
+      transcript: 'add two ounces of gin and stir with ice',
+      title: 'Martini',
+      sourceUrl: 'https://instagram.com/reel/x',
+      imageUrl: 'https://img.example.com/hero.jpg',
+      sourceType: 'instagram',
+    });
+    expect(p.sourceType).toBe('instagram');
+    expect(p.caption).toMatch(/2 oz gin/);
+    expect(p.transcript).toMatch(/two ounces of gin/);
+    expect(p.images[0]).toEqual({ url: 'https://img.example.com/hero.jpg', kind: 'hero' });
+    expect(p.acquiredVia).toBe('caption');
+  });
+
+  it('blank caption/transcript normalize to null; default sourceType is text', () => {
+    const p = packFromCaption({ caption: '   ', transcript: '' });
+    expect(p.caption).toBeNull();
+    expect(p.transcript).toBeNull();
+    expect(p.sourceType).toBe('text');
+  });
+
+  it('caption + transcript both emit labeled sections (the IG merge)', () => {
+    const p = packFromCaption({ caption: '2 oz gin', transcript: 'stir with ice', sourceType: 'instagram' });
+    const { sections } = buildPackSections(p);
+    expect(sections).toContain('CAPTION');
+    expect(sections).toContain('TRANSCRIPT');
+  });
+});
+
+describe('structure/gemini — IG reconciliation addendum', () => {
+  async function captureSystemParts(sourceType) {
+    let captured = null;
+    vi.stubGlobal('fetch', vi.fn(async (_endpoint, init) => {
+      captured = JSON.parse(init.body).systemInstruction.parts.map((p) => p.text);
+      return {
+        ok: true,
+        json: async () => ({
+          candidates: [{ content: { parts: [{ text: JSON.stringify({ isRecipe: true, title: 'X', confidence: 0.9 }) }] } }],
+        }),
+      };
+    }));
+    const pack = createContextPack({ sourceType, caption: '2 oz gin\nstir with ice' });
+    await structurePack(pack, { type: 'drink', clientKey: 'test-key' });
+    return captured;
+  }
+
+  it('appends IG_RECONCILIATION only for instagram packs', async () => {
+    const igParts = await captureSystemParts('instagram');
+    expect(igParts.some((t) => t === IG_RECONCILIATION)).toBe(true);
+    const textParts = await captureSystemParts('text');
+    expect(textParts.some((t) => t === IG_RECONCILIATION)).toBe(false);
+  });
+
+  it('IG_RECONCILIATION carries the approved language', () => {
+    expect(IG_RECONCILIATION).toMatch(/CAPTION is authoritative/);
+    expect(IG_RECONCILIATION).toMatch(/Do not double-count/);
   });
 });
 

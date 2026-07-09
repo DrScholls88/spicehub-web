@@ -7,9 +7,11 @@
 //   • Instagram embed / ?__a=1-style JSON calls as a FALLBACK to Apify
 //     (Apify orchestration stays client-side).
 //
-// No secrets required, no third-party dependencies, rate-limited per IP.
+// No secrets required, rate-limited per IP. Uses cheerio (server-only) to read
+// WordPress recipe-plugin cards; the client keeps its DOMParser path as fallback.
 // Pure helpers are exported for the golden corpus (tests/import/corpus.extract.test.js).
 // ─────────────────────────────────────────────────────────────────────────────
+import { extractPluginCandidate } from '../src/import/pluginExtractors.js';
 
 const FETCH_TIMEOUT_MS = 12000;
 const MAX_HTML_BYTES = 2_500_000;
@@ -324,6 +326,17 @@ export function extractFromHtml(html, url = '') {
     if (micro && micro.ingredients.length > 0) {
       candidate = micro;
       acquiredVia = 'microdata';
+    }
+  }
+
+  // WordPress recipe-plugin cards (WPRM / Tasty / Mediavine Create / EasyRecipe).
+  // Runs only when structured data didn't already yield a candidate, so a complete
+  // plugin card lets a blog import without a Gemini call. Falls back silently.
+  if (!candidate) {
+    const plugin = extractPluginCandidate(html);
+    if (plugin && (plugin.ingredients.length > 0 || plugin.directions.length > 0)) {
+      candidate = plugin;
+      acquiredVia = 'plugin:' + plugin._pluginType;
     }
   }
 

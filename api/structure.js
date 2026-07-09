@@ -14,6 +14,7 @@ import { SYSTEM_INSTRUCTION } from '../src/recipeSchema.js';
 import {
   RECONCILIATION_RULES,
   VERIFIER_RULES,
+  IG_RECONCILIATION,
   PACK_RESPONSE_SCHEMA,
   buildPackContents,
   sanitizeModelJson,
@@ -57,9 +58,10 @@ export function packFromRequestBody(body = {}) {
   return null;
 }
 
-async function geminiCall(model, contents, mode, apiKey) {
+async function geminiCall(model, contents, mode, apiKey, sourceType = null) {
   const systemParts = [{ text: SYSTEM_INSTRUCTION }, { text: RECONCILIATION_RULES }];
   if (mode === 'verify') systemParts.push({ text: VERIFIER_RULES });
+  if (sourceType === 'instagram') systemParts.push({ text: IG_RECONCILIATION });
 
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
@@ -113,7 +115,7 @@ export default async function handler(req, res) {
   try {
     const { contents, mode, kind } = buildPackContents(pack, { type: req.body?.type || 'meal' });
 
-    const primary = await geminiCall(PRIMARY_MODEL, contents, mode, apiKey);
+    const primary = await geminiCall(PRIMARY_MODEL, contents, mode, apiKey, pack.sourceType);
     if (primary.status) return res.status(502).json({ ok: false, reason: 'gemini-' + primary.status });
     if (primary.failed || !primary.structured?.isRecipe) {
       return res.status(200).json({ ok: true, structured: null, mode, elapsedMs: Date.now() - started });
@@ -122,7 +124,7 @@ export default async function handler(req, res) {
     let best = primary.structured;
     const lowConfidence = typeof best.confidence === 'number' && best.confidence < CONFIDENCE_FLOOR;
     if (lowConfidence && FLAGSHIP_MODEL && FLAGSHIP_MODEL !== PRIMARY_MODEL) {
-      const esc = await geminiCall(FLAGSHIP_MODEL, contents, mode, apiKey);
+      const esc = await geminiCall(FLAGSHIP_MODEL, contents, mode, apiKey, pack.sourceType);
       if (esc.structured?.isRecipe && (esc.structured.confidence ?? 0) > (best.confidence ?? 0)) {
         best = esc.structured;
         best._escalated = true;
