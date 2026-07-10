@@ -10,7 +10,7 @@ Source: `GeminiAnalysisMealPack.md` (39/100 friction score audit + follow-up Q&A
 ## P1 — Empty state / first-run experience (biggest gap vs. current code)
 
 3. ✅ **DONE (2026-07-07).** Spin button "0 meals" guard. `generateWeek` (App.jsx) no longer shows a blocking `alert()`; under 5 meals it toasts and routes to Library. LandingPage CTA relabels to "Add Meals to Spin" at 0 meals.
-4. ✅ **DONE (2026-07-07).** Starter kit. Turned out `paprika_import_data.js` already held 32 of Brian's real saved recipes, imported into App.jsx but never used — same dead-code pattern as #6. Wired those (not invented filler) via `src/data/starterKitMeals.js`; auto-seeds once per device, tagged `starterKit:true`, removable from Settings.
+4. ✅ **DONE (2026-07-07; curated 2026-07-09).** Starter kit. Curated ~10 cookable recipes in `src/data/starterKitData.js` + `starterKitMeals.js`; auto-seeds once per device when the library is empty; tagged `starterKit:true`. Settings supports Add/Restore and Remove; empty library offers “Load starter recipes.”
 5. **Progressive "fill your fridge" indicator.** Not built. Lower priority — only worth doing once the empty-state redirect exists (now does), still decoration with nothing new to unlock.
 
 ## P2 — Discovery / import architecture

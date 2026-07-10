@@ -304,7 +304,7 @@ export default function WeekView({
   days, weekPlan, meals, specialDays,
   onGenerate, onSmartPlan, dietaryPref, onChangeDietaryPref,
   onRespin, onSetDay, onSetSpecial, onViewDetail, onBuildGrocery,
-  onToggleLock,
+  onToggleLock, onLockAll, onUnlockAll,
   cookingStats = {},
   weekHistory = [],
   onRestoreWeek,
@@ -333,6 +333,7 @@ export default function WeekView({
   const [spinnerTargetDates, setSpinnerTargetDates] = useState(null);
   const [grocerySelectMode, setGrocerySelectMode] = useState(false);
   const [groceryDays, setGroceryDays] = useState(new Set());
+  const [justCompletedSpin, setJustCompletedSpin] = useState(false);
 
   const longPressTimerRef     = useRef(null);
   const longPressRafRef       = useRef(null);
@@ -977,6 +978,7 @@ export default function WeekView({
               onSpinnerComplete(pairs);
               setSpinnerSelectedIndices(null);
               setSpinnerTargetDates(null);
+              setJustCompletedSpin(true);
             }}
             onClose={() => {
               onCloseSpinner();
@@ -997,6 +999,25 @@ export default function WeekView({
           background: 'var(--card)',
           borderTop: '1px solid var(--border)',
         }}>
+          {justCompletedSpin && (
+            <button
+              onClick={() => {
+                setJustCompletedSpin(false);
+                onBuildGrocery();
+              }}
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                padding: '14px 16px', border: 'none', borderRadius: 12,
+                background: 'linear-gradient(135deg, var(--primary), #c084fc)',
+                color: 'white', fontSize: 15, fontWeight: 700, cursor: 'pointer',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                animation: 'wv-fadeIn 0.3s ease both',
+              }}
+            >
+              <ShoppingCart size={16} strokeWidth={2.5} />
+              Build your grocery list →
+            </button>
+          )}
           {selectMode ? (
             <div style={{ display: 'flex', gap: 8 }}>
               <button
@@ -1054,20 +1075,36 @@ export default function WeekView({
                 </label>
               )}
               <button
-                onClick={() => { navigator.vibrate?.([40, 25, 40]); onSmartPlan?.(); }}
+                onClick={() => { setJustCompletedSpin(false); navigator.vibrate?.([40, 25, 40]); onSmartPlan?.(); }}
                 style={PRIMARY_BTN}
               >
                 Plan my Week{rotationCount > 0 ? ` (${rotationCount})` : ''}
               </button>
+              {(onLockAll || onUnlockAll) && (
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button
+                    onClick={() => { onLockAll?.(); setJustCompletedSpin(false); }}
+                    style={{ ...SECONDARY_BTN, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '10px 8px', fontSize: 12 }}
+                  >
+                    🔒 Lock All
+                  </button>
+                  <button
+                    onClick={() => { onUnlockAll?.(); setJustCompletedSpin(false); }}
+                    style={{ ...SECONDARY_BTN, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '10px 8px', fontSize: 12 }}
+                  >
+                    🔓 Unlock All
+                  </button>
+                </div>
+              )}
               <div style={{ display: 'flex', gap: 8 }}>
                 <button
-                  onClick={() => { navigator.vibrate?.([50, 30, 50]); onGenerate(); }}
+                  onClick={() => { setJustCompletedSpin(false); navigator.vibrate?.([50, 30, 50]); onGenerate(); }}
                   style={{ ...SECONDARY_BTN, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
                 >
                   <RefreshCw size={14} strokeWidth={2.5} /> Spin
                 </button>
                 <button
-                  onClick={() => setSelectMode(true)}
+                  onClick={() => { setJustCompletedSpin(false); setSelectMode(true); }}
                   style={{ ...SECONDARY_BTN, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
                 >
                   <CheckSquare size={14} strokeWidth={2.5} /> Select

@@ -145,7 +145,7 @@ const fabActionVariants = {
   open: { opacity: 1, y: 0, scale: 1, transition: { type: 'spring', stiffness: 420, damping: 26 } },
 };
 
-export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDetail, onShare, onImport, onImportUrl, onReload, onToast, onToggleFavorite, onRate, onPlayVideo }) {
+export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDetail, onShare, onImport, onImportUrl, onReload, onToast, onToggleFavorite, onRate, onPlayVideo, onLoadStarterPack }) {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
@@ -590,11 +590,24 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
             ) : (
               <>
                 <p className="ml-empty-text">Your recipe box is empty</p>
-                <p className="ml-empty-hint">Import a recipe from Instagram to start your collection.</p>
+                <p className="ml-empty-hint">Load the starter pack for ready-to-spin meals, or import a recipe from a link.</p>
               </>
             )}
             {!search && category === 'All' && (
-              <button className="ml-empty-cta" onClick={onImport}>Import a Recipe</button>
+              <div className="ml-empty-actions">
+                {onLoadStarterPack && (
+                  <button className="ml-empty-cta" type="button" onClick={onLoadStarterPack}>
+                    Load starter recipes
+                  </button>
+                )}
+                <button
+                  className={onLoadStarterPack ? 'ml-empty-cta ml-empty-cta-secondary' : 'ml-empty-cta'}
+                  type="button"
+                  onClick={onImport}
+                >
+                  Import a Recipe
+                </button>
+              </div>
             )}
           </motion.div>
         ) : (

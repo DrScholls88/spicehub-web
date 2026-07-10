@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useReducer, useRef } from 'react';
-import { motion, AnimatePresence, useMotionValue, useAnimation, useReducedMotion, useDragControls, animate } from 'framer-motion';
+import { motion, AnimatePresence, useMotionValue, useReducedMotion, useDragControls, animate } from 'framer-motion';
 import useBackHandler from '../hooks/useBackHandler';
 import { getBarInventory, addToBarInventory } from '../db';
 import SquigglyText from './SquigglyText';
@@ -184,22 +184,28 @@ function SwingingShingle({ barName, onClickShingle }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // WALL CHALKBOARD — back wall, shows "Today's Special" based on inventory
 // ══════════════════════════════════════════════════════════════════════════════
-function WallChalkboard({ specialDrink, onClick }) {
-  const drinkName = specialDrink
-    ? specialDrink.name.toUpperCase().slice(0, 16)
-    : '???';
-  const ingredients = specialDrink
+function WallChalkboard({ specialDrink, onClick, spinning }) {
+  const drinkName = spinning
+    ? '???'
+    : specialDrink
+      ? specialDrink.name.toUpperCase().slice(0, 16)
+      : '???';
+  const ingredients = specialDrink && !spinning
     ? (specialDrink.ingredients || []).slice(0, 3).join(' · ').slice(0, 28)
-    : 'add bottles to\nsee specials!';
+    : spinning
+      ? 'shakin\' it up...'
+      : 'add bottles to\nsee specials!';
 
   return (
     <motion.button
-      className="wall-chalkboard"
+      className={`wall-chalkboard${spinning ? ' wall-chalkboard--spinning' : ''}`}
       onClick={onClick}
-      aria-label="Today's special chalkboard — click for bartender reaction"
+      aria-label="Today's special chalkboard — tap to spin a surprise pick"
       initial={{ opacity: 0, y: -20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ type: 'spring', stiffness: 260, damping: 22, delay: 0.3 }}
+      animate={spinning ? { opacity: 1, y: 0, rotate: [0, -2, 2, -2, 2, 0] } : { opacity: 1, y: 0 }}
+      transition={spinning
+        ? { rotate: { duration: 0.5, repeat: 2 } }
+        : { type: 'spring', stiffness: 260, damping: 22, delay: 0.3 }}
       whileHover={{ scale: 1.05, rotate: -0.6 }}
       whileTap={{ scale: 0.93 }}
     >
@@ -220,6 +226,7 @@ function WallChalkboard({ specialDrink, onClick }) {
             </motion.div>
           </AnimatePresence>
           <div className="chalk-ingredients">{ingredients}</div>
+          <div className="chalk-spin-hint" aria-hidden="true">★ TAP TO SPIN ★</div>
           {/* Chalk corner decorations */}
           <div className="chalk-corner chalk-corner--tl" aria-hidden="true" />
           <div className="chalk-corner chalk-corner--tr" aria-hidden="true" />
@@ -248,28 +255,35 @@ function WallBountyBoard({ bounties, onClickBounty }) {
       <div className="bounty-board-header" aria-hidden="true">⚑ WANTED ⚑</div>
       <div className="bounty-posters">
         <AnimatePresence>
-          {bounties.slice(0, 2).map((b, i) => (
-            <motion.button
-              key={b.ingredient}
-              className="bounty-poster"
-              onClick={() => onClickBounty?.(b)}
-              aria-label={`Wanted: ${b.ingredient} for ${b.drinkName}`}
-              initial={{ opacity: 0, scale: 0.72, rotate: i === 0 ? -10 : 10 }}
-              animate={{ opacity: 1, scale: 1, rotate: i === 0 ? -2.5 : 2.5 }}
-              exit={{ opacity: 0, scale: 0.65, transition: { duration: 0.15 } }}
-              transition={{ type: 'spring', stiffness: 320, damping: 18, delay: i * 0.14 + 0.68 }}
-              whileHover={{ scale: 1.09, rotate: 0 }}
-              whileTap={{ scale: 0.92 }}
-            >
-              <div className="bounty-poster-label">WANTED</div>
-              <div className="bounty-ingredient">
-                {b.ingredient.toUpperCase().slice(0, 10)}
-              </div>
-              <div className="bounty-reward">
-                REWARD:<br />{(b.drinkName || '?').slice(0, 9)}
-              </div>
-            </motion.button>
-          ))}
+          {bounties.slice(0, 2).map((b, i) => {
+            const outlaw = getOutlaw(b.ingredient, b.count);
+            return (
+              <motion.button
+                key={b.ingredient}
+                className="bounty-poster"
+                onClick={() => onClickBounty?.(b)}
+                aria-label={`Wanted: ${b.ingredient} for ${b.drinkName}`}
+                initial={{ opacity: 0, scale: 0.72, rotate: i === 0 ? -10 : 10 }}
+                animate={{ opacity: 1, scale: 1, rotate: i === 0 ? -2.5 : 2.5 }}
+                exit={{ opacity: 0, scale: 0.65, transition: { duration: 0.15 } }}
+                transition={{ type: 'spring', stiffness: 320, damping: 18, delay: i * 0.14 + 0.68 }}
+                whileHover={{ scale: 1.12, rotate: 0, y: -2 }}
+                whileTap={{ scale: 0.9, rotate: i === 0 ? 4 : -4 }}
+              >
+                <div className="bounty-poster-label">WANTED</div>
+                <div className="bounty-mugshot">
+                  <PixelOutlaw seed={b.ingredient} size={26} />
+                </div>
+                <div className="bounty-outlaw-name">{outlaw.nickname}</div>
+                <div className="bounty-ingredient">
+                  {b.ingredient.toUpperCase().slice(0, 10)}
+                </div>
+                <div className="bounty-reward">
+                  ${outlaw.reward} · {(b.drinkName || '?').slice(0, 9)}
+                </div>
+              </motion.button>
+            );
+          })}
         </AnimatePresence>
       </div>
     </motion.div>
@@ -1019,6 +1033,207 @@ function PixelRattlesnake({ facingLeft = true }) {
   );
 }
 
+// ── Tiny string hash (deterministic outlaw generation) ───────────────────────
+function hashStr(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+// ── Glass "clink" — two quick sine pings via Web Audio ───────────────────────
+function playClink() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const ping = (freq, at, dur = 0.16, gain = 0.1) => {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'sine';
+      o.frequency.value = freq;
+      o.connect(g); g.connect(ctx.destination);
+      g.gain.setValueAtTime(gain, ctx.currentTime + at);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + at + dur);
+      o.start(ctx.currentTime + at);
+      o.stop(ctx.currentTime + at + dur);
+    };
+    ping(1760, 0);
+    ping(2640, 0.055, 0.22, 0.07);
+    setTimeout(() => ctx.close(), 700);
+  } catch { /* autoplay blocked — silent fallback */ }
+}
+
+// ── Pixel outlaw mugshot — deterministic from ingredient name ─────────────────
+const OUTLAW_PREFIXES = ['ONE-EYED', 'WHISKEY', 'ROWDY', 'CACTUS', 'SLY', 'MAD-DOG', 'DUSTY', 'CROOKED', 'GRIZZLY', 'YELLER'];
+const OUTLAW_SKINS = ['#e8b88a', '#d9a06b', '#c68958', '#e5c298'];
+const OUTLAW_HATS  = ['#1a1a1a', '#4e342e', '#5d4037'];
+
+function getOutlaw(ingredient, count = 1) {
+  const h = hashStr(ingredient || '?');
+  return {
+    h,
+    nickname: `${OUTLAW_PREFIXES[h % OUTLAW_PREFIXES.length]} ${(ingredient || '?').split(' ')[0].toUpperCase().slice(0, 8)}`,
+    reward: 100 + (count * 50) + (h % 4) * 25,
+  };
+}
+
+function PixelOutlaw({ seed, size = 26 }) {
+  const h = hashStr(seed || '?');
+  const skin = OUTLAW_SKINS[h % OUTLAW_SKINS.length];
+  const hat = OUTLAW_HATS[(h >> 2) % OUTLAW_HATS.length];
+  const hatStyle = h % 3;            // 0 bowler, 1 wide cowboy, 2 bandana top
+  const eyeStyle = (h >> 3) % 3;     // 0 normal, 1 eyepatch, 2 squint
+  const stache = (h >> 5) % 3;       // 0 full, 1 handlebar, 2 none (stubble)
+  const scar = (h >> 7) % 2 === 0;
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" style={{ imageRendering: 'pixelated', display: 'block', margin: '0 auto' }} aria-hidden="true">
+      {/* Hat */}
+      {hatStyle === 0 && (<>
+        <rect x="6" y="1" width="12" height="4" fill={hat} />
+        <rect x="4" y="5" width="16" height="2" fill={hat} />
+      </>)}
+      {hatStyle === 1 && (<>
+        <rect x="7" y="1" width="10" height="4" fill={hat} />
+        <rect x="2" y="5" width="20" height="2" fill={hat} />
+        <rect x="7" y="3" width="10" height="1" fill="#8b6914" />
+      </>)}
+      {hatStyle === 2 && (<>
+        <rect x="5" y="2" width="14" height="4" fill="#b23b3b" />
+        <rect x="5" y="4" width="14" height="1" fill="#7a1f1f" />
+        <rect x="17" y="3" width="4" height="2" fill="#b23b3b" />
+      </>)}
+      {/* Face */}
+      <rect x="6" y="7" width="12" height="11" fill={skin} />
+      {/* Eyes */}
+      {eyeStyle === 0 && (<>
+        <rect x="8" y="10" width="2" height="2" fill="#222" />
+        <rect x="14" y="10" width="2" height="2" fill="#222" />
+      </>)}
+      {eyeStyle === 1 && (<>
+        <rect x="7" y="9" width="4" height="4" fill="#111" />
+        <rect x="6" y="8" width="12" height="1" fill="#111" />
+        <rect x="14" y="10" width="2" height="2" fill="#222" />
+      </>)}
+      {eyeStyle === 2 && (<>
+        <rect x="8" y="11" width="3" height="1" fill="#222" />
+        <rect x="13" y="11" width="3" height="1" fill="#222" />
+      </>)}
+      {/* Scar */}
+      {scar && <rect x="16" y="13" width="1" height="3" fill="#a05252" />}
+      {/* Mustache / stubble */}
+      {stache === 0 && <rect x="8" y="14" width="8" height="2" fill="#3e2711" />}
+      {stache === 1 && (<>
+        <rect x="7" y="14" width="4" height="2" fill="#3e2711" />
+        <rect x="13" y="14" width="4" height="2" fill="#3e2711" />
+        <rect x="6" y="13" width="2" height="1" fill="#3e2711" />
+        <rect x="16" y="13" width="2" height="1" fill="#3e2711" />
+      </>)}
+      {stache === 2 && (<>
+        <rect x="8" y="16" width="1" height="1" fill="#5a4632" />
+        <rect x="11" y="17" width="1" height="1" fill="#5a4632" />
+        <rect x="14" y="16" width="1" height="1" fill="#5a4632" />
+      </>)}
+      {/* Frown */}
+      <rect x="10" y="16" width="4" height="1" fill="#6b3520" />
+      {/* Collar */}
+      <rect x="4" y="18" width="16" height="6" fill="#42342a" />
+      <rect x="10" y="18" width="4" height="3" fill="#d9cbb0" />
+    </svg>
+  );
+}
+
+// ── Pixel candle — shelf light source ─────────────────────────────────────────
+function PixelCandle() {
+  return (
+    <div className="bs-candle-wrap" aria-hidden="true">
+      <div className="bs-candle-halo" />
+      <svg width="18" height="34" viewBox="0 0 18 34" style={{ imageRendering: 'pixelated', display: 'block' }}>
+        {/* Flame */}
+        <rect className="bs-candle-flame" x="7" y="0" width="4" height="6" fill="#ffcc33" rx="2" />
+        <rect className="bs-candle-flame" x="8" y="2" width="2" height="3" fill="#fff3b0" />
+        {/* Wick */}
+        <rect x="8" y="6" width="2" height="2" fill="#3a2a1a" />
+        {/* Wax */}
+        <rect x="5" y="8" width="8" height="14" fill="#f5e6c8" />
+        <rect x="5" y="8" width="2" height="14" fill="#fffaf0" />
+        <rect x="4" y="10" width="2" height="5" fill="#f5e6c8" />
+        {/* Holder */}
+        <rect x="2" y="22" width="14" height="3" fill="#8b6914" />
+        <rect x="6" y="25" width="6" height="6" fill="#6d4c41" />
+        <rect x="2" y="31" width="14" height="3" fill="#8b6914" />
+      </svg>
+    </div>
+  );
+}
+
+// ── Pixel cat — peeks from behind bottles (easter egg) ───────────────────────
+function PixelCat() {
+  return (
+    <svg width="30" height="22" viewBox="0 0 30 22" style={{ imageRendering: 'pixelated', display: 'block' }} aria-hidden="true">
+      {/* Ears */}
+      <rect x="4" y="0" width="4" height="5" fill="#37292b" />
+      <rect x="14" y="0" width="4" height="5" fill="#37292b" />
+      <rect x="5" y="2" width="2" height="2" fill="#b56576" />
+      <rect x="15" y="2" width="2" height="2" fill="#b56576" />
+      {/* Head */}
+      <rect x="2" y="4" width="18" height="14" fill="#453437" />
+      {/* Eyes */}
+      <rect x="5" y="8" width="4" height="4" fill="#ffd166" />
+      <rect x="13" y="8" width="4" height="4" fill="#ffd166" />
+      <rect x="7" y="9" width="2" height="3" fill="#1a1200" />
+      <rect x="15" y="9" width="2" height="3" fill="#1a1200" />
+      {/* Nose + whiskers */}
+      <rect x="10" y="13" width="2" height="2" fill="#b56576" />
+      <rect x="0" y="12" width="3" height="1" fill="#c8a882" opacity="0.8" />
+      <rect x="19" y="12" width="3" height="1" fill="#c8a882" opacity="0.8" />
+      {/* Paws on shelf edge */}
+      <rect x="4" y="18" width="5" height="3" fill="#37292b" />
+      <rect x="13" y="18" width="5" height="3" fill="#37292b" />
+      {/* Tail tip */}
+      <rect x="22" y="6" width="3" height="10" fill="#37292b" rx="1" />
+      <rect x="23" y="3" width="4" height="5" fill="#453437" rx="1" />
+    </svg>
+  );
+}
+
+// ── Pixel broom — sweeps a shelf row after a new arrival ─────────────────────
+function PixelBroom() {
+  return (
+    <svg width="26" height="44" viewBox="0 0 26 44" style={{ imageRendering: 'pixelated', display: 'block', transform: 'rotate(18deg)' }} aria-hidden="true">
+      {/* Handle */}
+      <rect x="11" y="0" width="4" height="26" fill="#8b6914" />
+      <rect x="11" y="0" width="1" height="26" fill="#c8a882" />
+      {/* Binding */}
+      <rect x="8" y="26" width="10" height="4" fill="#b23b3b" />
+      {/* Bristles */}
+      <rect x="6" y="30" width="14" height="10" fill="#d4a544" />
+      <rect x="6" y="36" width="2" height="7" fill="#c8952e" />
+      <rect x="10" y="36" width="2" height="8" fill="#d4a544" />
+      <rect x="14" y="36" width="2" height="7" fill="#c8952e" />
+      <rect x="18" y="36" width="2" height="8" fill="#d4a544" />
+    </svg>
+  );
+}
+
+// ── Corner cobweb — appears when the bar's gone stale ────────────────────────
+function PixelCobweb({ flip = false }) {
+  return (
+    <svg
+      width="44" height="44" viewBox="0 0 44 44"
+      style={{ imageRendering: 'pixelated', display: 'block', transform: flip ? 'scaleX(-1)' : 'none' }}
+      aria-hidden="true"
+    >
+      <g stroke="rgba(230,230,220,0.5)" strokeWidth="1" fill="none">
+        <path d="M0 0 L44 44" />
+        <path d="M0 18 Q14 14 22 22" />
+        <path d="M18 0 Q14 14 22 22" />
+        <path d="M0 34 Q22 26 34 34 Q26 22 34 0" opacity="0.6" />
+        <path d="M0 8 Q8 8 12 12 M8 0 Q8 8 12 12" opacity="0.8" />
+        <path d="M0 28 Q16 20 28 28" opacity="0.5" />
+      </g>
+      <rect x="20" y="20" width="3" height="3" fill="rgba(230,230,220,0.55)" />
+    </svg>
+  );
+}
+
 // ── Saloon Ambient Events Engine ──────────────────────────────────────────────
 function SaloonAmbience({ bartenderX, onBartenderSurprise }) {
   const [activeEvent, setActiveEvent] = useState(null); // null | 'tumbleweed' | 'snake'
@@ -1247,7 +1462,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
   // Home base is 78% of bar width — initialized to 260 (≈78% × 340px default)
   const xMV = useMotionValue(260);
   const yMV = useMotionValue(0);                 // vertical fling for the ragdoll toss
-  const bartenderControls = useAnimation(); // for rotate during toss
+  const rotMV = useMotionValue(0);               // tumble rotation during ragdoll flight
   const bartenderDragControls = useDragControls(); // long-press → programmatic drag start
   const dragActiveRef = useRef(false);           // true between drag start and end
   const prefersReducedMotion = useReducedMotion();
@@ -1318,6 +1533,33 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
   const [shakeActive, setShakeActive] = useState(false);
   const [showImpactFlash, setShowImpactFlash] = useState(false);
   const shakeTimerRef = useRef(null);
+
+  // ── Saloon remodel (wall texture) — persisted ─────────────────────────────
+  const WALL_STYLES = ['brick', 'wood', 'wallpaper'];
+  const [wallStyle, setWallStyle] = useState(() => {
+    try { return localStorage.getItem('bs-wall-style') || 'brick'; } catch { return 'brick'; }
+  });
+
+  // ── New-arrival bottle drop + broom sweep + dust state ────────────────────
+  const [newArrivalId, setNewArrivalId] = useState(null);
+  const [sweepNonce, setSweepNonce] = useState(0);
+  const [showArrivalToast, setShowArrivalToast] = useState(false);
+  const [dusty, setDusty] = useState(() => {
+    try {
+      const last = parseInt(localStorage.getItem('bs-last-arrival') || '0', 10);
+      return last > 0 && (Date.now() - last) > 3 * 24 * 60 * 60 * 1000; // 3+ days stale
+    } catch { return false; }
+  });
+  const arrivalTimerRef = useRef(null);
+  const sweepTimerRef = useRef(null);
+
+  // ── Peeking cat easter egg ─────────────────────────────────────────────────
+  const [peekCat, setPeekCat] = useState(null); // { left: %, shelf: 0-2 } | null
+  const catCounterRef = useRef(0);
+  const catTimerRef = useRef(null);
+
+  // ── Chalkboard "spinning" state while the surprise shakes up ─────────────
+  const [boardSpin, setBoardSpin] = useState(false);
 
   // Load persistence on mount
   useEffect(() => {
@@ -1485,47 +1727,85 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
       setBartenderState('surprised');
       wasDraggedRef.current = true;
 
-      const spinDir = info.velocity.x >= 0 ? 1 : -1;
-      const spins   = Math.min(Math.max(Math.round(speed / 200), 1), 4);
-
-      // ── Ballistic ragdoll launch ──────────────────────────────────────────
-      // Fling him along the throw vector (not just spin in place): translate
-      // xMV/yMV to a landing spot inside the stage while the inner div tumbles.
-      const stageW   = constraintsRef.current?.clientWidth || barTopRef.current?.clientWidth || 360;
-      const startX   = xMV.get();
-      // Throw distance scales with speed; clamp so he always lands on-screen.
-      const dist     = Math.min(Math.max(speed * 0.28, 90), stageW * 0.75);
-      const landX    = Math.max(6, Math.min(stageW - 60, startX + spinDir * dist));
-      // Arc height also scales with throw strength.
-      const lift     = -Math.min(60 + speed * 0.12, 170);
+      const stageW = constraintsRef.current?.clientWidth  || barTopRef.current?.clientWidth  || 360;
+      const stageH = constraintsRef.current?.clientHeight || 430;
 
       if (prefersReducedMotion) {
-        // Reduced motion: no spin/arc — just settle him at the landing spot.
+        // Reduced motion: no physics — settle him at a nearby landing spot.
+        const spinDir = info.velocity.x >= 0 ? 1 : -1;
+        const landX = Math.max(6, Math.min(stageW - 60, xMV.get() + spinDir * 120));
         await animate(xMV, landX, { duration: 0.28, ease: 'easeOut' }).finished;
+        yMV.set(0);
       } else {
-        await Promise.all([
-          animate(xMV, landX, { duration: 0.62, ease: [0.16, 1, 0.3, 1] }).finished,
-          animate(yMV, [0, lift, 0], { duration: 0.62, times: [0, 0.42, 1], ease: ['easeOut', 'easeIn'] }).finished,
-          bartenderControls.start({
-            rotate: 360 * spins * spinDir,
-            transition: { duration: 0.62, ease: [0.16, 1, 0.3, 1] },
-          }),
-        ]);
-        // Small bounce settle on landing
-        triggerCabinetShake();
-        await new Promise(r => setTimeout(r, 160));
+        // ── True ragdoll physics: launch along the throw vector, gravity pulls
+        // him down, and he bounces off the side walls + ceiling with damping
+        // until he comes to rest on the floor. Rotation follows horizontal
+        // velocity so he tumbles the way he was thrown.
+        const CLAMP = 2600;                       // max launch speed px/s
+        const GRAV  = 3000;                       // px/s²
+        const REST  = 0.58;                       // bounce restitution
+        const SPRITE_W = 110, SPRITE_H = 170;
+        const minX = 2, maxX = Math.max(minX + 10, stageW - SPRITE_W);
+        const ceilY = -(Math.max(120, stageH - SPRITE_H - 20)); // translateY up-limit
+        let px = xMV.get(), py = yMV.get();
+        let vx = Math.max(-CLAMP, Math.min(CLAMP, info.velocity.x));
+        let vy = Math.max(-CLAMP, Math.min(CLAMP, info.velocity.y));
+        let rot = rotMV.get();
+        let firstImpact = true;
+
+        const bump = () => { if (navigator.vibrate) navigator.vibrate(12); };
+
+        await new Promise((resolve) => {
+          let last = performance.now();
+          const started = last;
+          const step = (now) => {
+            const dt = Math.min((now - last) / 1000, 0.032);
+            last = now;
+            vy += GRAV * dt;
+            px += vx * dt;
+            py += vy * dt;
+
+            // Side walls — bounce with damping
+            if (px < minX)      { px = minX; vx = -vx * REST; bump(); }
+            else if (px > maxX) { px = maxX; vx = -vx * REST; bump(); }
+            // Ceiling
+            if (py < ceilY) { py = ceilY; vy = -vy * REST; bump(); }
+            // Floor — bounce until too slow, then settle
+            if (py >= 0) {
+              py = 0;
+              if (Math.abs(vy) > 240 && (now - started) < 2600) {
+                vy = -vy * REST;
+                vx *= 0.72;
+                if (firstImpact) { firstImpact = false; triggerCabinetShake(); }
+                else bump();
+              } else {
+                xMV.set(px); yMV.set(0); rotMV.set(rot);
+                resolve();
+                return;
+              }
+            }
+            // Tumble with horizontal velocity + light air drag
+            rot += vx * dt * 0.55;
+            vx *= 1 - 0.22 * dt;
+            xMV.set(px); yMV.set(py); rotMV.set(rot);
+            // Safety: never spin the loop past 3.2 s
+            if (now - started > 3200) { yMV.set(0); resolve(); return; }
+            animationRef.current = requestAnimationFrame(step);
+          };
+          animationRef.current = requestAnimationFrame(step);
+        });
+        await new Promise(r => setTimeout(r, 140));
       }
 
       setFlyScream(false);
       yMV.set(0);
 
-      // Reset rotation (spring settle; instant under reduced motion)
-      await bartenderControls.start({
-        rotate: 0,
-        transition: prefersReducedMotion
-          ? { duration: 0 }
-          : { type: 'spring', stiffness: 180, damping: 18 },
-      });
+      // Spring the tumble back upright (nearest full turn so he doesn't unwind)
+      const settled = Math.round(rotMV.get() / 360) * 360;
+      await animate(rotMV, settled, prefersReducedMotion
+        ? { duration: 0 }
+        : { type: 'spring', stiffness: 180, damping: 16 }).finished;
+      rotMV.set(0);
 
       // Clear flying ref BEFORE walk call so walkTo guard allows passage
       isFlyingRef.current = false; setIsFlying(false);
@@ -1550,7 +1830,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
       setBartenderState('walking');
       walkToRef.current?.(homeX(), () => { setBartenderState('idle'); setFacingRight(true); });
     }
-  }, [bartenderControls, prefersReducedMotion, xMV, yMV, triggerCabinetShake]);
+  }, [prefersReducedMotion, xMV, yMV, rotMV, triggerCabinetShake, homeX]);
 
   // ── Tap bartender 5× for joke — also completes Secret Pour sequence ──────
   const handleBartenderTap = useCallback(() => {
@@ -1613,7 +1893,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
     spotlightTimerRef.current = setTimeout(() => setSpotlightQuip(null), 5200);
   }, [bartenderState, selectedDrink]);
 
-  // ── "Surprise Me" handler ─────────────────────────────────────────────────
+  // ── "Surprise Me" — triggered from the Today's Special chalkboard ─────────
   const handleSurpriseMe = useCallback(() => {
     if (bartenderState !== 'idle' && bartenderState !== 'presenting') return;
     setIdleQuipText(sample(CONTEXTUAL_QUIPS.surprise));
@@ -1625,10 +1905,12 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
       : null;
     const classic = SURPRISE_CLASSICS[Math.floor(Math.random() * SURPRISE_CLASSICS.length)];
 
+    setBoardSpin(true);
     setBartenderState('shaking');
     if (navigator.vibrate) navigator.vibrate([50, 30, 50, 30, 50]); // cocktail shaker vibration
 
     setTimeout(() => {
+      setBoardSpin(false);
       if (pick) {
         setSurpriseResult({ name: pick.name, isDrink: true, drink: pick });
       } else {
@@ -1640,7 +1922,24 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
         setSurpriseResult(null);
       }, 4000);
     }, 1200);
-  }, [bartenderState, drinks, selectedDrink]);
+  }, [bartenderState, drinks, selectedDrink, triggerCabinetShake]);
+
+  // ── Saloon remodel — cycles the wall texture (persisted) ──────────────────
+  const REMODEL_QUIPS = {
+    brick:    "Back to the ol' brick. Classic.",
+    wood:     "Fresh timber walls! Smells like sawdust in here.",
+    wallpaper: "Fancy wallpaper! Very... uptown.",
+  };
+  const handleRemodel = useCallback(() => {
+    setWallStyle(prev => {
+      const next = WALL_STYLES[(WALL_STYLES.indexOf(prev) + 1) % WALL_STYLES.length];
+      try { localStorage.setItem('bs-wall-style', next); } catch { /* private mode */ }
+      setIdleQuipText(REMODEL_QUIPS[next]);
+      return next;
+    });
+    if (navigator.vibrate) navigator.vibrate(15);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Chiptune toggle ───────────────────────────────────────────────────
   const handleChiptuneToggle = useCallback(() => {
@@ -1726,23 +2025,6 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
       .map(([ingredient, count]) => ({ ingredient, drinkName: drinkName[ingredient], count }));
   }, [drinks, barInventory]);
 
-  // ── Chalkboard click: bartender walks left to comment on Today's Special ──
-  const handleChalkClick = useCallback(() => {
-    if (bartenderState !== 'idle') return;
-    const barWidth = barTopRef.current?.clientWidth || 320;
-    const targetX = barWidth * 0.18 - 30;
-    setBartenderState('walking');
-    walkToRef.current?.(targetX, () => {
-      setBartenderState('idle');
-      setIdleQuipText(
-        specialDrink
-          ? `Today I recommend the ${specialDrink.name}! Classic choice, partner.`
-          : "Stock up those shelves and I'll write something special!"
-      );
-    });
-    if (navigator.vibrate) navigator.vibrate(15);
-  }, [bartenderState, specialDrink]);
-
   // ── Bounty board click: bartender walks right to comment on wanted ingredient
   const handleBountyClick = useCallback((bounty) => {
     if (bartenderState !== 'idle') return;
@@ -1779,6 +2061,9 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
     clearTimeout(rapidClickTimerRef.current);
     clearTimeout(polishFastTimerRef.current);
     clearTimeout(flipTimerRef.current);
+    clearTimeout(arrivalTimerRef.current);
+    clearTimeout(sweepTimerRef.current);
+    clearTimeout(catTimerRef.current);
   }, []);
 
   // ── Generic walk helper (stable ref prevents stale closure in rAF loops) ────
@@ -2127,6 +2412,25 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
     }
     if (drinks.length > prevDrinkCountRef.current) {
       prevDrinkCountRef.current = drinks.length;
+
+      // ── New arrival! Glowing bottle drop + clink + broom sweep ────────────
+      const newest = drinks.reduce((a, b) => ((b.id || 0) > (a?.id || 0) ? b : a), null);
+      if (newest) {
+        setNewArrivalId(newest.id);
+        setShowArrivalToast(true);
+        playClink();
+        setSweepNonce(n => n + 1);          // broom sweeps the shelves clean
+        setDusty(false);                     // fresh stock — cobwebs gone
+        try { localStorage.setItem('bs-last-arrival', String(Date.now())); } catch { /* private mode */ }
+        setIdleQuipText(`Fresh bottle o' ${newest.name}! Straight to the shelf.`);
+        if (navigator.vibrate) navigator.vibrate([20, 30, 45]);
+        clearTimeout(arrivalTimerRef.current);
+        arrivalTimerRef.current = setTimeout(() => {
+          setNewArrivalId(null);
+          setShowArrivalToast(false);
+        }, 4200);
+      }
+
       if (Math.random() < 0.01) {
         const isCatch = Math.random() < 0.8;
         // Pick a random X position for the flip (roughly middle of bar area)
@@ -2175,6 +2479,19 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
 
   // ── Rapid activity tracking — used by container onClick ───────────────────
   const trackRapidClick = useCallback(() => {
+    // Peeking cat easter egg: after enough interactions, a cat pops out
+    // from behind a bottle, glances around, and vanishes.
+    catCounterRef.current += 1;
+    if (catCounterRef.current >= 8 && !catTimerRef.current) {
+      catCounterRef.current = 0;
+      if (Math.random() < 0.4) {
+        setPeekCat({ left: 12 + Math.random() * 70, shelf: Math.floor(Math.random() * 3) });
+        catTimerRef.current = setTimeout(() => {
+          setPeekCat(null);
+          catTimerRef.current = null;
+        }, 1700);
+      }
+    }
     rapidClickCountRef.current += 1;
     clearTimeout(rapidClickTimerRef.current);
     rapidClickTimerRef.current = setTimeout(() => {
@@ -2332,12 +2649,12 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
             <span className="bs-count-label">bottles</span>
           </div>
           <button
-            className="bs-surprise-btn"
-            onClick={handleSurpriseMe}
-            title="Bartender's Special"
+            className="bs-surprise-btn bs-remodel-btn"
+            onClick={handleRemodel}
+            title="Remodel the saloon walls"
           >
-            <span className="bs-pixel-icon bs-pixel-icon-die" aria-hidden="true" />
-            <span className="bs-surprise-label">SURPRISE</span>
+            <span aria-hidden="true">⚙</span>
+            <span className="bs-surprise-label">REMODEL</span>
           </button>
           <button
             className={`bs-chiptune-btn ${chiptuneOn ? 'bs-chiptune-on' : ''}`}
@@ -2369,17 +2686,33 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
         {/* First-run hints — teaches the hidden interactions (dismissed forever) */}
         {showTips && (
           <div className="bs-tips-banner" role="note">
-            <p>Tap the chalkboard, bounty board, tip jar &amp; sign to interact. Long-press the bartender to grab — then flick to toss him!</p>
+            <p>Tap the TODAY&apos;S SPECIAL board to spin a surprise pick! Tap the wanted posters, tip jar &amp; sign too. Long-press the bartender to grab — then flick to send him flying!</p>
             <button className="bs-tips-dismiss" onClick={dismissTips} aria-label="Dismiss tips">OK</button>
           </div>
         )}
 
         {/* ═══ 3-LAYER SALOON STAGE ═══ */}
-        <div className="saloon-stage" ref={(el) => { barTopRef.current = el; constraintsRef.current = el; }}>
+        <div
+          className={`saloon-stage saloon-wall--${wallStyle}`}
+          ref={(el) => { barTopRef.current = el; constraintsRef.current = el; }}
+        >
 
           {/* ── LAYER 1: Background — brick wall, lanterns, steam ── */}
           <div className="saloon-bg" aria-hidden="true">
             <div className="saloon-brick-wall" />
+            {/* Flickering neon wall sign — time-of-day aware */}
+            <div className="saloon-neon-wall" aria-hidden="true">
+              {getTimeContext().period === 'lastcall' ? 'LAST CALL'
+                : isHappyHour ? 'HAPPY HOUR'
+                : 'HOT DRINKS'}
+            </div>
+            {/* Slow-drifting saloon haze */}
+            {ambientOK && (
+              <div className="saloon-haze" aria-hidden="true">
+                <div className="saloon-haze-layer saloon-haze-a" />
+                <div className="saloon-haze-layer saloon-haze-b" />
+              </div>
+            )}
             {/* Decorative picture frames on the wall */}
             <div className="saloon-frames">
               <div className="saloon-frame saloon-frame-1" />
@@ -2407,8 +2740,9 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
             {/* Back-wall boards — chalkboard & bounty board */}
             <div className="saloon-boards">
               <WallChalkboard
-                specialDrink={specialDrink}
-                onClick={handleChalkClick}
+                specialDrink={surpriseResult ? { name: surpriseResult.name, ingredients: surpriseResult.drink?.ingredients } : specialDrink}
+                spinning={boardSpin}
+                onClick={handleSurpriseMe}
               />
               <WallBountyBoard
                 bounties={bounties}
@@ -2455,7 +2789,47 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
 
             {/* Paginated bottle shelves */}
             <div className="bs-backbar">
-              <div className="bs-display-case">
+              <div className={`bs-display-case bs-case-glow--${stoolFilter}`}>
+                {/* Candle light source — casts directional bottle shadows */}
+                <PixelCandle />
+                {/* Cobwebs creep in when no new bottle has arrived in days */}
+                {dusty && (
+                  <>
+                    <div className="bs-cobweb bs-cobweb--tl" aria-hidden="true"><PixelCobweb /></div>
+                    <div className="bs-cobweb bs-cobweb--tr" aria-hidden="true"><PixelCobweb flip /></div>
+                  </>
+                )}
+                {/* Broom sweep — clears the dust when a new bottle arrives */}
+                {sweepNonce > 0 && !prefersReducedMotion && (
+                  <motion.div
+                    key={sweepNonce}
+                    className="bs-broom-sweep"
+                    aria-hidden="true"
+                    initial={{ x: -60, rotate: -6 }}
+                    animate={{ x: (barTopRef.current?.clientWidth || 360) + 60, rotate: [null, 8, -6, 8, -6, 0] }}
+                    transition={{ duration: 1.1, ease: [0.45, 0, 0.55, 1] }}
+                    onAnimationComplete={() => setSweepNonce(0)}
+                  >
+                    <PixelBroom />
+                    <div className="bs-broom-dust" />
+                  </motion.div>
+                )}
+                {/* Peeking cat easter egg */}
+                <AnimatePresence>
+                  {peekCat && (
+                    <motion.div
+                      className="bs-peek-cat"
+                      style={{ left: `${peekCat.left}%`, bottom: `${(2 - peekCat.shelf) * 78 + 8}px` }}
+                      initial={{ y: 24, opacity: 0 }}
+                      animate={{ y: 0, opacity: 1 }}
+                      exit={{ y: 24, opacity: 0, transition: { duration: 0.18 } }}
+                      transition={{ type: 'spring', stiffness: 420, damping: 22 }}
+                      aria-hidden="true"
+                    >
+                      <PixelCat />
+                    </motion.div>
+                  )}
+                </AnimatePresence>
                 <div className={`bs-backbar-shelves ${pageDirection !== 'none' ? `bs-page-${pageDirection}` : ''}`}>
                   {shelves.map((row, shelfIdx) => (
                     <div key={shelfIdx} className={`bs-shelf-row bs-shelf-wobble-${shelfIdx}`}>
@@ -2466,6 +2840,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
                           const rarity = getDrinkRarity(drink);
                           const dimmed = isDimmed(drink);
                           const activeFilter = !dimmed && stoolFilter !== 'all' && stoolFilter !== 'recent';
+                          const isNewArrival = drink.id === newArrivalId;
                           return (
                             <motion.button
                               key={drink.id}
@@ -2476,17 +2851,21 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
                                 `bs-bottle-${rarity}`,
                                 dimmed ? 'bs-bottle-dimmed' : '',
                                 activeFilter ? 'bs-bottle-active-filter' : '',
+                                isNewArrival ? 'bs-bottle-new-arrival' : '',
                               ].filter(Boolean).join(' ')}
                               onClick={() => !dimmed && handleBottleTap(drink, shelfIdx)}
                               title={drink.name}
+                              initial={isNewArrival && !prefersReducedMotion ? { y: -160, opacity: 0, scale: 1.08 } : false}
+                              animate={isNewArrival && !prefersReducedMotion ? { y: 0, opacity: 1, scale: 1 } : undefined}
                               whileHover={dimmed ? {} : {
                                 rotate: [-4, 4, -3, 3, 0],
                                 transition: { duration: 0.35, ease: 'easeInOut' },
                               }}
                               whileTap={dimmed ? {} : { scale: 0.88 }}
+                              transition={isNewArrival ? { type: 'spring', stiffness: 320, damping: 14, mass: 0.9 } : undefined}
                             >
                               <div className="bs-bottle-idle" style={{ opacity: isSelected && holdingBottle ? 0.2 : 1 }}>
-                                <PixelBottle style={bottleStyle} size={52} glow={isSelected || rarity === 'legendary'} />
+                                <PixelBottle style={bottleStyle} size={52} glow={isSelected || rarity === 'legendary' || isNewArrival} />
                               </div>
                               <span className="bs-bottle-label" style={rarity !== 'common' ? { color: getRarityColor(rarity) } : undefined}>
                                 {drink.name.length > 9 ? drink.name.slice(0, 8) + '…' : drink.name}
@@ -2540,7 +2919,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
               {/* Inner motion.div handles rotation during toss */}
               <motion.div
                 className={`bs-bartender-wrap bs-bartender-draggable${secretFlash ? ' bs-secret-flash' : ''}${isGrabbed ? ' bs-bartender-grabbed' : ''}`}
-                animate={bartenderControls}
+                style={{ rotate: rotMV, position: 'relative', display: 'inline-block' }}
                 onPointerDown={handleBartenderPointerDown}
                 onPointerUp={handleBartenderPointerUp}
                 onPointerLeave={handleBartenderPointerLeave}
@@ -2551,7 +2930,6 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
                 role="button"
                 tabIndex={0}
                 aria-label="Long-press to grab the bartender! Tap for quips."
-                style={{ position: 'relative', display: 'inline-block' }}
               >
                 <PixelBartender
                   state={isGrabbed || isFlying ? 'surprised' : bartenderState}
@@ -2703,6 +3081,22 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
               );
             })()}
           </div>
+
+          {/* ── New arrival toast ── */}
+          <AnimatePresence>
+            {showArrivalToast && (
+              <motion.div
+                className="bs-arrival-toast"
+                initial={{ y: -34, opacity: 0, scale: 0.9 }}
+                animate={{ y: 0, opacity: 1, scale: 1 }}
+                exit={{ y: -24, opacity: 0 }}
+                transition={{ type: 'spring', stiffness: 380, damping: 20 }}
+                role="status"
+              >
+                ★ NEW ARRIVAL ON THE SHELF ★
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* ── LAYER 4: Ambient Events (tumbleweed, snake) — above all static layers ── */}
           <SaloonAmbience

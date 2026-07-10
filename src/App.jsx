@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import db, { importSeedMeals, removeStarterKitMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getCookingLog, getWeekHistory, saveWeekToHistory, toggleRotation, addBatchQueueItems, getBatchQueueItems, updateBatchQueueItem, getLearnedAliases } from './db';
-import { buildStarterKitMeals } from './data/starterKitMeals';
+import db, { importSeedMeals, removeStarterKitMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getStoreMemory, getCookingLog, getWeekHistory, saveWeekToHistory, toggleRotation, addBatchQueueItems, getBatchQueueItems, updateBatchQueueItem, getLearnedAliases } from './db';
+import { buildStarterKitMeals, STARTER_KIT_SEED_FLAG } from './data/starterKitMeals';
 import { checkStorageQuota, checkAndRecommendCleanup } from './storageManager';
 import { initializeBackgroundSync } from './backgroundSync';
 import WeekView from './components/WeekView';
@@ -65,27 +65,6 @@ function loadDietaryPref() {
 }
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-
-// ── I-8 Clipboard Sentinel: known recipe & social domains ─────────────────────
-const SENTINEL_DOMAINS = new Set([
-  'instagram.com', 'tiktok.com', 'youtube.com', 'youtu.be',
-  'allrecipes.com', 'seriouseats.com', 'bonappetit.com', 'epicurious.com',
-  'foodnetwork.com', 'tasty.co', 'delish.com', 'thepioneerwoman.com',
-  'budgetbytes.com', 'cookieandkate.com', 'halfbakedharvest.com',
-  'smittenkitchen.com', 'pinchofyum.com', 'minimalistbaker.com',
-  'food52.com', 'thekitchn.com', 'eatingwell.com', 'myrecipes.com',
-  'bettycrocker.com', 'tasteofhome.com', 'skinnytaste.com',
-  'recipetineats.com', 'natashaskitchen.com', 'cafedelites.com',
-  'gimmesomeoven.com', 'loveandlemons.com', 'ambitiouskitchen.com',
-  'themodernproper.com', 'iamafoodblog.com',
-]);
-
-function _isSentinelUrl(raw) {
-  try {
-    const hostname = new URL(raw).hostname.replace(/^www\./, '');
-    return [...SENTINEL_DOMAINS].some(d => hostname === d || hostname.endsWith('.' + d));
-  } catch { return false; }
-}
 
 // ── Date utilities (shared with week history logic) ───────────────────────────
 function getMondayOfWeek(date) {
@@ -197,9 +176,6 @@ export default function App() {
   // ── I-1 Instagram ZIP import ──────────────────────────────────────────────
   const [showZipImport, setShowZipImport] = useState(false);
 
-  // ── I-8 Clipboard Sentinel state ───────────────────────────────────────────
-  const [clipboardSentinel, setClipboardSentinel] = useState(null); // { url } — recipe link prompt
-
   // ── I-2 Post-share quick actions state ────────────────────────────────────
   const [postImportActions, setPostImportActions] = useState(null); // { message, recipe }
   const isShareImportRef = useRef(false); // set true when current import came from share-target
@@ -296,55 +272,6 @@ export default function App() {
     setTab('grocery');
   }, [postImportActions, showToast]);
 
-  // ── I-8 Clipboard Sentinel ─────────────────────────────────────────────────
-  useEffect(() => {
-    if (!navigator?.clipboard?.readText) return; // API not available
-
-    async function checkClipboard() {
-      // Don't prompt while an import sheet is already open
-      if (showImportFor) return;
-      try {
-        const text = await navigator.clipboard.readText();
-        const trimmed = (text || '').trim();
-        if (!trimmed || !/^https?:\/\//i.test(trimmed)) return;
-        // Avoid re-prompting for URLs dismissed this session
-        const dismissed = JSON.parse(sessionStorage.getItem('sh_sentinel_v') || '[]');
-        if (dismissed.includes(trimmed)) return;
-        if (_isSentinelUrl(trimmed)) {
-          setClipboardSentinel({ url: trimmed });
-        }
-      } catch {
-        // Clipboard permission denied or API unavailable — silent fail
-      }
-    }
-
-    // Check on mount (user may have copied before opening app)
-    checkClipboard();
-
-    // Re-check whenever the tab regains visibility (user switched apps, copied a link, came back)
-    const handleVisible = () => {
-      if (document.visibilityState === 'visible') checkClipboard();
-    };
-    document.addEventListener('visibilitychange', handleVisible);
-    return () => document.removeEventListener('visibilitychange', handleVisible);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showImportFor]); // re-bind when import sheet opens/closes
-
-  const dismissSentinel = useCallback((url) => {
-    try {
-      const prev = JSON.parse(sessionStorage.getItem('sh_sentinel_v') || '[]');
-      sessionStorage.setItem('sh_sentinel_v', JSON.stringify([...prev, url]));
-    } catch {}
-    setClipboardSentinel(null);
-  }, []);
-
-  const handleSentinelImport = useCallback((url) => {
-    dismissSentinel(url);
-    setImportModalKey(k => k + 1);
-    setShowImportFor('meals');
-    setSharedContent({ mode: 'url', url, text: '', title: '', isShare: false });
-  }, [dismissSentinel]);
-
   // Quick import helper. The LandingPage import tray that used to call this was
   // removed (declutter). Now used by MealLibrary's Discover Recipes flow
   // (DiscoverRecipes.jsx) to hand off a selected Reddit post URL straight into
@@ -393,30 +320,26 @@ export default function App() {
   }, [loadMeals, loadDrinks]);
 
   // ── Starter Kit auto-seed ─────────────────────────────────────────────────
-  // Gemini UX audit (2026-07-06): a brand-new install with 0 saved meals is a
-  // trust-breaker — the Spin CTA has nothing to work with and the dashboard
-  // looks broken rather than empty-by-design. On first-ever run (no meals yet,
-  // never seeded before on this device) we silently pre-load Brian's own
-  // Starter Kit recipes (data/starterKitMeals.js) so the library is populated
-  // immediately. Runs once per device via a localStorage flag; importSeedMeals
-  // also dedups by name, so this can never double-seed or clobber real data.
+  // Brand-new install with 0 meals: pre-load the curated intro pack so Spin
+  // works immediately. Once per device (localStorage flag). importSeedMeals
+  // dedups by name so this never clobbers user recipes. Manual Add/Restore in
+  // Settings always works even after remove.
   useEffect(() => {
-    if (loading) return; // wait for the initial db.meals.toArray() load to resolve
+    if (loading) return;
     if (meals.length > 0) return;
-    if (localStorage.getItem('spicehub-starter-kit-seeded')) return;
-    localStorage.setItem('spicehub-starter-kit-seeded', '1');
+    if (localStorage.getItem(STARTER_KIT_SEED_FLAG)) return;
+    localStorage.setItem(STARTER_KIT_SEED_FLAG, '1');
 
     importSeedMeals(buildStarterKitMeals())
       .then(({ imported }) => {
         if (imported > 0) {
           loadMeals();
-          showToast(`Added ${imported} starter recipes to get you cooking 🍳`, 'success', 3500);
+          showToast(`Added ${imported} starter recipes to get you cooking`, 'success', 3500);
         }
       })
       .catch(err => {
         console.warn('[SpiceHub] Starter Kit seed failed (non-fatal):', err);
-        // Allow a retry on next load instead of permanently giving up.
-        localStorage.removeItem('spicehub-starter-kit-seeded');
+        localStorage.removeItem(STARTER_KIT_SEED_FLAG);
       });
   }, [loading, meals.length, loadMeals, showToast]);
 
@@ -504,12 +427,25 @@ export default function App() {
     return () => clearTimeout(t);
   }, [groceryItems]);
 
-  // Load store memory on startup
+  // Load store memory on startup (Dexie is canonical; migrate orphan localStorage once)
   useEffect(() => {
-    try {
-      const mem = localStorage.getItem('spicehub_store_memory');
-      if (mem) window._storeMemory = JSON.parse(mem);
-    } catch { }
+    let cancelled = false;
+    (async () => {
+      try {
+        let mem = await getStoreMemory();
+        if (cancelled) return;
+        if (!mem || Object.keys(mem).length === 0) {
+          try {
+            const raw = localStorage.getItem('spicehub_store_memory');
+            if (raw) mem = JSON.parse(raw) || {};
+          } catch { /* ignore corrupt legacy key */ }
+        }
+        window._storeMemory = mem && typeof mem === 'object' ? mem : {};
+      } catch {
+        if (!cancelled) window._storeMemory = {};
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   // Compute cooking stats for dashboard
@@ -713,11 +649,15 @@ useEffect(() => {
       navigateToTab('library');
       return;
     }
+    // MealSpinner only mounts inside WeekView — always switch to Plan first so
+    // Home / sticky Spin actually opens the spinner (mom-speed path).
+    navigateToTab('week');
     setShowSpinner(true);
   }, [meals, showToast, navigateToTab]);
 
-  const handleSpinnerCompleteForDates = useCallback(async (pairs) => {
+  const handleSpinnerCompleteForDates = useCallback(async (pairs, options = {}) => {
     // pairs = [{date: Date, meal: mealObj}] — one entry per spinner slot
+    // options.buildGrocery: after apply, open Shop with list from the new plan
     const todayMonday = getMondayOfWeek(new Date());
     const weekMap = new Map();
 
@@ -746,8 +686,10 @@ useEffect(() => {
     });
 
     // Persist each week
+    let currentPlanApplied = null;
     for (const [, { mon, isCurrent, plan }] of weekMap) {
       if (isCurrent) {
+        currentPlanApplied = plan;
         setWeekPlan(plan);
       } else {
         await saveWeekToHistory(mon.toISOString(), plan);
@@ -758,7 +700,12 @@ useEffect(() => {
     getWeekHistory().then(h => setWeekHistory(h));
     setShowSpinner(false);
     showToast(`${pairs.length} meal${pairs.length !== 1 ? 's' : ''} planned! 🎉`);
-  }, [weekPlan, weekHistory, showToast]);
+
+    // Post-spin "Build grocery list" — use the plan we just applied (state not flushed yet)
+    if (options.buildGrocery && currentPlanApplied) {
+      buildGroceryList(undefined, { plan: currentPlanApplied, merge: true });
+    }
+  }, [weekPlan, weekHistory, showToast, buildGroceryList]);
 
   const restoreWeek = useCallback((weekMeals) => {
     if (!weekMeals || weekMeals.length !== 7) return;
@@ -829,6 +776,22 @@ useEffect(() => {
     }));
   }, []);
 
+  /** Protect all planned (non-special) days from re-spin — one tap instead of 14. */
+  const lockAllPlanned = useCallback(() => {
+    setWeekPlan(prev => {
+      const next = prev.map(m => (m && !m._special ? { ...m, _locked: true } : m));
+      const n = next.filter(m => m && m._locked).length;
+      if (n > 0) showToast(`Protected ${n} meal${n === 1 ? '' : 's'} from re-spin`, 'success');
+      else showToast('No meals to protect — spin a week first', 'info');
+      return next;
+    });
+  }, [showToast]);
+
+  const unlockAllPlanned = useCallback(() => {
+    setWeekPlan(prev => prev.map(m => (m && !m._special ? { ...m, _locked: false } : m)));
+    showToast('All days unlocked', 'info');
+  }, [showToast]);
+
   const setDaySpecial = useCallback((dayIndex, specialId) => {
     const special = SPECIAL_DAYS.find(s => s.id === specialId);
     if (special) {
@@ -860,6 +823,27 @@ useEffect(() => {
       removed > 0 ? `Removed ${removed} starter recipe${removed === 1 ? '' : 's'}` : 'No starter recipes to remove',
       removed > 0 ? 'success' : 'info'
     );
+  }, [loadMeals, showToast]);
+
+  /** Manual add/restore — name-dedupe; always allowed (independent of auto-seed flag). */
+  const handleAddStarterKit = useCallback(async () => {
+    try {
+      const { imported, skipped } = await importSeedMeals(buildStarterKitMeals());
+      localStorage.setItem(STARTER_KIT_SEED_FLAG, '1');
+      await loadMeals();
+      if (imported > 0) {
+        const skipNote = skipped > 0 ? ` (${skipped} already in library)` : '';
+        showToast(`Added ${imported} starter recipe${imported === 1 ? '' : 's'}${skipNote}`, 'success');
+      } else {
+        showToast(
+          skipped > 0 ? 'Starter pack already in your library' : 'No starter recipes to add',
+          'info',
+        );
+      }
+    } catch (err) {
+      console.warn('[SpiceHub] Starter Kit add failed:', err);
+      showToast('Could not add starter recipes — try again', 'error');
+    }
   }, [loadMeals, showToast]);
 
   const toggleFavorite = useCallback(async (meal) => {
@@ -896,20 +880,20 @@ useEffect(() => {
   }, [loadDrinks]);
 
   // ── Grocery list ──────────────────────────────────────────────────────────────
-  const buildGroceryList = useCallback((dayIndices) => {
+  // dayIndices: optional DOW indices. options.plan: override weekPlan (post-spin).
+  // options.merge (default true): keep checked/store for matching names on rebuild.
+  const buildGroceryList = useCallback((dayIndices, options = {}) => {
+    const planSource = Array.isArray(options.plan) ? options.plan : weekPlan;
+    const merge = options.merge !== false;
     const items = {};
     const storeMemory = window._storeMemory || {};
-    // If dayIndices supplied, only include those days; otherwise all 7
     const plansToUse = dayIndices
-      ? dayIndices.map(i => weekPlan[i]).filter(Boolean)
-      : weekPlan;
+      ? dayIndices.map(i => planSource[i]).filter(Boolean)
+      : planSource;
     plansToUse.forEach(meal => {
       if (!meal || meal._special) return;
 
-      // Spec A: prefer the structured ingredient array (source of truth). It
-      // carries real quantity/unit/name/category per row, so grocery
-      // aggregation + Store Mode no longer re-parse the display string. Fall
-      // back to the legacy flat path for any record without the field.
+      // Spec A: prefer the structured ingredient array (source of truth).
       const structured = (Array.isArray(meal.ingredientsStructured) && meal.ingredientsStructured.length)
         ? meal.ingredientsStructured
         : (upgradeRecipeIngredients(meal).ingredientsStructured || []);
@@ -917,8 +901,6 @@ useEffect(() => {
       if (structured.length) {
         structured.forEach(si => {
           if (!si) return;
-          // Display name matches the legacy flat string (display + section
-          // suffix) so nothing visual changes.
           const base = (si.original_text || si.display || si.name || '').trim();
           if (!base) return;
           const sec = (si.section || '').trim();
@@ -933,7 +915,6 @@ useEffect(() => {
         return;
       }
 
-      // ── Legacy fallback (no structured data available) ──────────────────────
       const metaMap = {};
       (meal._ingredientMeta || []).forEach(m => {
         if (m && m.text && m.category) metaMap[m.text.toLowerCase().trim()] = m.category;
@@ -947,9 +928,27 @@ useEffect(() => {
         }
       });
     });
-    setGroceryItems(Object.values(items));
+
+    let next = Object.values(items);
+    if (merge && groceryItems.length > 0) {
+      const prevByKey = new Map(
+        groceryItems.map(i => [String(i.name || '').toLowerCase().trim(), i]),
+      );
+      next = next.map(item => {
+        const prev = prevByKey.get(item.name.toLowerCase().trim());
+        if (!prev) return item;
+        return {
+          ...item,
+          checked: !!prev.checked,
+          store: item.store || prev.store || '',
+          category: item.category || prev.category || '',
+        };
+      });
+    }
+
+    setGroceryItems(next);
     setTab('grocery');
-  }, [weekPlan]);
+  }, [weekPlan, groceryItems]);
 
   // ── Add quest items to grocery (Bar → Grocery bridge) ───────────────────────
   const handleAddToGrocery = useCallback((questItems) => {
@@ -1249,27 +1248,6 @@ useEffect(() => {
         </div>
       )}
 
-      {/* ── I-8 Clipboard Sentinel chip ── */}
-      {clipboardSentinel && !showImportFor && (
-        <div className="sentinel-chip" role="alert" aria-live="polite">
-          <span className="sentinel-chip-icon" aria-hidden="true">🔗</span>
-          <span className="sentinel-chip-text">Import the link you copied?</span>
-          <button
-            className="sentinel-chip-cta"
-            onClick={() => handleSentinelImport(clipboardSentinel.url)}
-          >
-            Import
-          </button>
-          <button
-            className="sentinel-chip-dismiss"
-            aria-label="Dismiss"
-            onClick={() => dismissSentinel(clipboardSentinel.url)}
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
       <main className="main-content">
         {tab === 'home' && (
           <LandingPage
@@ -1306,6 +1284,8 @@ useEffect(() => {
             onViewDetail={setDetailItem}
             onBuildGrocery={buildGroceryList}
             onToggleLock={toggleLockDay}
+            onLockAll={lockAllPlanned}
+            onUnlockAll={unlockAllPlanned}
             cookingStats={cookingStats}
             weekHistory={weekHistory}
             onRestoreWeek={restoreWeek}
@@ -1334,6 +1314,7 @@ useEffect(() => {
             onToggleFavorite={toggleFavorite}
             onRate={rateMeal}
             onPlayVideo={openPipForMeal}
+            onLoadStarterPack={handleAddStarterKit}
           />
         )}
         {tab === 'bar' && (
@@ -1583,18 +1564,26 @@ useEffect(() => {
                   <span>Add to Home Screen</span>
                 </button>
               </div>
-              {meals.some(m => m.starterKit) && (
-                <div className="st-section">
-                  <h3>Starter Kit</h3>
-                  <p style={{ fontSize: '13px', color: 'var(--text-light)', margin: '0 0 10px' }}>
-                    {meals.filter(m => m.starterKit).length} starter recipe{meals.filter(m => m.starterKit).length === 1 ? '' : 's'} pre-loaded to help you get going.
-                  </p>
-                  <button className="st-install-btn" onClick={handleRemoveStarterKit}>
-                    <span className="st-install-icon">🧹</span>
-                    <span>Remove Starter Kit Recipes</span>
+              <div className="st-section">
+                <h3>Starter Kit</h3>
+                <p style={{ fontSize: '13px', color: 'var(--text-light)', margin: '0 0 10px' }}>
+                  {meals.some(m => m.starterKit)
+                    ? `${meals.filter(m => m.starterKit).length} starter recipe${meals.filter(m => m.starterKit).length === 1 ? '' : 's'} in your library — a curated pack to try Spin and grocery.`
+                    : 'Load a curated pack of cookable recipes so Spin and grocery work out of the box.'}
+                </p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <button className="st-install-btn" type="button" onClick={handleAddStarterKit}>
+                    <span className="st-install-icon">🍳</span>
+                    <span>{meals.some(m => m.starterKit) ? 'Restore Missing Starter Recipes' : 'Add Starter Pack'}</span>
                   </button>
+                  {meals.some(m => m.starterKit) && (
+                    <button className="st-install-btn" type="button" onClick={handleRemoveStarterKit}>
+                      <span className="st-install-icon">🧹</span>
+                      <span>Remove Starter Kit Recipes</span>
+                    </button>
+                  )}
                 </div>
-              )}
+              </div>
               <div className="st-section">
                 <h3>Legal</h3>
                 <LegalFooter />

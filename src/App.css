@@ -5547,8 +5547,15 @@ body {
 }
 
 /* ── Empty state CTA button ── */
-.ml-empty-cta {
+.ml-empty-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
   margin-top: 16px;
+}
+.ml-empty-cta {
+  margin-top: 0;
   padding: 12px 24px;
   background: var(--primary, #e65100);
   color: #fff;
@@ -5558,6 +5565,11 @@ body {
   font-weight: 600;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+}
+.ml-empty-cta-secondary {
+  background: transparent;
+  color: var(--primary, #e65100);
+  border: 1.5px solid var(--primary, #e65100);
 }
 .ml-empty-cta:active {
   opacity: 0.85;
@@ -20839,117 +20851,8 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 }
 .list-input-row.dragging { opacity: 0.45; }
 
-/* ══════════════════════════════════════════════════════════════════════════════
-   I-8 CLIPBOARD SENTINEL CHIP
-   A slim, glass-morphic pill that slides down just below the header when the
-   app detects a recipe link in the clipboard. Dismisses on X or import action.
-   ══════════════════════════════════════════════════════════════════════════════ */
-
-.sentinel-chip {
-  position: fixed;
-  top: 72px; /* below the app-header */
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 420;
-
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px 10px 14px;
-  max-width: calc(100vw - 32px);
-  width: max-content;
-
-  /* Double-bezel: outer shell */
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(16px) saturate(1.6);
-  -webkit-backdrop-filter: blur(16px) saturate(1.6);
-  border: 1px solid rgba(230, 81, 0, 0.18);
-  border-radius: 999px;
-  box-shadow:
-    0 4px 24px rgba(230, 81, 0, 0.10),
-    0 1px 3px rgba(0, 0, 0, 0.06),
-    inset 0 1px 1px rgba(255, 255, 255, 0.8);
-
-  animation: sentinel-drop 0.38s cubic-bezier(0.32, 0.72, 0, 1) both;
-}
-
-@media (prefers-color-scheme: dark) {
-  .sentinel-chip {
-    background: rgba(30, 22, 16, 0.92);
-    border-color: rgba(230, 81, 0, 0.28);
-    box-shadow:
-      0 4px 24px rgba(0, 0, 0, 0.35),
-      0 1px 3px rgba(0, 0, 0, 0.2),
-      inset 0 1px 1px rgba(255, 255, 255, 0.05);
-  }
-}
-
-@keyframes sentinel-drop {
-  from { opacity: 0; transform: translateX(-50%) translateY(-12px); }
-  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
-}
-
-.sentinel-chip-icon {
-  font-size: 15px;
-  flex-shrink: 0;
-  line-height: 1;
-}
-
-.sentinel-chip-text {
-  font-size: 13.5px;
-  font-weight: 500;
-  color: var(--text-primary, #1a1a1a);
-  letter-spacing: -0.01em;
-  white-space: nowrap;
-}
-
-.sentinel-chip-cta {
-  flex-shrink: 0;
-  padding: 5px 12px;
-  background: var(--primary, #e65100);
-  color: #fff;
-  border: none;
-  border-radius: 999px;
-  font-size: 12.5px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  cursor: pointer;
-  transition: all 0.22s cubic-bezier(0.32, 0.72, 0, 1);
-  box-shadow: 0 2px 8px rgba(230, 81, 0, 0.28);
-}
-
-.sentinel-chip-cta:hover {
-  background: #bf360c;
-  transform: scale(1.03);
-  box-shadow: 0 3px 12px rgba(230, 81, 0, 0.38);
-}
-
-.sentinel-chip-cta:active {
-  transform: scale(0.97);
-  transition-duration: 0.08s;
-}
-
-.sentinel-chip-dismiss {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.07);
-  color: var(--text-secondary, #666);
-  font-size: 11px;
-  cursor: pointer;
-  transition: background 0.18s ease, color 0.18s ease;
-  margin-left: 2px;
-}
-
-.sentinel-chip-dismiss:hover {
-  background: rgba(0, 0, 0, 0.14);
-  color: var(--text-primary, #1a1a1a);
-}
+/* I-8 Clipboard Sentinel chip removed 2026-07-10 — clipboard-triggered import
+   prompt was intrusive; share-target + import sheet remain the entry points. */
 
 /* ══════════════════════════════════════════════════════════════════════════════
    I-2 POST-IMPORT QUICK ACTIONS STRIP
@@ -21087,7 +20990,6 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 
 /* ── Compact layout on very small screens ── */
 @media (max-width: 360px) {
-  .sentinel-chip { top: 60px; }
   .pia-btn { font-size: 11.5px; padding: 8px 7px; }
 }
 
@@ -21757,4 +21659,357 @@ select:focus-visible,
   line-height: 1.5;
   max-width: 420px;
   margin: 0 auto;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SALOON ALIVE PACK — 2026-07
+   Ragdoll polish · quote-box spacing · backbar door · outlaw posters ·
+   Today's Special spinner · new-arrival drop · haze / candle / neon / cobwebs ·
+   peeking cat · wall remodel
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Quote box: float higher + clear the sprite so it never obstructs ── */
+.saloon-mid .bs-quips-layer {
+  bottom: 156px; /* was 134px — clears the hat with breathing room */
+}
+.bs-bt-speech--left  { --bubble-x: calc(-100% - 26px); }
+.bs-bt-speech--right { --bubble-x: calc(  0% + 26px);  }
+.bs-bt-speech-idle { opacity: 0.95; }
+
+/* ── 2. My Bar door: flush-left backbar doorway, clear of the chalkboard ── */
+.saloon-exit-door {
+  left: 0;
+  bottom: 54px;
+  width: 76px;
+  height: 196px;
+  border-left: none;
+  border-radius: 0 14px 0 0;
+  box-shadow:
+    6px 0 14px rgba(0, 0, 0, 0.55),
+    inset -6px 0 12px rgba(0, 0, 0, 0.45),
+    inset 0 0 18px rgba(0, 0, 0, 0.55);
+}
+/* Door frame post on the hinge side */
+.saloon-exit-door::before {
+  content: '';
+  position: absolute;
+  top: 0; right: -2px; bottom: 0;
+  width: 7px;
+  background: linear-gradient(180deg, #7d5a30 0%, #4e3419 100%);
+  border-left: 2px solid #160c04;
+  z-index: 2;
+}
+/* Swinging half-doors silhouette at the base — reads as a saloon back door */
+.saloon-exit-door::after {
+  content: '';
+  position: absolute;
+  left: 8%; right: 12%; bottom: 0;
+  height: 34%;
+  background:
+    linear-gradient(90deg, transparent 47%, rgba(0,0,0,0.5) 47% 53%, transparent 53%),
+    repeating-linear-gradient(0deg, rgba(0,0,0,0.18) 0 3px, transparent 3px 10px),
+    linear-gradient(180deg, #7d4b28 0%, #5a3018 100%);
+  border: 2px solid #2a1a0a;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  opacity: 0.9;
+}
+.saloon-exit-door:hover .saloon-exit-glow { animation-duration: 1.2s; }
+
+/* Chalkboard steps right so the doorway never covers the menu board */
+.wall-chalkboard {
+  left: 88px;         /* clear of the 76px door + frame */
+  bottom: 190px;      /* a touch higher — hangs above the door lintel line */
+}
+@media (min-width: 480px) {
+  .wall-chalkboard { left: calc(76px + 5%); }
+}
+
+/* Spin hint + spinning glow on the special board */
+.chalk-spin-hint {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 4px;
+  color: #ffd166;
+  text-align: center;
+  margin-top: 5px;
+  letter-spacing: 0.5px;
+  opacity: 0.85;
+  animation: chalkHintPulse 2.6s ease-in-out infinite;
+}
+@keyframes chalkHintPulse {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 1; text-shadow: 0 0 6px rgba(255, 209, 102, 0.7); }
+}
+.wall-chalkboard--spinning .chalkboard-frame {
+  box-shadow:
+    0 0 0 1px #7a4515,
+    3px 5px 0 #000,
+    0 0 16px rgba(255, 209, 102, 0.55),
+    inset 0 0 14px rgba(0,0,0,0.6);
+}
+
+/* ── 3. Wanted posters: mugshots + interactivity ── */
+.wall-bounty-board {
+  max-width: 118px;
+  opacity: 0.92;
+}
+.bounty-mugshot {
+  background: #e8d9b0;
+  border: 1px solid rgba(60, 20, 0, 0.55);
+  margin: 2px 2px 3px;
+  padding: 2px 0 1px;
+  box-shadow: inset 0 0 6px rgba(60, 20, 0, 0.25);
+}
+.bounty-outlaw-name {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 4px;
+  color: #6b0000;
+  letter-spacing: 0.4px;
+  line-height: 1.5;
+  word-break: break-word;
+  margin-bottom: 2px;
+}
+.bounty-poster:hover .bounty-mugshot { animation: outlawShifty 0.9s steps(2) infinite; }
+@keyframes outlawShifty {
+  0%, 100% { transform: translateX(0); }
+  50%      { transform: translateX(-1px); }
+}
+
+/* ── 4. Backlit shelving: glow color follows the stool filter ── */
+.bs-display-case { --shelf-glow: rgba(255, 170, 60, 0.32); }        /* warm amber default */
+.bs-case-glow--cocktail { --shelf-glow: rgba(255, 140, 40, 0.42); }  /* whiskey amber */
+.bs-case-glow--mocktail { --shelf-glow: rgba(80, 170, 255, 0.42); }  /* cool mocktail blue */
+.bs-case-glow--recent   { --shelf-glow: rgba(120, 255, 170, 0.36); } /* fresh green */
+.bs-shelf-plank::after {
+  background: var(--shelf-glow);
+  transition: background 0.6s ease;
+}
+.bs-shelf-plank {
+  box-shadow:
+    0 2px 6px rgba(0,0,0,0.6),
+    0 -6px 14px -4px var(--shelf-glow),
+    inset 0 1px 0 rgba(255,200,100,0.2);
+  transition: box-shadow 0.6s ease;
+}
+
+/* ── 5. Candle light source + directional bottle shadows ── */
+.bs-candle-wrap {
+  position: absolute;
+  right: 6px;
+  top: 42%;
+  z-index: 2;
+  pointer-events: none;
+}
+.bs-candle-halo {
+  position: absolute;
+  top: -26px; left: 50%;
+  width: 90px; height: 90px;
+  transform: translateX(-50%);
+  background: radial-gradient(circle, rgba(255, 190, 80, 0.28) 0%, transparent 65%);
+  animation: candleHalo 2.8s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes candleHalo {
+  0%, 100% { opacity: 0.75; transform: translateX(-50%) scale(1); }
+  40%      { opacity: 1;    transform: translateX(-50%) scale(1.08); }
+  70%      { opacity: 0.65; transform: translateX(-50%) scale(0.96); }
+}
+.bs-candle-flame { animation: candleFlame 0.9s steps(3) infinite; transform-origin: center bottom; }
+@keyframes candleFlame {
+  0%   { opacity: 1; }
+  33%  { opacity: 0.75; }
+  66%  { opacity: 0.9; }
+  100% { opacity: 1; }
+}
+/* Light comes from the right → bottles throw soft shadows to the left */
+.bs-bottle-idle {
+  filter: drop-shadow(-5px 4px 3px rgba(0, 0, 0, 0.45));
+}
+
+/* ── 6. Flickering neon wall sign (time-of-day aware) ── */
+.saloon-neon-wall {
+  position: absolute;
+  top: 66px;
+  right: 5%;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: #ff6ec7;
+  text-shadow:
+    0 0 4px #ff6ec7,
+    0 0 10px #ff6ec7,
+    0 0 22px rgba(255, 110, 199, 0.5);
+  opacity: 0.85;
+  transform: rotate(-2deg);
+  animation: saloonNeonFlicker 7s steps(1) infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+@keyframes saloonNeonFlicker {
+  0%, 8.5%, 9.5%, 42%, 43.5%, 100% { opacity: 0.85; }
+  9%   { opacity: 0.25; }
+  42.5%{ opacity: 0.3; }
+  43%  { opacity: 0.7; }
+  71%  { opacity: 0.9; }
+  71.5%{ opacity: 0.2; }
+  72%  { opacity: 0.85; }
+}
+
+/* ── 7. Saloon haze — two slow-drifting smoke layers (transform-only) ── */
+.saloon-haze {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 2;
+}
+.saloon-haze-layer {
+  position: absolute;
+  top: 0; bottom: 30%;
+  width: 160%;
+  left: -30%;
+  background:
+    radial-gradient(ellipse 26% 42% at 18% 34%, rgba(220, 200, 170, 0.05) 0%, transparent 70%),
+    radial-gradient(ellipse 32% 36% at 52% 22%, rgba(220, 200, 170, 0.07) 0%, transparent 70%),
+    radial-gradient(ellipse 24% 40% at 82% 40%, rgba(220, 200, 170, 0.045) 0%, transparent 70%);
+  will-change: transform;
+}
+.saloon-haze-a { animation: hazeDrift 46s linear infinite; }
+.saloon-haze-b {
+  animation: hazeDrift 71s linear infinite reverse;
+  top: 12%;
+  opacity: 0.8;
+}
+@keyframes hazeDrift {
+  from { transform: translateX(-8%); }
+  50%  { transform: translateX(8%); }
+  to   { transform: translateX(-8%); }
+}
+
+/* ── 8. Cobwebs (stale bar) ── */
+.bs-cobweb {
+  position: absolute;
+  top: 0;
+  z-index: 3;
+  opacity: 0.65;
+  pointer-events: none;
+  animation: cobwebBreathe 5s ease-in-out infinite;
+}
+.bs-cobweb--tl { left: 0; }
+.bs-cobweb--tr { right: 0; }
+@keyframes cobwebBreathe {
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 0.75; }
+}
+
+/* ── 9. Broom sweep + dust puff ── */
+.bs-broom-sweep {
+  position: absolute;
+  bottom: 4px;
+  left: 0;
+  z-index: 12;
+  pointer-events: none;
+}
+.bs-broom-dust {
+  position: absolute;
+  bottom: 0;
+  left: -18px;
+  width: 26px; height: 12px;
+  background:
+    radial-gradient(circle at 30% 60%, rgba(200, 180, 150, 0.55) 0 3px, transparent 4px),
+    radial-gradient(circle at 65% 30%, rgba(200, 180, 150, 0.4) 0 2px, transparent 3px),
+    radial-gradient(circle at 85% 70%, rgba(200, 180, 150, 0.5) 0 2px, transparent 3px);
+  animation: broomDustPuff 0.5s ease-out infinite;
+}
+@keyframes broomDustPuff {
+  from { opacity: 0.9; transform: translateY(0) scale(0.8); }
+  to   { opacity: 0;   transform: translateY(-8px) scale(1.4); }
+}
+
+/* ── 10. New-arrival bottle: golden pulse + landing glow ── */
+.bs-bottle-new-arrival .bs-bottle-idle {
+  animation: newArrivalPulse 1.1s ease-in-out infinite;
+}
+@keyframes newArrivalPulse {
+  0%, 100% { filter: drop-shadow(-5px 4px 3px rgba(0,0,0,0.45)) drop-shadow(0 0 5px rgba(255, 214, 90, 0.85)); }
+  50%      { filter: drop-shadow(-5px 4px 3px rgba(0,0,0,0.45)) drop-shadow(0 0 12px rgba(255, 214, 90, 1)); }
+}
+.bs-bottle-new-arrival .bs-bottle-label {
+  color: #ffd166;
+  text-shadow: 0 0 6px rgba(255, 209, 102, 0.8);
+}
+
+/* New-arrival toast banner */
+.bs-arrival-toast {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  translate: -50% 0;
+  z-index: 40;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  letter-spacing: 1px;
+  color: #1a1200;
+  background: linear-gradient(180deg, #ffd166 0%, #f0a500 100%);
+  border: 2px solid #7a4515;
+  border-radius: 3px;
+  padding: 6px 12px;
+  box-shadow: 2px 3px 0 #000, 0 0 14px rgba(255, 209, 102, 0.5);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* ── 11. Peeking cat ── */
+.bs-peek-cat {
+  position: absolute;
+  z-index: 0; /* behind the bottles (slots get z:1 below) */
+  pointer-events: none;
+}
+.bs-bottle-slot { position: relative; z-index: 1; }
+
+/* ── 12. Wall remodel textures ── */
+/* brick = existing default .saloon-brick-wall */
+.saloon-wall--wood .saloon-brick-wall {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 22px,
+      rgba(0,0,0,0.22) 22px,
+      rgba(0,0,0,0.22) 24px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 46px,
+      rgba(0,0,0,0.12) 46px,
+      rgba(0,0,0,0.12) 47px
+    ),
+    linear-gradient(180deg, #4a2c14 0%, #38200d 60%, #241407 100%);
+  background-size: 24px 100%, 100% 47px, 100% 100%;
+}
+.saloon-wall--wallpaper .saloon-brick-wall {
+  background:
+    radial-gradient(circle at 12px 12px, rgba(212, 165, 116, 0.14) 0 3px, transparent 4px),
+    radial-gradient(circle at 36px 36px, rgba(212, 165, 116, 0.14) 0 3px, transparent 4px),
+    radial-gradient(circle at 36px 12px, rgba(120, 60, 90, 0.2) 0 2px, transparent 3px),
+    radial-gradient(circle at 12px 36px, rgba(120, 60, 90, 0.2) 0 2px, transparent 3px),
+    linear-gradient(180deg, #3d1428 0%, #2a0d1c 60%, #1a0812 100%);
+  background-size: 48px 48px, 48px 48px, 48px 48px, 48px 48px, 100% 100%;
+}
+.bs-remodel-btn span:first-child { font-size: 12px; line-height: 1; }
+
+/* ── 13. Reduced motion: park every new animation ── */
+@media (prefers-reduced-motion: reduce) {
+  .saloon-haze-layer,
+  .saloon-neon-wall,
+  .bs-candle-halo,
+  .bs-candle-flame,
+  .chalk-spin-hint,
+  .bs-cobweb,
+  .bs-broom-dust,
+  .bs-bottle-new-arrival .bs-bottle-idle,
+  .bounty-poster:hover .bounty-mugshot {
+    animation: none !important;
+  }
 }
