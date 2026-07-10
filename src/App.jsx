@@ -655,6 +655,11 @@ useEffect(() => {
     setShowSpinner(true);
   }, [meals, showToast, navigateToTab]);
 
+  // buildGroceryList is declared further down (Grocery section) — reference it
+  // through a ref here to avoid a TDZ crash: putting the const itself in the
+  // deps array below would evaluate it before initialization on every render.
+  const buildGroceryListRef = useRef(null);
+
   const handleSpinnerCompleteForDates = useCallback(async (pairs, options = {}) => {
     // pairs = [{date: Date, meal: mealObj}] — one entry per spinner slot
     // options.buildGrocery: after apply, open Shop with list from the new plan
@@ -703,9 +708,9 @@ useEffect(() => {
 
     // Post-spin "Build grocery list" — use the plan we just applied (state not flushed yet)
     if (options.buildGrocery && currentPlanApplied) {
-      buildGroceryList(undefined, { plan: currentPlanApplied, merge: true });
+      buildGroceryListRef.current?.(undefined, { plan: currentPlanApplied, merge: true });
     }
-  }, [weekPlan, weekHistory, showToast, buildGroceryList]);
+  }, [weekPlan, weekHistory, showToast]);
 
   const restoreWeek = useCallback((weekMeals) => {
     if (!weekMeals || weekMeals.length !== 7) return;
@@ -949,6 +954,10 @@ useEffect(() => {
     setGroceryItems(next);
     setTab('grocery');
   }, [weekPlan, groceryItems]);
+
+  // Keep the early-declared ref pointing at the latest buildGroceryList
+  // (see handleSpinnerCompleteForDates — avoids use-before-init in deps).
+  useEffect(() => { buildGroceryListRef.current = buildGroceryList; }, [buildGroceryList]);
 
   // ── Add quest items to grocery (Bar → Grocery bridge) ───────────────────────
   const handleAddToGrocery = useCallback((questItems) => {
