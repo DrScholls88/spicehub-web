@@ -196,6 +196,8 @@ describe('transcribePagesOnline — /api/vision proxy + 429 / rate-limit handlin
     text: async () => bodyText,
   });
   const isProxy = (url) => String(url).startsWith('/api/vision');
+  const isMistralProxy = (url) => isProxy(url) && String(url).includes('provider=mistral');
+  const isGeminiProxy = (url) => isProxy(url) && !String(url).includes('provider=mistral');
   const isMistral = (url) => String(url).includes('api.mistral.ai');
   const isDirectGemini = (url) => String(url).includes('generativelanguage');
 
@@ -311,6 +313,59 @@ describe('transcribePagesOnline — /api/vision proxy + 429 / rate-limit handlin
     await expect(transcribePagesOnline(['data:image/jpeg;base64,x'])).rejects.toMatchObject({
       status: 429,
       engine: 'mistral', // last tier tried
+    });
+  });
+
+  // ── Mistral /api/vision proxy (security hardening — key no longer ships in
+  //    the client bundle; mirrors the Gemini proxy coverage above) ──────────
+
+  it('Mistral works via the /api/vision proxy alone, with no client key configured', async () => {
+    vi.stubEnv('VITE_GOOGLE_AI_KEY', '');
+    vi.stubEnv('VITE_MISTRAL_API_KEY', '');
+    let sawMistralProxyCall = false;
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      if (isMistralProxy(url)) { sawMistralProxyCall = true; return resOk(mistralOkBody); }
+      if (isGeminiProxy(url)) return resErr(500, 'gemini exploded');
+      throw new Error(`unexpected fetch to ${url}`);
+    }));
+
+    const out = await transcribePagesOnline(['data:image/jpeg;base64,x']);
+    expect(sawMistralProxyCall).toBe(true);
+    expect(out.engine).toBe('mistral');
+  });
+
+  it('falls back to Mistral\'s direct client-key call when only the Mistral proxy is unreachable', async () => {
+    vi.stubEnv('VITE_GOOGLE_AI_KEY', '');
+    vi.stubEnv('VITE_MISTRAL_API_KEY', 'm');
+    let directMistralSeen = false;
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      if (isGeminiProxy(url)) return resErr(500, 'gemini exploded');
+      if (isMistralProxy(url)) throw new Error('network down');
+      if (isMistral(url)) { directMistralSeen = true; return resOk(mistralOkBody); }
+      throw new Error(`unexpected fetch to ${url}`);
+    }));
+
+    const out = await transcribePagesOnline(['data:image/jpeg;base64,x']);
+    expect(directMistralSeen).toBe(true);
+    expect(out.engine).toBe('mistral');
+  });
+
+  it('does not let an unconfigured Mistral tier eclipse a real Gemini failure reason', async () => {
+    // Regression guard: Mistral tier 2 is now ALWAYS attempted (no more
+    // MISTRAL_KEY() gate), so an unconfigured Mistral must not paper over
+    // Gemini's actual error with a generic "no-server-key" 503.
+    vi.stubEnv('VITE_GOOGLE_AI_KEY', '');
+    vi.stubEnv('VITE_MISTRAL_API_KEY', '');
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      if (isMistralProxy(url)) return resErr(503, '{"ok":false,"reason":"no-server-key"}');
+      if (isGeminiProxy(url)) return resErr(500, 'gemini real failure');
+      throw new Error(`unexpected fetch to ${url}`);
+    }));
+
+    await expect(transcribePagesOnline(['data:image/jpeg;base64,x'])).rejects.toMatchObject({
+      status: 500,
+      engine: 'gemini',
+      detail: expect.stringContaining('gemini real failure'),
     });
   });
 });

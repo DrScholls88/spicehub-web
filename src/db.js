@@ -281,6 +281,7 @@ export async function addToBarInventory(ingredient, meta = {}) {
       brand: meta.brand ?? existing?.brand,
       qty: meta.qty ?? existing?.qty,
       notes: meta.notes ?? existing?.notes,
+      qtyLevel: meta.qtyLevel ?? existing?.qtyLevel, // P3 semantic stock enum — preserve on re-add
       addedAt: existing?.addedAt ?? new Date().toISOString(),
     });
   } catch (e) {
@@ -294,7 +295,9 @@ export async function updateBarBottle(ingredient, patch = {}) {
   try {
     const existing = await db.barInventory.get(key);
     if (!existing) return;
-    const allowed = ['displayName', 'category', 'subcategory', 'brand', 'qty', 'notes'];
+    // qtyLevel: P3 semantic stock enum (string, additive beside legacy qty).
+    // addedAt: refreshed on restock for the pantry freshness indicator.
+    const allowed = ['displayName', 'category', 'subcategory', 'brand', 'qty', 'notes', 'qtyLevel', 'addedAt'];
     const next = { ...existing };
     for (const field of allowed) {
       if (field in patch) next[field] = patch[field];

@@ -75,7 +75,7 @@ VitePWA({
       // tripped the real 2MiB default.
       injectManifest: {
         injectionPoint: 'self.__WB_MANIFEST',
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,jpg,webp,wasm,gz}'],
+        globPatterns: ['**/*.{js,mjs,css,html,ico,png,svg,jpg,webp,wasm,gz}'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
       },
       // cleanupOutdatedCaches is called directly in sw.js (workbox-precaching

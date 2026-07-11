@@ -47,7 +47,9 @@ import './App.css';
 // them out of the main bundle. InstagramZipImport in particular pulls in
 // jszip, which has no reason to load until a user actually opens ZIP import.
 const InstagramZipImport = lazy(() => import('./components/InstagramZipImport'));
-const FridgeMode = lazy(() => import('./components/FridgeMode'));
+// P5: PantryMode (persistent Kitchen Pantry) supersedes the old ephemeral
+// FridgeMode — same entry points, same overlay slot, shared inventory store.
+const PantryMode = lazy(() => import('./components/PantryMode'));
 const BarFridgeMode = lazy(() => import('./components/BarFridgeMode'));
 const MealStats = lazy(() => import('./components/MealStats'));
 const StorageManager = lazy(() => import('./components/StorageManager'));
@@ -1214,7 +1216,7 @@ useEffect(() => {
           </button>
         </div>
         <div className="header-actions">
-          <button className="hdr-btn" onClick={() => setShowFridge(true)} title="What's in My Fridge?" aria-label="What's in my fridge?">🧊</button>
+          <button className="hdr-btn" onClick={() => setShowFridge(true)} title="The Pantry — what can I cook?" aria-label="Open the pantry">🧺</button>
           <button className="hdr-btn" onClick={() => setShowStats(true)} title="Meal Stats" aria-label="Meal stats">📊</button>
           {/* I-1: Instagram saved-posts bulk import */}
           <button className="hdr-btn" onClick={() => setShowZipImport(true)} title="Import Instagram saved posts (ZIP)" aria-label="Import Instagram saved posts">📦</button>
@@ -1442,11 +1444,12 @@ useEffect(() => {
       <AnimatePresence>
         {showFridge && (
           <Suspense fallback={null}>
-            <FridgeMode
-              key="fridge-mode"
+            <PantryMode
+              key="pantry-mode"
               meals={meals}
               onViewDetail={(meal) => { setShowFridge(false); setDetailItem(meal); }}
               onClose={() => setShowFridge(false)}
+              onAddToGrocery={handleAddToGrocery}
             />
           </Suspense>
         )}
@@ -1459,6 +1462,7 @@ useEffect(() => {
           onImport={() => { setImportModalKey(k => k + 1); setShowImportFor('drinks'); }}
           onAddToGrocery={handleAddToGrocery}
           onExitToMyBar={() => tripBetweenRooms('toMyBar')}
+          onOpenPantry={() => { setShowBarShelf(false); setShowFridge(true); }}
         />
       )}
       <AnimatePresence>

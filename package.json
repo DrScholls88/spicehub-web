@@ -37,6 +37,7 @@
     "lucide-react": "^1.14.0",
     "motion": "^12.41.0",
     "parse-ingredient": "^2.2.0",
+    "pdfjs-dist": "^4.10.38",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-element-to-jsx-string": "^17.0.1",

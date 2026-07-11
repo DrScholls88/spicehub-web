@@ -33,6 +33,13 @@ describe('progressMap — stage classification', () => {
     ['Transcript: 1240 chars — structuring recipe…',  STAGE.POLISHING],
     ['No caption found — transcribing video audio…',  STAGE.UNDERSTANDING],
     ['Recipe structured successfully!',               STAGE.POLISHING],
+    // Photo import's TRANSCRIBE stage names its vision engine — this must
+    // land on Understanding, not Polishing (regression: bare "gemini" in the
+    // old POLISHING rule used to skip the Understanding node entirely).
+    ['Reading your photo with Gemini…',               STAGE.UNDERSTANDING],
+    ['Reading 3 pages with Gemini…',                  STAGE.UNDERSTANDING],
+    ['Gemini unavailable — trying Mistral…',           STAGE.FETCHING],
+    ['Organizing the recipe…',                        STAGE.POLISHING],
   ];
 
   for (const [msg, expected] of CASES) {
@@ -74,6 +81,17 @@ describe('progressMap — advanceTimeline (forward-only)', () => {
     expect(t.stage).toBe(STAGE.POLISHING);
     // Chip upgrades to the latest tier doing work:
     expect(t.chip).toBe('Gemini');
+  });
+
+  it('photo import: transcribe-stage Gemini messages land on Understanding, not Polishing (regression)', () => {
+    let t = INITIAL_TIMELINE;
+    t = advanceTimeline(t, 'Preparing your photo…');
+    expect(t.stage).toBe(STAGE.FETCHING);
+    t = advanceTimeline(t, 'Reading your photo with Gemini…');
+    expect(t.stage).toBe(STAGE.UNDERSTANDING);
+    expect(t.chip).toBe('Gemini');
+    t = advanceTimeline(t, 'Organizing the recipe…');
+    expect(t.stage).toBe(STAGE.POLISHING);
   });
 
   it('NEVER rewinds: a late fetch retry cannot drag the timeline backwards', () => {
