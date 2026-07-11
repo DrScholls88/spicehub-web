@@ -1,15 +1,21 @@
 /**
  * pdfPages.js — client-side PDF → page images for the photo import pipeline.
  *
- * Zero-cost approach: pdf.js is loaded on demand from a pinned CDN build the
- * first time a PDF is dropped, so the app bundle carries no PDF weight and no
- * new npm dependency (avoids native/module churn in the PWA build). Once the
- * service worker has cached the module it also works offline.
+ * Self-hosted approach: pdf.min.mjs and pdf.worker.min.mjs are served from
+ * /public/pdfjs/ so they are covered by the app's strict `script-src 'self'`
+ * CSP header (same pattern as Tesseract under /public/tesseract/). Loading
+ * from a CDN would be blocked by the vercel.json CSP. Once the service worker
+ * has cached these files the feature also works fully offline.
+ *
+ * To upgrade: npm install pdfjs-dist@<new-version>, then copy:
+ *   node_modules/pdfjs-dist/build/pdf.min.mjs        → public/pdfjs/
+ *   node_modules/pdfjs-dist/build/pdf.worker.min.mjs → public/pdfjs/
+ * and update PDFJS_VERSION below.
  */
 
 const PDFJS_VERSION = '4.10.38';
-const PDFJS_URL = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/build/pdf.min.mjs`;
-const PDFJS_WORKER_URL = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_VERSION}/build/pdf.worker.min.mjs`;
+const PDFJS_URL = '/pdfjs/pdf.min.mjs';
+const PDFJS_WORKER_URL = '/pdfjs/pdf.worker.min.mjs';
 
 let _pdfjsPromise = null;
 

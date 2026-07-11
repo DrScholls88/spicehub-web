@@ -14,6 +14,7 @@ Full Output Enforcement on modified files. Do not leave modified files truncated
 - This is a Windows PC not Linux, use only Windows based terminal commands to lookup.
 - Conventional Commit cmd provided for every change package. 
 - CLAUDE ONLY PROVIDES THE GIT COMMIT CMDS, DO NOT ATTEMPT TO COMMIT TO GIT, User will manually make the commits to ensure they go to the right place
+- Claude should feel empowered to challenge user reccomendations when they would produce a marked regression in quality and provide reasoning. 
 
 ## High-Priority Focus Areas (Current Sprint)
 1. Instagram Import

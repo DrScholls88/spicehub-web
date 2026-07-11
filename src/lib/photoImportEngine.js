@@ -388,6 +388,21 @@ async function fetchVisionTier(url, init, signal) {
   return res;
 }
 
+// ── Adding a new online vision tier ─────────────────────────────────────────
+// Every tier is a function `(uploadPages, { signal }) => Promise<contract>`
+// that: (1) builds a provider-specific request from `uploadPages` (data URLs)
+// + `buildVisionPrompt()`, (2) calls its own server route on /api/vision via
+// `?provider=<name>` FIRST so the API key stays server-side, catching a proxy
+// failure and falling back to a direct call with a client-side VITE_ key only
+// when one is configured (see transcribeWithGemini/transcribeWithMistral for
+// the pattern), (3) parses the response into the shared contract with
+// `parseVisionContract(text, uploadPages.length)`, and (4) returns
+// `{ ...contract, engine: '<name>' }`. Register it in `transcribePagesOnline`
+// below (add a gate/attempt block) and add its endpoint+key branch to
+// `resolveProviderRequest` in api/vision.js. Ollama (local, no proxy needed —
+// call http://localhost:11434 directly) and OpenAI vision (proxy the same way
+// as Mistral, Authorization: Bearer) are the likely next additions.
+
 // ── Tier 1: Gemini (all pages, one call) ───────────────────────────────────
 
 async function transcribeWithGemini(uploadPages, { signal } = {}) {
@@ -426,25 +441,37 @@ async function transcribeWithGemini(uploadPages, { signal } = {}) {
 // ── Tier 2: Mistral Pixtral (same contract) ─────────────────────────────────
 
 async function transcribeWithMistral(uploadPages, { signal } = {}) {
-  const key = MISTRAL_KEY();
-  if (!key) throw new Error('Mistral key missing');
-
   const content = uploadPages.map((dataUrl) => ({ type: 'image_url', image_url: dataUrl }));
   content.push({ type: 'text', text: buildVisionPrompt(uploadPages.length) });
+  const body = JSON.stringify({
+    model: MISTRAL_MODEL(),
+    temperature: 0.1,
+    response_format: { type: 'json_object' },
+    messages: [{ role: 'user', content }],
+  });
+  const init = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body };
 
-  const res = await fetchVisionTier('https://api.mistral.ai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify({
-      model: MISTRAL_MODEL(),
-      temperature: 0.1,
-      response_format: { type: 'json_object' },
-      messages: [{ role: 'user', content }],
-    }),
-  }, signal);
+  // Server proxy first — keeps the Mistral key out of the client bundle, same
+  // as transcribeWithGemini's /api/vision path (this used to be a client-only
+  // VITE_MISTRAL_API_KEY call, which shipped the key in the client bundle).
+  let res;
+  try {
+    res = await fetchVisionTier('/api/vision?provider=mistral', init, signal);
+  } catch (proxyErr) {
+    if (proxyErr.name === 'AbortError') throw proxyErr;
+    const key = MISTRAL_KEY();
+    if (!key) {
+      // No server key AND no client key — Mistral was never configured, not a
+      // genuine extraction failure. Tag it so transcribePagesOnline's "prefer
+      // the last tier's reason" heuristic doesn't let this eclipse Gemini's
+      // real failure when Mistral simply isn't set up.
+      proxyErr.notConfigured = proxyErr.status === 503 && /no-server-key/.test(proxyErr.detail || '');
+      throw proxyErr;
+    }
+    console.warn('[PhotoImport] /api/vision (mistral) proxy failed, falling back to client key:', proxyErr.message);
+    const mistralInit = { ...init, headers: { ...init.headers, Authorization: `Bearer ${key}` } };
+    res = await fetchVisionTier('https://api.mistral.ai/v1/chat/completions', mistralInit, signal);
+  }
   const data = await res.json();
   const text = data?.choices?.[0]?.message?.content;
   const contract = parseVisionContract(text, uploadPages.length);
@@ -521,7 +548,10 @@ export async function transcribePagesOnline(uploadPages, { signal, onProgress } 
       console.warn('[PhotoImport] Gemini tier failed:', err.message);
     }
   }
-  if (MISTRAL_KEY()) {
+  // No more MISTRAL_KEY() gate: transcribeWithMistral tries the /api/vision
+  // server proxy first too, which works even when no client key is configured
+  // (mirrors the Gemini tier — see api/vision.js).
+  {
     onProgress?.('transcribe', 'Gemini unavailable — trying Mistral…');
     try {
       return await transcribeWithMistral(uploadPages, { signal });
@@ -535,8 +565,10 @@ export async function transcribePagesOnline(uploadPages, { signal, onProgress } 
       console.warn('[PhotoImport] Mistral tier failed:', err.message);
     }
   }
-  // Prefer the LAST tier's failure reason — it's the more recent/relevant one.
-  const finalError = tier2Error || tier1Error || new Error('No online vision tier available');
+  // Prefer the LAST tier's failure reason — it's the more recent/relevant one
+  // — UNLESS Mistral was simply never configured (notConfigured): that's not
+  // a real failure and shouldn't eclipse Gemini's actual error reason.
+  const finalError = (tier2Error && !tier2Error.notConfigured ? tier2Error : null) || tier1Error || tier2Error || new Error('No online vision tier available');
   if (!finalError.engine) finalError.engine = 'vision';
   throw finalError;
 }

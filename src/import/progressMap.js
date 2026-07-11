@@ -22,7 +22,13 @@ const STAGE_RULES = [
   // ── Polishing: the model is structuring / finalizing ──
   // ("structuring", never bare "structur" — "structured data endpoints" is an
   //  Understanding-phase probe and must not skip the timeline ahead.)
-  { stage: STAGE.POLISHING, re: /structuring|recipe structured|gemini|✨|organiz|polish|reconcil|finaliz/i },
+  // NOTE: no bare "gemini" alternative here on purpose. Photo import's vision
+  // TRANSCRIBE stage also names its engine ("Reading your photo with Gemini…"),
+  // which used to false-match this rule via the word "gemini" alone and skip
+  // the Understanding node entirely. "structuring"/"✨" already cover the real
+  // Polishing message ("✨ Structuring recipe with Gemini…") without that
+  // collision — see tests/import/corpus.progress.test.js.
+  { stage: STAGE.POLISHING, re: /structuring|recipe structured|✨|organiz|polish|reconcil|finaliz/i },
   { stage: STAGE.POLISHING, re: /\bai\b.*(extract|structur|content)|(extract|structur).*\bai\b/i },
   // ── Understanding: we have material and are reading/parsing it ──
   { stage: STAGE.UNDERSTANDING, re: /caption (found|captured)|: caption \(/i },

@@ -275,12 +275,6 @@ function WallBountyBoard({ bounties, onClickBounty }) {
                   <PixelOutlaw seed={b.ingredient} size={26} />
                 </div>
                 <div className="bounty-outlaw-name">{outlaw.nickname}</div>
-                <div className="bounty-ingredient">
-                  {b.ingredient.toUpperCase().slice(0, 10)}
-                </div>
-                <div className="bounty-reward">
-                  ${outlaw.reward} · {(b.drinkName || '?').slice(0, 9)}
-                </div>
               </motion.button>
             );
           })}
@@ -1213,6 +1207,48 @@ function PixelBroom() {
   );
 }
 
+// ── 8-bit door creak — short descending square sweep ─────────────────────────
+function playCreak() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'square';
+    o.connect(g); g.connect(ctx.destination);
+    o.frequency.setValueAtTime(180, ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(70, ctx.currentTime + 0.28);
+    g.gain.setValueAtTime(0.05, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.3);
+    o.start(); o.stop(ctx.currentTime + 0.32);
+    setTimeout(() => ctx.close(), 500);
+  } catch { /* audio blocked */ }
+}
+
+// ── Pixel crate stack — dresses the stockroom door perimeter ─────────────────
+function PixelCrates() {
+  return (
+    <svg width="46" height="52" viewBox="0 0 46 52" style={{ imageRendering: 'pixelated', display: 'block' }} aria-hidden="true">
+      {/* Bottom crate */}
+      <rect x="2" y="24" width="30" height="26" fill="#6b4a26" />
+      <rect x="2" y="24" width="30" height="3" fill="#7d5a30" />
+      <rect x="2" y="47" width="30" height="3" fill="#4e3419" />
+      <rect x="2" y="24" width="3" height="26" fill="#7d5a30" />
+      <rect x="29" y="24" width="3" height="26" fill="#4e3419" />
+      <path d="M4 26 L30 48 M30 26 L4 48" stroke="#4e3419" strokeWidth="3" />
+      <rect x="10" y="33" width="14" height="7" fill="#3a2510" />
+      <rect x="11" y="35" width="12" height="1" fill="#c8a882" opacity="0.6" />
+      {/* Top crate — smaller, offset */}
+      <rect x="12" y="2" width="24" height="20" fill="#7d5a30" />
+      <rect x="12" y="2" width="24" height="2" fill="#8d6a3c" />
+      <rect x="12" y="20" width="24" height="2" fill="#4e3419" />
+      <path d="M14 4 L34 20 M34 4 L14 20" stroke="#4e3419" strokeWidth="2" />
+      {/* Sneaky bottle neck poking out */}
+      <rect x="38" y="38" width="4" height="12" fill="#2e5d34" />
+      <rect x="38" y="34" width="4" height="4" fill="#1d3d22" />
+    </svg>
+  );
+}
+
 // ── Corner cobweb — appears when the bar's gone stale ────────────────────────
 function PixelCobweb({ flip = false }) {
   return (
@@ -1454,7 +1490,7 @@ function saloonReducer(state, action) {
 // ══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ══════════════════════════════════════════════════════════════════════════════
-export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAddToGrocery, onExitToMyBar }) {
+export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAddToGrocery, onExitToMyBar, onOpenPantry }) {
   // ── Reducer for discrete mode transitions ──────────────────────────────────
   const [saloon, dispatch] = useReducer(saloonReducer, initialSaloonState);
 
@@ -1560,6 +1596,20 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
 
   // ── Chalkboard "spinning" state while the surprise shakes up ─────────────
   const [boardSpin, setBoardSpin] = useState(false);
+
+  // ── P1: ⚙ TOOLS popover (houses REMODEL / TUNE / FILL) ───────────────────
+  const [showTools, setShowTools] = useState(false);
+
+  // ── P1: idle speech bubble auto-fades after 4 s; tap bartender to re-show ─
+  const [bubbleVisible, setBubbleVisible] = useState(true);
+  const bubbleTimerRef = useRef(null);
+
+  // ── P1: door swing-open transition before exiting to My Bar ──────────────
+  const [doorSwing, setDoorSwing] = useState(false);
+  const doorSwingTimerRef = useRef(null);
+
+  // ── P2: wanted-poster parchment modal ─────────────────────────────────────
+  const [wantedModal, setWantedModal] = useState(null); // bounty | null
 
   // Load persistence on mount
   useEffect(() => {
@@ -2025,22 +2075,21 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
       .map(([ingredient, count]) => ({ ingredient, drinkName: drinkName[ingredient], count }));
   }, [drinks, barInventory]);
 
-  // ── Bounty board click: bartender walks right to comment on wanted ingredient
+  // ── P2: Bounty poster tap → full parchment modal ──────────────────────────
   const handleBountyClick = useCallback((bounty) => {
-    if (bartenderState !== 'idle') return;
-    const barWidth = barTopRef.current?.clientWidth || 320;
-    const targetX = barWidth * 0.68 - 30;
-    setBartenderState('walking');
-    walkToRef.current?.(targetX, () => {
-      setBartenderState('idle');
-      setIdleQuipText(
-        bounty
-          ? `You'll need ${bounty.ingredient} to unlock the ${bounty.drinkName}!`
-          : "Wanted: more bottles on these shelves, partner!"
-      );
-    });
+    if (!bounty) return;
+    setWantedModal(bounty);
     if (navigator.vibrate) navigator.vibrate(15);
-  }, [bartenderState]);
+  }, []);
+
+  // Drinks this wanted ingredient would help unlock (for the modal).
+  const wantedUnlocks = useMemo(() => {
+    if (!wantedModal) return [];
+    const ing = wantedModal.ingredient.toLowerCase();
+    return drinks
+      .filter(d => (d.ingredients || []).some(i => i.toLowerCase().includes(ing)))
+      .map(d => d.name);
+  }, [wantedModal, drinks]);
 
   // Cleanup — all timers cleared on unmount
   useEffect(() => () => {
@@ -2064,7 +2113,31 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
     clearTimeout(arrivalTimerRef.current);
     clearTimeout(sweepTimerRef.current);
     clearTimeout(catTimerRef.current);
+    clearTimeout(bubbleTimerRef.current);
+    clearTimeout(doorSwingTimerRef.current);
   }, []);
+
+  // ── P1: bubble lifecycle — reappear on quip change, fade after 4 s ────────
+  useEffect(() => {
+    setBubbleVisible(true);
+    clearTimeout(bubbleTimerRef.current);
+    bubbleTimerRef.current = setTimeout(() => setBubbleVisible(false), 4000);
+    return () => clearTimeout(bubbleTimerRef.current);
+  }, [idleQuipText, spotlightQuip]);
+
+  // ── P1: door swing → creak → then actually leave for My Bar ──────────────
+  const handleExitToMyBar = useCallback(() => {
+    if (doorSwing) return;
+    if (navigator.vibrate) navigator.vibrate(15);
+    playCreak();
+    if (prefersReducedMotion) { onExitToMyBar?.(); return; }
+    setDoorSwing(true);
+    doorSwingTimerRef.current = setTimeout(() => {
+      onExitToMyBar?.();
+      // Reset swing state in case the component stays mounted under the overlay
+      doorSwingTimerRef.current = setTimeout(() => setDoorSwing(false), 400);
+    }, 380);
+  }, [doorSwing, prefersReducedMotion, onExitToMyBar]);
 
   // ── Generic walk helper (stable ref prevents stale closure in rAF loops) ────
   const walkTo = useCallback((targetX, onArrive) => {
@@ -2649,32 +2722,15 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
             <span className="bs-count-label">bottles</span>
           </div>
           <button
-            className="bs-surprise-btn bs-remodel-btn"
-            onClick={handleRemodel}
-            title="Remodel the saloon walls"
+            className={`bs-tools-btn${showTools ? ' bs-tools-btn--open' : ''}`}
+            onClick={() => { setShowTools(v => !v); if (navigator.vibrate) navigator.vibrate(10); }}
+            title="Saloon tools"
+            aria-expanded={showTools}
+            aria-controls="bs-tools-menu"
           >
             <span aria-hidden="true">⚙</span>
-            <span className="bs-surprise-label">REMODEL</span>
+            <span className="bs-tools-label">TOOLS</span>
           </button>
-          <button
-            className={`bs-chiptune-btn ${chiptuneOn ? 'bs-chiptune-on' : ''}`}
-            onClick={handleChiptuneToggle}
-            title={chiptuneOn ? 'Mute chiptune' : 'Play 8-bit jazz'}
-          >
-            <span className={`bs-pixel-icon ${chiptuneOn ? 'bs-pixel-icon-speaker' : 'bs-pixel-icon-note'}`} aria-hidden="true" />
-            <span className="bs-chiptune-label">{chiptuneOn ? 'MUTE' : 'TUNE'}</span>
-            {chiptuneOn && <ChiptuneVisualizer />}
-          </button>
-          {onAddToGrocery && drinks.length > 0 && (
-            <button
-              className="bs-fillshelf-btn"
-              onClick={handleFillShelf}
-              title="Add top 3 missing ingredients to quest list"
-            >
-              <span className="bs-pixel-icon bs-pixel-icon-scroll" aria-hidden="true" />
-              <span className="bs-fillshelf-label">FILL</span>
-            </button>
-          )}
           {onImport && (
             <button className="bs-import-btn" onClick={onImport} title="Import a drink">
               <span>+</span>
@@ -2682,6 +2738,54 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
             </button>
           )}
         </div>
+
+        {/* ── ⚙ TOOLS popover — wooden plaque menu (REMODEL / TUNE / FILL) ── */}
+        <AnimatePresence>
+          {showTools && (
+            <>
+              <div className="bs-tools-scrim" onClick={() => setShowTools(false)} aria-hidden="true" />
+              <motion.div
+                id="bs-tools-menu"
+                className="bs-tools-menu"
+                role="menu"
+                initial={{ opacity: 0, y: -10, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -8, scale: 0.97, transition: { duration: 0.14 } }}
+                transition={{ type: 'spring', stiffness: 420, damping: 28 }}
+              >
+                <button
+                  className="bs-tools-item"
+                  role="menuitem"
+                  onClick={() => { handleRemodel(); setShowTools(false); }}
+                >
+                  <span className="bs-tools-item-icon" aria-hidden="true">🔨</span>
+                  <span>REMODEL</span>
+                  <span className="bs-tools-item-hint">wall: {wallStyle}</span>
+                </button>
+                <button
+                  className={`bs-tools-item${chiptuneOn ? ' bs-tools-item--active' : ''}`}
+                  role="menuitem"
+                  onClick={handleChiptuneToggle}
+                >
+                  <span className="bs-tools-item-icon" aria-hidden="true">{chiptuneOn ? '🔇' : '🎵'}</span>
+                  <span>{chiptuneOn ? 'MUTE' : 'TUNE'}</span>
+                  {chiptuneOn && <ChiptuneVisualizer />}
+                </button>
+                {onAddToGrocery && drinks.length > 0 && (
+                  <button
+                    className="bs-tools-item"
+                    role="menuitem"
+                    onClick={() => { handleFillShelf(); setShowTools(false); }}
+                  >
+                    <span className="bs-tools-item-icon" aria-hidden="true">📜</span>
+                    <span>FILL SHELF</span>
+                    <span className="bs-tools-item-hint">quest top 3</span>
+                  </button>
+                )}
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
 
         {/* First-run hints — teaches the hidden interactions (dismissed forever) */}
         {showTips && (
@@ -2752,21 +2856,60 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
 
             {/* Full-height return door → My Bar, tucked behind the bar counter */}
             {onExitToMyBar && (
+              <>
+                <motion.button
+                  className={`saloon-exit-door${doorSwing ? ' saloon-exit-door--swing' : ''}`}
+                  onClick={handleExitToMyBar}
+                  aria-label="Back to My Bar (stockroom)"
+                  title="Back to My Bar"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ type: 'spring', stiffness: 260, damping: 24, delay: 0.4 }}
+                  whileHover={{ filter: 'brightness(1.12)' }}
+                  whileTap={{ scale: 0.97 }}
+                >
+                  <span className="saloon-exit-lintel" aria-hidden="true">STOCKROOM</span>
+                  <span className="saloon-exit-panel" aria-hidden="true">
+                    <span className="saloon-exit-glow" aria-hidden="true" />
+                    <span className="saloon-exit-knob" aria-hidden="true" />
+                  </span>
+                  <span className="saloon-exit-staffsign" aria-hidden="true">my bar ‹</span>
+                </motion.button>
+                {/* Warm light spilling from under the stockroom door */}
+                <div className={`saloon-exit-spill${doorSwing ? ' saloon-exit-spill--flare' : ''}`} aria-hidden="true" />
+                {/* Crate stack anchoring the doorway into the scene */}
+                <div className="saloon-exit-crates" aria-hidden="true"><PixelCrates /></div>
+              </>
+            )}
+
+            {/* P5: Cookhouse door → the Kitchen Pantry (right side of the back wall) */}
+            {onOpenPantry && (
               <motion.button
-                className="saloon-exit-door"
-                onClick={() => { if (navigator.vibrate) navigator.vibrate(15); onExitToMyBar(); }}
-                aria-label="Back to My Bar"
-                title="Back to My Bar"
+                className="saloon-cookhouse-door"
+                onClick={() => { if (navigator.vibrate) navigator.vibrate(15); playCreak(); onOpenPantry(); }}
+                aria-label="Through to the Cookhouse (Kitchen Pantry)"
+                title="Cookhouse — the Kitchen Pantry"
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ type: 'spring', stiffness: 260, damping: 24, delay: 0.4 }}
+                transition={{ type: 'spring', stiffness: 260, damping: 24, delay: 0.5 }}
                 whileHover={{ filter: 'brightness(1.12)' }}
                 whileTap={{ scale: 0.97 }}
               >
-                <span className="saloon-exit-lintel" aria-hidden="true">‹ MY BAR</span>
-                <span className="saloon-exit-panel" aria-hidden="true">
-                  <span className="saloon-exit-glow" aria-hidden="true" />
-                  <span className="saloon-exit-knob" aria-hidden="true" />
+                <span className="saloon-cookhouse-lintel" aria-hidden="true">COOKHOUSE</span>
+                <span className="saloon-cookhouse-panel" aria-hidden="true">
+                  <span className="saloon-cookhouse-hat" aria-hidden="true">
+                    {/* Pixel chef hat */}
+                    <svg width="22" height="18" viewBox="0 0 22 18" style={{ imageRendering: 'pixelated' }}>
+                      <rect x="4" y="2" width="14" height="8" fill="#f5f0e6" rx="3" />
+                      <rect x="2" y="5" width="5" height="5" fill="#f5f0e6" rx="2" />
+                      <rect x="15" y="5" width="5" height="5" fill="#f5f0e6" rx="2" />
+                      <rect x="5" y="10" width="12" height="5" fill="#e8e0d0" />
+                      <rect x="5" y="13" width="12" height="2" fill="#c9bfa8" />
+                    </svg>
+                  </span>
+                  <span className="saloon-cookhouse-steam" aria-hidden="true">
+                    <i /><i /><i />
+                  </span>
                 </span>
               </motion.button>
             )}
@@ -2876,14 +3019,15 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
                         {row.length < BOTTLES_PER_SHELF && Array.from({ length: BOTTLES_PER_SHELF - row.length }).map((_, i) => (
                           <div key={`empty-${i}`} className="bs-bottle-slot bs-empty-slot"
                             onClick={() => { if (onImport) onImport(); }}
-                            title="Add a drink"
+                            title="A bottle awaits… import a drink to unlock this slot"
                           >
-                            <svg width="20" height="48" viewBox="0 0 20 48" className="bs-empty-bottle-svg">
-                              <rect x="7" y="4" width="6" height="3" fill="none" stroke="#555" strokeWidth="1" strokeDasharray="2,2" />
-                              <rect x="8" y="7" width="4" height="6" fill="none" stroke="#555" strokeWidth="1" strokeDasharray="2,2" />
-                              <rect x="4" y="13" width="12" height="24" rx="1" fill="none" stroke="#555" strokeWidth="1" strokeDasharray="2,2" />
-                              <line x1="7" y1="25" x2="13" y2="25" stroke="#666" strokeWidth="1.5" />
-                              <line x1="10" y1="22" x2="10" y2="28" stroke="#666" strokeWidth="1.5" />
+                            {/* Locked-bottle silhouette — environmental "collect me" storytelling */}
+                            <svg width="20" height="48" viewBox="0 0 20 48" className="bs-empty-bottle-svg bs-locked-bottle">
+                              <rect x="7" y="4" width="6" height="3" fill="#241408" />
+                              <rect x="8" y="7" width="4" height="6" fill="#241408" />
+                              <rect x="4" y="13" width="12" height="24" rx="1" fill="#241408" />
+                              <rect x="5" y="14" width="2" height="22" fill="rgba(255,255,255,0.05)" />
+                              <text x="10" y="29" textAnchor="middle" fontSize="10" fill="#5a4a30" fontFamily="monospace">?</text>
                             </svg>
                           </div>
                         ))}
@@ -2925,6 +3069,10 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
                 onPointerLeave={handleBartenderPointerLeave}
                 onClick={(e) => {
                   if (wasDraggedRef.current) { wasDraggedRef.current = false; return; }
+                  // P1: tapping the bartender always revives his speech bubble
+                  setBubbleVisible(true);
+                  clearTimeout(bubbleTimerRef.current);
+                  bubbleTimerRef.current = setTimeout(() => setBubbleVisible(false), 4000);
                   handleBartenderTap(e);
                 }}
                 role="button"
@@ -3062,21 +3210,30 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
                       <span>{spotlightQuip || idleQuipText}</span>
                     </div>
                   )}
-                  {bartenderState === 'idle' && !selectedDrink && !jokeText && !surpriseResult && !secretCocktailActive && (
-                    <div className={`bs-bt-speech bs-bt-speech-idle ${bubbleDir}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
-                      <AnimatePresence mode="wait">
-                        <motion.span
-                          key={spotlightQuip || idleQuipText}
-                          initial={{ opacity: 0, y: 5 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -4 }}
-                          transition={{ duration: 0.22, ease: 'easeOut' }}
-                        >
-                          {spotlightQuip || idleQuipText}
-                        </motion.span>
-                      </AnimatePresence>
-                    </div>
-                  )}
+                  <AnimatePresence>
+                    {bubbleVisible && bartenderState === 'idle' && !selectedDrink && !jokeText && !surpriseResult && !secretCocktailActive && (
+                      <motion.div
+                        className={`bs-bt-speech bs-bt-speech-idle ${bubbleDir}`}
+                        style={{ maxWidth: 'min(240px, 60vw)' }}
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -6, transition: { duration: 0.35 } }}
+                        transition={{ duration: 0.22, ease: 'easeOut' }}
+                      >
+                        <AnimatePresence mode="wait">
+                          <motion.span
+                            key={spotlightQuip || idleQuipText}
+                            initial={{ opacity: 0, y: 5 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -4 }}
+                            transition={{ duration: 0.22, ease: 'easeOut' }}
+                          >
+                            {spotlightQuip || idleQuipText}
+                          </motion.span>
+                        </AnimatePresence>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               );
             })()}
@@ -3346,6 +3503,74 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
             </div>
           );
         })()}
+
+        {/* ── P2: Wanted poster parchment modal ── */}
+        <AnimatePresence>
+          {wantedModal && (() => {
+            const outlaw = getOutlaw(wantedModal.ingredient, wantedModal.count);
+            return (
+              <motion.div
+                className="wanted-modal-overlay"
+                onClick={() => setWantedModal(null)}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0, transition: { duration: 0.15 } }}
+              >
+                <motion.div
+                  className="wanted-modal"
+                  role="dialog"
+                  aria-label={`Wanted: ${wantedModal.ingredient}`}
+                  onClick={e => e.stopPropagation()}
+                  initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 1.25, rotate: -4 }}
+                  animate={{ opacity: 1, scale: 1, rotate: -1 }}
+                  exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.15 } }}
+                  transition={{ type: 'spring', stiffness: 340, damping: 22 }}
+                >
+                  <button className="wanted-modal-close" onClick={() => setWantedModal(null)} aria-label="Close">✕</button>
+                  <div className="wanted-modal-header" aria-hidden="true">⚑ WANTED ⚑</div>
+                  <div className="wanted-modal-sub" aria-hidden="true">DEAD OR MIXED</div>
+                  <div className="wanted-modal-mugshot">
+                    <PixelOutlaw seed={wantedModal.ingredient} size={72} />
+                  </div>
+                  <div className="wanted-modal-name">{outlaw.nickname}</div>
+                  <div className="wanted-modal-crime">
+                    WANTED FOR: MISSIN&apos; FROM {wantedModal.count} RECIPE{wantedModal.count !== 1 ? 'S' : ''}
+                  </div>
+                  <div className="wanted-modal-ingredient">{wantedModal.ingredient.toUpperCase()}</div>
+                  <div className="wanted-modal-reward">REWARD: ${outlaw.reward}</div>
+                  {wantedUnlocks.length > 0 && (
+                    <div className="wanted-modal-unlocks">
+                      <span className="wanted-modal-unlocks-title">CAPTURE TO UNLOCK:</span>
+                      {wantedUnlocks.slice(0, 4).map(name => (
+                        <span key={name} className="wanted-modal-unlock-item">• {name}</span>
+                      ))}
+                      {wantedUnlocks.length > 4 && (
+                        <span className="wanted-modal-unlock-item">…and {wantedUnlocks.length - 4} more</span>
+                      )}
+                    </div>
+                  )}
+                  {onAddToGrocery && (
+                    <button
+                      className="wanted-modal-cta"
+                      onClick={() => {
+                        onAddToGrocery([{
+                          name: wantedModal.ingredient,
+                          tag: 'bar-quest',
+                          questName: wantedModal.drinkName || 'Wanted Board',
+                        }]);
+                        if (navigator.vibrate) navigator.vibrate([30, 20, 30]);
+                        setIdleQuipText(`Posse's on the hunt for ${wantedModal.ingredient}!`);
+                        setWantedModal(null);
+                      }}
+                    >
+                      📜 ADD TO QUEST LIST
+                    </button>
+                  )}
+                </motion.div>
+              </motion.div>
+            );
+          })()}
+        </AnimatePresence>
 
         {/* ── Marquee customization modal ── */}
         {showMarqueeModal && (
