@@ -117,6 +117,10 @@ export default function App() {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [showFridge, setShowFridge] = useState(false);
+  // Two doors into the same PantryMode room: the "What can I cook" tile jumps
+  // straight to the proximity-match panel, the "Pantry" tile opens to the
+  // plain inventory. Reset explicitly at every open site (no stale default).
+  const [pantryStartOnMatches, setPantryStartOnMatches] = useState(false);
   const [cookModeMeal, setCookModeMeal] = useState(null); // { meal, scaleFactor }
   const [mixModeDrink, setMixModeDrink] = useState(null); // { drink, scaleFactor }
   const [pipVideo, setPipVideo] = useState(null); // { source, meal } — floating PiP player
@@ -1271,7 +1275,8 @@ useEffect(() => {
             onNavigate={navigateToTab}
             onGenerate={generateWeek}
             onViewDetail={setDetailItem}
-            onOpenFridge={() => setShowFridge(true)}
+            onOpenFridge={() => { setPantryStartOnMatches(true); setShowFridge(true); }}
+            onOpenPantry={() => { setPantryStartOnMatches(false); setShowFridge(true); }}
             onOpenStats={() => setShowStats(true)}
             onOpenDiscover={() => setShowDiscover(true)}
             canInstall={!!deferredPrompt}
@@ -1447,6 +1452,7 @@ useEffect(() => {
             <PantryMode
               key="pantry-mode"
               meals={meals}
+              initialShowMatches={pantryStartOnMatches}
               onViewDetail={(meal) => { setShowFridge(false); setDetailItem(meal); }}
               onClose={() => setShowFridge(false)}
               onAddToGrocery={handleAddToGrocery}
@@ -1462,7 +1468,7 @@ useEffect(() => {
           onImport={() => { setImportModalKey(k => k + 1); setShowImportFor('drinks'); }}
           onAddToGrocery={handleAddToGrocery}
           onExitToMyBar={() => tripBetweenRooms('toMyBar')}
-          onOpenPantry={() => { setShowBarShelf(false); setShowFridge(true); }}
+          onOpenPantry={() => { setShowBarShelf(false); setPantryStartOnMatches(false); setShowFridge(true); }}
         />
       )}
       <AnimatePresence>

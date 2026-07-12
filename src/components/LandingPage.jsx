@@ -437,6 +437,7 @@ const TILE_COLORS = {
   myMeals: '#2e7d32',
   bar: '#7b1fa2',
   grocery: '#1565c0',
+  pantry: '#8a6d3b',
   fridge: '#00838f',
   stats: '#e65100',
 };
@@ -820,6 +821,7 @@ export default function LandingPage({
   onGenerate = () => {},
   onViewDetail = () => {},
   onOpenFridge = () => {},
+  onOpenPantry = () => {},
   onOpenStats = () => {},
   onOpenDiscover = () => {},
   onInstallApp = null,
@@ -897,8 +899,8 @@ export default function LandingPage({
     {
       id: 'planWeek',
       emoji: '🎲',
-      title: 'The Rotation',
-      subtitle: rotationCount > 0 ? `${rotationCount} meals active` : 'Set up your meals',
+      title: 'Plan out your week of meals',
+      subtitle: "So you stop texting ‘idk, you pick’ at 5pm.",
       accent: TILE_COLORS.planWeek,
       onClick: () => onNavigate('week'),
     },
@@ -927,10 +929,18 @@ export default function LandingPage({
       onClick: () => onNavigate('grocery'),
     },
     {
+      id: 'pantry',
+      emoji: '🥫',
+      title: 'Pantry',
+      subtitle: 'Track what’s on hand',
+      accent: TILE_COLORS.pantry,
+      onClick: () => onOpenPantry(),
+    },
+    {
       id: 'fridge',
       emoji: '🧊',
-      title: 'Fridge Mode',
-      subtitle: 'What can I make?',
+      title: 'What Can I Cook today?',
+      subtitle: 'All I have is ingredients for food.',
       accent: TILE_COLORS.fridge,
       onClick: () => onOpenFridge(),
     },
@@ -942,7 +952,7 @@ export default function LandingPage({
       accent: TILE_COLORS.stats,
       onClick: () => onOpenStats(),
     },
-  ], [rotationCount, meals.length, drinks.length, totalCooked, onNavigate, onOpenFridge, onOpenStats]);
+  ], [rotationCount, meals.length, drinks.length, totalCooked, onNavigate, onOpenFridge, onOpenPantry, onOpenStats]);
 
   // ── Seasonal picks ──────────────────────────────────────────────────────────
   const seasonInfo = useMemo(() => getSeasonInfo(), []);

@@ -65,7 +65,7 @@ export function matchMealAgainstPantry(meal, pantryTokens) {
   };
 }
 
-export default function PantryMode({ meals, onViewDetail, onClose, onAddToGrocery }) {
+export default function PantryMode({ meals, onViewDetail, onClose, onAddToGrocery, initialShowMatches = false }) {
   const dragControls = useDragControls();
   const handleSheetDragEnd = useCallback((_e, info) => {
     if (info.offset.y > 100 || info.velocity.y > 500) onClose();
@@ -75,7 +75,7 @@ export default function PantryMode({ meals, onViewDetail, onClose, onAddToGrocer
   const [loaded, setLoaded] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [ledger, setLedger] = useState(null);       // record (or virtual staple) being inspected
-  const [showMatches, setShowMatches] = useState(false);
+  const [showMatches, setShowMatches] = useState(initialShowMatches);
   const [matchFilter, setMatchFilter] = useState(null); // "cook with this" ingredient
   const [justAdded, setJustAdded] = useState(null);
 
@@ -281,6 +281,7 @@ export default function PantryMode({ meals, onViewDetail, onClose, onAddToGrocer
                       type="button"
                       className={[
                         'pm-tile',
+                        'pm-tile--fresh',
                         isDry ? 'pm-tile--out' : '',
                         rec.ingredient === justAdded ? 'pm-tile--new' : '',
                       ].filter(Boolean).join(' ')}
