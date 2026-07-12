@@ -2,7 +2,15 @@ import { describe, it, expect } from 'vitest';
 import { INGREDIENT_CATALOG, ALL_CATALOG_ITEMS } from '../data/bar/ingredientCatalog';
 import { spriteSpec } from '../lib/barSprites.jsx';
 
-const VALID_KINDS = new Set(['bottle', 'can', 'citrus', 'herb', 'garnish', 'glass', 'ice', 'egg', 'sugar']);
+// The sprite engine is shared between the Bar and the Pantry (see
+// lib/barSprites.jsx header): kitchen-shaped kinds like 'produce', 'dairy',
+// and 'shaker' are valid renders for bar catalog items too (a rimming salt,
+// a muddled cucumber, a splash of milk) — they're a deliberate upgrade over
+// the old generic hashed-bottle fallback, not a regression.
+const VALID_KINDS = new Set([
+  'bottle', 'can', 'citrus', 'herb', 'garnish', 'glass', 'ice', 'egg', 'sugar',
+  'produce', 'protein', 'dairy', 'drygood', 'jar', 'shaker',
+]);
 
 describe('ingredient catalog', () => {
   it('is a vast, well-formed catalog', () => {
