@@ -284,17 +284,30 @@ export async function extractRedditPost(url) {
  * Good recipe subreddits: recipes, EatCheapAndHealthy, Cooking, MealPrepSunday,
  *   AskCulinary, veganrecipes, ketorecipes, vegetarian
  *
+ * Pagination: Reddit's listing endpoints use a cursor (`after`), not page
+ * numbers — each response includes the fullname of the last item (e.g.
+ * "t3_abc123") to pass back as `after` on the next call to continue where
+ * you left off. There's no "page 2" URL; passing the previous response's
+ * `after` value is the only supported way to advance. See
+ * https://www.reddit.com/dev/api#listings for the underlying shape.
+ *
  * @param {string} subreddit - Subreddit name without /r/ prefix (default: 'recipes')
  * @param {string} sort - 'new' | 'hot' | 'top' (default: 'new')
  * @param {number} limit - Number of posts to return (max 100, default: 25)
- * @returns {Array<{ title, url, selftext, thumbnail, author, score, subreddit }>}
+ * @param {string|null} after - Cursor from a previous call's returned `after`
+ *   (null/omitted for the first page)
+ * @returns {{ posts: Array<{ title, url, selftext, thumbnail, author, score, subreddit }>, after: string|null }}
+ *   `after` is null when Reddit reports no further pages (or the request failed) —
+ *   callers should stop offering "load more" once it's null.
  */
-export async function discoverRedditRecipes(subreddit = 'recipes', sort = 'new', limit = 25) {
-  const jsonUrl = `https://www.reddit.com/r/${subreddit}/${sort}.json?limit=${Math.min(limit, 100)}`;
-  console.log(`[reddit] Discovering posts from r/${subreddit} (${sort}, limit ${limit})`);
+export async function discoverRedditRecipes(subreddit = 'recipes', sort = 'new', limit = 25, after = null) {
+  const params = new URLSearchParams({ limit: String(Math.min(limit, 100)) });
+  if (after) params.set('after', after);
+  const jsonUrl = `https://www.reddit.com/r/${subreddit}/${sort}.json?${params.toString()}`;
+  console.log(`[reddit] Discovering posts from r/${subreddit} (${sort}, limit ${limit}${after ? `, after ${after}` : ''})`);
 
   const data = await fetchRedditJson(jsonUrl);
-  if (!data || !data.data?.children) return [];
+  if (!data || !data.data?.children) return { posts: [], after: null };
 
   const posts = data.data.children
     .map(child => child.data)
@@ -323,8 +336,13 @@ export async function discoverRedditRecipes(subreddit = 'recipes', sort = 'new',
       flair: post.link_flair_text || '',
     }));
 
-  console.log(`[reddit] Found ${posts.length} posts from r/${subreddit}`);
-  return posts;
+  // data.data.after is Reddit's own cursor for the next page; it's already
+  // null/undefined when a subreddit is exhausted, which is exactly the
+  // "no more pages" signal callers need — normalize undefined to null so
+  // consumers only ever have to check one falsy value.
+  const nextAfter = data.data.after || null;
+  console.log(`[reddit] Found ${posts.length} posts from r/${subreddit}${nextAfter ? ' (more available)' : ' (end of listing)'}`);
+  return { posts, after: nextAfter };
 }
 
 

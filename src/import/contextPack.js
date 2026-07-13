@@ -28,6 +28,10 @@ export function createContextPack(fields = {}) {
     sourceUrl: fields.sourceUrl || '',
     sourceType: fields.sourceType || 'text',
     title: fields.title || '',
+    // Creator handle/name when the acquisition source provided one (oEmbed
+    // author_name, Apify ownerFullName/ownerUsername). Distinct from `title` —
+    // never used as a fallback dish title, only as source attribution.
+    author: fields.author || '',
     caption: fields.caption || null,
     transcript: fields.transcript || null,
     markdown: fields.markdown || null,
@@ -57,6 +61,7 @@ export function packFromCaption({
   sourceType = 'text',
   acquiredVia = '',
   confidence = 0.5,
+  author = '',
 } = {}) {
   const imgs = Array.isArray(images)
     ? images
@@ -67,6 +72,7 @@ export function packFromCaption({
     sourceType,
     sourceUrl,
     title,
+    author,
     caption: caption && caption.trim() ? caption : null,
     transcript: transcript && String(transcript).trim() ? transcript : null,
     images: imgs,

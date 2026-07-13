@@ -302,13 +302,21 @@ async function preprocessForOCR(dataUrl) {
 // ── Vision prompt ───────────────────────────────────────────────────────────
 
 function buildVisionPrompt(pageCount) {
-  return `You are given ${pageCount} page image${pageCount === 1 ? '' : 's'} of recipe content (cookbook page, recipe card, menu board, handwritten note, or website screenshot). Pages are in reading order.
+  return `You are given ${pageCount} page image${pageCount === 1 ? '' : 's'} of recipe content (cookbook page, recipe card, menu board, handwritten note, bar/cocktail card, or website screenshot). Pages are in reading order.
 
 For EACH page, transcribe ALL text as faithfully as possible:
 - Preserve line breaks, section headers (like "Ingredients:", "For the sauce:"), bullet points, numbered steps, quantities, and measurements exactly as written.
 - If handwritten, read every word you can; mark unreadable words as [?].
 - If a page shows only a plated dish with no text, transcribe nothing for it.
 - If the content is a menu board, transcribe each item name and description.
+
+Cocktail/bar cards need extra care — they use conventions that are easy to misread or drop:
+- Fraction glyphs are common in measurements (¾ oz, 1¼ oz, ½ oz); transcribe the exact glyph or its plain-text equivalent, never round it off.
+- Ratio shorthand (e.g. "2:1:1", "3:2:1") describes proportions of the ingredients listed nearby, in order — transcribe it verbatim on its own line near those ingredients rather than dropping it.
+- Bar abbreviations to preserve exactly: oz, dash, splash, bs/barspoon, top/float, rinse, neat, up, rocks.
+- Many cards list ingredients as "Name — amount" (name first, amount right-aligned) rather than "amount name" — transcribe each ingredient line in whatever order it actually appears, don't silently reorder to amount-first.
+- Glassware (coupe, rocks/old-fashioned, highball, martini, copper mug) and garnish (twist, cherry, mint sprig, salt/sugar rim) are often set apart from the main ingredient list — a small icon, a line at the bottom, or a separate column. Transcribe these as their own line(s) even if visually separated, don't fold them into ingredients or drop them.
+- Method terms (shake, stir, build, muddle, strain, double-strain, dry shake) are directions, not ingredients, even when they appear as a single word near the glass icon.
 
 Also detect whether any page contains a PHOTOGRAPH of the finished dish or drink (not an illustration, not the text). If yes, report which page and its bounding box.
 
