@@ -15,7 +15,7 @@ import ImportSheet from './components/ImportSheet';
 import BatchImportQueue, { BatchQueuePill } from './components/BatchImportQueue';
 import DiscoverRecipes from './components/DiscoverRecipes';
 import { startBatchImportEngine } from './batchImportEngine';
-import { extractMultipleUrls } from './recipeParser';
+import { extractMultipleUrls, detectImportType } from './recipeParser';
 import { categorizeIngredient, upgradeRecipeIngredients, setLearnedAliases } from './recipeSchema';
 import { seedEntities } from './utils/ingredientEntities';
 import CookMode from './components/CookMode';
@@ -541,12 +541,13 @@ export default function App() {
 // ── Shared-content drink detection helper ────────────────────────────────────
 // Returns true if the URL / title / text looks like a cocktail / drink post.
 // Used to auto-route shares to the Bar instead of the Meal library.
-const DRINK_KEYWORDS_RX = /\b(cocktail|drink|bar\b|bartend|beer|wine|whiskey|whisky|bourbon|vodka|rum\b|gin\b|tequila|mezcal|margarita|martini|negroni|mojito|spritz|mocktail|mixolog|booze|seltzer|cider|mead|sake|liqueur|schnapps|aperol|campari|baileys|kahlua|triple\s*sec|bitters|pour\s*over|pour-over|on\s+the\s+rocks|neat\b|craft\s+beer|ipa\b|lager|ale\b|stout|porter\b|sour\b|daiquiri|paloma|mule\b|sling\b|punch\b|highball|lowball|nightcap|happy\s*hour)\b/i;
-
+//
+// 2026-07-13 critique fix: this used to carry its own DRINK_KEYWORDS_RX,
+// duplicating detectImportType's keyword list in recipeParser.js. Two lists
+// meant a keyword added to one (e.g. a new liquor brand) silently didn't help
+// the other detection path. Delegates to the single source of truth instead.
 function _looksLikeDrink(url, title, text) {
-  return DRINK_KEYWORDS_RX.test(url || '') ||
-         DRINK_KEYWORDS_RX.test(title || '') ||
-         DRINK_KEYWORDS_RX.test(text || '');
+  return detectImportType(url, `${title || ''} ${text || ''}`) === 'drink';
 }
 
 // Handle Share Target (Android + PWA)
