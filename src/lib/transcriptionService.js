@@ -116,10 +116,16 @@ function resample(pcm, fromRate, toRate) {
  * Returns { ok, transcript, extractedVia } or null if server unreachable.
  */
 async function tryServerTranscribe(url, onProgress, { signal } = {}) {
-  // Detect server (same logic as recipeParser's detectServer)
+  // Detect server (same logic as recipeParser's detectServer). The localhost
+  // fallback must be guarded the same way detectServer() guards it — otherwise
+  // production HTTPS builds still queue it as a candidate, and the browser
+  // blocks it via CSP (connect-src) after a wasted round trip. This drifted
+  // out of sync with detectServer() at some point; keep both guards identical.
+  const isLocalHost = typeof window !== 'undefined' &&
+    /^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/i.test(window.location.hostname);
   const serverUrls = [
     import.meta.env?.VITE_SERVER_URL,
-    'http://localhost:3001',
+    isLocalHost ? 'http://localhost:3001' : null,
   ].filter(Boolean);
 
   for (const serverUrl of serverUrls) {
