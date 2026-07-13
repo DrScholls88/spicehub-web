@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Pencil, X as XIcon, Sparkles } from 'lucide-react';
 import { isSocialMediaUrl, getSocialPlatform, detectImportType } from '../recipeParser.js';
@@ -143,15 +143,34 @@ export default function ImportInput({
     }
   }, [url]);
 
-  // Auto-detect type from URL
+  // Tracks whether the user has manually picked Meal/Drink since the URL last
+  // changed. Without this, the auto-detect effect below (which used to depend
+  // on itemType itself) re-ran on every manual toggle tap and silently
+  // reverted it right back — detectImportType() defaults to 'meal' for any
+  // URL with no drink keywords, which is true for virtually every Instagram
+  // link, so a Drink tap on an IG paste would flip back to Meal on the very
+  // next render. (2026-07-13 critique: "auto-locks in a Meals import that I
+  // can't seem to manually change.")
+  const userTypedTypeRef = useRef(false);
+
+  // A genuinely new URL deserves a fresh auto-detect guess.
   useEffect(() => {
-    if (url) {
+    userTypedTypeRef.current = false;
+  }, [url]);
+
+  // Auto-detect type from URL — only when the user hasn't manually overridden
+  // it, and only re-run when the URL itself changes (NOT itemType — that was
+  // the bug: including itemType here made a manual toggle re-trigger this
+  // same effect, which then reasserted the URL-based guess over the user's tap).
+  useEffect(() => {
+    if (url && !userTypedTypeRef.current) {
       const detected = detectImportType(url);
       if (detected && detected !== itemType) {
         setItemType(detected);
       }
     }
-  }, [url, itemType, setItemType]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [url]);
 
   const handleUrlSubmit = useCallback(() => {
     if (url.trim()) {
@@ -338,14 +357,14 @@ export default function ImportInput({
                   <div className="import-input-type-toggle">
                     <button
                       className={itemType === 'meal' ? 'active' : ''}
-                      onClick={() => { hapticLight(); setItemType('meal'); }}
+                      onClick={() => { hapticLight(); userTypedTypeRef.current = true; setItemType('meal'); }}
                       style={{ transition: TYPE_TOGGLE_TRANSITION }}
                     >
                       🍽️ Meal
                     </button>
                     <button
                       className={itemType === 'drink' ? 'active' : ''}
-                      onClick={() => { hapticLight(); setItemType('drink'); }}
+                      onClick={() => { hapticLight(); userTypedTypeRef.current = true; setItemType('drink'); }}
                       style={{ transition: TYPE_TOGGLE_TRANSITION }}
                     >
                       🍸 Drink

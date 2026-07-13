@@ -759,6 +759,26 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
         </p>
       )}
 
+      {/* Creator's note — the short friendly intro/story the extraction engine
+          preserved from a social caption (see recipeSchema `intro`). Only renders
+          when the source actually had one; never fabricated by the model. */}
+      {recipe.intro && recipe.intro.trim() && (
+        <div className="review-creator-note">
+          <NotebookPen size={14} strokeWidth={2} className="review-creator-note-icon" />
+          <div className="review-creator-note-body">
+            <p className="review-creator-note-text">{recipe.intro}</p>
+            {recipe.author && recipe.author.trim() && (
+              <span className="review-creator-note-attribution">
+                — {recipe.author}
+                {recipe.sourcePlatform && recipe.sourcePlatform !== 'web'
+                  ? ` on ${recipe.sourcePlatform[0].toUpperCase()}${recipe.sourcePlatform.slice(1)}`
+                  : ''}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* F.6: sticky segmented tabs with live counters.
           The inactive tab doubles as a drop zone for cross-section moves
           during a handle-drag (Fix 1). */}

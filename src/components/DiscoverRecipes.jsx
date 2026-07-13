@@ -32,8 +32,12 @@ const CATEGORIES = [
 
 export default function DiscoverRecipes({ onClose, onSelectUrl }) {
   const [activeId, setActiveId] = useState(CATEGORIES[0].id);
+  // Per category: { posts, after, hasMore } — `after` is Reddit's pagination
+  // cursor from the last page fetched; `hasMore` mirrors "was after non-null"
+  // so the UI can drop the Load More button once a subreddit is exhausted.
   const [resultsByCategory, setResultsByCategory] = useState({});
   const [loadingId, setLoadingId] = useState(null);
+  const [loadingMoreId, setLoadingMoreId] = useState(null);
   const [errorId, setErrorId] = useState(null);
   const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
 
@@ -47,8 +51,8 @@ export default function DiscoverRecipes({ onClose, onSelectUrl }) {
     setLoadingId(category.id);
     setErrorId(null);
     try {
-      const posts = await discoverRedditRecipes(category.subreddit, category.sort, 20);
-      setResultsByCategory(prev => ({ ...prev, [category.id]: posts }));
+      const { posts, after } = await discoverRedditRecipes(category.subreddit, category.sort, 20);
+      setResultsByCategory(prev => ({ ...prev, [category.id]: { posts, after, hasMore: !!after } }));
       if (posts.length === 0) setErrorId(`${category.id}-empty`);
     } catch {
       setErrorId(category.id);
@@ -57,6 +61,34 @@ export default function DiscoverRecipes({ onClose, onSelectUrl }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resultsByCategory]);
+
+  // Fetch the next page for a category that's already loaded, appending to
+  // (not replacing) its results. Separate loading flag from loadCategory's
+  // so "load more" spinner doesn't blank out the results already on screen.
+  const loadMore = useCallback(async (category) => {
+    const current = resultsByCategory[category.id];
+    if (!current?.after || loadingMoreId) return;
+    setLoadingMoreId(category.id);
+    try {
+      const { posts: nextPosts, after: nextAfter } = await discoverRedditRecipes(
+        category.subreddit, category.sort, 20, current.after,
+      );
+      setResultsByCategory(prev => {
+        const prevEntry = prev[category.id];
+        if (!prevEntry) return prev; // category was reset/closed mid-fetch
+        // De-dupe by url — Reddit's listing can repeat an item across pages
+        // if new posts land between requests and shift the cursor window.
+        const seen = new Set(prevEntry.posts.map(p => p.url));
+        const merged = [...prevEntry.posts, ...nextPosts.filter(p => !seen.has(p.url))];
+        return { ...prev, [category.id]: { posts: merged, after: nextAfter, hasMore: !!nextAfter } };
+      });
+    } catch {
+      // Load-more failures aren't fatal — leave existing results in place and
+      // let the user tap the (still-visible) button to retry.
+    } finally {
+      setLoadingMoreId(null);
+    }
+  }, [resultsByCategory, loadingMoreId]);
 
   // Load the first category on open — an empty "pick a category" screen would
   // just be a smaller version of the blank-library problem this whole
@@ -78,10 +110,13 @@ export default function DiscoverRecipes({ onClose, onSelectUrl }) {
   };
 
   const activeCategory = CATEGORIES.find(c => c.id === activeId);
-  const results = resultsByCategory[activeId] || [];
+  const activeEntry = resultsByCategory[activeId];
+  const results = activeEntry?.posts || [];
   const isLoading = loadingId === activeId;
+  const isLoadingMore = loadingMoreId === activeId;
   const hasError = errorId === activeId;
   const isEmpty = errorId === `${activeId}-empty`;
+  const canLoadMore = !!activeEntry?.hasMore;
 
   return (
     <div className="discover-overlay" onClick={onClose}>
@@ -179,6 +214,22 @@ export default function DiscoverRecipes({ onClose, onSelectUrl }) {
                     </motion.button>
                   ))}
                 </AnimatePresence>
+              )}
+
+              {!isLoading && !hasError && !isEmpty && results.length > 0 && (canLoadMore || isLoadingMore) && (
+                <button
+                  className="discover-load-more"
+                  onClick={() => loadMore(activeCategory)}
+                  disabled={isLoadingMore}
+                >
+                  {isLoadingMore ? (
+                    <>
+                      <Loader2 size={14} className="discover-spin" strokeWidth={2.5} /> Loading more…
+                    </>
+                  ) : (
+                    'Load more'
+                  )}
+                </button>
               )}
             </div>
           </>

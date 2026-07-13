@@ -53,7 +53,8 @@ function buildRace(url, f) {
       const d = await f.apify(url);
       if (!d?.caption || d.caption.length <= MIN_CAPTION) throw new Error('apify-weak');
       const images = [d.displayUrl, ...(Array.isArray(d.images) ? d.images : [])].filter(Boolean);
-      return { src: 'apify', caption: d.caption, images, title: d.ownerFullName || d.ownerUsername || '' };
+      const creator = d.ownerFullName || d.ownerUsername || '';
+      return { src: 'apify', caption: d.caption, images, title: creator, author: creator };
     })(),
     (async () => {
       const oe = await f.oembed(url);
@@ -62,7 +63,7 @@ function buildRace(url, f) {
       if (!m) throw new Error('oembed-no-cap');
       const raw = m[1].replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').trim();
       if (raw.length <= MIN_CAPTION) throw new Error('oembed-weak');
-      return { src: 'oembed', caption: raw, images: oe.thumbnail_url ? [oe.thumbnail_url] : [], title: oe.author_name || '' };
+      return { src: 'oembed', caption: raw, images: oe.thumbnail_url ? [oe.thumbnail_url] : [], title: oe.author_name || '', author: oe.author_name || '' };
     })(),
     ...(shortcode
       ? [(async () => {
@@ -109,6 +110,7 @@ export async function acquireInstagramPack(url, { fetchers = {}, signal } = {}) 
     sourceUrl: url,
     sourceType: 'instagram',
     title: winner.title || '',
+    author: winner.author || '',
     caption: winner.caption, // RAW — recipeParser cleans it
     images: winner.images
       .filter(Boolean)

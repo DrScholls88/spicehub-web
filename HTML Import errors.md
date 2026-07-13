@@ -1,83 +1,77 @@
 Service Worker registered: ServiceWorkerRegistration {installing: null, waiting: null, active: ServiceWorker, navigationPreload: NavigationPreloadManager, scope: 'https://spicehub-web.vercel.app/', …}
 main.jsx:70 Background Sync API available
-VM1416 keyboard-shortcuts.js:214 Extension keyboard shortcuts loaded. Available shortcuts:
-VM1416 keyboard-shortcuts.js:215 - Alt+C: Toggle Copy Mode
-VM1416 keyboard-shortcuts.js:216 - Alt+A: Toggle Absolute Mode
-VM1416 keyboard-shortcuts.js:217 - Alt+O: Trigger OCR Mode
+VM1265 keyboard-shortcuts.js:214 Extension keyboard shortcuts loaded. Available shortcuts:
+VM1265 keyboard-shortcuts.js:215 - Alt+C: Toggle Copy Mode
+VM1265 keyboard-shortcuts.js:216 - Alt+A: Toggle Absolute Mode
+VM1265 keyboard-shortcuts.js:217 - Alt+O: Trigger OCR Mode
 backgroundSync.js:32 [BackgroundSync] Registered sync-recipe-imports
+3(index):1 Uncaught (in promise) Error: A listener indicated an asynchronous response by returning true, but the message channel closed before a response was received
+photo-1607446045875-c4a6f74f9e64:1  GET https://images.unsplash.com/photo-1607446045875-c4a6f74f9e64?w=400 404 (Not Found)
+VM1272 keyboard-shortcuts.js:214 Extension keyboard shortcuts loaded. Available shortcuts:
+VM1272 keyboard-shortcuts.js:215 - Alt+C: Toggle Copy Mode
+VM1272 keyboard-shortcuts.js:216 - Alt+A: Toggle Absolute Mode
+VM1272 keyboard-shortcuts.js:217 - Alt+O: Trigger OCR Mode
+VM1276 keyboard-shortcuts.js:214 Extension keyboard shortcuts loaded. Available shortcuts:
+VM1276 keyboard-shortcuts.js:215 - Alt+C: Toggle Copy Mode
+VM1276 keyboard-shortcuts.js:216 - Alt+A: Toggle Absolute Mode
+VM1276 keyboard-shortcuts.js:217 - Alt+O: Trigger OCR Mode
 keyboard-shortcuts.js:214 Extension keyboard shortcuts loaded. Available shortcuts:
 keyboard-shortcuts.js:215 - Alt+C: Toggle Copy Mode
 keyboard-shortcuts.js:216 - Alt+A: Toggle Absolute Mode
 keyboard-shortcuts.js:217 - Alt+O: Trigger OCR Mode
-api.js:85 [fetchHtmlViaProxy] Target: https://www.allrecipes.com/recipe/13637/three-bean-salad
-api.js:105 [fetchHtmlViaProxy] Internal proxy returned empty/error, trying public proxies...
-(index):1 Access to fetch at 'https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.allrecipes.com%2Frecipe%2F13637%2Fthree-bean-salad' from origin 'https://spicehub-web.vercel.app' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.Understand this error
-api.js:128  GET https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.allrecipes.com%2Frecipe%2F13637%2Fthree-bean-salad net::ERR_FAILED 500 (Internal Server Error)
-fetchHtmlViaProxy @ api.js:128
-await in fetchHtmlViaProxy
-(anonymous) @ ImportModal.jsx:397
-(anonymous) @ ImportModal.jsx:1377
+website.js:70  POST https://spicehub-web.vercel.app/api/extract 502 (Bad Gateway)
+(anonymous) @ website.js:70
+_importRecipeFromUrlInner @ recipeParser.js:3235
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
 processDispatchQueue @ react-dom-client.production.js:12317
 (anonymous) @ react-dom-client.production.js:12867
 batchedUpdates$1 @ react-dom-client.production.js:1498
 dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
 dispatchEvent @ react-dom-client.production.js:15306
-dispatchDiscreteEvent @ react-dom-client.production.js:15274Understand this error
-api.js:128  GET https://corsproxy.io/?https%3A%2F%2Fwww.allrecipes.com%2Frecipe%2F13637%2Fthree-bean-salad 403 (Forbidden)
-fetchHtmlViaProxy @ api.js:128
-await in fetchHtmlViaProxy
-(anonymous) @ ImportModal.jsx:397
-(anonymous) @ ImportModal.jsx:1377
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+website.js:77 [SpiceHub] /api/extract HTTP 502 — falling back to client tiers
+recipeParser.js:3278 [SpiceHub] Fetching recipe via CORS proxy...
+api.js:110 [fetchHtmlViaProxy] Target: https://www.thekitchn.com/summer-sunset-cocktail-recipe-23739142
+api.js:120  GET https://spicehub-web.vercel.app/api/proxy?url=https%3A%2F%2Fwww.thekitchn.com%2Fsummer-sunset-cocktail-recipe-23739142 403 (Forbidden)
+fetchHtmlViaProxy @ api.js:120
+_importRecipeFromUrlInner @ recipeParser.js:3284
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
 processDispatchQueue @ react-dom-client.production.js:12317
 (anonymous) @ react-dom-client.production.js:12867
 batchedUpdates$1 @ react-dom-client.production.js:1498
 dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
 dispatchEvent @ react-dom-client.production.js:15306
-dispatchDiscreteEvent @ react-dom-client.production.js:15274Understand this error
-(index):1 Access to fetch at 'https://proxy.cors.sh/https://www.allrecipes.com/recipe/13637/three-bean-salad' from origin 'https://spicehub-web.vercel.app' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.Understand this error
-api.js:128  GET https://proxy.cors.sh/https://www.allrecipes.com/recipe/13637/three-bean-salad net::ERR_FAILED 429 (Too Many Requests)
-fetchHtmlViaProxy @ api.js:128
-await in fetchHtmlViaProxy
-(anonymous) @ ImportModal.jsx:397
-(anonymous) @ ImportModal.jsx:1377
-processDispatchQueue @ react-dom-client.production.js:12317
-(anonymous) @ react-dom-client.production.js:12867
-batchedUpdates$1 @ react-dom-client.production.js:1498
-dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
-dispatchEvent @ react-dom-client.production.js:15306
-dispatchDiscreteEvent @ react-dom-client.production.js:15274Understand this error
-(index):1 Access to fetch at 'https://cors.bridged.cc/https://www.allrecipes.com/recipe/13637/three-bean-salad' from origin 'https://spicehub-web.vercel.app' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.Understand this error
-api.js:128  GET https://cors.bridged.cc/https://www.allrecipes.com/recipe/13637/three-bean-salad net::ERR_FAILED 429 (Too Many Requests)
-fetchHtmlViaProxy @ api.js:128
-await in fetchHtmlViaProxy
-(anonymous) @ ImportModal.jsx:397
-(anonymous) @ ImportModal.jsx:1377
-processDispatchQueue @ react-dom-client.production.js:12317
-(anonymous) @ react-dom-client.production.js:12867
-batchedUpdates$1 @ react-dom-client.production.js:1498
-dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
-dispatchEvent @ react-dom-client.production.js:15306
-dispatchDiscreteEvent @ react-dom-client.production.js:15274Understand this error
-installHook.js:1 [fetchHtmlViaProxy] ❌ All proxies failed for: https://www.allrecipes.com/recipe/13637/three-bean-salad
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+api.js:137 [fetchHtmlViaProxy] Internal proxy returned empty/error, trying public proxies...
+2installHook.js:1 Proxy request failed: AbortError: signal is aborted without reason
+    at api.js:163:43
 overrideMethod @ installHook.js:1
-fetchHtmlViaProxy @ api.js:161
+fetchHtmlViaProxy @ api.js:207
 await in fetchHtmlViaProxy
-(anonymous) @ ImportModal.jsx:397
-(anonymous) @ ImportModal.jsx:1377
+_importRecipeFromUrlInner @ recipeParser.js:3284
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
 processDispatchQueue @ react-dom-client.production.js:12317
 (anonymous) @ react-dom-client.production.js:12867
 batchedUpdates$1 @ react-dom-client.production.js:1498
 dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
 dispatchEvent @ react-dom-client.production.js:15306
-dispatchDiscreteEvent @ react-dom-client.production.js:15274Understand this warning
-api.js:85 [fetchHtmlViaProxy] Target: https://www.allrecipes.com/recipe/13637/three-bean-salad
-api.js:105 [fetchHtmlViaProxy] Internal proxy returned empty/error, trying public proxies...
-(index):1 Access to fetch at 'https://api.allorigins.win/get?url=https%3A%2F%2Fwww.allrecipes.com%2Frecipe%2F13637%2Fthree-bean-salad' from origin 'https://spicehub-web.vercel.app' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.Understand this error
-api.js:128  GET https://api.allorigins.win/get?url=https%3A%2F%2Fwww.allrecipes.com%2Frecipe%2F13637%2Fthree-bean-salad net::ERR_FAILED 520
-fetchHtmlViaProxy @ api.js:128
-await in fetchHtmlViaProxy
-(anonymous) @ BrowserAssist.jsx:304
-(anonymous) @ BrowserAssist.jsx:368
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+api.js:110 [fetchHtmlViaProxy] Target: https://www.thekitchn.com/summer-sunset-cocktail-recipe-23739142
+api.js:120  GET https://spicehub-web.vercel.app/api/proxy?url=https%3A%2F%2Fwww.thekitchn.com%2Fsummer-sunset-cocktail-recipe-23739142 403 (Forbidden)
+fetchHtmlViaProxy @ api.js:120
+(anonymous) @ BrowserAssist.jsx:342
+(anonymous) @ BrowserAssist.jsx:406
 commitHookEffectListMount @ react-dom-client.production.js:8583
 commitPassiveMountOnFiber @ react-dom-client.production.js:10126
 recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
@@ -85,7 +79,31 @@ commitPassiveMountOnFiber @ react-dom-client.production.js:10241
 recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
 commitPassiveMountOnFiber @ react-dom-client.production.js:10241
 recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10129
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
 commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
 recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
 commitPassiveMountOnFiber @ react-dom-client.production.js:10120
 recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
@@ -111,132 +129,299 @@ postMessage
 (anonymous) @ scheduler.production.js:325
 scheduleTaskForRootDuringMicrotask @ react-dom-client.production.js:12055
 processRootScheduleInMicrotask @ react-dom-client.production.js:11978
-(anonymous) @ react-dom-client.production.js:12095Understand this error
-api.js:128  GET https://corsproxy.io/?https%3A%2F%2Fwww.allrecipes.com%2Frecipe%2F13637%2Fthree-bean-salad 403 (Forbidden)
-fetchHtmlViaProxy @ api.js:128
-await in fetchHtmlViaProxy
-(anonymous) @ BrowserAssist.jsx:304
-(anonymous) @ BrowserAssist.jsx:368
-commitHookEffectListMount @ react-dom-client.production.js:8583
-commitPassiveMountOnFiber @ react-dom-client.production.js:10126
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10241
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10241
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10241
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10120
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10241
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10120
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10241
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10120
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10241
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10137
-flushPassiveEffects @ react-dom-client.production.js:11763
-(anonymous) @ react-dom-client.production.js:11498
-performWorkUntilDeadline @ scheduler.production.js:151
-postMessage
-(anonymous) @ scheduler.production.js:202
-performWorkUntilDeadline @ scheduler.production.js:187
-postMessage
-(anonymous) @ scheduler.production.js:202
-(anonymous) @ scheduler.production.js:325
-scheduleTaskForRootDuringMicrotask @ react-dom-client.production.js:12055
-processRootScheduleInMicrotask @ react-dom-client.production.js:11978
-(anonymous) @ react-dom-client.production.js:12095Understand this error
-(index):1 Access to fetch at 'https://proxy.cors.sh/https://www.allrecipes.com/recipe/13637/three-bean-salad' from origin 'https://spicehub-web.vercel.app' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.Understand this error
-api.js:128  GET https://proxy.cors.sh/https://www.allrecipes.com/recipe/13637/three-bean-salad net::ERR_FAILED 429 (Too Many Requests)
-fetchHtmlViaProxy @ api.js:128
-await in fetchHtmlViaProxy
-(anonymous) @ BrowserAssist.jsx:304
-(anonymous) @ BrowserAssist.jsx:368
-commitHookEffectListMount @ react-dom-client.production.js:8583
-commitPassiveMountOnFiber @ react-dom-client.production.js:10126
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10241
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10241
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10241
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10120
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10241
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10120
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10241
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10120
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10241
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10137
-flushPassiveEffects @ react-dom-client.production.js:11763
-(anonymous) @ react-dom-client.production.js:11498
-performWorkUntilDeadline @ scheduler.production.js:151
-postMessage
-(anonymous) @ scheduler.production.js:202
-performWorkUntilDeadline @ scheduler.production.js:187
-postMessage
-(anonymous) @ scheduler.production.js:202
-(anonymous) @ scheduler.production.js:325
-scheduleTaskForRootDuringMicrotask @ react-dom-client.production.js:12055
-processRootScheduleInMicrotask @ react-dom-client.production.js:11978
-(anonymous) @ react-dom-client.production.js:12095Understand this error
-(index):1 Access to fetch at 'https://cors.bridged.cc/https://www.allrecipes.com/recipe/13637/three-bean-salad' from origin 'https://spicehub-web.vercel.app' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.Understand this error
-api.js:128  GET https://cors.bridged.cc/https://www.allrecipes.com/recipe/13637/three-bean-salad net::ERR_FAILED 429 (Too Many Requests)
-fetchHtmlViaProxy @ api.js:128
-await in fetchHtmlViaProxy
-(anonymous) @ BrowserAssist.jsx:304
-(anonymous) @ BrowserAssist.jsx:368
-commitHookEffectListMount @ react-dom-client.production.js:8583
-commitPassiveMountOnFiber @ react-dom-client.production.js:10126
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10241
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10241
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10241
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10120
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10241
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10120
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10241
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10120
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10241
-recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
-commitPassiveMountOnFiber @ react-dom-client.production.js:10137
-flushPassiveEffects @ react-dom-client.production.js:11763
-(anonymous) @ react-dom-client.production.js:11498
-performWorkUntilDeadline @ scheduler.production.js:151
-postMessage
-(anonymous) @ scheduler.production.js:202
-performWorkUntilDeadline @ scheduler.production.js:187
-postMessage
-(anonymous) @ scheduler.production.js:202
-(anonymous) @ scheduler.production.js:325
-scheduleTaskForRootDuringMicrotask @ react-dom-client.production.js:12055
-processRootScheduleInMicrotask @ react-dom-client.production.js:11978
-(anonymous) @ react-dom-client.production.js:12095Understand this error
-installHook.js:1 [fetchHtmlViaProxy] ❌ All proxies failed for: https://www.allrecipes.com/recipe/13637/three-bean-salad
+(anonymous) @ react-dom-client.production.js:12095
+setTimeout
+(anonymous) @ recipeParser.js:3125
+importRecipeFromUrl @ recipeParser.js:3125
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+api.js:137 [fetchHtmlViaProxy] Internal proxy returned empty/error, trying public proxies...
+installHook.js:1 Proxy request failed: AbortError: signal is aborted without reason
+    at api.js:163:43
 overrideMethod @ installHook.js:1
-fetchHtmlViaProxy @ api.js:161
+fetchHtmlViaProxy @ api.js:207
 await in fetchHtmlViaProxy
-(anonymous) @ BrowserAssist.jsx:304
-(anonymous) @ BrowserAssist.jsx:368
+_importRecipeFromUrlInner @ recipeParser.js:3284
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+api.js:164  GET https://thingproxy.freeboard.io/fetch/https%3A%2F%2Fwww.thekitchn.com%2Fsummer-sunset-cocktail-recipe-23739142 net::ERR_NAME_NOT_RESOLVED
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3284
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 Proxy request failed: TypeError: Failed to fetch
+    at hr (api.js:164:26)
+    at async BS (recipeParser.js:3284:16)
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3284
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+api.js:164  GET https://corsproxy.io/?https%3A%2F%2Fwww.thekitchn.com%2Fsummer-sunset-cocktail-recipe-23739142 403 (Forbidden)
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3284
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 [Proxy skip] corsproxy.io returned 403
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:174
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3284
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+api.js:164  GET https://proxy.cors.sh/https://www.thekitchn.com/summer-sunset-cocktail-recipe-23739142 403 (Forbidden)
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3284
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 [Proxy skip] proxy.cors.sh returned 403
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:174
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3284
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+api.js:164  GET https://cors.bridged.cc/https://www.thekitchn.com/summer-sunset-cocktail-recipe-23739142 net::ERR_NAME_NOT_RESOLVED
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3284
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 Proxy request failed: TypeError: Failed to fetch
+    at hr (api.js:164:26)
+    at async BS (recipeParser.js:3284:16)
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3284
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 [fetchHtmlViaProxy] ❌ All proxies failed for: https://www.thekitchn.com/summer-sunset-cocktail-recipe-23739142
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:212
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3284
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+(index):1 Access to fetch at 'https://www.thekitchn.com/wp-json/wp/v2/posts?slug=summer-sunset-cocktail-recipe-23739142&_fields=id,title,content,featured_media&per_page=1' from origin 'https://spicehub-web.vercel.app' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.
+recipeParser.js:2818  GET https://www.thekitchn.com/wp-json/wp/v2/posts?slug=summer-sunset-cocktail-recipe-23739142&_fields=id,title,content,featured_media&per_page=1 net::ERR_FAILED 404 (Not Found)
+tryEndpointNudging @ recipeParser.js:2818
+_importRecipeFromUrlInner @ recipeParser.js:3306
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+(index):1 Access to fetch at 'https://www.thekitchn.com/summer-sunset-cocktail-recipe-23739142?format=json' from origin 'https://spicehub-web.vercel.app' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.
+recipeParser.js:2883  GET https://www.thekitchn.com/summer-sunset-cocktail-recipe-23739142?format=json net::ERR_FAILED 200 (OK)
+tryEndpointNudging @ recipeParser.js:2883
+await in tryEndpointNudging
+_importRecipeFromUrlInner @ recipeParser.js:3306
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+(index):1 Access to fetch at 'https://www.thekitchn.com/summer-sunset-cocktail-recipe-23739142.json' from origin 'https://spicehub-web.vercel.app' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.
+recipeParser.js:2883  GET https://www.thekitchn.com/summer-sunset-cocktail-recipe-23739142.json net::ERR_FAILED 404 (Not Found)
+tryEndpointNudging @ recipeParser.js:2883
+await in tryEndpointNudging
+_importRecipeFromUrlInner @ recipeParser.js:3306
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+(index):1 Access to fetch at 'https://spicehub-backend.onrender.com/api/v2/ping' from origin 'https://spicehub-web.vercel.app' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.
+recipeParser.js:2413  GET https://spicehub-backend.onrender.com/api/v2/ping net::ERR_FAILED 500 (Internal Server Error)
+detectServer @ recipeParser.js:2413
+tryServerExtraction @ recipeParser.js:2682
+_importRecipeFromUrlInner @ recipeParser.js:3314
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+recipeParser.js:2690  POST https://spicehub-web.vercel.app/api/extract-url net::ERR_ABORTED 405 (Method Not Allowed)
+tryServerExtraction @ recipeParser.js:2690
+await in tryServerExtraction
+_importRecipeFromUrlInner @ recipeParser.js:3314
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+api.js:110 [fetchHtmlViaProxy] Target: https://www.thekitchn.com/summer-sunset-cocktail-recipe-23739142
+api.js:120  GET https://spicehub-web.vercel.app/api/proxy?url=https%3A%2F%2Fwww.thekitchn.com%2Fsummer-sunset-cocktail-recipe-23739142 403 (Forbidden)
+fetchHtmlViaProxy @ api.js:120
+_importRecipeFromUrlInner @ recipeParser.js:3320
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+api.js:137 [fetchHtmlViaProxy] Internal proxy returned empty/error, trying public proxies...
+installHook.js:1 Proxy request failed: AbortError: signal is aborted without reason
+    at api.js:163:43
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3320
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 Proxy request failed: AbortError: signal is aborted without reason
+    at api.js:163:43
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+(anonymous) @ BrowserAssist.jsx:342
+(anonymous) @ BrowserAssist.jsx:406
 commitHookEffectListMount @ react-dom-client.production.js:8583
 commitPassiveMountOnFiber @ react-dom-client.production.js:10126
 recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
@@ -244,7 +429,31 @@ commitPassiveMountOnFiber @ react-dom-client.production.js:10241
 recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
 commitPassiveMountOnFiber @ react-dom-client.production.js:10241
 recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10129
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
 commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
 recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
 commitPassiveMountOnFiber @ react-dom-client.production.js:10120
 recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
@@ -270,8 +479,1259 @@ postMessage
 (anonymous) @ scheduler.production.js:325
 scheduleTaskForRootDuringMicrotask @ react-dom-client.production.js:12055
 processRootScheduleInMicrotask @ react-dom-client.production.js:11978
-(anonymous) @ react-dom-client.production.js:12095Understand this warning
-BrowserAssist.jsx:314 [BrowserAssist] Proxy failed, falling back to direct iframe source
-Framing 'https://www.allrecipes.com/' violates the following Content Security Policy directive: "frame-ancestors 'self' https://*.seo.aws.about.com https://*.dotdash.com *.allrecipes.com". The request has been blocked.
-Understand this error
-(index):1 Unsafe attempt to load URL https://www.allrecipes.com/recipe/13637/three-bean-salad/ from frame with URL chrome-error://chromewebdata/. Domains, protocols and ports must match.
+(anonymous) @ react-dom-client.production.js:12095
+setTimeout
+(anonymous) @ recipeParser.js:3125
+importRecipeFromUrl @ recipeParser.js:3125
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 Proxy request failed: AbortError: signal is aborted without reason
+    at api.js:163:43
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3320
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 Proxy request failed: AbortError: signal is aborted without reason
+    at api.js:163:43
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+(anonymous) @ BrowserAssist.jsx:342
+(anonymous) @ BrowserAssist.jsx:406
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10129
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+(anonymous) @ react-dom-client.production.js:11498
+performWorkUntilDeadline @ scheduler.production.js:151
+postMessage
+(anonymous) @ scheduler.production.js:202
+performWorkUntilDeadline @ scheduler.production.js:187
+postMessage
+(anonymous) @ scheduler.production.js:202
+(anonymous) @ scheduler.production.js:325
+scheduleTaskForRootDuringMicrotask @ react-dom-client.production.js:12055
+processRootScheduleInMicrotask @ react-dom-client.production.js:11978
+(anonymous) @ react-dom-client.production.js:12095
+setTimeout
+(anonymous) @ recipeParser.js:3125
+importRecipeFromUrl @ recipeParser.js:3125
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 Proxy request failed: AbortError: signal is aborted without reason
+    at api.js:163:43
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3320
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+api.js:164  GET https://thingproxy.freeboard.io/fetch/https%3A%2F%2Fwww.thekitchn.com%2Fsummer-sunset-cocktail-recipe-23739142 net::ERR_NAME_NOT_RESOLVED
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3320
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 Proxy request failed: TypeError: Failed to fetch
+    at hr (api.js:164:26)
+    at async BS (recipeParser.js:3320:42)
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3320
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+api.js:164  GET https://corsproxy.io/?https%3A%2F%2Fwww.thekitchn.com%2Fsummer-sunset-cocktail-recipe-23739142 403 (Forbidden)
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3320
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 [Proxy skip] corsproxy.io returned 403
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:174
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3320
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+api.js:164  GET https://proxy.cors.sh/https://www.thekitchn.com/summer-sunset-cocktail-recipe-23739142 403 (Forbidden)
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3320
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 [Proxy skip] proxy.cors.sh returned 403
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:174
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3320
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+api.js:164  GET https://cors.bridged.cc/https://www.thekitchn.com/summer-sunset-cocktail-recipe-23739142 net::ERR_NAME_NOT_RESOLVED
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3320
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 Proxy request failed: TypeError: Failed to fetch
+    at hr (api.js:164:26)
+    at async BS (recipeParser.js:3320:42)
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3320
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 [fetchHtmlViaProxy] ❌ All proxies failed for: https://www.thekitchn.com/summer-sunset-cocktail-recipe-23739142
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:212
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3320
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+api.js:110 [fetchHtmlViaProxy] Target: https://www.thekitchn.com/summer-sunset-cocktail-recipe-23739142
+api.js:120  GET https://spicehub-web.vercel.app/api/proxy?url=https%3A%2F%2Fwww.thekitchn.com%2Fsummer-sunset-cocktail-recipe-23739142 403 (Forbidden)
+fetchHtmlViaProxy @ api.js:120
+_importRecipeFromUrlInner @ recipeParser.js:3332
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+api.js:137 [fetchHtmlViaProxy] Internal proxy returned empty/error, trying public proxies...
+installHook.js:1 Proxy request failed: AbortError: signal is aborted without reason
+    at api.js:163:43
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+(anonymous) @ BrowserAssist.jsx:342
+(anonymous) @ BrowserAssist.jsx:406
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10129
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+(anonymous) @ react-dom-client.production.js:11498
+performWorkUntilDeadline @ scheduler.production.js:151
+postMessage
+(anonymous) @ scheduler.production.js:202
+performWorkUntilDeadline @ scheduler.production.js:187
+postMessage
+(anonymous) @ scheduler.production.js:202
+(anonymous) @ scheduler.production.js:325
+scheduleTaskForRootDuringMicrotask @ react-dom-client.production.js:12055
+processRootScheduleInMicrotask @ react-dom-client.production.js:11978
+(anonymous) @ react-dom-client.production.js:12095
+setTimeout
+(anonymous) @ recipeParser.js:3125
+importRecipeFromUrl @ recipeParser.js:3125
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+api.js:164  GET https://thingproxy.freeboard.io/fetch/https%3A%2F%2Fwww.thekitchn.com%2Fsummer-sunset-cocktail-recipe-23739142 net::ERR_NAME_NOT_RESOLVED
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+(anonymous) @ BrowserAssist.jsx:342
+(anonymous) @ BrowserAssist.jsx:406
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10129
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+(anonymous) @ react-dom-client.production.js:11498
+performWorkUntilDeadline @ scheduler.production.js:151
+postMessage
+(anonymous) @ scheduler.production.js:202
+performWorkUntilDeadline @ scheduler.production.js:187
+postMessage
+(anonymous) @ scheduler.production.js:202
+(anonymous) @ scheduler.production.js:325
+scheduleTaskForRootDuringMicrotask @ react-dom-client.production.js:12055
+processRootScheduleInMicrotask @ react-dom-client.production.js:11978
+(anonymous) @ react-dom-client.production.js:12095
+setTimeout
+(anonymous) @ recipeParser.js:3125
+importRecipeFromUrl @ recipeParser.js:3125
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 Proxy request failed: TypeError: Failed to fetch
+    at hr (api.js:164:26)
+    at async BrowserAssist.jsx:342:18
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+(anonymous) @ BrowserAssist.jsx:342
+(anonymous) @ BrowserAssist.jsx:406
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10129
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+(anonymous) @ react-dom-client.production.js:11498
+performWorkUntilDeadline @ scheduler.production.js:151
+postMessage
+(anonymous) @ scheduler.production.js:202
+performWorkUntilDeadline @ scheduler.production.js:187
+postMessage
+(anonymous) @ scheduler.production.js:202
+(anonymous) @ scheduler.production.js:325
+scheduleTaskForRootDuringMicrotask @ react-dom-client.production.js:12055
+processRootScheduleInMicrotask @ react-dom-client.production.js:11978
+(anonymous) @ react-dom-client.production.js:12095
+setTimeout
+(anonymous) @ recipeParser.js:3125
+importRecipeFromUrl @ recipeParser.js:3125
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 Proxy request failed: AbortError: signal is aborted without reason
+    at api.js:163:43
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3332
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+api.js:164  GET https://corsproxy.io/?https%3A%2F%2Fwww.thekitchn.com%2Fsummer-sunset-cocktail-recipe-23739142 403 (Forbidden)
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+(anonymous) @ BrowserAssist.jsx:342
+(anonymous) @ BrowserAssist.jsx:406
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10129
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+(anonymous) @ react-dom-client.production.js:11498
+performWorkUntilDeadline @ scheduler.production.js:151
+postMessage
+(anonymous) @ scheduler.production.js:202
+performWorkUntilDeadline @ scheduler.production.js:187
+postMessage
+(anonymous) @ scheduler.production.js:202
+(anonymous) @ scheduler.production.js:325
+scheduleTaskForRootDuringMicrotask @ react-dom-client.production.js:12055
+processRootScheduleInMicrotask @ react-dom-client.production.js:11978
+(anonymous) @ react-dom-client.production.js:12095
+setTimeout
+(anonymous) @ recipeParser.js:3125
+importRecipeFromUrl @ recipeParser.js:3125
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 [Proxy skip] corsproxy.io returned 403
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:174
+await in fetchHtmlViaProxy
+(anonymous) @ BrowserAssist.jsx:342
+(anonymous) @ BrowserAssist.jsx:406
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10129
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+(anonymous) @ react-dom-client.production.js:11498
+performWorkUntilDeadline @ scheduler.production.js:151
+postMessage
+(anonymous) @ scheduler.production.js:202
+performWorkUntilDeadline @ scheduler.production.js:187
+postMessage
+(anonymous) @ scheduler.production.js:202
+(anonymous) @ scheduler.production.js:325
+scheduleTaskForRootDuringMicrotask @ react-dom-client.production.js:12055
+processRootScheduleInMicrotask @ react-dom-client.production.js:11978
+(anonymous) @ react-dom-client.production.js:12095
+setTimeout
+(anonymous) @ recipeParser.js:3125
+importRecipeFromUrl @ recipeParser.js:3125
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+api.js:164  GET https://proxy.cors.sh/https://www.thekitchn.com/summer-sunset-cocktail-recipe-23739142 403 (Forbidden)
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+(anonymous) @ BrowserAssist.jsx:342
+(anonymous) @ BrowserAssist.jsx:406
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10129
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+(anonymous) @ react-dom-client.production.js:11498
+performWorkUntilDeadline @ scheduler.production.js:151
+postMessage
+(anonymous) @ scheduler.production.js:202
+performWorkUntilDeadline @ scheduler.production.js:187
+postMessage
+(anonymous) @ scheduler.production.js:202
+(anonymous) @ scheduler.production.js:325
+scheduleTaskForRootDuringMicrotask @ react-dom-client.production.js:12055
+processRootScheduleInMicrotask @ react-dom-client.production.js:11978
+(anonymous) @ react-dom-client.production.js:12095
+setTimeout
+(anonymous) @ recipeParser.js:3125
+importRecipeFromUrl @ recipeParser.js:3125
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 [Proxy skip] proxy.cors.sh returned 403
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:174
+await in fetchHtmlViaProxy
+(anonymous) @ BrowserAssist.jsx:342
+(anonymous) @ BrowserAssist.jsx:406
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10129
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+(anonymous) @ react-dom-client.production.js:11498
+performWorkUntilDeadline @ scheduler.production.js:151
+postMessage
+(anonymous) @ scheduler.production.js:202
+performWorkUntilDeadline @ scheduler.production.js:187
+postMessage
+(anonymous) @ scheduler.production.js:202
+(anonymous) @ scheduler.production.js:325
+scheduleTaskForRootDuringMicrotask @ react-dom-client.production.js:12055
+processRootScheduleInMicrotask @ react-dom-client.production.js:11978
+(anonymous) @ react-dom-client.production.js:12095
+setTimeout
+(anonymous) @ recipeParser.js:3125
+importRecipeFromUrl @ recipeParser.js:3125
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+api.js:164  GET https://cors.bridged.cc/https://www.thekitchn.com/summer-sunset-cocktail-recipe-23739142 net::ERR_NAME_NOT_RESOLVED
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+(anonymous) @ BrowserAssist.jsx:342
+(anonymous) @ BrowserAssist.jsx:406
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10129
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+(anonymous) @ react-dom-client.production.js:11498
+performWorkUntilDeadline @ scheduler.production.js:151
+postMessage
+(anonymous) @ scheduler.production.js:202
+performWorkUntilDeadline @ scheduler.production.js:187
+postMessage
+(anonymous) @ scheduler.production.js:202
+(anonymous) @ scheduler.production.js:325
+scheduleTaskForRootDuringMicrotask @ react-dom-client.production.js:12055
+processRootScheduleInMicrotask @ react-dom-client.production.js:11978
+(anonymous) @ react-dom-client.production.js:12095
+setTimeout
+(anonymous) @ recipeParser.js:3125
+importRecipeFromUrl @ recipeParser.js:3125
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 Proxy request failed: TypeError: Failed to fetch
+    at hr (api.js:164:26)
+    at async BrowserAssist.jsx:342:18
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+(anonymous) @ BrowserAssist.jsx:342
+(anonymous) @ BrowserAssist.jsx:406
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10129
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+(anonymous) @ react-dom-client.production.js:11498
+performWorkUntilDeadline @ scheduler.production.js:151
+postMessage
+(anonymous) @ scheduler.production.js:202
+performWorkUntilDeadline @ scheduler.production.js:187
+postMessage
+(anonymous) @ scheduler.production.js:202
+(anonymous) @ scheduler.production.js:325
+scheduleTaskForRootDuringMicrotask @ react-dom-client.production.js:12055
+processRootScheduleInMicrotask @ react-dom-client.production.js:11978
+(anonymous) @ react-dom-client.production.js:12095
+setTimeout
+(anonymous) @ recipeParser.js:3125
+importRecipeFromUrl @ recipeParser.js:3125
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 [fetchHtmlViaProxy] ❌ All proxies failed for: https://www.thekitchn.com/summer-sunset-cocktail-recipe-23739142
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:212
+await in fetchHtmlViaProxy
+(anonymous) @ BrowserAssist.jsx:342
+(anonymous) @ BrowserAssist.jsx:406
+commitHookEffectListMount @ react-dom-client.production.js:8583
+commitPassiveMountOnFiber @ react-dom-client.production.js:10126
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10129
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10120
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10241
+recursivelyTraversePassiveMountEffects @ react-dom-client.production.js:10101
+commitPassiveMountOnFiber @ react-dom-client.production.js:10137
+flushPassiveEffects @ react-dom-client.production.js:11763
+(anonymous) @ react-dom-client.production.js:11498
+performWorkUntilDeadline @ scheduler.production.js:151
+postMessage
+(anonymous) @ scheduler.production.js:202
+performWorkUntilDeadline @ scheduler.production.js:187
+postMessage
+(anonymous) @ scheduler.production.js:202
+(anonymous) @ scheduler.production.js:325
+scheduleTaskForRootDuringMicrotask @ react-dom-client.production.js:12055
+processRootScheduleInMicrotask @ react-dom-client.production.js:11978
+(anonymous) @ react-dom-client.production.js:12095
+setTimeout
+(anonymous) @ recipeParser.js:3125
+importRecipeFromUrl @ recipeParser.js:3125
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+BrowserAssist.jsx:352 [BrowserAssist] Proxy failed, falling back to direct iframe source
+react-dom-client.production.js:509 Framing 'https://www.thekitchn.com/' violates the following Content Security Policy directive: "frame-src https://www.youtube-nocookie.com https://www.instagram.com". The request has been blocked.
+
+api.js:164  GET https://api.allorigins.win/raw?url=https%3A%2F%2Fwww.thekitchn.com%2Fsummer-sunset-cocktail-recipe-23739142 408 (Request Timeout)
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3332
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 [Proxy skip] api.allorigins.win returned 408
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:174
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3332
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 [Proxy skip] allorigins/get: target returned 403
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:186
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3332
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+api.js:164  GET https://thingproxy.freeboard.io/fetch/https%3A%2F%2Fwww.thekitchn.com%2Fsummer-sunset-cocktail-recipe-23739142 net::ERR_NAME_NOT_RESOLVED
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3332
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 Proxy request failed: TypeError: Failed to fetch
+    at hr (api.js:164:26)
+    at async BS (recipeParser.js:3332:34)
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3332
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+api.js:164  GET https://corsproxy.io/?https%3A%2F%2Fwww.thekitchn.com%2Fsummer-sunset-cocktail-recipe-23739142 403 (Forbidden)
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3332
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 [Proxy skip] corsproxy.io returned 403
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:174
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3332
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+api.js:164  GET https://proxy.cors.sh/https://www.thekitchn.com/summer-sunset-cocktail-recipe-23739142 403 (Forbidden)
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3332
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 [Proxy skip] proxy.cors.sh returned 403
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:174
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3332
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+api.js:164  GET https://cors.bridged.cc/https://www.thekitchn.com/summer-sunset-cocktail-recipe-23739142 net::ERR_NAME_NOT_RESOLVED
+fetchHtmlViaProxy @ api.js:164
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3332
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 Proxy request failed: TypeError: Failed to fetch
+    at hr (api.js:164:26)
+    at async BS (recipeParser.js:3332:34)
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:207
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3332
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274
+installHook.js:1 [fetchHtmlViaProxy] ❌ All proxies failed for: https://www.thekitchn.com/summer-sunset-cocktail-recipe-23739142
+overrideMethod @ installHook.js:1
+fetchHtmlViaProxy @ api.js:212
+await in fetchHtmlViaProxy
+_importRecipeFromUrlInner @ recipeParser.js:3332
+await in _importRecipeFromUrlInner
+importRecipeFromUrl @ recipeParser.js:3124
+(anonymous) @ ImportSheet.jsx:370
+(anonymous) @ ImportSheet.jsx:477
+(anonymous) @ ImportSheet.jsx:1141
+processDispatchQueue @ react-dom-client.production.js:12317
+(anonymous) @ react-dom-client.production.js:12867
+batchedUpdates$1 @ react-dom-client.production.js:1498
+dispatchEventForPluginEventSystem @ react-dom-client.production.js:12455
+dispatchEvent @ react-dom-client.production.js:15306
+dispatchDiscreteEvent @ react-dom-client.production.js:15274

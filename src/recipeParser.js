@@ -21,6 +21,8 @@ import {
   crossCheckStructured, reconcileStructuredWithFlat,
   // Spec B — per-field confidence
   annotateFieldConfidence,
+  // Source attribution (author/sourcePlatform) — see finalizeAIRecipe
+  detectSourcePlatform,
 } from './recipeSchema.js';
 import { normalizeIngredient, resolveUnit } from './utils/ingredientNormalizer.js';
 // Unified import engine (2026-07 unification): shared zero-junk contract,
@@ -949,7 +951,7 @@ export function enforceDeterministicRules(input = {}) {
  * deterministic enforcer, then attaches display name, structured fields, source
  * metadata, and the engine tag. Keeps all paths consistent + observable.
  */
-function finalizeAIRecipe(thin, { hintTitle = '', imageUrl = '', sourceUrl = '', via = '' } = {}) {
+function finalizeAIRecipe(thin, { hintTitle = '', imageUrl = '', sourceUrl = '', via = '', author = '' } = {}) {
   const enforced = enforceDeterministicRules({ ...thin, _structuredVia: via || thin._structuredVia });
   const audit = enforced._postProcessAudit;
   if (audit && (audit.movedCount || audit.filteredCount)) {
@@ -976,6 +978,10 @@ function finalizeAIRecipe(thin, { hintTitle = '', imageUrl = '', sourceUrl = '',
     ...buildStructuredFields(enforced.ingredients, enforced.directions),
     imageUrl: imageUrl || enforced.imageUrl || '',
     link: sourceUrl || enforced.link || '',
+    // Source attribution: real metadata (oEmbed/Apify creator handle), never
+    // an LLM guess — kept out of RECIPE_SCHEMA on purpose (see detectSourcePlatform).
+    author: author || enforced.author || '',
+    sourcePlatform: detectSourcePlatform(sourceUrl || enforced.link || ''),
     _aiStructured: true,
     _structuredVia: via || enforced._structuredVia || 'unknown',
   };
@@ -1120,7 +1126,7 @@ function pickBetterRecipe(a, b) {
   return score(b) > score(a) ? b : a;
 }
 
-export async function structureWithGrokClient(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal' } = {}) {
+export async function structureWithGrokClient(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal', author = '' } = {}) {
   if (!_grokKey() || !rawText || rawText.trim().length < 20) return null;
 
   const kind = type === 'drink' ? 'drink' : (detectKindHeuristic(rawText) === 'drink' ? 'drink' : 'meal');
@@ -1141,7 +1147,7 @@ export async function structureWithGrokClient(rawText, { title: hintTitle = '', 
 
   console.log('[SpiceHub] Grok extraction OK — groups:', primary.ingredientGroups?.length, 'directions:', primary.directions?.length, 'confidence:', primary.confidence);
 
-  let best = finalizeAIRecipe(thinFromStructured(primary), { hintTitle, imageUrl, sourceUrl, via: `grok:${XAI_MODEL}` });
+  let best = finalizeAIRecipe(thinFromStructured(primary), { hintTitle, imageUrl, sourceUrl, author, via: `grok:${XAI_MODEL}` });
 
   // Confidence-driven escalation: if the fast model was unsure OR the
   // deterministic enforcer had to correct ≥3 lines, try the flagship once and
@@ -1152,7 +1158,7 @@ export async function structureWithGrokClient(rawText, { title: hintTitle = '', 
     console.log(`[SpiceHub] Grok escalating to ${XAI_MODEL_FLAGSHIP} (confidence ${primary.confidence}, corrections ${best._postProcessAudit?.movedCount || 0})`);
     const flagship = await grokWithRetry(messages, XAI_MODEL_FLAGSHIP);
     if (flagship && flagship.isRecipe) {
-      const escalated = finalizeAIRecipe(thinFromStructured(flagship), { hintTitle, imageUrl, sourceUrl, via: `grok:${XAI_MODEL_FLAGSHIP}` });
+      const escalated = finalizeAIRecipe(thinFromStructured(flagship), { hintTitle, imageUrl, sourceUrl, author, via: `grok:${XAI_MODEL_FLAGSHIP}` });
       best = pickBetterRecipe(best, escalated);
     }
   }
@@ -1203,7 +1209,7 @@ async function geminiGenerateStructured(model, contents, clientKey) {
   }
 }
 
-export async function structureWithAIClient(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal' } = {}) {
+export async function structureWithAIClient(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal', author = '' } = {}) {
   const clientKey = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_GOOGLE_AI_KEY : null;
   if (!clientKey || !rawText || rawText.trim().length < 20) return null;
 
@@ -1232,7 +1238,7 @@ export async function structureWithAIClient(rawText, { title: hintTitle = '', im
     });
     const structured = await serverStructurePack(miniPack, { type });
     if (structured?.isRecipe) {
-      return finalizeAIRecipe(thinFromStructured(structured), { hintTitle, imageUrl, sourceUrl, via: 'gemini-pack:server' });
+      return finalizeAIRecipe(thinFromStructured(structured), { hintTitle, imageUrl, sourceUrl, author, via: 'gemini-pack:server' });
     }
     return null;
   }
@@ -1240,7 +1246,7 @@ export async function structureWithAIClient(rawText, { title: hintTitle = '', im
   const s = primary.structured;
   console.log(`[SpiceHub] Gemini (${GEMINI_MODEL}) extraction OK — groups:`, s.ingredientGroups?.length, 'directions:', s.directions?.length, 'confidence:', s.confidence);
 
-  let best = finalizeAIRecipe(thinFromStructured(s), { hintTitle, imageUrl, sourceUrl, via: `gemini:${GEMINI_MODEL}` });
+  let best = finalizeAIRecipe(thinFromStructured(s), { hintTitle, imageUrl, sourceUrl, author, via: `gemini:${GEMINI_MODEL}` });
 
   // ── Confidence-driven escalation to a stronger Gemini model ────────────────
   // Same engine improvement we built for Grok: if the fast model was unsure OR
@@ -1253,7 +1259,7 @@ export async function structureWithAIClient(rawText, { title: hintTitle = '', im
     console.log(`[SpiceHub] Gemini escalating to ${GEMINI_MODEL_FLAGSHIP} (confidence ${s.confidence}, corrections ${best._postProcessAudit?.movedCount || 0})`);
     const esc = await geminiGenerateStructured(GEMINI_MODEL_FLAGSHIP, contents, clientKey);
     if (esc.structured && esc.structured.isRecipe) {
-      const escalated = finalizeAIRecipe(thinFromStructured(esc.structured), { hintTitle, imageUrl, sourceUrl, via: `gemini:${GEMINI_MODEL_FLAGSHIP}` });
+      const escalated = finalizeAIRecipe(thinFromStructured(esc.structured), { hintTitle, imageUrl, sourceUrl, author, via: `gemini:${GEMINI_MODEL_FLAGSHIP}` });
       best = pickBetterRecipe(best, escalated);
     }
   }
@@ -1261,7 +1267,7 @@ export async function structureWithAIClient(rawText, { title: hintTitle = '', im
 }
 
 /** Legacy prose-prompt fallback for when responseSchema isn't supported. */
-async function _structureWithAIClientLegacy(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal' } = {}) {
+async function _structureWithAIClientLegacy(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal', author = '' } = {}) {
   const clientKey = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_GOOGLE_AI_KEY : null;
   if (!clientKey) return null;
 
@@ -1295,7 +1301,7 @@ async function _structureWithAIClientLegacy(rawText, { title: hintTitle = '', im
       notes: parsed.notes || null,
       ...(type === 'drink' ? { glass: parsed.glass || null, garnish: parsed.garnish || null, _type: 'drink' } : { _type: 'meal' }),
     };
-    return finalizeAIRecipe(legacyThin, { hintTitle, imageUrl, sourceUrl, via: 'gemini-client-legacy' });
+    return finalizeAIRecipe(legacyThin, { hintTitle, imageUrl, sourceUrl, author, via: 'gemini-client-legacy' });
   } catch {
     return null;
   }
@@ -1305,14 +1311,14 @@ async function _structureWithAIClientLegacy(rawText, { title: hintTitle = '', im
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ AI-powered structuring via server /api/structure-recipe (Gemini Flash) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 // Falls back to direct client call if VITE_GOOGLE_AI_KEY is configured.
 // Returns a SpiceHub recipe object on success, null if unavailable.
-export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal' } = {}) {
+export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal', author = '' } = {}) {
   if (!rawText || rawText.trim().length < 20) return null;
 
   // Step 5 (2026-07 unification): the Grok alternate engine is REMOVED.
   // One extraction brain — Gemini structured output — everywhere.
   // Try client-side Gemini first (faster, no backend roundtrip)
   try {
-    const clientResult = await structureWithAIClient(rawText, { title: hintTitle, imageUrl, sourceUrl, type });
+    const clientResult = await structureWithAIClient(rawText, { title: hintTitle, imageUrl, sourceUrl, type, author });
     if (clientResult && (clientResult.ingredients?.length || clientResult.directions?.length)) {
       return clientResult;
     }
@@ -1342,7 +1348,7 @@ export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl
     // Use thinFromStructured if it has the new shape, else legacy flat mapping
     if (r.ingredientGroups) {
       const thin = thinFromStructured(r);
-      return finalizeAIRecipe(thin, { hintTitle, imageUrl, sourceUrl, via: 'server-schema' });
+      return finalizeAIRecipe(thin, { hintTitle, imageUrl, sourceUrl, author, via: 'server-schema' });
     }
     // Legacy flat response fallback
     const ingredients = Array.isArray(r.ingredients)
@@ -1361,7 +1367,7 @@ export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl
       notes: r.notes || null,
       ...(type === 'drink' ? { glass: r.glass || null, garnish: r.garnish || null, _type: 'drink' } : { _type: 'meal' }),
     };
-    return finalizeAIRecipe(serverThin, { hintTitle, imageUrl, sourceUrl, via: 'server-legacy' });
+    return finalizeAIRecipe(serverThin, { hintTitle, imageUrl, sourceUrl, author, via: 'server-legacy' });
   } catch {
     return null;
   }
@@ -1401,7 +1407,7 @@ function _detItemFromLine(line, kind = 'meal') {
  * Deterministic, local recipe structuring. Returns a finalized thin recipe
  * (Spec-A-shaped ingredientsStructured) or null when nothing usable was found.
  */
-export function structureDeterministic(caption, { type = 'meal', imageUrl = '', sourceUrl = '' } = {}) {
+export function structureDeterministic(caption, { type = 'meal', imageUrl = '', sourceUrl = '', author = '' } = {}) {
   if (!caption || !String(caption).trim()) return null;
   const parsed = parseCaption(caption);
   const ings = Array.isArray(parsed?.ingredients) ? parsed.ingredients : [];
@@ -1441,7 +1447,7 @@ export function structureDeterministic(caption, { type = 'meal', imageUrl = '', 
     needsReview: true,
   };
   const thin = thinFromStructured(schemaObj);
-  return finalizeAIRecipe(thin, { hintTitle: parsed.title || '', imageUrl, sourceUrl, via: 'deterministic' });
+  return finalizeAIRecipe(thin, { hintTitle: parsed.title || '', imageUrl, sourceUrl, author, via: 'deterministic' });
 }
 
 // Dev flag: force the ContextPack path only (skip the legacy structureWithAI
@@ -1476,7 +1482,7 @@ function _applyCaptionCrossCheck(result, textForAI, type) {
   return result;
 }
 
-export async function captionToRecipe(captionText, { title = '', imageUrl = '', sourceUrl = '', type = 'meal', transcript = null, sourceType = 'text' } = {}) {
+export async function captionToRecipe(captionText, { title = '', imageUrl = '', sourceUrl = '', type = 'meal', transcript = null, sourceType = 'text', author = '' } = {}) {
   const hasCaption = !!(captionText && captionText.trim().length >= 20);
   const hasTranscript = !!(transcript && String(transcript).trim().length >= 20);
   if (!hasCaption && !hasTranscript) return null;
@@ -1497,6 +1503,7 @@ export async function captionToRecipe(captionText, { title = '', imageUrl = '', 
         hintTitle: title,
         imageUrl,
         sourceUrl,
+        author,
         via: 'gemini-pack:' + (structured._structureMode || 'extract'),
       });
       if (hasRecipeContent(packRecipe)) {
@@ -1513,7 +1520,7 @@ export async function captionToRecipe(captionText, { title = '', imageUrl = '', 
 
   // ── Legacy fallback: structureWithAI (8k) then heuristic parse (unchanged) ──
   try {
-    const aiResult = await structureWithAI(textForAI, { title, imageUrl, sourceUrl, type });
+    const aiResult = await structureWithAI(textForAI, { title, imageUrl, sourceUrl, type, author });
     if (aiResult) {
       const hasRealIngs = (aiResult.ingredients || []).some(i => i && !/^see (original post|recipe) for/i.test(i.trim()));
       const hasRealDirs = (aiResult.directions || []).some(d => d && !/^see (original post|recipe) for/i.test(d.trim()));
@@ -1537,7 +1544,7 @@ export async function captionToRecipe(captionText, { title = '', imageUrl = '', 
   // Spec C: the offline fallback now runs the deterministic parser, so no-API /
   // offline imports get the SAME Spec-A structured ingredients (kind, sections,
   // qty/unit/name, category) instead of flat strings via the weak splitter.
-  const det = structureDeterministic(textForParse, { type, imageUrl, sourceUrl });
+  const det = structureDeterministic(textForParse, { type, imageUrl, sourceUrl, author });
   if (det && ((det.ingredients?.length || 0) > 0 || (det.directions?.length || 0) > 0)) {
     return { ...det, name: det.name || title || '' };
   }
@@ -2207,6 +2214,7 @@ async function extractInstagramEmbed(url) {
 
     // Extract caption
     let caption = '';
+    let author = ''; // creator handle/name — source attribution, kept separate from `title`
     const captionPatterns = [
       /<div\s+class="[^"]*Caption[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
       /<div\s+class="[^"]*EmbedCaption[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
@@ -2324,7 +2332,8 @@ async function extractInstagramEmbed(url) {
           const oData = JSON.parse(oEmbedHtml);
           if (oData?.title && oData.title.length > 10) {
             caption = oData.title;
-            if (!title) title = oData.author_name || '';
+            author = oData.author_name || '';
+            if (!title) title = author;
             if (!imageUrl && oData.thumbnail_url && isValidImageUrl(oData.thumbnail_url) && !isProfilePicUrl(oData.thumbnail_url)) imageUrl = oData.thumbnail_url;
             console.log(`[instagram-embed] oEmbed fallback success Ã¢â‚¬â€ ${caption.length} chars`);
           }
@@ -2351,7 +2360,7 @@ async function extractInstagramEmbed(url) {
     }
 
     console.log(`[instagram-embed] Success Ã¢â‚¬â€ caption: ${caption.length} chars, image: ${imageUrl ? 'yes' : 'no'}`);
-    return { ok: true, type: 'caption', caption: stripSocialMetaPrefix(caption), title, imageUrl, sourceUrl: url };
+    return { ok: true, type: 'caption', caption: stripSocialMetaPrefix(caption), title, author, imageUrl, sourceUrl: url };
   } catch (e) {
     console.log(`[instagram-embed] Error: ${e.message}`);
     return null;
@@ -2412,7 +2421,16 @@ async function detectServer() {
       const timer = setTimeout(() => ctrl.abort(), 3000);
       const resp = await fetch(`${base}/api/v2/ping`, { signal: ctrl.signal });
       clearTimeout(timer);
-      if (resp.ok) {
+      // 2026-07-13 critique fix: resp.ok alone is not enough. The `window.location.origin`
+      // fallback candidate is the Vercel deployment, whose api/ folder does NOT implement
+      // /api/v2/ping (or /api/extract-video, /api/extract-instagram-agent, /api/structure-recipe
+      // — those exist only on the dedicated Node server). A too-broad SPA rewrite can make
+      // Vercel serve index.html (200 OK, text/html) for that unmatched path, which used to read
+      // as resp.ok===true and made detectServer() falsely "detect" Vercel as a full dedicated
+      // server. Callers then hit the legacy-only routes above and got guaranteed 405s on every
+      // Instagram/video import. Requiring real JSON closes that false positive.
+      const contentType = resp.headers.get('content-type') || '';
+      if (resp.ok && contentType.includes('json')) {
         _serverBaseUrl = base;
         return _serverBaseUrl;
       }
@@ -5087,6 +5105,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   let capturedCaption   = '';
   let capturedImageUrl  = '';
   let capturedTitle     = '';   // best title found across all phases
+  let capturedAuthor    = '';   // creator handle/name (oEmbed author_name / Apify owner*) — attribution only
   let capturedSource    = '';   // which extraction method won (apify/oembed/ig-json/embed/browser)
   let videoRecipe       = null; // yt-dlp/server resource helper result
 
@@ -5143,6 +5162,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
           }
         }
         if (igPack.title && !capturedTitle) capturedTitle = igPack.title;
+        if (igPack.author && !capturedAuthor) capturedAuthor = igPack.author;
         progress(1, 'done', capturedSource + ': caption (' + capturedCaption.length + ' chars)');
       } else {
         progress(1, 'done', 'Quick extraction failed — trying embed…');
@@ -5176,6 +5196,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
         }
       }
       if (embedData?.title && !capturedTitle) capturedTitle = embedData.title;
+      if (embedData?.author && !capturedAuthor) capturedAuthor = embedData.author;
 
       if (embedData?.caption) {
         const embedCaption = cleanSocialCaption(embedData.caption);
@@ -5314,6 +5335,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
         type,
         sourceType: 'instagram',
         transcript: igTranscriptForPack,
+        author: capturedAuthor,
       }));
       // Use OR: accept if EITHER ingredients OR directions is non-placeholder
       if (recipe && (!isPlaceholder(recipe.ingredients) || !isPlaceholder(recipe.directions))) {

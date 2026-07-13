@@ -125,6 +125,26 @@
   min-height: 40px;
 }
 
+.discover-load-more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 14px;
+  margin-top: 4px;
+  border-radius: 999px;
+  border: 1px solid var(--border, #e0e0e0);
+  background: var(--surface-2, #f5f5f5);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  min-height: 44px; /* touch target */
+}
+.discover-load-more:disabled {
+  opacity: 0.7;
+}
+
 .discover-card {
   display: flex;
   align-items: center;
@@ -205,6 +225,10 @@
   border-color: rgba(255, 255, 255, 0.1);
 }
 [data-theme="dark"] .discover-retry {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+[data-theme="dark"] .discover-load-more {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.12);
 }

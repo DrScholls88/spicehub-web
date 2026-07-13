@@ -831,6 +831,34 @@ export function normalizeNutrition(raw = {}) {
   return hasAny ? out : null;
 }
 
+// -----------------------------------------------------------------------------
+// 7a. SOURCE PLATFORM DETECTION
+// -----------------------------------------------------------------------------
+// Stamped onto every import (via finalizeAIRecipe in recipeParser.js) so saved
+// recipes carry honest source attribution. This is app-level metadata derived
+// from the URL itself — deliberately NOT part of RECIPE_SCHEMA/asked of the LLM,
+// since the platform is a known fact (not something to infer from text) and
+// asking the model to guess it risks hallucination for zero benefit.
+export const SOURCE_PLATFORMS = [
+  'instagram', 'tiktok', 'youtube', 'facebook', 'pinterest', 'x', 'web',
+];
+
+export function detectSourcePlatform(url = '') {
+  if (!url || typeof url !== 'string') return '';
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+    if (host.includes('instagram')) return 'instagram';
+    if (host.includes('tiktok')) return 'tiktok';
+    if (host.includes('youtube') || host === 'youtu.be') return 'youtube';
+    if (host.includes('facebook') || host === 'fb.watch') return 'facebook';
+    if (host.includes('pinterest')) return 'pinterest';
+    if (host.includes('twitter') || host === 'x.com') return 'x';
+    return 'web';
+  } catch {
+    return '';
+  }
+}
+
 // Schema.org field name → user-friendly display label
 export const NUTRITION_LABELS = {
   calories: 'Calories',
@@ -923,6 +951,12 @@ export const RECIPE_SCHEMA = {
       },
     },
     description: { type: 'string' }, // brief 1-2 sentence recipe summary
+    // Creator's short friendly intro/story from a social caption (e.g. "made this
+    // for my mom's birthday and it was gone in 5 minutes!"). Optional — only
+    // populate when the source actually has a distinct hook/story separate from
+    // the recipe itself; do NOT invent one. Displayed as "Creator's note" in
+    // ImportReview.
+    intro: { type: 'string' },
     recipeYield: { type: 'string' }, // e.g. "12 cookies", "4 servings", "1 loaf"
     servings: { type: 'string' },
     prepTime: { type: 'string' },   // prep time only; do NOT duplicate totalTime
@@ -961,7 +995,7 @@ export const RECIPE_SCHEMA = {
 // ledger compares a recipe's stored `engineVersion` against this value to offer
 // "improve" re-runs that re-send the cached caption (no re-scrape, no Apify cost).
 // Format: YYYY.MM.patch — human-readable and monotonically comparable as a string.
-export const ENGINE_PROMPT_VERSION = '2026.07.2';
+export const ENGINE_PROMPT_VERSION = '2026.07.3';
 
 // -----------------------------------------------------------------------------
 // 9. SHARED SYSTEM INSTRUCTION (used identically by text / server / vision)
@@ -980,6 +1014,14 @@ export const SYSTEM_INSTRUCTION = [
   "engagement bait, view/like counts, blog boilerplate (\"Jump to Recipe\", \"Pin this\"), music",
   "credits, and inline video timestamps (\"at 0:45 add garlic\"). The title is the dish/drink",
   "name only, 2–6 words, no serving context.",
+  "",
+  "1a. Social captions (Instagram/TikTok/YouTube Shorts): before stripping the chrome above,",
+  "check whether the caption opens with a short friendly hook or story distinct from the recipe",
+  "itself (e.g. \"made this for my mom's birthday and it was gone in 5 minutes!\", \"my go-to",
+  "weeknight dinner when I'm short on time\"). If so, capture that hook — cleaned of hashtags/",
+  "emojis/CTAs, in the creator's own warm voice — as `intro`. Do NOT fabricate an intro when",
+  "the caption is just an ingredient/step list with no distinct hook; leave `intro` empty rather",
+  "than inventing one.",
   "",
   "2. Classify: Set kind=\"drink\" when the source is a cocktail or mixed drink (spirits,",
   "liqueurs; oz/dash/splash/part/barspoon units; shake/stir/strain/build/muddle language;",
@@ -1034,9 +1076,11 @@ export const SYSTEM_INSTRUCTION = [
   "form (\"scallion\" for an item named \"green onion\", \"chicken\" for \"chicken breast\"),",
   "the ref must use the canonical `name` from ingredientGroups, not the word used in the step.",
   "",
-  "8. Metadata: Set `description` to a brief 1-2 sentence summary of the dish. Keep it",
-  "factual and concise (e.g. \"Quick weeknight pasta with a creamy sun-dried tomato sauce.\").",
-  "If no description is evident, make your best one-line summary from the recipe content.",
+  "8. Metadata: Set `description` to a brief 1-2 sentence FACTUAL summary of the dish (e.g.",
+  "\"Quick weeknight pasta with a creamy sun-dried tomato sauce.\"). If no description is",
+  "evident, make your best one-line summary from the recipe content. `description` is always",
+  "yours to write; `intro` (see 1a) is the creator's own words and must be left empty when the",
+  "source doesn't have one — never duplicate `description` into `intro`.",
   "Set `recipeYield` to the recipe's stated yield as text (e.g. \"12 cookies\",",
   "\"4 servings\", \"1 loaf\", \"2 cocktails\"). This is more descriptive than the numeric",
   "`servings` field. If the yield is a simple serving count, set both fields.",
@@ -1355,6 +1399,10 @@ export function thinFromStructured(structured = {}) {
     nutrition: normalizeNutrition(structured.nutrition),
     // Description: brief recipe summary for cards and search.
     description: (structured.description || '').trim(),
+    // Creator's note: short friendly intro/story from a social caption, kept
+    // separate from `description` so ImportReview can show it as attributed
+    // creator content. Empty when the source has no distinct hook.
+    intro: (structured.intro || '').trim(),
     // Yield: descriptive output (e.g. "12 cookies", "1 loaf").
     recipeYield: (structured.recipeYield || '').trim(),
     // Notes: structured [{title?, text}] array. Legacy string notes are wrapped
