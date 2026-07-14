@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import db, { importSeedMeals, removeStarterKitMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getStoreMemory, getCookingLog, getWeekHistory, saveWeekToHistory, toggleRotation, addBatchQueueItems, getBatchQueueItems, updateBatchQueueItem, getLearnedAliases } from './db';
+import db, { importSeedMeals, removeStarterKitMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getStoreMemory, getCookingLog, getWeekHistory, saveWeekToHistory, toggleRotation, addBatchQueueItems, getBatchQueueItems, updateBatchQueueItem, getLearnedAliases, moveMealToBar } from './db';
 import { buildStarterKitMeals, STARTER_KIT_SEED_FLAG } from './data/starterKitMeals';
 import { checkStorageQuota, checkAndRecommendCleanup } from './storageManager';
 import { initializeBackgroundSync } from './backgroundSync';
@@ -828,6 +828,23 @@ useEffect(() => {
     await loadMeals();
   }, [loadMeals]);
 
+  // 2026-07-14: recovery path for recipes mis-imported into the wrong library
+  // (e.g. a drink saved to Meal Library before the import-destination-routing
+  // fix). Also clears the meal out of any week-plan slot it was sitting in,
+  // same as deleteMeal, since it's leaving the meals table entirely.
+  const handleMoveMealToBar = useCallback(async (meal) => {
+    if (!meal?.id) return;
+    try {
+      await moveMealToBar(meal);
+      setWeekPlan(prev => prev.map(m => m?.id === meal.id ? null : m));
+      await Promise.all([loadMeals(), loadDrinks()]);
+      showToast(`Moved "${meal.name || 'Recipe'}" to The Bar 🍸`);
+    } catch (err) {
+      console.error('[handleMoveMealToBar] failed:', err);
+      showToast("Couldn't move that recipe — try again");
+    }
+  }, [loadMeals, loadDrinks, showToast]);
+
   const handleRemoveStarterKit = useCallback(async () => {
     const removed = await removeStarterKitMeals();
     await loadMeals();
@@ -1076,22 +1093,39 @@ useEffect(() => {
     // Ghost rows (from V2 optimistic path) arrive with an `id` already set in Dexie.
     // We use put() for everything: it upserts, so ghost rows re-save harmlessly
     // and new recipes get inserted. add() would throw ConstraintError on ghost refs.
+    //
+    // 2026-07-14 fix: this used to gate on `target === 'drinks'` only. But the
+    // ImportReview "Save to" destination grid for drinks only ever emits
+    // 'library' or 'bar' (see ImportReview.jsx `destinations`) — it never emits
+    // 'drinks'. So a correctly-detected drink saved via the default 'library'
+    // destination, or even via the user explicitly tapping "Bar", always fell
+    // through to db.meals. Route by the recipe's own itemType whenever the
+    // destination is the generic 'library' choice, and treat 'bar' as an
+    // explicit drink override alongside the legacy 'drinks' value.
+    let anyDrink = false;
+    let anyMeal = false;
     try {
       for (const r of imported) {
         if (r.id && !r.name && !r.ingredients) continue;
-        if (target === 'drinks') { await db.drinks.put(r); }
-        else { await db.meals.put(r); }
+        const isDrinkItem = target === 'drinks' || target === 'bar' ||
+          (target !== 'meals' && (r.itemType === 'drink' || r._type === 'drink' || r.type === 'drink'));
+        if (isDrinkItem) { await db.drinks.put(r); anyDrink = true; }
+        else { await db.meals.put(r); anyMeal = true; }
       }
     } catch (err) {
       console.error('[handleImport] DB write failed:', err);
     } finally {
-      if (target === 'drinks') { await loadDrinks(); }
-      else { await loadMeals(); }
+      // A batch could in principle mix types; reload whichever tables we
+      // actually touched instead of assuming target implies a single table.
+      await Promise.all([
+        anyDrink ? loadDrinks() : Promise.resolve(),
+        anyMeal || (!anyDrink && !anyMeal) ? loadMeals() : Promise.resolve(),
+      ]);
     }
 
     if (!real.length) return;
     const count = real.length;
-    const noun = target === 'drinks' ? (count === 1 ? 'drink' : 'drinks') : (count === 1 ? 'recipe' : 'recipes');
+    const noun = anyDrink && !anyMeal ? (count === 1 ? 'drink' : 'drinks') : (count === 1 ? 'recipe' : 'recipes');
     const name = count === 1 ? (real[0].name || 'Recipe') : `${count} ${noun}`;
 
     // ── I-2: Post-save quick actions for single-recipe share-target imports ──
@@ -1102,7 +1136,7 @@ useEffect(() => {
       return;
     }
 
-    showToast(`Added ${name} to ${target === 'drinks' ? 'The Bar 🍸' : 'your library'}`);
+    showToast(`Added ${name} to ${anyDrink && !anyMeal ? 'The Bar 🍸' : 'your library'}`);
   }, [showImportFor, loadMeals, loadDrinks, showToast, setGroceryItems, setWeekPlan, setTab, setPostImportActions]);
 
   // ── Batch import: mark a batchQueue row 'saved' after ImportSheet save ────
@@ -1332,6 +1366,7 @@ useEffect(() => {
             onRate={rateMeal}
             onPlayVideo={openPipForMeal}
             onLoadStarterPack={handleAddStarterKit}
+            onMoveToBar={handleMoveMealToBar}
           />
         )}
         {tab === 'bar' && (
@@ -1400,6 +1435,7 @@ useEffect(() => {
             onRate={isDrink(detailItem) ? null : rateMeal}
             onStartCook={isDrink(detailItem) ? null : startCookMode}
             onStartMix={isDrink(detailItem) ? startMixMode : null}
+            onMoveToBar={isDrink(detailItem) ? null : handleMoveMealToBar}
             isDrink={isDrink(detailItem)}
           />
         )}

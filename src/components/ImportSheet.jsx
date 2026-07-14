@@ -424,15 +424,19 @@ export default function ImportSheet({
         // Transcription didn't yield a recipe — fall through to normal fallback
       }
 
+      // 2026-07-14: BrowserAssist (the in-app iframe "browser assist" fallback)
+      // is disabled — commented out below, not deleted. It confused users as an
+      // unexplained second import surface, and its own fallback is structurally
+      // blocked for non-Instagram/YouTube sources by the app's CSP frame-src
+      // allowlist, so it could never succeed there anyway. Route straight to
+      // the same graceful "paste it yourself" recovery its own onError already
+      // used, instead of opening a surface that's disabled.
       if (result && result._needsBrowserAssist) {
-        if (result._emptyCaption) {
-          hapticError();
-          setError("We couldn't find recipe text in this post. Paste it below and we'll sort it for you.");
-        }
-        setBrowserAssistSeed(result.seed || null);
+        hapticError();
+        setError("We couldn't automatically read this post. Paste the recipe text below and we'll sort it for you.");
         setCapturedText(result.capturedCaption || '');
         setImportUrl(cleanU);
-        setPhase('browserAssist');
+        setPhase('input');
         return;
       }
 
@@ -888,13 +892,8 @@ export default function ImportSheet({
                             <Mic size={14} /> Transcribe Video
                           </button>
                         )}
-                        <button
-                          type="button"
-                          className="import-sheet-btn import-sheet-btn-ghost"
-                          onClick={() => setPhase('browserAssist')}
-                        >
-                          Try in browser
-                        </button>
+                        {/* "Try in browser" (BrowserAssist) removed 2026-07-14 — see
+                            the commented-out render block further down for why. */}
                       </>
                     )}
                     <button
@@ -1062,6 +1061,13 @@ export default function ImportSheet({
                 </motion.div>
               )}
 
+              {/* BrowserAssist disabled 2026-07-14 (2026-07-13 critique: unexplained
+                  "secondary importer" that confused users, and whose own iframe
+                  fallback is structurally blocked by CSP frame-src for anything
+                  but Instagram/YouTube). The phase === 'browserAssist' transition
+                  is no longer triggered anywhere (see handleUrlImport / the removed
+                  "Try in browser" button above) — kept commented, not deleted, in
+                  case it's worth reviving with a narrower, explained scope later.
               {phase === 'browserAssist' && (
                 <motion.div
                   key="browserAssist"
@@ -1088,6 +1094,7 @@ export default function ImportSheet({
                   />
                 </motion.div>
               )}
+              */}
             </AnimatePresence>
           </div>
 
