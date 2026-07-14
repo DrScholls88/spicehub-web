@@ -116,7 +116,12 @@ export async function fetchHtmlViaProxy(url, timeoutMs = 30000) {
   try {
     const internalUrl = `/api/proxy?url=${encodeURIComponent(targetUrl)}`;
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+    // 2026-07-14: was the full timeoutMs (up to 30s) before even trying a
+    // public proxy. This is a same-origin serverless call — if it's healthy it
+    // answers in well under a second; capping it short means a slow/hanging
+    // instance fails fast into the public-proxy cascade instead of burning the
+    // whole budget here first.
+    const timer = setTimeout(() => ctrl.abort(), Math.min(timeoutMs, 10000));
     const resp = await fetch(internalUrl, { signal: ctrl.signal });
     clearTimeout(timer);
 
@@ -142,19 +147,27 @@ export async function fetchHtmlViaProxy(url, timeoutMs = 30000) {
   // ── 2. Public CORS proxy waterfall (secondary / local dev fallback) ────────────
   // Ordered by observed reliability (codetabs and allorigins succeed most often).
   // corsproxy.io often returns 403 for major recipe/social sites — kept but de-prioritized.
-  // proxy.cors.sh and cors.bridged.cc hit 429 rate limits quickly — kept as last resorts.
+  // proxy.cors.sh hits 429 rate limits quickly — kept as a last resort.
+  //
+  // 2026-07-14: thingproxy.freeboard.io and cors.bridged.cc removed. Both
+  // came back net::ERR_NAME_NOT_RESOLVED in production console logs — the
+  // domains themselves no longer resolve (service discontinued), not a rate
+  // limit or transient failure. Keeping them in the rotation meant every
+  // single import ate a guaranteed-dead DNS lookup, on top of however many
+  // times this whole waterfall runs per import (embed page, oEmbed, mirror
+  // fallbacks can each call fetchHtmlViaProxy separately).
   const PUBLIC_PROXIES = [
     (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
     (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
     (u) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
-    (u) => `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(u)}`,
     (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
     (u) => `https://proxy.cors.sh/${u}`,
-    (u) => `https://cors.bridged.cc/${u}`,
   ];
 
-  // Per-proxy timeout is shorter since we try multiple
-  const perProxyTimeout = Math.min(timeoutMs / 2, 15000);
+  // Per-proxy timeout is shorter since we try multiple. Was capped at 15s —
+  // a working proxy answers in 1-4s, so 8s is still generous headroom while
+  // cutting the worst-case wait for a hanging one roughly in half.
+  const perProxyTimeout = Math.min(timeoutMs / 2, 8000);
 
   for (const makeProxy of PUBLIC_PROXIES) {
     const proxyUrl = makeProxy(targetUrl);

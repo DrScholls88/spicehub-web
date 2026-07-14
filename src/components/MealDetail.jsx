@@ -22,7 +22,7 @@ function CopyLinkButton({ url }) {
   );
 }
 
-export default function MealDetail({ meal, onClose, onShare, onExport, onToggleFavorite, onRate, onStartCook, onStartMix, onToggleRotation, isDrink = false, onPhotoUpdated }) {
+export default function MealDetail({ meal, onClose, onShare, onExport, onToggleFavorite, onRate, onStartCook, onStartMix, onToggleRotation, isDrink = false, onPhotoUpdated, onMoveToBar }) {
   // ── Drag-down-to-dismiss ──
   const sheetRef = useRef(null);
   const dragControls = useDragControls();
@@ -361,6 +361,20 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
               style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
             >
               <Martini size={18} strokeWidth={1.75} /> Start Mixing
+            </button>
+          </div>
+        )}
+
+        {/* Recovery path for a drink recipe mis-imported into the Meal Library */}
+        {onMoveToBar && (
+          <div className="detail-section" style={{ paddingBottom: 20 }}>
+            <button
+              className="cook-mode-launch-btn mix-mode-launch-btn"
+              onClick={() => { onClose(); onMoveToBar(meal); }}
+              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+              title="This looks like it belongs in the Bar? Move it over."
+            >
+              <Martini size={18} strokeWidth={1.75} /> Move to Bar
             </button>
           </div>
         )}

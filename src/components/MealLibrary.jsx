@@ -145,7 +145,7 @@ const fabActionVariants = {
   open: { opacity: 1, y: 0, scale: 1, transition: { type: 'spring', stiffness: 420, damping: 26 } },
 };
 
-export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDetail, onShare, onImport, onImportUrl, onReload, onToast, onToggleFavorite, onRate, onPlayVideo, onLoadStarterPack }) {
+export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDetail, onShare, onImport, onImportUrl, onReload, onToast, onToggleFavorite, onRate, onPlayVideo, onLoadStarterPack, onMoveToBar }) {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
@@ -1008,6 +1008,14 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                     : quickPreview.imageUrl
                     ? '📸 Find Better Photo'
                     : '📸 Find Photo'}
+                </button>
+              )}
+              {onMoveToBar && (
+                <button
+                  onClick={() => { hapticLight(); onMoveToBar(quickPreview); setQuickPreview(null); }}
+                  title="Move this to the Bar Library — for a recipe that got imported as a meal by mistake"
+                >
+                  🍸 Move to Bar
                 </button>
               )}
               <button

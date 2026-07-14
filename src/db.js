@@ -819,6 +819,29 @@ export async function deleteWeekFromHistory(id) {
   await db.weekHistory.delete(id);
 }
 
+// ── Meal ↔ Bar transfer (2026-07-14) ──────────────────────────────────────────
+// Corrects mis-imported recipes that landed in the wrong library — e.g. a
+// drink saved to db.meals before the import-type-routing fix. Moves the full
+// record across tables (drinks/meals get their own auto-increment id, so the
+// old id is dropped) and stamps the type fields so downstream code (CookMode
+// vs MixMode routing, ImportReview's isDrink check) treats it correctly going
+// forward.
+export async function moveMealToBar(meal) {
+  if (!meal || !meal.id) throw new Error('moveMealToBar: meal with id required');
+  const { id, ...rest } = meal;
+  const newId = await db.drinks.add({ ...rest, itemType: 'drink', _type: 'drink', type: 'drink' });
+  await db.meals.delete(id);
+  return newId;
+}
+
+export async function moveDrinkToMeals(drink) {
+  if (!drink || !drink.id) throw new Error('moveDrinkToMeals: drink with id required');
+  const { id, ...rest } = drink;
+  const newId = await db.meals.add({ ...rest, itemType: 'meal', _type: 'meal', type: 'meal' });
+  await db.drinks.delete(id);
+  return newId;
+}
+
 // ── Instagram import cache ────────────────────────────────────────────────────
 const INSTAGRAM_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
