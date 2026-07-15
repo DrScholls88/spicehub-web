@@ -132,7 +132,13 @@ body {
   gap: 7px;
   min-width: 0;
   min-height: 44px;
-  margin: -6px -8px;
+  /* Negative margin enlarges the tap target beyond the visible text without
+     shifting layout — but only on the left/top/bottom, where it just eats
+     into the header's own edge padding. Zero on the right: a negative right
+     margin here would bleed this button's paint box past its reserved flex
+     slot and overlap the build badge sitting right next to it in
+     .app-brand-wrap (bug: logo/build# overlapping, fixed 2026-07-15). */
+  margin: -6px 0 -6px -8px;
   padding: 6px 8px;
   border: 0;
   border-radius: 14px;
