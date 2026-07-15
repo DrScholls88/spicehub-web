@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { X, Lock, Star, BookOpen, UtensilsCrossed, ChevronDown, ChevronRight, MoreVertical, Plus, RefreshCw, CheckSquare, ShoppingCart, CalendarDays, List } from 'lucide-react';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import MealSpinner from './MealSpinner';
+import { filterMealsByConstraints } from '../lib/weekPlanner';
 
 // ── MealImage helper ──────────────────────────────────────────────────────────
 function MealImage({ src, alt, className, style, fallbackEmoji = '🍽️', fallbackClass }) {
@@ -316,9 +317,33 @@ export default function WeekView({
   rotationMeals,
   currentPlan,
   recentlyUsedIds = null,
+  spinConstraints = null,
+  fridgeInventoryNames = [],
+  onSpinConstraintsSkipped = null,
 }) {
   const today = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
   const currentWeekMonday = useMemo(() => getMonday(today), [today]);
+
+  // Spin Action Center constraints (Vegetarian Only / Under 30 Mins / Use Fridge
+  // Stock) pre-filter the candidate pool handed to MealSpinner. This never
+  // touches `meals`/`rotationMeals` themselves — those still drive the rest of
+  // WeekView (grid, rotation management, etc.) untouched — it's purely what
+  // the spinner is allowed to pick from. filterMealsByConstraints guarantees a
+  // non-empty pool (skips a constraint rather than starving the spinner) and
+  // reports which constraints it had to skip so we can toast an honest heads-up.
+  const spinnerPools = useMemo(() => {
+    const rotFiltered = filterMealsByConstraints(rotationMeals, spinConstraints, fridgeInventoryNames);
+    const allFiltered = filterMealsByConstraints(meals, spinConstraints, fridgeInventoryNames);
+    return { rotation: rotFiltered, all: allFiltered };
+  }, [meals, rotationMeals, spinConstraints, fridgeInventoryNames]);
+
+  useEffect(() => {
+    if (!showSpinner) return;
+    const skipped = spinnerPools.rotation.skipped.length > 0 ? spinnerPools.rotation.skipped : spinnerPools.all.skipped;
+    if (skipped.length > 0) onSpinConstraintsSkipped?.(skipped);
+    // Only fire once per spinner open, not on every pool recompute.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showSpinner]);
 
   const [viewMode, setViewMode] = useState('timeline');
   const [viewYear,  setViewYear]  = useState(today.getFullYear());
@@ -967,8 +992,8 @@ export default function WeekView({
           animation: 'wv-fadeIn 0.2s ease both',
         }}>
           <MealSpinner
-            meals={meals}
-            rotationMeals={rotationMeals}
+            meals={spinnerPools.all.pool}
+            rotationMeals={spinnerPools.rotation.pool}
             currentPlan={currentPlan}
             onComplete={(pickedMeals) => {
               const targetDates = spinnerTargetDates && spinnerTargetDates.length > 0

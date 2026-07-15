@@ -17,7 +17,7 @@ const FETCH_TIMEOUT_MS = 12000;
 const MAX_HTML_BYTES = 2_500_000;
 const MAX_MARKDOWN_CHARS = 60000;
 
-const BROWSER_HEADERS = {
+export const BROWSER_HEADERS = {
   'User-Agent':
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
   Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
@@ -390,7 +390,7 @@ export function parseEmbedImage(html) {
   return decodeEntities(m[1].replace(/\\u0026/g, '&').replace(/\\\//g, '/'));
 }
 
-async function fetchWithTimeout(url, headers, timeoutMs = FETCH_TIMEOUT_MS) {
+export async function fetchWithTimeout(url, headers, timeoutMs = FETCH_TIMEOUT_MS) {
   const res = await fetch(url, {
     headers,
     redirect: 'follow',
@@ -401,7 +401,7 @@ async function fetchWithTimeout(url, headers, timeoutMs = FETCH_TIMEOUT_MS) {
   return text.length > MAX_HTML_BYTES ? text.slice(0, MAX_HTML_BYTES) : text;
 }
 
-async function extractInstagramFallback(url) {
+export async function extractInstagramFallback(url) {
   const shortcode = extractInstagramShortcode(url);
   if (!shortcode) return { ok: false, reason: 'no-shortcode' };
 

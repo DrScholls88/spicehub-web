@@ -124,6 +124,7 @@ function DrinkImage({ src, alt, className, phClass }) {
 export default function BarLibrary({
   drinks, onAdd, onEdit, onDelete, onViewDetail, onShare,
   onImport, onReload, onToast, onOpenShelf, onOpenBarFridge, onPlayVideo,
+  onMoveToMeals,
 }) {
   const [search, setSearch]                   = useState('');
   const [category, setCategory]               = useState('All');
@@ -138,6 +139,7 @@ export default function BarLibrary({
   const [menuAnimation, setMenuAnimation]     = useState(false);
   const [fabOpen, setFabOpen]                 = useState(false); // speed-dial: + expands to add/import
   const [reExtractDrink, setReExtractDrink]   = useState(null);  // I-5: drink being re-extracted
+  const [reimportingPhotoId, setReimportingPhotoId] = useState(null); // parity w/ Meal Library's Find Photo
 
   const longPressTimer    = useRef(null);
   const touchStartPos     = useRef(null);
@@ -328,6 +330,34 @@ export default function BarLibrary({
     onToast?.('Deleted ' + count + ' drink' + (count !== 1 ? 's' : ''));
     exitSelectMode();
   }, [selectedIds, onDelete, onToast, exitSelectMode]);
+
+  // ── Re-import photo (parity with Meal Library's "Find Better Photo") ──────
+  const handleReimportPhoto = useCallback(async (drink) => {
+    const sourceUrl = drink.link || drink.sourceUrl;
+    if (!sourceUrl) { onToast?.('No source URL to search for a photo'); return; }
+    setReimportingPhotoId(drink.id);
+    onToast?.('🔍 Searching for a better photo…');
+    try {
+      const res = await fetch('/api/import/photo-only', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: sourceUrl }),
+        signal: AbortSignal.timeout(30000),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.ok && data.imageUrl) {
+        await db.drinks.update(drink.id, { imageUrl: data.imageUrl });
+        onReload?.();
+        onToast?.('📸 Found a better photo!');
+      } else {
+        onToast?.('No better photo found for this drink');
+      }
+    } catch {
+      onToast?.('Photo search failed — check your connection and try again');
+    } finally {
+      setReimportingPhotoId(null);
+    }
+  }, [onToast, onReload]);
 
   // ── Tile click ────────────────────────────────────────────────────────────
   const handleTileClick = useCallback((drink) => {
@@ -835,6 +865,28 @@ export default function BarLibrary({
                     onClick={() => { hapticLight(); setReExtractDrink(quickPreview); setQuickPreview(null); }}
                   >
                     ✨ Improve
+                  </button>
+                )}
+                {(quickPreview.link || quickPreview.sourceUrl) && (
+                  <button
+                    className="bl-qp-btn"
+                    onClick={() => { handleReimportPhoto(quickPreview); setQuickPreview(null); }}
+                    disabled={reimportingPhotoId === quickPreview.id}
+                  >
+                    {reimportingPhotoId === quickPreview.id
+                      ? '⏳ Searching…'
+                      : quickPreview.imageUrl
+                      ? '📸 Find Better Photo'
+                      : '📸 Find Photo'}
+                  </button>
+                )}
+                {onMoveToMeals && (
+                  <button
+                    className="bl-qp-btn"
+                    onClick={() => { hapticLight(); onMoveToMeals(quickPreview); setQuickPreview(null); }}
+                    title="Move this to the Meal Library — for a recipe that got imported as a drink by mistake"
+                  >
+                    🍽️ Move to Meals
                   </button>
                 )}
                 <button

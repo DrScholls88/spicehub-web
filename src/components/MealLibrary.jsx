@@ -737,11 +737,24 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                     {formatAddedDate(meal.importedAt || meal.createdAt || meal.created)}
                   </span>
                 )}
-                {meal.notes && (
-                  <span className="ml-tile-notes">
-                    {meal.notes.slice(0, 60)}{meal.notes.length > 60 ? '…' : ''}
-                  </span>
-                )}
+                {/* Notes may be a structured [{title,text}] array (post-2026-06-26 schema)
+                    or a legacy flat string — never render either raw, since React throws
+                    on plain-object children. This was the root cause of the "Meal Library
+                    goes blank" bug: any meal with populated structured notes (starter pack
+                    recipes always have them) crashed the whole tile render with no
+                    ErrorBoundary to catch it. */}
+                {(() => {
+                  const notePreview = meal._notesFlat
+                    || (Array.isArray(meal.notes)
+                        ? meal.notes.map(n => (typeof n === 'string' ? n : n?.text || '')).filter(Boolean).join(' ')
+                        : (typeof meal.notes === 'string' ? meal.notes : ''));
+                  if (!notePreview) return null;
+                  return (
+                    <span className="ml-tile-notes">
+                      {notePreview.slice(0, 60)}{notePreview.length > 60 ? '…' : ''}
+                    </span>
+                  );
+                })()}
               </div>
             </motion.div>
           ))}

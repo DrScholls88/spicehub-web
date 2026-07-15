@@ -159,3 +159,55 @@ describe('spriteSpec — kitchen/pantry kinds', () => {
     expect(spriteSpec('olive').kind).toBe('garnish'); // still a cocktail garnish, not oil
   });
 });
+
+describe('spriteSpec — vegetarian/vegan pantry expansion (2026-07-12)', () => {
+  it('named legumes get their own cluster color, not the generic pea-green', () => {
+    const black = spriteSpec('black beans');
+    const kidney = spriteSpec('kidney beans');
+    const chick = spriteSpec('chickpeas');
+    const lentil = spriteSpec('lentils');
+    const generic = spriteSpec('green beans');
+    for (const s of [black, kidney, chick, lentil, generic]) {
+      expect(s).toMatchObject({ kind: 'produce', shape: 'cluster' });
+    }
+    // Each named legume gets a distinct palette from the generic bean/pea one.
+    expect(black.palette.body).not.toBe(generic.palette.body);
+    expect(kidney.palette.body).not.toBe(generic.palette.body);
+    expect(chick.palette.body).not.toBe(generic.palette.body);
+    expect(lentil.palette.body).not.toBe(generic.palette.body);
+  });
+
+  it('plant-based proteins resolve to protein sprites, not generic bottles', () => {
+    expect(spriteSpec('tofu')).toMatchObject({ kind: 'protein', shape: 'cube' });
+    expect(spriteSpec('tempeh')).toMatchObject({ kind: 'protein', shape: 'cube' });
+    expect(spriteSpec('seitan')).toMatchObject({ kind: 'protein', shape: 'steak' });
+    expect(spriteSpec('edamame')).toMatchObject({ kind: 'produce', shape: 'cluster' });
+  });
+
+  it('vegan condiments and swaps get jar/can kinds', () => {
+    expect(spriteSpec('hummus')).toMatchObject({ kind: 'jar', shape: 'condiment' });
+    expect(spriteSpec('peanut butter')).toMatchObject({ kind: 'jar', shape: 'condiment' });
+    expect(spriteSpec('almond butter')).toMatchObject({ kind: 'jar', shape: 'condiment' });
+    expect(spriteSpec('tamari').kind).toBe('can');
+    expect(spriteSpec('vegetable broth').kind).toBe('can');
+    expect(spriteSpec('nutritional yeast')).toMatchObject({ kind: 'jar', shape: 'spice' });
+  });
+
+  it('plant milks and dairy-free swaps reuse the dairy sprites', () => {
+    expect(spriteSpec('oat milk')).toMatchObject({ kind: 'dairy', shape: 'carton' });
+    expect(spriteSpec('almond milk')).toMatchObject({ kind: 'dairy', shape: 'carton' });
+    expect(spriteSpec('soy milk')).toMatchObject({ kind: 'dairy', shape: 'carton' });
+    expect(spriteSpec('vegan cheese')).toMatchObject({ kind: 'dairy', shape: 'wedge' });
+  });
+
+  it('maple syrup and agave nectar resolve as syrup bottles, not spice/produce', () => {
+    expect(spriteSpec('maple syrup')).toMatchObject({ kind: 'bottle', shape: 'round' });
+    expect(spriteSpec('agave nectar')).toMatchObject({ kind: 'bottle', shape: 'round' });
+  });
+
+  it('more produce coverage (brussels sprouts, sweet potatoes, bananas plural)', () => {
+    expect(spriteSpec('brussels sprouts')).toMatchObject({ kind: 'produce', shape: 'round' });
+    expect(spriteSpec('sweet potatoes')).toMatchObject({ kind: 'produce', shape: 'round' });
+    expect(spriteSpec('bananas')).toMatchObject({ kind: 'produce', shape: 'long' });
+  });
+});

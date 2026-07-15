@@ -12,6 +12,7 @@ import {
   freshnessOf,
   KITCHEN_STAPLES,
   STORAGE_TIPS,
+  STAPLE_GROUPS,
 } from '../lib/pantryDomain';
 
 describe('semantic quantity enum', () => {
@@ -118,12 +119,36 @@ describe('staples & kitchen categories', () => {
     expect(categorizeKitchen('jasmine rice')?.category).toBe('grains');
     expect(categorizeKitchen('smoked paprika')?.category).toBe('spices');
     expect(categorizeKitchen('olive oil')?.category).toBe('oils');
+    expect(categorizeKitchen('canned black beans')?.category).toBe('legumes');
+    expect(categorizeKitchen('chickpeas')?.category).toBe('legumes');
+    // Ambiguous/generic "beans" and fresh "green beans" stay produce —
+    // only the named legumes above get the shelf-stable legumes bucket.
+    expect(categorizeKitchen('green beans')?.category).toBe('produce');
     for (const { category } of [
       { category: 'protein' }, { category: 'produce' }, { category: 'dairy' },
       { category: 'grains' }, { category: 'spices' }, { category: 'baking' },
-      { category: 'oils' }, { category: 'condiments' },
+      { category: 'oils' }, { category: 'condiments' }, { category: 'legumes' },
     ]) {
       expect(typeof STORAGE_TIPS[category]).toBe('string');
+    }
+  });
+});
+
+describe('STAPLE_GROUPS — "Dry Pantry Vault" sub-categories', () => {
+  it('covers every KITCHEN_STAPLES item exactly once', () => {
+    const grouped = STAPLE_GROUPS.flatMap(g => g.items);
+    // No dupes across (or within) groups...
+    expect(new Set(grouped).size).toBe(grouped.length);
+    // ...and the set matches KITCHEN_STAPLES exactly (nothing missing, nothing extra).
+    expect(new Set(grouped)).toEqual(new Set(KITCHEN_STAPLES));
+  });
+
+  it('every group has a label and a non-empty items array', () => {
+    for (const g of STAPLE_GROUPS) {
+      expect(typeof g.label).toBe('string');
+      expect(g.label.length).toBeGreaterThan(0);
+      expect(Array.isArray(g.items)).toBe(true);
+      expect(g.items.length).toBeGreaterThan(0);
     }
   });
 });

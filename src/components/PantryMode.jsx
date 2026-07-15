@@ -5,7 +5,7 @@ import { canonicalizeIngredient } from '../lib/barMatch';
 import {
   getInventory,
   QTY_LEVELS, QTY_FILL, QTY_LABEL,
-  KITCHEN_STAPLES, isStaple, categorizeKitchen, getDomainFlags,
+  KITCHEN_STAPLES, STAPLE_GROUPS, isStaple, categorizeKitchen, getDomainFlags,
   STORAGE_TIPS, freshnessOf,
 } from '../lib/pantryDomain';
 import { IngredientSprite } from '../lib/barSprites.jsx';
@@ -29,6 +29,12 @@ const FRESH_QUICK_ADDS = [
   'chicken breast', 'ground beef', 'eggs', 'milk', 'cheddar cheese',
   'spinach', 'tomatoes', 'bell peppers', 'mushrooms', 'potatoes',
   'lemons', 'cilantro',
+  // Vegetarian / vegan proteins & swaps
+  'tofu', 'tempeh', 'seitan', 'edamame', 'hummus',
+  'oat milk', 'almond milk', 'soy milk', 'vegan cheese', 'greek yogurt',
+  // More fresh produce
+  'broccoli', 'zucchini', 'sweet potatoes', 'kale', 'avocado',
+  'brussels sprouts', 'cauliflower', 'carrots', 'cucumber', 'bananas',
 ];
 
 // ── Simple, alias-light meal matcher (proximity match) ───────────────────────
@@ -249,7 +255,7 @@ export default function PantryMode({ meals, onViewDetail, onClose, onAddToGrocer
             onClick={() => { addFresh(inputValue); setInputValue(''); }}
             disabled={!inputValue.trim()}
           >
-            + Add
+            Quick Add
           </button>
         </div>
         <div className="pm-quick">
@@ -290,11 +296,15 @@ export default function PantryMode({ meals, onViewDetail, onClose, onAddToGrocer
                       onClick={() => openLedger(rec.ingredient)}
                       title={rec.displayName || rec.ingredient}
                     >
-                      <span className="pm-tile-dish">
+                      <span className="pm-tile-dish pm-tile-dish--crate">
                         <IngredientSprite name={rec.ingredient} size={36} />
                       </span>
                       <span className="pm-tile-name">{rec.displayName || rec.ingredient}</span>
-                      {fr && <span className={`pm-fresh-dot pm-fresh-dot--${fr}`} title={freshDotTitle[fr]} aria-label={freshDotTitle[fr]} />}
+                      <span
+                        className={`pm-status-bar${fr ? ` pm-status-bar--${fr}` : ''}`}
+                        title={fr ? freshDotTitle[fr] : undefined}
+                        aria-label={fr ? freshDotTitle[fr] : undefined}
+                      />
                       {isDry && <span className="pm-out-tag">OUT</span>}
                       {getDomainFlags(rec.ingredient).canBoth && (
                         <span className="dual-duty-tag dual-duty-tag--tile" title="Double duty — bar & kitchen">🍸🍳</span>
@@ -306,31 +316,40 @@ export default function PantryMode({ meals, onViewDetail, onClose, onAddToGrocer
             )}
           </div>
 
-          {/* STAPLES — default in stock; dim when marked out */}
+          {/* STAPLES — "The Dry Pantry Vault": default in stock, staggered
+              into labeled sub-shelves instead of one flat wall of 24 tiles. */}
           <div className="pm-zone">
-            <h3 className="pm-zone-title"><span aria-hidden="true">🏺</span> STAPLES <span className="pm-zone-hint">always assumed stocked — tap if you run out</span></h3>
-            <motion.div className="pm-grid pm-grid--staples" variants={zoneV} initial="hidden" animate="visible">
-              {KITCHEN_STAPLES.map(name => {
-                const stocked = stapleStocked(name);
-                return (
-                  <motion.button
-                    key={name}
-                    type="button"
-                    className={`pm-tile pm-tile--staple ${stocked ? '' : 'pm-tile--out'}`}
-                    variants={tileV}
-                    whileTap={{ scale: 0.93 }}
-                    onClick={() => openLedger(name)}
-                    title={stocked ? name : `${name} — out of stock`}
-                  >
-                    <span className="pm-tile-dish pm-tile-dish--jar">
-                      <IngredientSprite name={name} size={30} />
-                    </span>
-                    <span className="pm-tile-name">{name}</span>
-                    {!stocked && <span className="pm-out-tag">OUT</span>}
-                  </motion.button>
-                );
-              })}
-            </motion.div>
+            <h3 className="pm-zone-title">
+              <span aria-hidden="true">🏺</span> STAPLES
+              <span className="pm-zone-hint">THE DRY PANTRY (Staples Vault)</span>
+            </h3>
+            {STAPLE_GROUPS.map(group => (
+              <div className="pm-staple-group" key={group.label}>
+                <h4 className="pm-staple-group-title">{group.label}</h4>
+                <motion.div className="pm-grid pm-grid--staple" variants={zoneV} initial="hidden" animate="visible">
+                  {group.items.map(name => {
+                    const stocked = stapleStocked(name);
+                    return (
+                      <motion.button
+                        key={name}
+                        type="button"
+                        className={`pm-tile pm-tile--staple ${stocked ? '' : 'pm-tile--out'}`}
+                        variants={tileV}
+                        whileTap={{ scale: 0.93 }}
+                        onClick={() => openLedger(name)}
+                        title={stocked ? name : `${name} — out of stock`}
+                      >
+                        <span className="pm-tile-dish pm-tile-dish--jar">
+                          <IngredientSprite name={name} size={30} />
+                        </span>
+                        <span className="pm-tile-name">{name}</span>
+                        {!stocked && <span className="pm-out-tag">OUT</span>}
+                      </motion.button>
+                    );
+                  })}
+                </motion.div>
+              </div>
+            ))}
           </div>
         </div>
 

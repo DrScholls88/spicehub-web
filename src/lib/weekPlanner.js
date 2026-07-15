@@ -317,10 +317,71 @@ export function planWeek(rotationMeals = [], opts = {}) {
   return plan;
 }
 
+// -----------------------------------------------------------------------------
+// fridgeMatchRatio — what fraction of a meal's ingredients are on-hand
+// -----------------------------------------------------------------------------
+// Deliberately simple substring match (mirrors BarLibrary's matchScore for the
+// same reason: ingredient text is freeform, e.g. "2 cups diced yellow onion"
+// vs inventory's canonical "onions" — exact matching would almost never hit).
+export function fridgeMatchRatio(meal, inventoryNames = []) {
+  const ingredients = Array.isArray(meal?.ingredients) ? meal.ingredients : [];
+  if (ingredients.length === 0 || !Array.isArray(inventoryNames) || inventoryNames.length === 0) return 0;
+  const inv = inventoryNames.map(normStr).filter(Boolean);
+  let matched = 0;
+  for (const ing of ingredients) {
+    const ingLower = normStr(ing);
+    if (!ingLower) continue;
+    if (inv.some(name => ingLower.includes(name) || name.includes(ingLower.split(' ').pop()))) matched++;
+  }
+  return matched / ingredients.length;
+}
+
+// -----------------------------------------------------------------------------
+// filterMealsByConstraints — Spin Action Center pre-spin toggles
+// -----------------------------------------------------------------------------
+// Pre-filters a candidate pool BEFORE it reaches MealSpinner's own random
+// shuffle (or planWeek's scorer) — deliberately a pre-filter rather than a
+// scoring signal so "Under 30 Mins" etc. are hard guarantees, not nudges.
+// Always returns a non-empty array when the input was non-empty: if a
+// constraint would filter out everything, that constraint is skipped and
+// `skipped` reports which ones, so the caller can toast an honest heads-up
+// instead of silently ignoring the user's choice OR crashing on an empty pool.
+export function filterMealsByConstraints(mealsList = [], constraints = {}, fridgeInventoryNames = []) {
+  const base = Array.isArray(mealsList) ? mealsList : [];
+  const skipped = [];
+  let out = base;
+
+  if (constraints?.vegetarianOnly) {
+    const next = out.filter(m => (Array.isArray(m?.dietaryTags) ? m.dietaryTags : [])
+      .map(normStr).includes('vegetarian'));
+    if (next.length > 0) out = next;
+    else skipped.push('vegetarianOnly');
+  }
+
+  if (constraints?.under30) {
+    const next = out.filter(m => {
+      const mins = mealTotalMinutes(m);
+      return mins != null && mins <= 30;
+    });
+    if (next.length > 0) out = next;
+    else skipped.push('under30');
+  }
+
+  if (constraints?.useFridgeStock && Array.isArray(fridgeInventoryNames) && fridgeInventoryNames.length > 0) {
+    const next = out.filter(m => fridgeMatchRatio(m, fridgeInventoryNames) >= 0.4);
+    if (next.length > 0) out = next;
+    else skipped.push('useFridgeStock');
+  }
+
+  return { pool: out, skipped };
+}
+
 export default {
   parseTotalMinutes,
   buildRecencyMap,
   scoreMeal,
   pickForSlot,
   planWeek,
+  fridgeMatchRatio,
+  filterMealsByConstraints,
 };
