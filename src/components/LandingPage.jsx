@@ -1196,39 +1196,13 @@ export default function LandingPage({
           </AnimatePresence>
         </div>
 
-        {/* Spin Action Center — consolidated Spin CTA + pre-spin constraint
-            toggles (Gemini landing analysis, 2026-07-14). Toggles pre-filter
-            the candidate pool the spinner draws from (WeekView + weekPlanner's
-            filterMealsByConstraints); "Vegetarian Only" mirrors the existing
-            household dietaryPref rather than inventing a second setting. */}
-        {onChangeSpinConstraints && (
-          <div className="spin-action-center">
-            <button
-              type="button"
-              className={`spin-constraint-toggle${spinConstraints?.vegetarianOnly ? ' active' : ''}`}
-              onClick={() => onChangeSpinConstraints({ vegetarianOnly: !spinConstraints?.vegetarianOnly })}
-              aria-pressed={!!spinConstraints?.vegetarianOnly}
-            >
-              <span className="sct-box">{spinConstraints?.vegetarianOnly ? '✓' : ''}</span> Vegetarian Only
-            </button>
-            <button
-              type="button"
-              className={`spin-constraint-toggle${spinConstraints?.under30 ? ' active' : ''}`}
-              onClick={() => onChangeSpinConstraints({ under30: !spinConstraints?.under30 })}
-              aria-pressed={!!spinConstraints?.under30}
-            >
-              <span className="sct-box">{spinConstraints?.under30 ? '✓' : ''}</span> Under 30 Mins
-            </button>
-            <button
-              type="button"
-              className={`spin-constraint-toggle${spinConstraints?.useFridgeStock ? ' active' : ''}`}
-              onClick={() => onChangeSpinConstraints({ useFridgeStock: !spinConstraints?.useFridgeStock })}
-              aria-pressed={!!spinConstraints?.useFridgeStock}
-            >
-              <span className="sct-box">{spinConstraints?.useFridgeStock ? '✓' : ''}</span> Use Fridge Stock
-            </button>
-          </div>
-        )}
+        {/* Spin Action Center pre-spin constraint toggles removed from the
+            landing page (feedback 2026-07-15: clunky, low-value UI). The
+            underlying filter plumbing (WeekView + weekPlanner's
+            filterMealsByConstraints, App.jsx's spinConstraints state) is left
+            intact — "Vegetarian Only" still auto-derives from the household
+            dietaryPref setting elsewhere, so nothing regresses; "Under 30
+            Mins"/"Use Fridge Stock" just have no UI entry point right now. */}
 
         {/* Primary CTA — Spin the Week (full width). Gemini UX audit
             (2026-07-06): with 0 saved meals, "Spin the Week" is a dead end —
@@ -1320,9 +1294,6 @@ export default function LandingPage({
           </motion.div>
         )}
       </div>
-
-      {/* ── Discover — browse recipe communities, tap to import ── */}
-      <DiscoverFeatureCard onPress={onOpenDiscover} />
 
       {/* ── Widget dashboard (reorder / pin / hide, persisted local layout) ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
@@ -1476,6 +1447,11 @@ export default function LandingPage({
           )}
         </motion.button>
       )}
+
+      {/* ── Discover — browse recipe communities, tap to import. Not
+          functional yet, so it's parked below the Stats tile/strip rather
+          than in a prominent spot (feedback 2026-07-15). ── */}
+      <DiscoverFeatureCard onPress={onOpenDiscover} />
 
       {/* ── Seasonal Picks ── */}
       {seasonalMeals.length >= 2 && (
