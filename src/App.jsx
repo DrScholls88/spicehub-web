@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import db, { importSeedMeals, removeStarterKitMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getStoreMemory, getCookingLog, getWeekHistory, saveWeekToHistory, toggleRotation, addBatchQueueItems, getBatchQueueItems, updateBatchQueueItem, getLearnedAliases, moveMealToBar } from './db';
+import db, { importSeedMeals, removeStarterKitMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getStoreMemory, getCookingLog, getWeekHistory, saveWeekToHistory, toggleRotation, addBatchQueueItems, getBatchQueueItems, updateBatchQueueItem, getLearnedAliases, moveMealToBar, moveDrinkToMeals } from './db';
 import { buildStarterKitMeals, STARTER_KIT_SEED_FLAG } from './data/starterKitMeals';
 import { checkStorageQuota, checkAndRecommendCleanup } from './storageManager';
 import { initializeBackgroundSync } from './backgroundSync';
@@ -33,6 +33,8 @@ import useOnlineStatus, { onOnlineStatusChange } from './hooks/useOnlineStatus';
 import useBackHandler from './hooks/useBackHandler';
 import useSwipeDismiss from './hooks/useSwipeDismiss';
 import { planWeek, pickForSlot, buildRecencyMap } from './lib/weekPlanner';
+import { getInventory } from './lib/pantryDomain';
+import { loadLandingLayout, saveLandingLayout, loadSpinConstraints, saveSpinConstraints } from './lib/landingLayout';
 import { renderRecipeExport, exportViaShare } from './utils/exportRenderer.js';
 import { compressRecipeImage } from './imageCompressor.js';
 import ConsentGate, { getStoredConsent } from './components/ConsentGate';
@@ -102,6 +104,37 @@ export default function App() {
   // A-1: household dietary preference + cached recency map for Smart Auto-Plan
   const [dietaryPref, setDietaryPref] = useState(loadDietaryPref);
   const recencyMapRef = useRef(new Map());
+  // Spin Action Center (2026-07-14): pre-spin constraints, device-local.
+  // vegetarianOnly is NOT read from this persisted blob — it's always derived
+  // fresh from dietaryPref below so there's exactly one vegetarian setting in
+  // the app, not two that can drift out of sync.
+  const [spinConstraints, setSpinConstraints] = useState(loadSpinConstraints);
+  const effectiveSpinConstraints = useMemo(() => ({
+    ...spinConstraints,
+    vegetarianOnly: dietaryPref?.dietary === 'vegetarian' && dietaryPref?.mode !== 'exclude',
+  }), [spinConstraints, dietaryPref]);
+  const updateSpinConstraints = useCallback((patch) => {
+    setSpinConstraints(prev => {
+      const next = { ...prev, ...patch };
+      saveSpinConstraints(next);
+      return next;
+    });
+  }, []);
+  // Kitchen inventory for the Fridge widget telemetry (full records, so we
+  // have addedAt for freshness) + "Use Fridge Stock" spin constraint (just
+  // needs the plain name list). Loaded once on mount and refreshed whenever
+  // the user returns from the Pantry overlay, where inventory is edited.
+  const [fridgeInventory, setFridgeInventory] = useState([]);
+  const fridgeInventoryNames = useMemo(
+    () => fridgeInventory.map(r => r.ingredient).filter(Boolean),
+    [fridgeInventory]
+  );
+  const refreshFridgeInventory = useCallback(async () => {
+    try {
+      const records = await getInventory({ domain: 'kitchen' });
+      setFridgeInventory(Array.isArray(records) ? records : []);
+    } catch { /* best-effort — telemetry/filter just falls back to empty */ }
+  }, []);
   const [detailItem, setDetailItem] = useState(null);   // meal or drink being viewed
   const [editMeal, setEditMeal] = useState(null);
   const [editDrink, setEditDrink] = useState(null);
@@ -179,6 +212,32 @@ export default function App() {
     });
   }, []);
 
+  // ── Logo easter egg (banner interactivity, 2026-07-14) ────────────────────
+  // Tap: brief "ignite" animation on the chili. Long-press: toggle "Spicy
+  // Mode" (nudges --primary/--primary-light, see .spicy-mode-active in
+  // LandingPage.css) — playful, fully reversible, never persisted.
+  const [logoFiring, setLogoFiring] = useState(false);
+  const [spicyMode, setSpicyMode] = useState(false);
+  const logoPressTimer = useRef(null);
+  const logoLongPressedRef = useRef(false);
+
+  const handleLogoPressStart = useCallback(() => {
+    logoLongPressedRef.current = false;
+    logoPressTimer.current = setTimeout(() => {
+      logoLongPressedRef.current = true;
+      if (navigator.vibrate) navigator.vibrate(20);
+      setSpicyMode(v => !v);
+    }, 550);
+  }, []);
+
+  const handleLogoPressEnd = useCallback(() => {
+    if (logoPressTimer.current) { clearTimeout(logoPressTimer.current); logoPressTimer.current = null; }
+    if (!logoLongPressedRef.current) {
+      setLogoFiring(true);
+      setTimeout(() => setLogoFiring(false), 700);
+    }
+  }, []);
+
   // ── I-1 Instagram ZIP import ──────────────────────────────────────────────
   const [showZipImport, setShowZipImport] = useState(false);
 
@@ -197,6 +256,13 @@ export default function App() {
   useBackHandler(editDrink !== null, () => setEditDrink(null), 'edit-drink');
   useBackHandler(!!showImportFor, () => setShowImportFor(null), 'import');
   useBackHandler(showFridge, () => setShowFridge(false), 'fridge');
+  // Refresh the Fridge widget telemetry + spin-constraint pool whenever the
+  // Pantry overlay closes, since that's the only place inventory is edited.
+  const prevShowFridgeRef = useRef(showFridge);
+  useEffect(() => {
+    if (prevShowFridgeRef.current && !showFridge) refreshFridgeInventory();
+    prevShowFridgeRef.current = showFridge;
+  }, [showFridge, refreshFridgeInventory]);
   useBackHandler(showBarShelf, () => setShowBarShelf(false), 'bar-shelf');
   useBackHandler(showBarFridge, () => setShowBarFridge(false), 'bar-fridge');
   useBackHandler(showDiscover, () => setShowDiscover(false), 'discover-landing');
@@ -314,6 +380,7 @@ export default function App() {
     loadWeekPlan().then(plan => { if (plan) setWeekPlan(plan); });
     loadGroceryList().then(items => { if (items) setGroceryItems(items); });
     getWeekHistory().then(history => setWeekHistory(history));
+    refreshFridgeInventory();
 
     // Check storage quota on startup
     checkStorageQuota()
@@ -742,6 +809,37 @@ useEffect(() => {
     setWeekPlan(prev => prev.map((m, i) => i === dayIndex ? pick : m));
   }, [meals, weekPlan, rotationMeals, dietaryPref, showToast]);
 
+  // ── Landing Page "empty day" bottom sheet actions (2026-07-14) ────────────
+  // Lets a user resolve an empty day without leaving Home. Spin only reroutes
+  // to respinDay's tested logic when the date falls in the CURRENT week (that's
+  // the only week respinDay/weekPlan actually represent); a next-week date
+  // falls back to opening the full spinner rather than guessing at plumbing
+  // for weeks that live in weekHistory.
+  const handleRespinForDate = useCallback((date) => {
+    const weekMon = getMondayOfWeek(date);
+    const currentMon = getMondayOfWeek(new Date());
+    if (weekMon.getTime() === currentMon.getTime()) {
+      const dow = date.getDay() === 0 ? 6 : date.getDay() - 1;
+      respinDay(dow);
+    } else {
+      generateWeek();
+    }
+  }, [respinDay, generateWeek]);
+
+  const handleAssignMealToDay = useCallback((date, meal) => {
+    if (!date || !meal) return;
+    handleSpinnerCompleteForDates([{ date, meal }]);
+  }, [handleSpinnerCompleteForDates]);
+
+  // "Add Custom Meal" from the day sheet: open the normal create-recipe modal,
+  // but remember which day slot asked for it so saveMeal can assign the newly
+  // created recipe straight into that day once it's saved.
+  const [pendingDaySlot, setPendingDaySlot] = useState(null);
+  const handleCreateMealForDay = useCallback((date) => {
+    setPendingDaySlot(date);
+    setEditMeal({});
+  }, []);
+
   // A-1: Smart Auto-Plan — fill every empty, unlocked slot from The Rotation
   // using the local scoring engine. Locked/filled days are preserved.
   const smartPlanWeek = useCallback(async () => {
@@ -816,11 +914,25 @@ useEffect(() => {
   // ── Meal CRUD ─────────────────────────────────────────────────────────────────
   const saveMeal = useCallback(async (mealData) => {
     mealData = await compressRecipeImage(mealData);
-    if (mealData.id) { await db.meals.update(mealData.id, mealData); }
-    else { await db.meals.add({ ...mealData, createdAt: new Date().toISOString() }); }
+    let savedMeal;
+    if (mealData.id) {
+      await db.meals.update(mealData.id, mealData);
+      savedMeal = mealData;
+    } else {
+      const stamped = { ...mealData, createdAt: new Date().toISOString() };
+      const newId = await db.meals.add(stamped);
+      savedMeal = { ...stamped, id: newId };
+    }
     await loadMeals();
     setEditMeal(null);
-  }, [loadMeals]);
+    // "Add Custom Meal" from the Landing day-sheet: slot the freshly-created
+    // recipe straight into the day that asked for it.
+    if (pendingDaySlot) {
+      const slot = pendingDaySlot;
+      setPendingDaySlot(null);
+      handleSpinnerCompleteForDates([{ date: slot, meal: savedMeal }]);
+    }
+  }, [loadMeals, pendingDaySlot, handleSpinnerCompleteForDates]);
 
   const deleteMeal = useCallback(async (id) => {
     await db.meals.delete(id);
@@ -842,6 +954,20 @@ useEffect(() => {
     } catch (err) {
       console.error('[handleMoveMealToBar] failed:', err);
       showToast("Couldn't move that recipe — try again");
+    }
+  }, [loadMeals, loadDrinks, showToast]);
+
+  // Reverse of handleMoveMealToBar — for a recipe that got imported as a drink
+  // by mistake (parity feature added to BarLibrary alongside Move to Bar).
+  const handleMoveDrinkToMeals = useCallback(async (drink) => {
+    if (!drink?.id) return;
+    try {
+      await moveDrinkToMeals(drink);
+      await Promise.all([loadMeals(), loadDrinks()]);
+      showToast(`Moved "${drink.name || 'Drink'}" to your library 🍽️`);
+    } catch (err) {
+      console.error('[handleMoveDrinkToMeals] failed:', err);
+      showToast("Couldn't move that drink — try again");
     }
   }, [loadMeals, loadDrinks, showToast]);
 
@@ -1224,7 +1350,7 @@ useEffect(() => {
   }
 
   return (
-    <div className="app">
+    <div className={`app${spicyMode ? ' spicy-mode-active' : ''}`}>
       <OfflineIndicator
         queuedOps={queuedOps}
         isSyncing={isSyncing}
@@ -1235,12 +1361,19 @@ useEffect(() => {
           <h1 className="app-brand-title">
             <button
               type="button"
-              className="app-brand"
+              className={`app-brand landing-logo-tap${logoFiring ? ' firing' : ''}`}
               onClick={handleBrandHome}
-              aria-label="Go to SpiceHub landing page"
+              onMouseDown={handleLogoPressStart}
+              onMouseUp={handleLogoPressEnd}
+              onMouseLeave={() => { if (logoPressTimer.current) { clearTimeout(logoPressTimer.current); logoPressTimer.current = null; } }}
+              onTouchStart={handleLogoPressStart}
+              onTouchEnd={handleLogoPressEnd}
+              onTouchCancel={() => { if (logoPressTimer.current) { clearTimeout(logoPressTimer.current); logoPressTimer.current = null; } }}
+              aria-label="Go to SpiceHub landing page. Long-press for a surprise."
               aria-current={tab === 'home' ? 'page' : undefined}
+              title={spicyMode ? 'Spicy Mode is on — long-press to turn off' : undefined}
             >
-              <span className="app-brand-mark" aria-hidden="true">🌶️</span>
+              <span className="app-brand-mark" aria-hidden="true">{spicyMode ? '🌶️🔥' : '🌶️'}</span>
               <span className="app-brand-name">SpiceHub</span>
             </button>
           </h1>
@@ -1306,6 +1439,8 @@ useEffect(() => {
             weekHistory={weekHistory}
             meals={meals}
             drinks={drinks}
+            groceryItems={groceryItems}
+            fridgeInventory={fridgeInventory}
             rotationCount={rotationMeals.length}
             onNavigate={navigateToTab}
             onGenerate={generateWeek}
@@ -1316,6 +1451,11 @@ useEffect(() => {
             onOpenDiscover={() => setShowDiscover(true)}
             canInstall={!!deferredPrompt}
             onInstallApp={handleInstallApp}
+            onRespinDate={handleRespinForDate}
+            onAssignMeal={handleAssignMealToDay}
+            onCreateMealForDay={handleCreateMealForDay}
+            spinConstraints={effectiveSpinConstraints}
+            onChangeSpinConstraints={updateSpinConstraints}
           />
         )}
         {tab === 'home' && <LegalFooter />}
@@ -1347,6 +1487,13 @@ useEffect(() => {
             rotationMeals={rotationMeals}
             currentPlan={weekPlan}
             recentlyUsedIds={recentlyUsedIds}
+            spinConstraints={effectiveSpinConstraints}
+            fridgeInventoryNames={fridgeInventoryNames}
+            onSpinConstraintsSkipped={(skipped) => {
+              const labels = { vegetarianOnly: 'Vegetarian Only', under30: 'Under 30 Mins', useFridgeStock: 'Use Fridge Stock' };
+              const names = skipped.map(k => labels[k] || k).join(', ');
+              showToast(`Not enough meals match ${names} — showing the full rotation instead`, 'info', 3600);
+            }}
           />
         )}
         {tab === 'library' && (
@@ -1383,6 +1530,7 @@ useEffect(() => {
             onOpenShelf={() => setShowBarShelf(true)}
             onOpenBarFridge={() => setShowBarFridge(true)}
             onPlayVideo={openPipForMeal}
+            onMoveToMeals={handleMoveDrinkToMeals}
           />
         )}
         {tab === 'grocery' && (

@@ -106,6 +106,17 @@ const P = {
   peaK:         { body: '#7cb342', label: '#558b2f', cap: '#33691e', accent: '#aed581' },
   bananaK:      { body: '#fdd835', label: '#f9a825', cap: '#827717', accent: '#fff59d' },
   appleK:       { body: '#e53935', label: '#c62828', cap: '#2e7d32', accent: '#ef9a9a' },
+  brusselsK:    { body: '#33691e', label: '#558b2f', cap: '#1b5e20', accent: '#7cb342' },
+  edamameK:     { body: '#8bc34a', label: '#558b2f', cap: '#33691e', accent: '#c5e1a5' },
+
+  // ── Legumes & plant-based proteins ───────────────────────────────────────
+  blackBeanK:  { body: '#3e2f2a', label: '#5d4a42', cap: '#241a17', accent: '#6d5850' },
+  kidneyBeanK: { body: '#8d2f2f', label: '#a84444', cap: '#5c1f1f', accent: '#c17a7a' },
+  chickpeaK:   { body: '#e8d3a0', label: '#d4b876', cap: '#a8895a', accent: '#f5e8c8' },
+  lentilK:     { body: '#c9682f', label: '#a85220', cap: '#7a3d17', accent: '#e0a06b' },
+  tempehK:     { body: '#e8dcb8', label: '#c9b98a', cap: '#a1927a', accent: '#f5eeda' },
+  seitanK:     { body: '#8a5a3a', label: '#6d4527', cap: '#4e321c', accent: '#b58259' },
+  hummusK:     { body: '#f0e2b6', label: '#d9c48a', cap: '#b8a06a', accent: '#faf3d8' },
 };
 
 // Sentinel: spice jars use a hashed palette so the many small-jar spices
@@ -117,15 +128,23 @@ const SPICE_PALETTES = [P.spiceRed, P.spiceGreen, P.spiceGold, P.spiceBrown];
 // ── Keyword table (ordered: specific first) ───────────────────────────────────
 // Each entry: { kw:[...], kind, shape?, palette }. First match wins.
 const TABLE = [
+  // Pantry compounds that would otherwise be shadowed by the bare 'soda' mixer
+  // keyword just below (e.g. "baking soda" whole-word-matches 'soda') — must
+  // be checked first per this table's own "compounds before shadowing singles"
+  // convention (see the kitchen section's header comment further down).
+  { kw: ['baking soda', 'baking powder', 'powdered sugar'], kind: 'drygood', shape: 'box', palette: P.bakingBox },
+
   // Juices/mixers that are cartons/cans — checked BEFORE citrus 'orange'/'lemon'
   { kw: ['orange juice', 'cranberry juice', 'pineapple juice', 'tomato juice', 'grapefruit juice', 'apple juice'], kind: 'can', palette: P.can },
   { kw: ['soda water', 'club soda', 'seltzer', 'sparkling water', 'tonic', 'tonic water', 'cola', 'coke', 'ginger beer', 'ginger ale', 'soda', 'lemonade', 'energy drink'], kind: 'can', palette: P.can },
 
-  // Citrus (fruit + citrus juice)
-  { kw: ['lime juice', 'lime wedge', 'lime'], kind: 'citrus', palette: P.lime },
-  { kw: ['lemon juice', 'lemon wedge', 'lemon'], kind: 'citrus', palette: P.lemon },
-  { kw: ['orange wedge', 'orange slice', 'orange peel', 'orange'], kind: 'citrus', palette: P.orange },
-  { kw: ['grapefruit'], kind: 'citrus', palette: P.orange },
+  // Citrus (fruit + citrus juice) — plurals listed explicitly (matches this
+  // table's own convention elsewhere, e.g. 'potato'/'potatoes') since word
+  // matching is exact-string, not stemmed.
+  { kw: ['lime juice', 'lime wedge', 'lime', 'limes'], kind: 'citrus', palette: P.lime },
+  { kw: ['lemon juice', 'lemon wedge', 'lemon', 'lemons'], kind: 'citrus', palette: P.lemon },
+  { kw: ['orange wedge', 'orange slice', 'orange peel', 'orange', 'oranges'], kind: 'citrus', palette: P.orange },
+  { kw: ['grapefruit', 'grapefruits'], kind: 'citrus', palette: P.orange },
 
   // Herbs
   { kw: ['mint', 'basil', 'rosemary', 'thyme', 'sage', 'cilantro'], kind: 'herb', palette: P.mint },
@@ -143,7 +162,7 @@ const TABLE = [
   // Ice / egg / sugar / salt
   { kw: ['ice cube', 'ice cubes', 'crushed ice', 'ice'], kind: 'ice', palette: P.ice },
   { kw: ['egg white', 'egg yolk', 'whole egg', 'egg', 'eggs', 'aquafaba'], kind: 'egg', palette: P.egg },
-  { kw: ['simple syrup', 'sugar syrup', 'honey syrup', 'demerara syrup', 'cinnamon syrup', 'vanilla syrup', 'raspberry syrup', 'agave', 'honey', 'grenadine', 'orgeat'], kind: 'bottle', shape: 'round', palette: P.syrup },
+  { kw: ['simple syrup', 'sugar syrup', 'honey syrup', 'demerara syrup', 'cinnamon syrup', 'vanilla syrup', 'raspberry syrup', 'maple syrup', 'agave nectar', 'agave', 'honey', 'grenadine', 'orgeat'], kind: 'bottle', shape: 'round', palette: P.syrup },
   { kw: ['sugar', 'superfine sugar', 'caster sugar'], kind: 'sugar', palette: P.sugar },
 
   // Spirits & wine/beer (bottles)
@@ -179,12 +198,13 @@ const TABLE = [
   // Condiments, sauces & broths (compounds before protein/produce singles)
   { kw: ['ketchup', 'salsa', 'bbq sauce', 'hot sauce', 'sriracha', 'tomato paste', 'tomato sauce', 'jam', 'jelly'], kind: 'jar', shape: 'condiment', palette: P.condRed },
   { kw: ['mustard'], kind: 'jar', shape: 'condiment', palette: P.condYellow },
-  { kw: ['mayo', 'mayonnaise', 'ranch', 'tahini', 'pesto'], kind: 'jar', shape: 'condiment', palette: P.condWhite },
-  { kw: ['soy sauce', 'worcestershire', 'fish sauce', 'oyster sauce', 'hoisin', 'broth', 'stock', 'chicken broth', 'beef broth', 'peanut butter'], kind: 'can', palette: P.condBrown },
+  { kw: ['mayo', 'mayonnaise', 'ranch', 'tahini', 'pesto', 'peanut butter', 'almond butter', 'hummus'], kind: 'jar', shape: 'condiment', palette: P.condWhite },
+  { kw: ['soy sauce', 'tamari', 'worcestershire', 'fish sauce', 'oyster sauce', 'hoisin', 'broth', 'stock', 'chicken broth', 'beef broth', 'vegetable broth'], kind: 'can', palette: P.condBrown },
 
   // Spice jars & shakers (compounds before produce's plain pepper/onion/garlic)
   { kw: ['salt', 'sea salt'], kind: 'shaker', palette: P.saltShaker },
   { kw: ['black pepper', 'white pepper'], kind: 'shaker', palette: P.pepperShaker },
+  { kw: ['nutritional yeast'], kind: 'jar', shape: 'spice', palette: P.spiceGold },
   { kw: ['paprika', 'cumin', 'oregano', 'chili powder', 'curry', 'turmeric', 'cayenne', 'bay', 'seasoning', 'italian seasoning', 'garlic powder', 'onion powder', 'red pepper flakes', 'clove', 'cardamom', 'cinnamon', 'nutmeg'], kind: 'jar', shape: 'spice', palette: SPICE_HASH_MARKER },
 
   // Dairy
@@ -200,6 +220,8 @@ const TABLE = [
   { kw: ['fish', 'salmon', 'tuna'], kind: 'protein', shape: 'fish', palette: P.fishK },
   { kw: ['shrimp', 'crab'], kind: 'protein', shape: 'shrimp', palette: P.shrimpK },
   { kw: ['tofu'], kind: 'protein', shape: 'cube', palette: P.tofuK },
+  { kw: ['tempeh'], kind: 'protein', shape: 'cube', palette: P.tempehK },
+  { kw: ['seitan'], kind: 'protein', shape: 'steak', palette: P.seitanK },
 
   // Grains, dry goods & baking
   { kw: ['flour', 'cornstarch'], kind: 'drygood', shape: 'sack', palette: P.flour },
@@ -208,7 +230,7 @@ const TABLE = [
   { kw: ['bread', 'breadcrumbs', 'panko'], kind: 'drygood', shape: 'loaf', palette: P.breadK },
   { kw: ['tortilla', 'tortillas'], kind: 'drygood', shape: 'stack', palette: P.tortillaK },
   { kw: ['cocoa', 'chocolate', 'chocolate chips'], kind: 'drygood', shape: 'box', palette: P.cocoaK },
-  { kw: ['baking soda', 'baking powder', 'powdered sugar'], kind: 'drygood', shape: 'box', palette: P.bakingBox },
+  // (baking soda/powder/powdered sugar moved to the top of TABLE — see comment there)
   { kw: ['vanilla extract', 'vanilla'], kind: 'bottle', shape: 'mini', palette: P.vanillaK },
 
   // Produce (single words last, after every compound above)
@@ -217,6 +239,7 @@ const TABLE = [
   { kw: ['potato', 'potatoes'], kind: 'produce', shape: 'round', palette: P.potatoK },
   { kw: ['carrot', 'carrots'], kind: 'produce', shape: 'long', palette: P.carrotK },
   { kw: ['broccoli'], kind: 'produce', shape: 'cap', palette: P.broccoliK },
+  { kw: ['brussels sprouts', 'brussel sprouts'], kind: 'produce', shape: 'round', palette: P.brusselsK },
   { kw: ['cauliflower', 'cabbage'], kind: 'produce', shape: 'round', palette: P.cauliK },
   { kw: ['spinach', 'lettuce', 'kale', 'arugula'], kind: 'produce', shape: 'leafy', palette: P.leafyK },
   { kw: ['parsley'], kind: 'herb', palette: P.mint },
@@ -228,8 +251,16 @@ const TABLE = [
   { kw: ['avocado'], kind: 'produce', shape: 'round', palette: P.avocadoK },
   { kw: ['cucumber', 'zucchini', 'scallion', 'scallions', 'celery'], kind: 'produce', shape: 'long', palette: P.cucumberK },
   { kw: ['squash'], kind: 'produce', shape: 'long', palette: P.squashK },
+  // Named legumes checked BEFORE the generic 'beans' below (same first-match
+  // rule as everywhere else in this table) so canned/dry beans get their own
+  // color instead of the generic pea-green cluster.
+  { kw: ['black beans'], kind: 'produce', shape: 'cluster', palette: P.blackBeanK },
+  { kw: ['kidney beans'], kind: 'produce', shape: 'cluster', palette: P.kidneyBeanK },
+  { kw: ['chickpeas', 'garbanzo beans'], kind: 'produce', shape: 'cluster', palette: P.chickpeaK },
+  { kw: ['lentils'], kind: 'produce', shape: 'cluster', palette: P.lentilK },
+  { kw: ['edamame'], kind: 'produce', shape: 'cluster', palette: P.edamameK },
   { kw: ['peas', 'beans', 'green beans'], kind: 'produce', shape: 'cluster', palette: P.peaK },
-  { kw: ['banana'], kind: 'produce', shape: 'long', palette: P.bananaK },
+  { kw: ['banana', 'bananas'], kind: 'produce', shape: 'long', palette: P.bananaK },
   { kw: ['apple'], kind: 'produce', shape: 'round', palette: P.appleK },
 ];
 

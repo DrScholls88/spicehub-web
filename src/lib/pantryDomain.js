@@ -40,24 +40,70 @@ const BOTH_KEYWORDS = [
 // ── Kitchen category keyword table ───────────────────────────────────────────
 // First match wins. Whole-word matching against the canonicalized name.
 const KITCHEN_CATEGORIES = [
-  { category: 'protein',   emoji: '🥩', keywords: ['chicken', 'beef', 'steak', 'pork', 'bacon', 'sausage', 'turkey', 'ham', 'lamb', 'fish', 'salmon', 'tuna', 'shrimp', 'crab', 'tofu', 'ground'] },
-  { category: 'produce',   emoji: '🥬', keywords: ['spinach', 'lettuce', 'kale', 'arugula', 'broccoli', 'carrot', 'carrots', 'onion', 'onions', 'garlic', 'potato', 'potatoes', 'pepper', 'peppers', 'zucchini', 'squash', 'mushroom', 'mushrooms', 'avocado', 'corn', 'peas', 'beans', 'green beans', 'cabbage', 'cauliflower', 'cucumber', 'tomato', 'tomatoes', 'lemon', 'lime', 'orange', 'apple', 'banana', 'berries', 'cilantro', 'parsley', 'basil', 'mint', 'ginger', 'scallion', 'scallions', 'celery', 'jalapeno', 'jalapeño'] },
+  // Named legumes checked BEFORE 'produce' (which owns the bare 'beans' /
+  // 'green beans' keywords for fresh/frozen veg) so "black beans" or
+  // "chickpeas" get their own shelf-stable storage tip instead of being
+  // swept into produce's fridge/crisper guidance. Deliberately no bare
+  // 'beans' keyword here — that stays produce's for the ambiguous case.
+  { category: 'legumes',   emoji: '🫘', keywords: ['black beans', 'kidney beans', 'pinto beans', 'navy beans', 'garbanzo beans', 'chickpeas', 'lentils', 'split peas'] },
+  { category: 'protein',   emoji: '🥩', keywords: ['chicken', 'beef', 'steak', 'pork', 'bacon', 'sausage', 'turkey', 'ham', 'lamb', 'fish', 'salmon', 'tuna', 'shrimp', 'crab', 'tofu', 'tempeh', 'seitan', 'ground'] },
+  { category: 'produce',   emoji: '🥬', keywords: ['spinach', 'lettuce', 'kale', 'arugula', 'broccoli', 'brussels sprouts', 'carrot', 'carrots', 'onion', 'onions', 'garlic', 'potato', 'potatoes', 'sweet potato', 'sweet potatoes', 'pepper', 'peppers', 'zucchini', 'squash', 'mushroom', 'mushrooms', 'avocado', 'corn', 'edamame', 'peas', 'beans', 'green beans', 'cabbage', 'cauliflower', 'cucumber', 'tomato', 'tomatoes', 'lemon', 'lime', 'orange', 'apple', 'banana', 'berries', 'cilantro', 'parsley', 'basil', 'mint', 'ginger', 'scallion', 'scallions', 'celery', 'jalapeno', 'jalapeño'] },
   { category: 'dairy',     emoji: '🧀', keywords: ['milk', 'cheese', 'cheddar', 'mozzarella', 'parmesan', 'feta', 'yogurt', 'butter', 'cream', 'sour cream', 'cream cheese', 'egg', 'eggs'] },
   { category: 'grains',    emoji: '🌾', keywords: ['rice', 'pasta', 'spaghetti', 'noodles', 'bread', 'tortilla', 'tortillas', 'flour', 'oats', 'oatmeal', 'quinoa', 'couscous', 'barley', 'cereal', 'breadcrumbs', 'panko'] },
   { category: 'spices',    emoji: '🧂', keywords: ['salt', 'black pepper', 'paprika', 'cumin', 'oregano', 'chili powder', 'cinnamon', 'nutmeg', 'curry', 'turmeric', 'cayenne', 'bay', 'thyme', 'rosemary', 'seasoning', 'italian seasoning', 'garlic powder', 'onion powder', 'red pepper flakes', 'clove', 'cardamom'] },
-  { category: 'baking',    emoji: '🧁', keywords: ['sugar', 'brown sugar', 'baking soda', 'baking powder', 'yeast', 'vanilla', 'vanilla extract', 'cocoa', 'chocolate', 'chocolate chips', 'honey', 'maple syrup', 'cornstarch', 'powdered sugar'] },
+  { category: 'baking',    emoji: '🧁', keywords: ['sugar', 'brown sugar', 'baking soda', 'baking powder', 'yeast', 'vanilla', 'vanilla extract', 'cocoa', 'chocolate', 'chocolate chips', 'honey', 'maple syrup', 'agave', 'agave nectar', 'cornstarch', 'powdered sugar'] },
   { category: 'oils',      emoji: '🫒', keywords: ['olive oil', 'vegetable oil', 'canola oil', 'sesame oil', 'coconut oil', 'vinegar', 'balsamic', 'apple cider vinegar', 'rice vinegar', 'cooking spray'] },
-  { category: 'condiments', emoji: '🥫', keywords: ['ketchup', 'mustard', 'mayo', 'mayonnaise', 'soy sauce', 'hot sauce', 'sriracha', 'worcestershire', 'bbq sauce', 'salsa', 'ranch', 'tomato paste', 'tomato sauce', 'broth', 'stock', 'chicken broth', 'beef broth', 'peanut butter', 'jam', 'jelly', 'fish sauce', 'oyster sauce', 'hoisin', 'tahini', 'pesto'] },
+  { category: 'condiments', emoji: '🥫', keywords: ['ketchup', 'mustard', 'mayo', 'mayonnaise', 'soy sauce', 'tamari', 'hot sauce', 'sriracha', 'worcestershire', 'bbq sauce', 'salsa', 'ranch', 'tomato paste', 'tomato sauce', 'broth', 'stock', 'chicken broth', 'beef broth', 'vegetable broth', 'peanut butter', 'almond butter', 'jam', 'jelly', 'fish sauce', 'oyster sauce', 'hoisin', 'tahini', 'pesto', 'hummus', 'nutritional yeast'] },
 ];
 
 // ── Permanent staples — default to In Stock unless explicitly marked EMPTY ──
+// Expanded 2026-07-12 with a heavy vegetarian/vegan lean (legumes, plant
+// proteins, dairy-free swaps) alongside the original core 24 — see
+// STAPLE_GROUPS below for how these are shelved.
 export const KITCHEN_STAPLES = [
   'salt', 'black pepper', 'olive oil', 'vegetable oil', 'flour', 'sugar',
   'butter', 'garlic', 'onions', 'rice', 'pasta', 'soy sauce', 'ketchup',
   'mustard', 'mayonnaise', 'baking soda', 'baking powder', 'vanilla extract',
   'honey', 'vinegar', 'chicken broth', 'hot sauce', 'brown sugar', 'eggs',
+  // Grains & essentials
+  'quinoa', 'oats', 'breadcrumbs', 'cornstarch',
+  // Baking & sweets
+  'maple syrup', 'agave nectar', 'cocoa powder', 'powdered sugar', 'yeast',
+  // Sauces & broths
+  'tamari', 'sriracha', 'bbq sauce', 'salsa', 'coconut milk', 'vegetable broth',
+  // Plant-based proteins & legumes
+  'black beans', 'kidney beans', 'chickpeas', 'lentils', 'peanut butter',
+  'tahini', 'nutritional yeast',
 ];
 const STAPLE_SET = new Set(KITCHEN_STAPLES.map(s => canonicalizeIngredient(s)));
+
+// ── Staple sub-groups — "The Dry Pantry Vault" ───────────────────────────────
+// Purely presentational grouping for the Pantry UI (staggered mini-shelves
+// instead of one flat wall of identical tiles). Every KITCHEN_STAPLES item
+// appears in exactly one group — see pantryDomain.test.js for the invariant
+// that keeps this in sync if the staples list changes.
+export const STAPLE_GROUPS = [
+  {
+    label: 'Essentials Base',
+    items: ['salt', 'black pepper', 'garlic', 'onions', 'rice', 'pasta', 'flour', 'eggs', 'quinoa', 'oats', 'breadcrumbs', 'cornstarch'],
+  },
+  {
+    label: 'Baking & Sweets',
+    items: ['sugar', 'brown sugar', 'baking soda', 'baking powder', 'vanilla extract', 'honey', 'maple syrup', 'agave nectar', 'cocoa powder', 'powdered sugar', 'yeast'],
+  },
+  {
+    label: 'Oils & Fats',
+    items: ['olive oil', 'vegetable oil', 'butter'],
+  },
+  {
+    label: 'Sauces & Broths',
+    items: ['soy sauce', 'ketchup', 'mustard', 'mayonnaise', 'vinegar', 'chicken broth', 'hot sauce', 'tamari', 'sriracha', 'bbq sauce', 'salsa', 'coconut milk', 'vegetable broth'],
+  },
+  {
+    label: 'Plant-Based Proteins',
+    items: ['black beans', 'kidney beans', 'chickpeas', 'lentils', 'peanut butter', 'tahini', 'nutritional yeast'],
+  },
+];
 
 // ── Storage tips per kitchen category (the "gourmet ledger" line) ────────────
 export const STORAGE_TIPS = {
@@ -69,6 +115,7 @@ export const STORAGE_TIPS = {
   baking:    'Airtight and dry. Brown sugar stays soft with a slice of bread in the jar.',
   oils:      'Dark cupboard, tight cap. Oils hate light, heat, and air.',
   condiments: 'Refrigerate after opening; wipe the threads so the cap seals clean.',
+  legumes:   'Dry: airtight jar, cool and dark, keeps a year+. Canned: pantry until opened, then fridge.',
 };
 
 // ── Freshness (perishables) ───────────────────────────────────────────────────
@@ -139,7 +186,15 @@ export function filterRecordsByDomain(records, domain = 'all') {
   const list = Array.isArray(records) ? records : [];
   if (domain === 'all') return list;
   return list.filter((r) => {
-    const f = getDomainFlags(r?.ingredient || '');
+    // A record with no usable ingredient string (malformed row, missing
+    // field) is a different situation from getDomainFlags('') being called
+    // directly with an explicitly blank name — that function's own contract
+    // is to return all-false for junk input. Here, an inventory row that
+    // exists but we can't identify still has to land SOMEWHERE, and per the
+    // "open kitchen, closed bar" philosophy used everywhere else in this
+    // file, an unidentifiable row defaults to the kitchen, never the bar.
+    const hasName = typeof r?.ingredient === 'string' && r.ingredient.trim().length > 0;
+    const f = hasName ? getDomainFlags(r.ingredient) : { canDrink: false, canEat: true, canBoth: false };
     return domain === 'bar'
       ? (f.canDrink || f.canBoth)
       : (f.canEat || f.canBoth);

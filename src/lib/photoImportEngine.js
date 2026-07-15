@@ -469,11 +469,18 @@ async function transcribeWithMistral(uploadPages, { signal } = {}) {
     if (proxyErr.name === 'AbortError') throw proxyErr;
     const key = MISTRAL_KEY();
     if (!key) {
-      // No server key AND no client key — Mistral was never configured, not a
-      // genuine extraction failure. Tag it so transcribePagesOnline's "prefer
-      // the last tier's reason" heuristic doesn't let this eclipse Gemini's
-      // real failure when Mistral simply isn't set up.
-      proxyErr.notConfigured = proxyErr.status === 503 && /no-server-key/.test(proxyErr.detail || '');
+      // No client-side key configured — without one there's no direct-call
+      // fallback available, so whatever the proxy just said IS the entire
+      // Mistral attempt. The client key is what signals "Mistral is actually
+      // set up in this environment"; if it's absent, ANY proxy failure here
+      // (a real outage, a missing server key, whatever shape the error takes)
+      // must not be allowed to eclipse Gemini's tier-1 error — that's the
+      // more meaningful signal when Mistral was never really in play.
+      // (Previously this only recognized a specific 503/"no-server-key"
+      // shape, which missed plain 500s and let a coincidental Mistral failure
+      // mask a genuine Gemini error — see photoImportEngine.test.js "does not
+      // fall back when no client key is configured".)
+      proxyErr.notConfigured = true;
       throw proxyErr;
     }
     console.warn('[PhotoImport] /api/vision (mistral) proxy failed, falling back to client key:', proxyErr.message);

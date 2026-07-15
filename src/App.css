@@ -69,6 +69,7 @@ body {
 
 #root {
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 /* ── Loading Screen ── */
@@ -78,6 +79,7 @@ body {
   align-items: center;
   justify-content: center;
   height: 100vh;
+  height: 100dvh;
   gap: 16px;
 }
 
@@ -101,6 +103,7 @@ body {
   max-width: 600px;
   margin: 0 auto;
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
 }
@@ -22946,6 +22949,18 @@ select:focus-visible,
   height: 42px;
   width: 46px;
 }
+/* FRESH items sit in a small open wooden crate — visually distinct from the
+   staples' sealed brass-lid jars, per the "tactile fresh storage" mockup. */
+.pm-tile-dish--crate {
+  border: 2px solid #a97c50;
+  border-top: 4px solid #8a5a34; /* open-crate lip */
+  border-radius: 3px;
+  background:
+    repeating-linear-gradient(180deg, rgba(139, 94, 52, 0.14) 0px, rgba(139, 94, 52, 0.14) 2px, transparent 2px, transparent 8px),
+    linear-gradient(180deg, #f5e6c8 0%, #e8d1a4 100%);
+  height: 44px;
+  width: 50px;
+}
 .pm-tile-name {
   max-width: 100%;
   overflow: hidden;
@@ -22983,6 +22998,35 @@ select:focus-visible,
   height: 8px;
   border-radius: 50%;
   box-shadow: 0 0 0 2px rgba(255,255,255,0.85);
+}
+/* Margin-gauge — a slim status underline instead of a corner dot, per the
+   mockup. Always rendered (even neutral) so tile heights never jump. */
+.pm-status-bar {
+  width: 26px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(120, 100, 70, 0.15);
+  margin-top: 1px;
+}
+.pm-status-bar--fresh { background: #5aa361; }
+.pm-status-bar--aging { background: #d9a53c; }
+.pm-status-bar--old   { background: #c9503c; animation: pmDotPulse 1.6s ease-in-out infinite; }
+
+/* ── Staples sub-shelves: "Essentials Base" / "Baking & Sweets" /
+   "Oils, Sauces & Fats" — staggered mini-grids instead of one flat wall. ── */
+.pm-staple-group { margin-top: 12px; }
+.pm-staple-group:first-of-type { margin-top: 6px; }
+.pm-staple-group-title {
+  margin: 0 0 6px;
+  padding-bottom: 4px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  letter-spacing: 1px;
+  color: #8a7355;
+  border-bottom: 1px solid rgba(120, 100, 70, 0.22);
+}
+.pm-grid--staple {
+  grid-template-columns: repeat(3, 1fr);
 }
 .pm-fresh-dot--fresh { background: #5aa361; }
 .pm-fresh-dot--aging { background: #d9a53c; }
