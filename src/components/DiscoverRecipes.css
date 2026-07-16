@@ -1,9 +1,8 @@
-/* DiscoverRecipes — "browse and import" surface for the dormant Reddit
-   discovery scraper (Gemini UX audit 2026-07-06, action item #6/#9).
-   Reuses the app's existing overlay/sheet/handle/close visual language
-   (see .st-overlay / .st-handle / .st-close in the Settings sheet rules)
-   but ships its own scrollable sheet since this list can grow long. */
+/* DiscoverRecipes — multi-source recipe blog aggregator.
+   Bottom-sheet overlay with search, source pills, category chips,
+   and recipe cards with source badges. */
 
+/* ── Overlay + Sheet ──────────────────────────────────────────────── */
 .discover-overlay {
   position: fixed;
   top: 0; right: 0; bottom: 0; left: 0;
@@ -23,17 +22,18 @@
   max-width: 600px;
   margin: 0 auto;
   z-index: 501;
-  max-height: 85vh;
+  max-height: 88vh;
   display: flex;
   flex-direction: column;
 }
 
+/* ── Header ───────────────────────────────────────────────────────── */
 .discover-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .discover-title {
@@ -49,12 +49,127 @@
   margin: 0;
 }
 
-.discover-chips {
+.discover-header-actions {
   display: flex;
   gap: 8px;
+  align-items: center;
+}
+
+.discover-refresh-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid var(--border, #e0e0e0);
+  background: var(--surface-2, #f5f5f5);
+  color: var(--text-light, #888);
+  transition: background 0.15s;
+}
+.discover-refresh-btn:active {
+  background: var(--border, #e0e0e0);
+}
+.discover-refresh-btn:disabled {
+  opacity: 0.5;
+}
+
+/* ── Search ────────────────────────────────────────────────────────── */
+.discover-search-wrap {
+  position: relative;
+  margin-bottom: 10px;
+}
+
+.discover-search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-light, #888);
+  pointer-events: none;
+}
+
+.discover-search {
+  width: 100%;
+  padding: 10px 36px 10px 34px;
+  border: 1px solid var(--border, #e0e0e0);
+  border-radius: 12px;
+  background: var(--surface-2, #f5f5f5);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+  min-height: 42px;
+}
+.discover-search:focus {
+  border-color: var(--primary);
+}
+.discover-search::placeholder {
+  color: var(--text-light, #999);
+}
+
+.discover-search-clear {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--border, #ddd);
+  color: var(--text-light, #888);
+  border: none;
+}
+
+/* ── Source pills (horizontal scroll) ─────────────────────────────── */
+.discover-sources {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+  margin-bottom: 2px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.discover-sources::-webkit-scrollbar { display: none; }
+
+.discover-source-pill {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border, #e0e0e0);
+  background: transparent;
+  color: var(--text-light, #888);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  min-height: 32px;
+  transition: all 0.15s;
+}
+.discover-source-pill-active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.discover-source-pill-name {
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Category chips ───────────────────────────────────────────────── */
+.discover-chips {
+  display: flex;
+  gap: 7px;
   overflow-x: auto;
   padding-bottom: 10px;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
 }
@@ -64,31 +179,32 @@
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 9px 14px;
+  gap: 5px;
+  padding: 7px 12px;
   border-radius: 999px;
   border: 1px solid var(--border, #e0e0e0);
   background: var(--surface-2, #f5f5f5);
   color: var(--text);
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
   white-space: nowrap;
-  min-height: 40px; /* touch target */
+  min-height: 36px;
+  transition: all 0.15s;
 }
-
 .discover-chip-active {
   background: var(--primary);
   border-color: var(--primary);
   color: #fff;
 }
 
+/* ── Results list ─────────────────────────────────────────────────── */
 .discover-results {
   flex: 1;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding-top: 4px;
+  gap: 6px;
+  padding-top: 2px;
 }
 
 .discover-status {
@@ -97,7 +213,7 @@
   align-items: center;
   justify-content: center;
   gap: 10px;
-  padding: 40px 16px;
+  padding: 36px 16px;
   color: var(--text-light, #888);
   font-size: 14px;
   text-align: center;
@@ -125,26 +241,7 @@
   min-height: 40px;
 }
 
-.discover-load-more {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: 100%;
-  padding: 10px 14px;
-  margin-top: 4px;
-  border-radius: 999px;
-  border: 1px solid var(--border, #e0e0e0);
-  background: var(--surface-2, #f5f5f5);
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 700;
-  min-height: 44px; /* touch target */
-}
-.discover-load-more:disabled {
-  opacity: 0.7;
-}
-
+/* ── Recipe card ──────────────────────────────────────────────────── */
 .discover-card {
   display: flex;
   align-items: center;
@@ -155,12 +252,16 @@
   border-radius: 14px;
   background: var(--surface, #fff);
   text-align: left;
-  min-height: 64px; /* touch target */
+  min-height: 72px;
+  transition: background 0.15s;
+}
+.discover-card:active {
+  background: var(--surface-2, #f5f5f5);
 }
 
 .discover-card-thumb {
-  width: 56px;
-  height: 56px;
+  width: 60px;
+  height: 60px;
   flex-shrink: 0;
   border-radius: 10px;
   overflow: hidden;
@@ -178,7 +279,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 
 .discover-card-title {
@@ -190,18 +291,51 @@
   line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+  line-height: 1.3;
 }
 
-.discover-card-meta {
+.discover-card-source {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.discover-card-date {
+  color: var(--text-light, #888);
+  font-weight: 500;
+}
+
+.discover-card-snippet {
   font-size: 12px;
   color: var(--text-light, #888);
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.35;
+  margin-top: 1px;
 }
 
 .discover-card-arrow {
   flex-shrink: 0;
   color: var(--text-light, #888);
+  opacity: 0.6;
 }
 
+/* ── Footer ───────────────────────────────────────────────────────── */
+.discover-footer-note {
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-light, #888);
+  padding: 10px 0 4px;
+  opacity: 0.7;
+}
+
+/* ── Offline ──────────────────────────────────────────────────────── */
 .discover-offline {
   display: flex;
   flex-direction: column;
@@ -212,10 +346,20 @@
   color: var(--text-light, #888);
   text-align: center;
 }
-
 .discover-offline p { margin: 0; font-size: 14px; }
 .discover-offline-hint { font-size: 13px !important; opacity: 0.8; }
 
+/* ── Dark mode ────────────────────────────────────────────────────── */
+[data-theme="dark"] .discover-search {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+[data-theme="dark"] .discover-search-clear {
+  background: rgba(255, 255, 255, 0.12);
+}
+[data-theme="dark"] .discover-source-pill {
+  border-color: rgba(255, 255, 255, 0.1);
+}
 [data-theme="dark"] .discover-chip {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.12);
@@ -224,11 +368,11 @@
   background: rgba(255, 255, 255, 0.04);
   border-color: rgba(255, 255, 255, 0.1);
 }
-[data-theme="dark"] .discover-retry {
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.12);
+[data-theme="dark"] .discover-card:active {
+  background: rgba(255, 255, 255, 0.08);
 }
-[data-theme="dark"] .discover-load-more {
+[data-theme="dark"] .discover-retry,
+[data-theme="dark"] .discover-refresh-btn {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.12);
 }

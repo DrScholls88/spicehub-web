@@ -125,68 +125,6 @@ describe('fetchRedditJson', () => {
   });
 });
 
-// Coverage for the 2026-07-08 "still 403ing" fix: prod logs showed the
-// 2026-07-07 proxy-cascade fix wasn't enough — Reddit blocks anonymous/
-// unauthenticated requests from cloud IP ranges regardless of headers. A new
-// OAuth2-authenticated tier (api/reddit.js, client_credentials app-only grant)
-// now sits between the direct-fetch attempt and the old anonymous cascade.
-describe('fetchRedditJson — OAuth proxy tier', () => {
-  const isOAuth = (url) => String(url).includes('/api/reddit');
-  const isOldCascade = (url) => String(url).includes('/api/proxy') || String(url).includes('codetabs') || String(url).includes('allorigins');
-
-  it('uses the OAuth proxy when direct fetch fails, without touching the old anonymous cascade', async () => {
-    const fetchSpy = vi.fn(async (url) => {
-      if (isOAuth(url)) return resOk(JSON.stringify({ viaOAuth: true }));
-      if (isOldCascade(url)) throw new Error('should not reach the old cascade');
-      throw new TypeError('Failed to fetch'); // direct fetch CORS-blocked
-    });
-    vi.stubGlobal('fetch', fetchSpy);
-
-    const out = await fetchRedditJson('https://www.reddit.com/r/recipes/new.json');
-    expect(out).toEqual({ viaOAuth: true });
-    expect(fetchSpy.mock.calls.some(([url]) => isOldCascade(url))).toBe(false);
-  });
-
-  it('falls through to the old anonymous cascade when the OAuth proxy is not configured (503)', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (url) => {
-      if (isOAuth(url)) return resErr(503);
-      if (isOldCascade(url)) return resOk(JSON.stringify({ viaOldCascade: true }));
-      throw new TypeError('Failed to fetch');
-    }));
-
-    const out = await fetchRedditJson('https://www.reddit.com/r/recipes/new.json');
-    expect(out).toEqual({ viaOldCascade: true });
-  });
-
-  it('falls through to the old anonymous cascade when the OAuth proxy throws', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (url) => {
-      if (isOAuth(url)) throw new Error('network error');
-      if (isOldCascade(url)) return resOk(JSON.stringify({ viaOldCascade: true }));
-      throw new TypeError('Failed to fetch');
-    }));
-
-    const out = await fetchRedditJson('https://www.reddit.com/r/recipes/new.json');
-    expect(out).toEqual({ viaOldCascade: true });
-  });
-
-  it('sends the Reddit path (not a full URL) as the OAuth proxy path param', async () => {
-    let capturedOAuthUrl = '';
-    vi.stubGlobal('fetch', vi.fn(async (url) => {
-      if (isOAuth(url)) { capturedOAuthUrl = String(url); return resOk(JSON.stringify({ ok: true })); }
-      throw new TypeError('Failed to fetch');
-    }));
-
-    await fetchRedditJson('https://www.reddit.com/r/recipes/comments/abc123/title.json?limit=25');
-    expect(capturedOAuthUrl).toContain('/api/reddit?path=');
-    const encodedPath = capturedOAuthUrl.split('path=')[1];
-    const decodedPath = decodeURIComponent(encodedPath);
-    expect(decodedPath).toBe('/r/recipes/comments/abc123/title.json?limit=25&raw_json=1');
-    // Never leaks the reddit.com host into the path param — api/reddit.js
-    // rejects anything containing "://" to stay a closed (not open) proxy.
-    expect(decodedPath).not.toContain('://');
-  });
-});
-
 // Coverage for the 2026-07-08 "photos" gap: extractRedditPost previously only
 // ever captured ONE image (preview.images[0] or thumbnail), silently dropping
 // gallery posts (multi-photo recipe posts are common — an ingredients shot +

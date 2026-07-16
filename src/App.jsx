@@ -149,6 +149,14 @@ export default function App() {
   const [toast, setToast] = useState(null);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const [updateReady, setUpdateReady] = useState(false); // new build installed while app on-screen
+  // Already-installed detection: hide the "Add to Home Screen" action when the
+  // app is already running as an installed PWA (iOS uses navigator.standalone;
+  // everyone else exposes the standalone display-mode media query).
+  const isStandalone = typeof window !== 'undefined' && (
+    window.matchMedia?.('(display-mode: standalone)')?.matches ||
+    window.navigator?.standalone === true
+  );
   const [showFridge, setShowFridge] = useState(false);
   // Two doors into the same PantryMode room: the "What can I cook" tile jumps
   // straight to the proximity-match panel, the "Pantry" tile opens to the
@@ -344,9 +352,8 @@ export default function App() {
     setTab('grocery');
   }, [postImportActions, showToast]);
 
-  // Quick import helper. The LandingPage import tray that used to call this was
-  // removed (declutter). Now used by MealLibrary's Discover Recipes flow
-  // (DiscoverRecipes.jsx) to hand off a selected Reddit post URL straight into
+  // Quick import helper. Used by MealLibrary's Discover Recipes flow
+  // (DiscoverRecipes.jsx) to hand off a selected recipe blog URL straight into
   // the standard ImportSheet review — item type (meal vs drink) is
   // auto-detected downstream by the import engine, so we open the meals sheet.
   const handleQuickImport = useCallback((url) => {
@@ -583,6 +590,16 @@ export default function App() {
     // NOTE: removed unconditional isMobileDevice() auto-show — was causing the
     // persistent banner on every tab load. Install is now accessible via ⚙️ Settings.
     return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+  }, []);
+
+  // Surface an in-app "Update ready" prompt when a new build installs while the
+  // app is on-screen. main.jsx dispatches spicehub:update-ready instead of
+  // auto-reloading a visible session, so the user chooses when to refresh
+  // (their in-progress work is already persisted to Dexie either way).
+  useEffect(() => {
+    const onUpdateReady = () => setUpdateReady(true);
+    window.addEventListener('spicehub:update-ready', onUpdateReady);
+    return () => window.removeEventListener('spicehub:update-ready', onUpdateReady);
   }, []);
 
   const handleInstallApp = async () => {
@@ -1387,12 +1404,14 @@ useEffect(() => {
             #{__SPICEHUB_BUILD__}
           </button>
         </div>
+        {/* Decluttered (feedback 2026-07-15): header used to carry 5 icons
+            crowding the logo/build badge, worse on iPhone where the notch
+            already eats horizontal space. Down to 2 now — Stats is still
+            reachable from the landing page's widget tile (onOpenStats),
+            ZIP import moved into MealLibrary's + speed-dial, and Storage
+            moved into the Settings sheet. */}
         <div className="header-actions">
           <button className="hdr-btn" onClick={() => setShowFridge(true)} title="The Pantry — what can I cook?" aria-label="Open the pantry">🧺</button>
-          <button className="hdr-btn" onClick={() => setShowStats(true)} title="Meal Stats" aria-label="Meal stats">📊</button>
-          {/* I-1: Instagram saved-posts bulk import */}
-          <button className="hdr-btn" onClick={() => setShowZipImport(true)} title="Import Instagram saved posts (ZIP)" aria-label="Import Instagram saved posts">📦</button>
-          <button className="hdr-btn" onClick={() => setShowStorageManager(true)} title="Storage" aria-label="Storage manager">💾</button>
           <button className="hdr-btn" onClick={() => setShowSettings(true)} title="Settings" aria-label="Settings">⚙️</button>
         </div>
       </header>
@@ -1404,6 +1423,21 @@ useEffect(() => {
             <div className="install-banner-actions">
               <button className="btn-small" onClick={handleInstallApp}>Install</button>
               <button className="btn-icon small" onClick={handleDismissInstallBanner} aria-label="Dismiss install banner">✕</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {updateReady && (
+        <div className="install-banner update-banner" role="status">
+          <div className="install-banner-content">
+            <span>🔄 New version ready</span>
+            <div className="install-banner-actions">
+              <button
+                className="btn-small"
+                onClick={() => (window.__spicehubApplyUpdate ? window.__spicehubApplyUpdate() : window.location.reload())}
+              >Refresh</button>
+              <button className="btn-icon small" onClick={() => setUpdateReady(false)} aria-label="Dismiss update prompt">✕</button>
             </div>
           </div>
         </div>
@@ -1507,6 +1541,7 @@ useEffect(() => {
             onExport={(item) => openExportSheet('recipe', item)}
             onImport={() => { setImportModalKey(k => k + 1); setShowImportFor('meals'); }}
             onImportUrl={handleQuickImport}
+            onImportZip={() => setShowZipImport(true)}
             onReload={loadMeals}
             onToast={showToast}
             onToggleFavorite={toggleFavorite}
@@ -1673,7 +1708,7 @@ useEffect(() => {
       <AnimatePresence>
         {roomTrip && <RoomTransition key="room-trip" trip={roomTrip} />}
       </AnimatePresence>
-      {/* ── Discover Recipes (Reddit browse-and-import) — Landing entry point ── */}
+      {/* ── Discover Recipes (blog aggregator) — Landing entry point ── */}
       <AnimatePresence>
         {showDiscover && (
           <DiscoverRecipes
@@ -1756,16 +1791,67 @@ useEffect(() => {
               {/* PWA Install — only shown when browser supports it or on mobile */}
               <div className="st-section st-install-section">
                 <h3>App</h3>
+                {!isStandalone && (
+                  <button
+                    className="st-install-btn"
+                    onClick={() => {
+                      // Reset dismissal so banner can reappear, then trigger install
+                      localStorage.removeItem('pwa-install-dismissed');
+                      handleInstallApp();
+                    }}
+                  >
+                    <span className="st-install-icon">📲</span>
+                    <span>Add to Home Screen</span>
+                  </button>
+                )}
+                {/* Storage moved here from the header (feedback 2026-07-15:
+                    header decluttering) */}
                 <button
                   className="st-install-btn"
-                  onClick={() => {
-                    // Reset dismissal so banner can reappear, then trigger install
-                    localStorage.removeItem('pwa-install-dismissed');
-                    handleInstallApp();
+                  type="button"
+                  onClick={() => { setShowSettings(false); setShowStorageManager(true); }}
+                >
+                  <span className="st-install-icon">💾</span>
+                  <span>Storage Manager</span>
+                </button>
+                {/* iOS home-screen PWAs don't reliably notice a new build on
+                    their own (main.jsx now auto-checks on foreground + auto-
+                    reloads once an update takes over, but this gives users an
+                    explicit "did I get it yet?" control instead of relying on
+                    delete-and-re-add). If an update IS found it activates and
+                    the page reloads on its own within a couple seconds; if
+                    nothing happens, they're already current. */}
+                <button
+                  className="st-install-btn"
+                  type="button"
+                  onClick={async () => {
+                    if (!navigator.onLine) {
+                      showToast("You're offline — can't check for updates", 'error', 3000);
+                      return;
+                    }
+                    showToast('Checking for updates…', 'info', 2000);
+                    try {
+                      const reg = window.__spicehubSWRegistration
+                        || (navigator.serviceWorker && await navigator.serviceWorker.getRegistration());
+                      if (!reg) { showToast('Updates need a browser reload to check', 'error', 3000); return; }
+                      await reg.update();
+                      // reg.update() resolves once sw.js has been re-fetched. A new
+                      // build shows up as an installing/waiting worker; the
+                      // updatefound flow (main.jsx) then surfaces the Refresh
+                      // prompt. Only claim "latest" when there's genuinely no new
+                      // worker — no more fixed-timer false success.
+                      if (reg.installing || reg.waiting) {
+                        showToast('New version found — installing…', 'success', 3000);
+                      } else {
+                        showToast(`You're on the latest version (build #${__SPICEHUB_BUILD__})`, 'success', 3000);
+                      }
+                    } catch {
+                      showToast('Could not check for updates — check your connection', 'error', 3000);
+                    }
                   }}
                 >
-                  <span className="st-install-icon">📲</span>
-                  <span>Add to Home Screen</span>
+                  <span className="st-install-icon">🔄</span>
+                  <span>Check for Updates</span>
                 </button>
               </div>
               <div className="st-section">
