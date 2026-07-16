@@ -112,6 +112,14 @@ body {
   background: linear-gradient(135deg, var(--primary), var(--primary-light));
   color: white;
   padding: 10px 16px;
+  /* iOS renders edge-to-edge under the status bar/notch/Dynamic Island
+     (index.html sets viewport-fit=cover + a translucent status bar on
+     purpose, so the header's own gradient shows through behind it) — but
+     without this, the header's CONTENT (logo, build badge, icon buttons)
+     was laid out starting at the true top of the viewport, landing right
+     under the Dynamic Island cutout and reading as garbled/overlapping
+     text. Push content down by the actual inset instead. */
+  padding-top: calc(10px + env(safe-area-inset-top));
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -11729,6 +11737,17 @@ body {
   margin: 0 auto;
   z-index: 501;
   animation: slideUp 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  /* This sheet has no top/max-height, so its height was pure content-driven
+     — anchored to bottom:0 it grows straight up. With this many sections
+     (Theme, App, Starter Kit, Legal, version footer) it routinely exceeds
+     shorter Android viewports, pushing the title/close button off the top
+     of the screen with no way to scroll up to them (the overlay behind it
+     is fixed, not scrollable). Cap it and let the sheet itself scroll,
+     matching the established .modal-content pattern used elsewhere. */
+  max-height: 88vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .st-handle {
