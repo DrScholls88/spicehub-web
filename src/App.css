@@ -108,6 +108,29 @@ body {
   flex-direction: column;
 }
 
+/* ── iOS status-bar scrim ────────────────────────────────────────────────────
+   index.html sets viewport-fit=cover + apple-mobile-web-app-status-bar-style:
+   black-translucent, so on a home-screen iPhone the webview paints edge-to-edge
+   and iOS draws WHITE status-bar glyphs (clock, battery, signal) directly over
+   whatever the page renders at y=0. On the main screen the orange .app-header
+   sits there so the glyphs are legible — but on any LIGHT-topped screen (full-
+   screen modals, the landing view, or a scrolled body) white-on-cream makes the
+   clock invisible. This fixed scrim guarantees the active theme's --primary
+   color fills the status-bar inset on EVERY screen, so the glyphs stay readable
+   regardless of what's underneath. pointer-events:none so it never eats taps;
+   height collapses to 0 on non-inset devices (desktop/Android chrome). */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: env(safe-area-inset-top, 0px);
+  background: var(--primary, #e65100);
+  z-index: 2147483647;
+  pointer-events: none;
+}
+
 .app-header {
   background: linear-gradient(135deg, var(--primary), var(--primary-light));
   color: white;
@@ -4666,6 +4689,17 @@ body {
   justify-content: space-between;
 }
 
+/* Update-ready prompt reuses the install-banner layout but a distinct green,
+   so it reads as "good news, action available" rather than a promo/install nag.
+   Override the action button's text colour off var(--primary) (orange) so the
+   white pill stays legible on the green bar. */
+.update-banner {
+  background: linear-gradient(135deg, #2e7d32, #43a047);
+}
+.update-banner .install-banner-actions .btn-small {
+  color: #2e7d32;
+}
+
 .install-banner-content {
   display: flex;
   align-items: center;
@@ -5945,6 +5979,10 @@ body {
 
 .ml-fab-action-icon--discover {
   background: linear-gradient(135deg, #388e3c, #66bb6a);
+}
+
+.ml-fab-action-icon--zip {
+  background: linear-gradient(135deg, #6d4c2b, #8d6e42);
 }
 
 [data-theme="dark"] .ml-fab-action-label {
@@ -16212,10 +16250,10 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 .spinner-title {
   font-size: 22px;
   font-weight: 800;
-  background: linear-gradient(135deg, var(--primary), var(--primary-light));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  /* Solid brand orange instead of gradient-clipped text: crisper at small
+     sizes, avoids the transparent-fill accessibility/contrast pitfall, and
+     drops the last gradient-text tell (2026-07-16 critique). */
+  color: var(--primary);
 }
 
 .spinner-close {

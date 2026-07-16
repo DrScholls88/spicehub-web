@@ -58,7 +58,13 @@ export default defineConfig({
     react(),
 VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon-192.svg', 'icon-512.svg', 'icon-maskable.svg'],
+      includeAssets: [
+        'icon-192.svg', 'icon-512.svg', 'icon-maskable.svg',
+        // Raster icons (2026-07-16): iOS ignores SVG for apple-touch-icon and
+        // falls back to a home-screen screenshot without a real PNG. These are
+        // the home-screen + maskable rasters referenced by index.html/manifest.
+        'apple-touch-icon-180.png', 'icon-192.png', 'icon-512.png', 'icon-maskable-512.png',
+      ],
       manifest: false, // keep your custom /public/manifest.json
       strategies: 'injectManifest',
       srcDir: 'src',

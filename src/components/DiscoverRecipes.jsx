@@ -1,122 +1,107 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Loader2, WifiOff, RefreshCw, ArrowUpRight } from 'lucide-react';
-import { discoverRedditRecipes } from '../scrapers/redditDiscovery';
+import { X, Loader2, WifiOff, RefreshCw, ArrowUpRight, Search } from 'lucide-react';
+import { fetchDiscoveryFeed, filterPosts, clearDiscoveryCache, DISCOVER_CATEGORIES } from '../scrapers/blogDiscovery';
 import { hapticLight } from '../haptics';
 import SafeMediaImage from './SafeMediaImage';
 import './DiscoverRecipes.css';
 
-// Gemini UX audit (2026-07-06, action item #6/#9): the app already had a
-// zero-auth Reddit discovery scraper (scrapers/redditDiscovery.js) sitting
-// completely unwired — no UI ever called discoverRedditRecipes(). Single-post
-// Reddit URL import already worked (recipeParser.js routes any reddit.com URL
-// through tryRedditJson), so this component is purely the missing "browse and
-// find something new" surface. Per the audit's "Curated Discoverability"
-// recommendation, this shows a small, fixed set of subreddit categories
-// instead of an open-ended feed/search — bounded scope, predictable quality.
+// Redesigned Discovery surface: multi-source recipe blog aggregator.
+// Replaces the Reddit-only feed (which required OAuth credentials and kept
+// 403'ing) with a zero-auth RSS-based system that scrapes ~10 popular
+// recipe blogs server-side and returns unified JSON.
 //
-// Architecture note (audit #7/#8): "My Meals" stays fully offline/local —
-// this component only ever READS from the network on-demand when the user
-// opens it, and never touches the local Dexie library directly. Selecting a
-// result hands its URL back to the same import pipeline every other recipe
-// URL goes through (App.jsx handleQuickImport → ImportSheet), so there's no
-// parallel/duplicate import code path to maintain.
-
-const CATEGORIES = [
-  { id: 'weeknight', label: 'Quick Weeknight', emoji: '⚡', subreddit: 'EatCheapAndHealthy', sort: 'hot' },
-  { id: 'comfort', label: 'Comfort Food', emoji: '🍲', subreddit: 'recipes', sort: 'hot' },
-  { id: 'vegetarian', label: 'Vegetarian & Vegan', emoji: '🥕', subreddit: 'veganrecipes', sort: 'hot' },
-  { id: 'mealprep', label: 'Meal Prep', emoji: '📦', subreddit: 'MealPrepSunday', sort: 'hot' },
-  { id: 'baking', label: 'Baking & Sweets', emoji: '🧁', subreddit: 'Baking', sort: 'hot' },
-];
+// UX: search bar, source pills (horizontal scroll), category chips,
+// recipe cards with source badge + snippet. Tap → import pipeline.
 
 export default function DiscoverRecipes({ onClose, onSelectUrl }) {
-  const [activeId, setActiveId] = useState(CATEGORIES[0].id);
-  // Per category: { posts, after, hasMore } — `after` is Reddit's pagination
-  // cursor from the last page fetched; `hasMore` mirrors "was after non-null"
-  // so the UI can drop the Load More button once a subreddit is exhausted.
-  const [resultsByCategory, setResultsByCategory] = useState({});
-  const [loadingId, setLoadingId] = useState(null);
-  const [loadingMoreId, setLoadingMoreId] = useState(null);
-  const [errorId, setErrorId] = useState(null);
+  // ─── State ───────────────────────────────────────────────────────────
+  const [allPosts, setAllPosts] = useState([]);
+  const [sources, setSources] = useState({}); // { key: { name, emoji, tags } }
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [activeCategory, setActiveCategory] = useState('all');
+  const [activeSource, setActiveSource] = useState('all');
+  const [searchText, setSearchText] = useState('');
+  const searchRef = useRef(null);
   const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
 
-  // Hardware back button is handled centrally by the parent (MealLibrary's
-  // useBackHandler(showDiscover, ...) closes this the same way the X button
-  // and overlay-click do — keeps one source of truth for the back stack.
-
-  const loadCategory = useCallback(async (category, { force = false } = {}) => {
-    if (!force && resultsByCategory[category.id]) return; // already cached
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) return; // offline guard
-    setLoadingId(category.id);
-    setErrorId(null);
+  // ─── Load feed ───────────────────────────────────────────────────────
+  const loadFeed = useCallback(async ({ force = false } = {}) => {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+    setLoading(true);
+    setError(null);
     try {
-      const { posts, after } = await discoverRedditRecipes(category.subreddit, category.sort, 20);
-      setResultsByCategory(prev => ({ ...prev, [category.id]: { posts, after, hasMore: !!after } }));
-      if (posts.length === 0) setErrorId(`${category.id}-empty`);
-    } catch {
-      setErrorId(category.id);
+      if (force) clearDiscoveryCache();
+      const data = await fetchDiscoveryFeed({ force });
+      setAllPosts(data.posts || []);
+      setSources(data.sources || {});
+    } catch (err) {
+      console.error('[discover] Feed load failed:', err);
+      setError(err.message || 'Failed to load recipes');
     } finally {
-      setLoadingId(null);
+      setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resultsByCategory]);
+  }, []);
 
-  // Fetch the next page for a category that's already loaded, appending to
-  // (not replacing) its results. Separate loading flag from loadCategory's
-  // so "load more" spinner doesn't blank out the results already on screen.
-  const loadMore = useCallback(async (category) => {
-    const current = resultsByCategory[category.id];
-    if (!current?.after || loadingMoreId) return;
-    setLoadingMoreId(category.id);
-    try {
-      const { posts: nextPosts, after: nextAfter } = await discoverRedditRecipes(
-        category.subreddit, category.sort, 20, current.after,
-      );
-      setResultsByCategory(prev => {
-        const prevEntry = prev[category.id];
-        if (!prevEntry) return prev; // category was reset/closed mid-fetch
-        // De-dupe by url — Reddit's listing can repeat an item across pages
-        // if new posts land between requests and shift the cursor window.
-        const seen = new Set(prevEntry.posts.map(p => p.url));
-        const merged = [...prevEntry.posts, ...nextPosts.filter(p => !seen.has(p.url))];
-        return { ...prev, [category.id]: { posts: merged, after: nextAfter, hasMore: !!nextAfter } };
-      });
-    } catch {
-      // Load-more failures aren't fatal — leave existing results in place and
-      // let the user tap the (still-visible) button to retry.
-    } finally {
-      setLoadingMoreId(null);
-    }
-  }, [resultsByCategory, loadingMoreId]);
-
-  // Load the first category on open — an empty "pick a category" screen would
-  // just be a smaller version of the blank-library problem this whole
-  // backlog item exists to avoid.
   useEffect(() => {
-    loadCategory(CATEGORIES[0]);
+    loadFeed();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleCategoryTap = (category) => {
+  // ─── Filtered posts ──────────────────────────────────────────────────
+  const filteredPosts = useMemo(() =>
+    filterPosts(allPosts, {
+      categoryId: activeCategory,
+      sourceKey: activeSource,
+      search: searchText,
+    }),
+    [allPosts, activeCategory, activeSource, searchText]
+  );
+
+  // ─── Handlers ────────────────────────────────────────────────────────
+  const handleCategoryTap = (id) => {
     hapticLight();
-    setActiveId(category.id);
-    loadCategory(category);
+    setActiveCategory(id);
+  };
+
+  const handleSourceTap = (key) => {
+    hapticLight();
+    setActiveSource(key === activeSource ? 'all' : key);
   };
 
   const handleSelect = (post) => {
     hapticLight();
-    onSelectUrl(post.url);
+    onSelectUrl(post.link);
   };
 
-  const activeCategory = CATEGORIES.find(c => c.id === activeId);
-  const activeEntry = resultsByCategory[activeId];
-  const results = activeEntry?.posts || [];
-  const isLoading = loadingId === activeId;
-  const isLoadingMore = loadingMoreId === activeId;
-  const hasError = errorId === activeId;
-  const isEmpty = errorId === `${activeId}-empty`;
-  const canLoadMore = !!activeEntry?.hasMore;
+  const handleRefresh = () => {
+    hapticLight();
+    loadFeed({ force: true });
+  };
+
+  // Source list for the pills row
+  const sourceList = useMemo(() => {
+    const list = [{ key: 'all', name: 'All Sources', emoji: '✨' }];
+    for (const [key, src] of Object.entries(sources)) {
+      list.push({ key, name: src.name, emoji: src.emoji });
+    }
+    return list;
+  }, [sources]);
+
+  // Time-ago helper
+  const timeAgo = (dateStr) => {
+    if (!dateStr) return '';
+    try {
+      const diff = Date.now() - new Date(dateStr).getTime();
+      const days = Math.floor(diff / 86400000);
+      if (days === 0) return 'Today';
+      if (days === 1) return 'Yesterday';
+      if (days < 7) return `${days}d ago`;
+      if (days < 30) return `${Math.floor(days / 7)}w ago`;
+      return `${Math.floor(days / 30)}mo ago`;
+    } catch { return ''; }
+  };
 
   return (
     <div className="discover-overlay" onClick={onClose}>
@@ -129,14 +114,28 @@ export default function DiscoverRecipes({ onClose, onSelectUrl }) {
         transition={{ type: 'spring', stiffness: 320, damping: 32 }}
       >
         <div className="st-handle" />
+
+        {/* ── Header ────────────────────────────────────────────── */}
         <div className="discover-header">
           <div>
             <h2 className="discover-title">Discover Recipes</h2>
-            <p className="discover-subtitle">Browse recipe communities — tap one to import it</p>
+            <p className="discover-subtitle">Fresh picks from top recipe blogs</p>
           </div>
-          <button className="st-close" onClick={onClose} aria-label="Close">
-            <X size={18} strokeWidth={2.5} />
-          </button>
+          <div className="discover-header-actions">
+            {!isOffline && (
+              <button
+                className="discover-refresh-btn"
+                onClick={handleRefresh}
+                disabled={loading}
+                aria-label="Refresh"
+              >
+                <RefreshCw size={15} strokeWidth={2.5} className={loading ? 'discover-spin' : ''} />
+              </button>
+            )}
+            <button className="st-close" onClick={onClose} aria-label="Close">
+              <X size={18} strokeWidth={2.5} />
+            </button>
+          </div>
         </div>
 
         {isOffline ? (
@@ -147,58 +146,103 @@ export default function DiscoverRecipes({ onClose, onSelectUrl }) {
           </div>
         ) : (
           <>
-            <div className="discover-chips" role="tablist" aria-label="Recipe categories">
-              {CATEGORIES.map(category => (
+            {/* ── Search ──────────────────────────────────────────── */}
+            <div className="discover-search-wrap">
+              <Search size={15} strokeWidth={2.5} className="discover-search-icon" />
+              <input
+                ref={searchRef}
+                type="text"
+                className="discover-search"
+                placeholder="Search recipes…"
+                value={searchText}
+                onChange={e => setSearchText(e.target.value)}
+                aria-label="Search recipes"
+              />
+              {searchText && (
                 <button
-                  key={category.id}
-                  role="tab"
-                  aria-selected={activeId === category.id}
-                  className={`discover-chip${activeId === category.id ? ' discover-chip-active' : ''}`}
-                  onClick={() => handleCategoryTap(category)}
+                  className="discover-search-clear"
+                  onClick={() => { setSearchText(''); searchRef.current?.focus(); }}
+                  aria-label="Clear search"
                 >
-                  <span aria-hidden="true">{category.emoji}</span> {category.label}
+                  <X size={14} strokeWidth={2.5} />
+                </button>
+              )}
+            </div>
+
+            {/* ── Source pills ─────────────────────────────────────── */}
+            <div className="discover-sources" role="tablist" aria-label="Recipe sources">
+              {sourceList.map(src => (
+                <button
+                  key={src.key}
+                  role="tab"
+                  aria-selected={activeSource === src.key}
+                  className={`discover-source-pill${activeSource === src.key ? ' discover-source-pill-active' : ''}`}
+                  onClick={() => handleSourceTap(src.key)}
+                >
+                  <span aria-hidden="true">{src.emoji}</span>
+                  <span className="discover-source-pill-name">{src.name}</span>
                 </button>
               ))}
             </div>
 
+            {/* ── Category chips ───────────────────────────────────── */}
+            <div className="discover-chips" role="tablist" aria-label="Recipe categories">
+              {DISCOVER_CATEGORIES.map(cat => (
+                <button
+                  key={cat.id}
+                  role="tab"
+                  aria-selected={activeCategory === cat.id}
+                  className={`discover-chip${activeCategory === cat.id ? ' discover-chip-active' : ''}`}
+                  onClick={() => handleCategoryTap(cat.id)}
+                >
+                  <span aria-hidden="true">{cat.emoji}</span> {cat.label}
+                </button>
+              ))}
+            </div>
+
+            {/* ── Results ──────────────────────────────────────────── */}
             <div className="discover-results">
-              {isLoading && (
+              {loading && (
                 <div className="discover-status">
                   <Loader2 size={22} className="discover-spin" strokeWidth={2} />
-                  <span>Finding recipes in r/{activeCategory.subreddit}…</span>
+                  <span>Finding recipes from top blogs…</span>
                 </div>
               )}
 
-              {!isLoading && hasError && (
+              {!loading && error && (
                 <div className="discover-status">
-                  <span>Couldn't reach r/{activeCategory.subreddit} right now.</span>
-                  <button className="discover-retry" onClick={() => loadCategory(activeCategory, { force: true })}>
+                  <span>Couldn't reach recipe sources right now.</span>
+                  <button className="discover-retry" onClick={handleRefresh}>
                     <RefreshCw size={14} strokeWidth={2.5} /> Try again
                   </button>
                 </div>
               )}
 
-              {!isLoading && isEmpty && (
+              {!loading && !error && filteredPosts.length === 0 && (
                 <div className="discover-status">
-                  <span>No recipes found in r/{activeCategory.subreddit} right now — try another category.</span>
+                  {searchText || activeCategory !== 'all' || activeSource !== 'all' ? (
+                    <span>No recipes match your filters — try broadening your search.</span>
+                  ) : (
+                    <span>No recipes found right now — try refreshing.</span>
+                  )}
                 </div>
               )}
 
-              {!isLoading && !hasError && !isEmpty && (
+              {!loading && !error && filteredPosts.length > 0 && (
                 <AnimatePresence initial={false}>
-                  {results.map((post, idx) => (
+                  {filteredPosts.map((post, idx) => (
                     <motion.button
-                      key={post.url}
+                      key={post.link}
                       className="discover-card"
                       onClick={() => handleSelect(post)}
                       initial={{ opacity: 0, y: 8 }}
                       animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: Math.min(idx * 0.03, 0.3), duration: 0.25 }}
+                      transition={{ delay: Math.min(idx * 0.025, 0.3), duration: 0.2 }}
                       whileTap={{ scale: 0.98 }}
                     >
                       <div className="discover-card-thumb">
                         <SafeMediaImage
-                          src={post.imageUrl || post.thumbnail}
+                          src={post.imageUrl}
                           alt=""
                           className="discover-card-img"
                           fallbackEmoji="🍽️"
@@ -206,9 +250,13 @@ export default function DiscoverRecipes({ onClose, onSelectUrl }) {
                       </div>
                       <div className="discover-card-body">
                         <span className="discover-card-title">{post.title}</span>
-                        <span className="discover-card-meta">
-                          r/{post.subreddit} · {post.score} upvotes{post.flair ? ` · ${post.flair}` : ''}
+                        <span className="discover-card-source">
+                          {post.sourceEmoji} {post.sourceName}
+                          {post.pubDate && <span className="discover-card-date"> · {timeAgo(post.pubDate)}</span>}
                         </span>
+                        {post.snippet && (
+                          <span className="discover-card-snippet">{post.snippet}</span>
+                        )}
                       </div>
                       <ArrowUpRight size={16} strokeWidth={2.5} className="discover-card-arrow" aria-hidden="true" />
                     </motion.button>
@@ -216,20 +264,11 @@ export default function DiscoverRecipes({ onClose, onSelectUrl }) {
                 </AnimatePresence>
               )}
 
-              {!isLoading && !hasError && !isEmpty && results.length > 0 && (canLoadMore || isLoadingMore) && (
-                <button
-                  className="discover-load-more"
-                  onClick={() => loadMore(activeCategory)}
-                  disabled={isLoadingMore}
-                >
-                  {isLoadingMore ? (
-                    <>
-                      <Loader2 size={14} className="discover-spin" strokeWidth={2.5} /> Loading more…
-                    </>
-                  ) : (
-                    'Load more'
-                  )}
-                </button>
+              {!loading && !error && filteredPosts.length > 0 && (
+                <div className="discover-footer-note">
+                  Showing {filteredPosts.length} recipe{filteredPosts.length !== 1 ? 's' : ''}
+                  {activeSource !== 'all' || activeCategory !== 'all' || searchText ? ' (filtered)' : ''}
+                </div>
               )}
             </div>
           </>

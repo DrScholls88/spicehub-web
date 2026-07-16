@@ -145,7 +145,7 @@ const fabActionVariants = {
   open: { opacity: 1, y: 0, scale: 1, transition: { type: 'spring', stiffness: 420, damping: 26 } },
 };
 
-export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDetail, onShare, onImport, onImportUrl, onReload, onToast, onToggleFavorite, onRate, onPlayVideo, onLoadStarterPack, onMoveToBar }) {
+export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDetail, onShare, onImport, onImportUrl, onImportZip, onReload, onToast, onToggleFavorite, onRate, onPlayVideo, onLoadStarterPack, onMoveToBar }) {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
@@ -823,6 +823,19 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                 <span className="ml-fab-action-label">Discover Recipes</span>
                 <span className="ml-fab-action-icon ml-fab-action-icon--discover" aria-hidden="true">🔎</span>
               </motion.button>
+              {/* Moved here from the header icon strip (feedback 2026-07-15:
+                  header decluttering) */}
+              {onImportZip && (
+                <motion.button
+                  className="ml-fab-action"
+                  variants={fabActionVariants}
+                  onClick={() => { hapticLight(); setFabOpen(false); onImportZip(); }}
+                  whileTap={{ scale: 0.94 }}
+                >
+                  <span className="ml-fab-action-label">Import Instagram Saved (ZIP)</span>
+                  <span className="ml-fab-action-icon ml-fab-action-icon--zip" aria-hidden="true">📦</span>
+                </motion.button>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -863,7 +876,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
         )}
       </AnimatePresence>
 
-      {/* ── Discover Recipes (Reddit browse-and-import) ── */}
+      {/* ── Discover Recipes (blog aggregator) ── */}
       <AnimatePresence>
         {showDiscover && (
           <DiscoverRecipes
