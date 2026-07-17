@@ -165,7 +165,150 @@ db.version(17).stores({
   });
 });
 
+// v18: User-defined tags for meal categorization + scroll-fatigue relief.
+// userTags table stores the available tag labels. Meals gain a `tags` array
+// (multi-entry indexed) for secondary categorization alongside the existing
+// `category` field (which stays as primary type: Dinners, Breakfasts, etc.).
+db.version(18).stores({
+  meals: '++id, name, status, sourceHash, jobId, ingredients_text, *tags',
+  userTags: '++id, &name',
+}).upgrade(tx => {
+  const defaults = [
+    { name: 'Weeknight',    color: '#4CAF50', emoji: '⚡', sortOrder: 0 },
+    { name: 'Meal Prep',    color: '#2196F3', emoji: '📦', sortOrder: 1 },
+    { name: 'Comfort Food', color: '#FF9800', emoji: '🫕', sortOrder: 2 },
+    { name: 'Date Night',   color: '#E91E63', emoji: '🌹', sortOrder: 3 },
+    { name: 'Kid-Friendly', color: '#9C27B0', emoji: '👶', sortOrder: 4 },
+  ];
+  const seedTags = tx.table('userTags').bulkAdd(defaults);
+  const backfillTags = tx.table('meals').toCollection().modify(meal => {
+    if (!Array.isArray(meal.tags)) meal.tags = [];
+  });
+  return Promise.all([seedTags, backfillTags]);
+});
+
 export default db;
+
+// ── User Tags helpers (v18) ─────────────────────────────────────────────────
+export async function getUserTags() {
+  try {
+    const tags = await db.userTags.orderBy('sortOrder').toArray();
+    return tags;
+  } catch (e) {
+    console.warn('[SpiceHub DB] getUserTags failed:', e);
+    return [];
+  }
+}
+
+export async function addUserTag({ name, color, emoji }) {
+  if (!name || !name.trim()) return null;
+  const trimmed = name.trim();
+  try {
+    const existing = await db.userTags.where('name').equalsIgnoreCase(trimmed).first();
+    if (existing) return existing.id; // don't duplicate
+    const maxOrder = await db.userTags.orderBy('sortOrder').last();
+    const id = await db.userTags.add({
+      name: trimmed,
+      color: color || '#888888',
+      emoji: emoji || '🏷️',
+      sortOrder: (maxOrder?.sortOrder ?? -1) + 1,
+    });
+    return id;
+  } catch (e) {
+    console.warn('[SpiceHub DB] addUserTag failed:', e);
+    return null;
+  }
+}
+
+export async function updateUserTag(id, patch) {
+  try {
+    await db.userTags.update(id, patch);
+  } catch (e) {
+    console.warn('[SpiceHub DB] updateUserTag failed:', e);
+  }
+}
+
+export async function deleteUserTag(id) {
+  try {
+    const tag = await db.userTags.get(id);
+    if (!tag) return;
+    // Remove this tag from all meals that have it
+    await db.meals.where('tags').equals(tag.name).modify(meal => {
+      meal.tags = (meal.tags || []).filter(t => t !== tag.name);
+    });
+    await db.userTags.delete(id);
+  } catch (e) {
+    console.warn('[SpiceHub DB] deleteUserTag failed:', e);
+  }
+}
+
+export async function renameUserTag(id, newName) {
+  if (!newName || !newName.trim()) return;
+  const trimmed = newName.trim();
+  try {
+    const tag = await db.userTags.get(id);
+    if (!tag) return;
+    const oldName = tag.name;
+    // Update tag record
+    await db.userTags.update(id, { name: trimmed });
+    // Rename in all meals that carry the old name
+    if (oldName !== trimmed) {
+      await db.meals.where('tags').equals(oldName).modify(meal => {
+        meal.tags = (meal.tags || []).map(t => t === oldName ? trimmed : t);
+      });
+    }
+  } catch (e) {
+    console.warn('[SpiceHub DB] renameUserTag failed:', e);
+  }
+}
+
+export async function setMealTags(mealId, tags) {
+  try {
+    await db.meals.update(mealId, { tags: Array.isArray(tags) ? tags : [] });
+  } catch (e) {
+    console.warn('[SpiceHub DB] setMealTags failed:', e);
+  }
+}
+
+export async function addMealTag(mealId, tagName) {
+  try {
+    const meal = await db.meals.get(mealId);
+    if (!meal) return;
+    const current = Array.isArray(meal.tags) ? meal.tags : [];
+    if (!current.includes(tagName)) {
+      await db.meals.update(mealId, { tags: [...current, tagName] });
+    }
+  } catch (e) {
+    console.warn('[SpiceHub DB] addMealTag failed:', e);
+  }
+}
+
+export async function removeMealTag(mealId, tagName) {
+  try {
+    const meal = await db.meals.get(mealId);
+    if (!meal) return;
+    const current = Array.isArray(meal.tags) ? meal.tags : [];
+    await db.meals.update(mealId, { tags: current.filter(t => t !== tagName) });
+  } catch (e) {
+    console.warn('[SpiceHub DB] removeMealTag failed:', e);
+  }
+}
+
+export async function bulkSetMealTags(mealIds, tagName, add = true) {
+  if (!Array.isArray(mealIds) || !mealIds.length || !tagName) return;
+  try {
+    await db.meals.where('id').anyOf(mealIds).modify(meal => {
+      const current = Array.isArray(meal.tags) ? meal.tags : [];
+      if (add) {
+        if (!current.includes(tagName)) meal.tags = [...current, tagName];
+      } else {
+        meal.tags = current.filter(t => t !== tagName);
+      }
+    });
+  } catch (e) {
+    console.warn('[SpiceHub DB] bulkSetMealTags failed:', e);
+  }
+}
 
 // ── Learned alias helpers (Spec D) ────────────────────────────────────────────
 export async function getLearnedAliases() {

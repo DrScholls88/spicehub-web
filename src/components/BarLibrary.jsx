@@ -8,6 +8,7 @@ import ReExtractSheet from './ReExtractSheet';
 import useBackHandler from '../hooks/useBackHandler';
 import { hapticLight } from '../haptics';
 import { getMealVideoSource } from '../lib/videoSource';
+import { RefreshCw } from 'lucide-react';
 import SquigglyText from './SquigglyText';
 
 // ── Assignable drink categories ──────────────────────────────────────────────
@@ -865,6 +866,25 @@ export default function BarLibrary({
                     onClick={() => { hapticLight(); setReExtractDrink(quickPreview); setQuickPreview(null); }}
                   >
                     ✨ Improve
+                  </button>
+                )}
+                {(quickPreview.link || quickPreview.sourceUrl) && (
+                  <button
+                    className="bl-qp-btn"
+                    onClick={() => {
+                      const url = quickPreview.link || quickPreview.sourceUrl;
+                      hapticLight();
+                      setQuickPreview(null);
+                      if (window.__spicehubTriggerImport) {
+                        window.__spicehubTriggerImport(url);
+                      } else {
+                        navigator.clipboard.writeText(url).catch(() => {});
+                        onToast?.('Link copied — open Import to re-import this drink.');
+                      }
+                    }}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                  >
+                    <RefreshCw size={15} strokeWidth={1.75} /> Re-import
                   </button>
                 )}
                 {(quickPreview.link || quickPreview.sourceUrl) && (
