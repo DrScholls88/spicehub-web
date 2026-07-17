@@ -146,6 +146,9 @@ const TABLE = [
   // be checked first per this table's own "compounds before shadowing singles"
   // convention (see the kitchen section's header comment further down).
   { kw: ['baking soda', 'baking powder', 'powdered sugar'], kind: 'drygood', shape: 'box', palette: P.bakingBox },
+  // "Rye Bread" would otherwise be shadowed by the single-word 'rye' whiskey
+  // keyword far below — same shadowing risk as baking soda/'soda' above.
+  { kw: ['rye bread'], kind: 'drygood', shape: 'loaf', palette: P.breadK },
 
   // Juices/mixers that are cartons/cans — checked BEFORE citrus 'orange'/'lemon'
   { kw: ['orange juice', 'cranberry juice', 'pineapple juice', 'tomato juice', 'grapefruit juice', 'apple juice'], kind: 'can', palette: P.can },
@@ -158,12 +161,15 @@ const TABLE = [
   { kw: ['lemon juice', 'lemon wedge', 'lemon', 'lemons'], kind: 'citrus', palette: P.lemon },
   { kw: ['orange wedge', 'orange slice', 'orange peel', 'orange', 'oranges'], kind: 'citrus', palette: P.orange },
   { kw: ['grapefruit', 'grapefruits'], kind: 'citrus', palette: P.orange },
+  { kw: ['mandarin', 'mandarins', 'clementine', 'clementines'], kind: 'citrus', palette: P.orange },
 
   // Herbs
   { kw: ['mint', 'basil', 'rosemary', 'thyme', 'sage', 'cilantro'], kind: 'herb', palette: P.mint },
+  { kw: ['dill', 'chives', 'tarragon', 'lemongrass', 'bay leaves', 'curry leaves'], kind: 'herb', palette: P.mint },
 
   // Garnishes
-  { kw: ['cherry', 'maraschino cherry', 'raspberry', 'strawberry'], kind: 'garnish', palette: P.cherry },
+  { kw: ['cherry', 'cherries', 'maraschino cherry', 'raspberry', 'raspberries', 'strawberry', 'strawberries'], kind: 'garnish', palette: P.cherry },
+  { kw: ['blueberry', 'blueberries', 'blackberry', 'blackberries', 'cranberry', 'cranberries'], kind: 'produce', shape: 'cluster', palette: P.berry },
   // "olive oil" must resolve as an oil bottle, not the olive garnish below —
   // checked here (before the plain 'olive' keyword) since first match wins.
   { kw: ['olive oil'], kind: 'bottle', shape: 'round', palette: P.oil },
@@ -209,61 +215,72 @@ const TABLE = [
   { kw: ['vegetable oil', 'canola oil', 'sesame oil', 'coconut oil', 'cooking spray', 'apple cider vinegar', 'rice vinegar', 'balsamic', 'vinegar'], kind: 'bottle', shape: 'round', palette: P.oil },
 
   // Condiments, sauces & broths (compounds before protein/produce singles)
-  { kw: ['ketchup', 'salsa', 'bbq sauce', 'hot sauce', 'sriracha', 'tomato paste', 'tomato sauce', 'jam', 'jelly'], kind: 'jar', shape: 'condiment', palette: P.condRed },
+  { kw: ['ketchup', 'salsa', 'bbq sauce', 'hot sauce', 'sriracha', 'tomato paste', 'tomato sauce', 'jam', 'jelly', 'marinara', 'marinara sauce', 'fig jam', 'apple butter', 'orange marmalade', 'salsa verde', 'pico de gallo', 'cocktail sauce', 'buffalo sauce', 'duck sauce'], kind: 'jar', shape: 'condiment', palette: P.condRed },
   { kw: ['mustard'], kind: 'jar', shape: 'condiment', palette: P.condYellow },
-  { kw: ['mayo', 'mayonnaise', 'ranch', 'tahini', 'pesto', 'peanut butter', 'almond butter', 'hummus'], kind: 'jar', shape: 'condiment', palette: P.condWhite },
-  { kw: ['soy sauce', 'tamari', 'worcestershire', 'fish sauce', 'oyster sauce', 'hoisin', 'broth', 'stock', 'chicken broth', 'beef broth', 'vegetable broth'], kind: 'can', palette: P.condBrown },
+  { kw: ['mayo', 'mayonnaise', 'ranch', 'tahini', 'pesto', 'peanut butter', 'almond butter', 'hummus', 'alfredo', 'alfredo sauce', 'aioli', 'tzatziki', 'tartar sauce', 'remoulade', 'guacamole', 'sunflower seed butter', 'nutella'], kind: 'jar', shape: 'condiment', palette: P.condWhite },
+  { kw: ['soy sauce', 'tamari', 'worcestershire', 'fish sauce', 'oyster sauce', 'hoisin', 'broth', 'stock', 'chicken broth', 'beef broth', 'vegetable broth', 'miso', 'miso paste', 'natto', 'marmite', 'gochujang', 'sambal oelek', 'harissa', 'chimichurri', 'steak sauce'], kind: 'can', palette: P.condBrown },
 
   // Spice jars & shakers (compounds before produce's plain pepper/onion/garlic)
   { kw: ['salt', 'sea salt'], kind: 'shaker', palette: P.saltShaker },
   { kw: ['black pepper', 'white pepper'], kind: 'shaker', palette: P.pepperShaker },
   { kw: ['nutritional yeast'], kind: 'jar', shape: 'spice', palette: P.spiceGold },
-  { kw: ['paprika', 'cumin', 'oregano', 'chili powder', 'curry', 'turmeric', 'cayenne', 'bay', 'seasoning', 'italian seasoning', 'garlic powder', 'onion powder', 'red pepper flakes', 'clove', 'cardamom', 'cinnamon', 'nutmeg'], kind: 'jar', shape: 'spice', palette: SPICE_HASH_MARKER },
+  { kw: ['paprika', 'cumin', 'oregano', 'chili powder', 'curry', 'turmeric', 'cayenne', 'bay', 'seasoning', 'italian seasoning', 'garlic powder', 'onion powder', 'red pepper flakes', 'crushed red pepper', 'clove', 'cardamom', 'cinnamon', 'nutmeg', 'garam masala', 'chinese five spice', 'five spice', "za'atar", 'zaatar', 'herbes de provence', 'ground coriander', 'coriander', 'ground cumin', 'fennel seeds', 'mustard seeds', 'star anise', 'saffron', 'sumac', 'msg', 'ground ginger', 'poultry seasoning', 'cajun seasoning', 'old bay seasoning', 'adobo seasoning', 'everything bagel seasoning', 'taco seasoning', 'ranch seasoning', 'smoked paprika', 'sweet paprika', 'dried oregano', 'dried basil', 'dried rosemary'], kind: 'jar', shape: 'spice', palette: SPICE_HASH_MARKER },
 
   // Dairy
-  { kw: ['milk', 'coconut milk'], kind: 'dairy', shape: 'carton', palette: P.milk },
-  { kw: ['cheese', 'cheddar', 'mozzarella', 'parmesan', 'feta'], kind: 'dairy', shape: 'wedge', palette: P.cheese },
-  { kw: ['yogurt', 'sour cream', 'cream cheese'], kind: 'dairy', shape: 'tub', palette: P.yogurt },
-  { kw: ['butter', 'cream', 'heavy cream'], kind: 'dairy', shape: 'stick', palette: P.butterK },
+  { kw: ['milk', 'coconut milk', 'half and half', 'buttermilk', 'oat milk', 'almond milk', 'soy milk', 'cashew milk'], kind: 'dairy', shape: 'carton', palette: P.milk },
+  { kw: ['cheese', 'cheddar', 'mozzarella', 'parmesan', 'feta', 'goat cheese', 'cottage cheese', 'ricotta', 'string cheese', 'shredded mexican blend', 'shredded cheese', 'vegan cheese'], kind: 'dairy', shape: 'wedge', palette: P.cheese },
+  { kw: ['yogurt', 'sour cream', 'cream cheese', 'coconut yogurt'], kind: 'dairy', shape: 'tub', palette: P.yogurt },
+  { kw: ['butter', 'cream', 'heavy cream', 'vegan butter'], kind: 'dairy', shape: 'stick', palette: P.butterK },
 
   // Protein
   { kw: ['chicken', 'turkey', 'ham'], kind: 'protein', shape: 'poultry', palette: P.poultry },
   { kw: ['beef', 'steak', 'lamb'], kind: 'protein', shape: 'steak', palette: P.steak },
-  { kw: ['pork', 'bacon', 'sausage'], kind: 'protein', shape: 'steak', palette: P.porkK },
-  { kw: ['fish', 'salmon', 'tuna'], kind: 'protein', shape: 'fish', palette: P.fishK },
-  { kw: ['shrimp', 'crab'], kind: 'protein', shape: 'shrimp', palette: P.shrimpK },
+  { kw: ['pork', 'bacon', 'sausage', 'chorizo'], kind: 'protein', shape: 'steak', palette: P.porkK },
+  { kw: ['fish', 'salmon', 'tuna', 'cod', 'tilapia', 'halibut', 'trout', 'anchovies', 'anchovy'], kind: 'protein', shape: 'fish', palette: P.fishK },
+  { kw: ['shrimp', 'crab', 'scallop', 'scallops', 'mussel', 'mussels', 'clam', 'clams', 'lobster'], kind: 'protein', shape: 'shrimp', palette: P.shrimpK },
   { kw: ['tofu'], kind: 'protein', shape: 'cube', palette: P.tofuK },
   { kw: ['tempeh'], kind: 'protein', shape: 'cube', palette: P.tempehK },
   { kw: ['seitan'], kind: 'protein', shape: 'steak', palette: P.seitanK },
+  { kw: ['falafel', 'veggie burger', 'plant-based ground', 'plant based ground', 'plant-based sausage', 'textured vegetable protein'], kind: 'protein', shape: 'cube', palette: P.tofuK },
 
   // Grains, dry goods & baking
-  { kw: ['flour', 'cornstarch'], kind: 'drygood', shape: 'sack', palette: P.flour },
-  { kw: ['rice', 'quinoa', 'couscous', 'barley', 'yeast'], kind: 'drygood', shape: 'sack', palette: P.riceK },
-  { kw: ['pasta', 'spaghetti', 'noodles', 'oats', 'oatmeal', 'cereal'], kind: 'drygood', shape: 'box', palette: P.pastaK },
-  { kw: ['bread', 'breadcrumbs', 'panko'], kind: 'drygood', shape: 'loaf', palette: P.breadK },
-  { kw: ['tortilla', 'tortillas'], kind: 'drygood', shape: 'stack', palette: P.tortillaK },
-  { kw: ['cocoa', 'chocolate', 'chocolate chips'], kind: 'drygood', shape: 'box', palette: P.cocoaK },
+  { kw: ['flour', 'cornstarch', 'almond flour', 'whole wheat flour', 'gluten-free flour', 'self-rising flour', 'bread flour', 'cake flour'], kind: 'drygood', shape: 'sack', palette: P.flour },
+  { kw: ['rice', 'quinoa', 'couscous', 'barley', 'yeast', 'farro', 'bulgur', 'polenta', 'grits', 'granola', 'cornmeal', 'wild rice', 'arborio rice', 'jasmine rice', 'basmati rice'], kind: 'drygood', shape: 'sack', palette: P.riceK },
+  { kw: ['pasta', 'spaghetti', 'noodles', 'oats', 'oatmeal', 'cereal', 'penne', 'fusilli', 'lasagna noodles', 'ramen noodles', 'rice noodles', 'soba noodles', 'egg noodles', 'steel-cut oats', 'rolled oats'], kind: 'drygood', shape: 'box', palette: P.pastaK },
+  { kw: ['bread', 'breadcrumbs', 'panko', 'bagel', 'bagels', 'naan', 'dinner rolls', 'english muffins', 'hamburger buns', 'hot dog buns', 'sourdough bread', 'rye bread'], kind: 'drygood', shape: 'loaf', palette: P.breadK },
+  { kw: ['tortilla', 'tortillas', 'flour tortillas', 'corn tortillas', 'pita bread', 'pita'], kind: 'drygood', shape: 'stack', palette: P.tortillaK },
+  { kw: ['cocoa', 'chocolate', 'chocolate chips', 'dark chocolate', 'white chocolate chips'], kind: 'drygood', shape: 'box', palette: P.cocoaK },
   // (baking soda/powder/powdered sugar moved to the top of TABLE — see comment there)
-  { kw: ['vanilla extract', 'vanilla'], kind: 'bottle', shape: 'mini', palette: P.vanillaK },
+  { kw: ['vanilla extract', 'vanilla', 'almond extract', 'lemon extract'], kind: 'bottle', shape: 'mini', palette: P.vanillaK },
+  { kw: ['cake mix', 'brownie mix', 'pie crust', 'graham crackers', 'marshmallows', 'coconut flakes', 'sprinkles', 'food coloring', 'stevia', 'monk fruit sweetener', 'monk fruit'], kind: 'drygood', shape: 'box', palette: P.bakingBox },
+  { kw: ['applesauce', 'canned peaches', 'canned pineapple', 'canned pumpkin', 'canned corn', 'water chestnuts', 'bamboo shoots', 'coconut water', 'coconut cream'], kind: 'can', palette: P.can },
+  { kw: ['green olives', 'kalamata olives', 'pickles', 'pickled jalapeno', 'pickled jalapeños', 'pickled jalapenos', 'capers', 'artichoke hearts', 'roasted red peppers', 'sun-dried tomatoes'], kind: 'jar', shape: 'condiment', palette: P.olive },
+  { kw: ['almond', 'almonds', 'cashew', 'cashews', 'walnut', 'walnuts', 'pecan', 'pecans', 'pistachio', 'pistachios', 'macadamia', 'macadamia nuts', 'peanut', 'peanuts', 'pine nuts', 'brazil nuts'], kind: 'drygood', shape: 'sack', palette: P.nutK },
+  { kw: ['sunflower seeds', 'pumpkin seeds', 'chia seeds', 'flax seeds', 'hemp seeds', 'sesame seeds'], kind: 'drygood', shape: 'sack', palette: P.seedK },
+  { kw: ['raisins', 'dried cranberries', 'dried apricots', 'dried mango', 'prunes', 'dried figs', 'trail mix'], kind: 'drygood', shape: 'sack', palette: P.driedFruitK },
+  { kw: ['green tea', 'black tea', 'herbal tea', 'matcha powder', 'matcha'], kind: 'drygood', shape: 'box', palette: P.teaK },
+  { kw: ['crackers', 'pretzels', 'popcorn', 'granola bars', 'protein bars', 'granola bar', 'protein bar', 'rice cakes'], kind: 'drygood', shape: 'box', palette: P.snackK },
 
   // Produce (single words last, after every compound above)
-  { kw: ['onion', 'onions', 'garlic'], kind: 'produce', shape: 'bulb', palette: P.onionK },
+  { kw: ['onion', 'onions', 'garlic', 'shallot', 'shallots', 'leek', 'leeks'], kind: 'produce', shape: 'bulb', palette: P.onionK },
   { kw: ['ginger'], kind: 'produce', shape: 'bulb', palette: P.potatoK },
-  { kw: ['potato', 'potatoes'], kind: 'produce', shape: 'round', palette: P.potatoK },
+  { kw: ['potato', 'potatoes', 'parsnip', 'parsnips', 'turnip', 'turnips', 'rutabaga', 'jicama'], kind: 'produce', shape: 'round', palette: P.potatoK },
   { kw: ['carrot', 'carrots'], kind: 'produce', shape: 'long', palette: P.carrotK },
-  { kw: ['broccoli'], kind: 'produce', shape: 'cap', palette: P.broccoliK },
+  { kw: ['broccoli', 'broccolini', 'artichoke', 'artichokes'], kind: 'produce', shape: 'cap', palette: P.broccoliK },
   { kw: ['brussels sprouts', 'brussel sprouts'], kind: 'produce', shape: 'round', palette: P.brusselsK },
   { kw: ['cauliflower', 'cabbage'], kind: 'produce', shape: 'round', palette: P.cauliK },
-  { kw: ['spinach', 'lettuce', 'kale', 'arugula'], kind: 'produce', shape: 'leafy', palette: P.leafyK },
+  { kw: ['spinach', 'lettuce', 'kale', 'arugula', 'chard', 'swiss chard', 'collard greens', 'collards', 'bok choy', 'watercress'], kind: 'produce', shape: 'leafy', palette: P.leafyK },
   { kw: ['parsley'], kind: 'herb', palette: P.mint },
   { kw: ['tomato', 'tomatoes'], kind: 'produce', shape: 'round', palette: P.tomatoK },
-  { kw: ['jalapeno', 'jalapeño', 'jalapenos'], kind: 'produce', shape: 'pepper', palette: P.pepperRedK },
+  { kw: ['beet', 'beets', 'golden beets', 'radish', 'radishes'], kind: 'produce', shape: 'round', palette: P.beetK },
+  { kw: ['eggplant', 'eggplants'], kind: 'produce', shape: 'long', palette: P.eggplantK },
+  { kw: ['jalapeno', 'jalapeño', 'jalapenos', 'habanero', 'serrano pepper', 'poblano pepper'], kind: 'produce', shape: 'pepper', palette: P.pepperRedK },
   { kw: ['pepper', 'peppers', 'bell pepper', 'bell peppers'], kind: 'produce', shape: 'pepper', palette: P.pepperGreenK },
   { kw: ['corn'], kind: 'produce', shape: 'cob', palette: P.cornK },
   { kw: ['mushroom', 'mushrooms'], kind: 'produce', shape: 'cap', palette: P.mushroomK },
   { kw: ['avocado'], kind: 'produce', shape: 'round', palette: P.avocadoK },
-  { kw: ['cucumber', 'zucchini', 'scallion', 'scallions', 'celery'], kind: 'produce', shape: 'long', palette: P.cucumberK },
-  { kw: ['squash'], kind: 'produce', shape: 'long', palette: P.squashK },
+  { kw: ['cucumber', 'zucchini', 'scallion', 'scallions', 'celery', 'fennel', 'asparagus', 'okra'], kind: 'produce', shape: 'long', palette: P.cucumberK },
+  { kw: ['squash', 'pumpkin'], kind: 'produce', shape: 'long', palette: P.squashK },
   // Named legumes checked BEFORE the generic 'beans' below (same first-match
   // rule as everywhere else in this table) so canned/dry beans get their own
   // color instead of the generic pea-green cluster.
@@ -274,7 +291,12 @@ const TABLE = [
   { kw: ['edamame'], kind: 'produce', shape: 'cluster', palette: P.edamameK },
   { kw: ['peas', 'beans', 'green beans'], kind: 'produce', shape: 'cluster', palette: P.peaK },
   { kw: ['banana', 'bananas'], kind: 'produce', shape: 'long', palette: P.bananaK },
-  { kw: ['apple'], kind: 'produce', shape: 'round', palette: P.appleK },
+  { kw: ['apple', 'apples', 'granny smith apples', 'granny smith'], kind: 'produce', shape: 'round', palette: P.appleK },
+  { kw: ['grape', 'grapes', 'red grapes'], kind: 'produce', shape: 'cluster', palette: P.grapeK },
+  { kw: ['peach', 'peaches', 'nectarine', 'nectarines', 'plum', 'plums', 'apricot', 'apricots', 'pear', 'pears'], kind: 'produce', shape: 'round', palette: P.peachK },
+  { kw: ['pineapple', 'mango', 'papaya', 'guava', 'lychee', 'passion fruit', 'dragon fruit', 'star fruit', 'persimmon'], kind: 'produce', shape: 'round', palette: P.tropicalK },
+  { kw: ['watermelon', 'cantaloupe', 'honeydew melon', 'kiwi'], kind: 'produce', shape: 'round', palette: P.melonK },
+  { kw: ['pomegranate', 'fig', 'figs', 'date', 'dates'], kind: 'produce', shape: 'cluster', palette: P.driedFruitK },
 ];
 
 // Deterministic variety for ingredients no keyword matches: hash the name to a

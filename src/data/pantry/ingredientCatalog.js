@@ -124,7 +124,7 @@ export const INGREDIENT_CATALOG = [
       'Marinara Sauce', 'Pasta Sauce', 'Alfredo Sauce', 'Pesto', 'Canned Corn',
       'Canned Pumpkin', 'Applesauce', 'Canned Peaches', 'Canned Pineapple',
       'Green Olives', 'Kalamata Olives', 'Roasted Red Peppers', 'Artichoke Hearts',
-      'Pickles', 'Pickled Jalapeños', 'Capers', 'Sun-Dried Tomatoes', 'Coconut Cream',
+      'Pickles', 'Pickled Jalapenos', 'Capers', 'Sun-Dried Tomatoes', 'Coconut Cream',
       'Water Chestnuts', 'Bamboo Shoots', 'Refried Beans', 'Baked Beans',
     ],
   },

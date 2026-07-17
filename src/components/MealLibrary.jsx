@@ -1,10 +1,9 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { ChefHat, UtensilsCrossed, MoreHorizontal, Play, Sparkles, Heart, Repeat, Clock, AlertTriangle } from 'lucide-react';
+import { ChefHat, UtensilsCrossed, MoreHorizontal, Play, Sparkles, Heart, Repeat, Clock, AlertTriangle, Tag, Plus, Pencil, Trash2, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { downloadMealsFile, importMealsFromJson, shareMealsFile } from '../sync';
 import { toggleRotation, bulkSetRotation, getUserTags, addUserTag, deleteUserTag, renameUserTag, setMealTags, bulkSetMealTags } from '../db';
 import db from '../db';
-import { Tag, Plus, Pencil, Trash2, Check } from 'lucide-react';
 import useBackHandler from '../hooks/useBackHandler';
 import SafeMediaImage from './SafeMediaImage';
 import ReExtractSheet from './ReExtractSheet';
@@ -578,6 +577,8 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
   useBackHandler(!!reExtractMeal, () => setReExtractMeal(null), 'meal-reextract');
   useBackHandler(!!quickPreview, () => setQuickPreview(null), 'meal-quickpreview');
   useBackHandler(showDiscover, () => setShowDiscover(false), 'meal-discover');
+  useBackHandler(showTagManager, () => { setShowTagManager(false); setEditingTagId(null); }, 'meal-tagmgr');
+  useBackHandler(showBulkTagPicker, () => setShowBulkTagPicker(false), 'meal-bulktag');
 
   // ── Escape key closes the expandable card (desktop / keyboard) ──────────────
   useEffect(() => {
@@ -590,15 +591,25 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
   // ── Render Tile ────────────────────────────────────────────────────────────
   const renderTile = (meal, idx) => (
     <motion.div
-      key={meal.id || idx}
-      layout
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.1 } }}
-      transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+      key={meal.id}
+      layout="position"
+      initial={{ opacity: 0, y: 14, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.88, transition: { duration: 0.14 } }}
+      transition={{
+        type: 'spring',
+        stiffness: 480,
+        damping: 32,
+        delay: Math.min(idx * 0.03, 0.22),
+      }}
+      whileHover={!selectMode ? {
+        y: -3,
+        scale: 1.02,
+        transition: { type: 'spring', stiffness: 300, damping: 20, delay: 0 },
+      } : undefined}
+      whileTap={{ scale: 0.96, transition: { duration: 0.1 } }}
       className={[
         'ml-tile',
-        meal.isFavorite ? 'ml-tile-fav-bg' : '',
         selectMode && selectedIds.has(meal.id) ? 'ml-tile-selected' : '',
         meal.status === 'failed' ? 'ml-tile-failed' : '',
       ].filter(Boolean).join(' ')}
@@ -1131,6 +1142,26 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                 </div>
               )}
 
+              {/* ── Tag chips (tap to toggle) ── */}
+              {userTags.length > 0 && (
+                <div className="ml-qp-tags">
+                  {userTags.map(tag => {
+                    const hasTag = (quickPreview.tags || []).includes(tag.name);
+                    return (
+                      <button
+                        key={tag.id}
+                        className={`ml-qp-tag${hasTag ? ' ml-qp-tag-active' : ''}`}
+                        style={hasTag ? { background: tag.color, borderColor: tag.color, color: '#fff' } : undefined}
+                        onClick={() => handleToggleMealTag(quickPreview.id, tag.name)}
+                      >
+                        {hasTag ? <Check size={11} strokeWidth={3} /> : <Tag size={11} strokeWidth={2} />}
+                        {tag.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               <div className="ml-qp-section">
                 <h4>Ingredients ({(quickPreview.ingredients || []).length})</h4>
                 <ul className="ml-qp-list">
@@ -1256,6 +1287,155 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                   <span>{cat}</span>
                 </button>
               ))}
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+      </AnimatePresence>
+
+      {/* ── Tag Manager sheet ── */}
+      <AnimatePresence>
+      {showTagManager && (
+        <motion.div
+          key="tag-manager"
+          className="ml-overlay"
+          onClick={() => { setShowTagManager(false); setEditingTagId(null); }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <motion.div
+            className="ml-sheet"
+            onClick={e => e.stopPropagation()}
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', stiffness: 320, damping: 34 }}
+          >
+            <div className="ml-sheet-handle" />
+            <div className="ml-sheet-header">
+              <h3>Manage Tags</h3>
+              <button className="ml-sheet-close" onClick={() => { setShowTagManager(false); setEditingTagId(null); }}>✕</button>
+            </div>
+            <p className="ml-sheet-subtitle">
+              Create custom tags to organize your recipes
+            </p>
+            {/* New tag input */}
+            <div className="ml-tag-create-row">
+              <input
+                type="text"
+                className="ml-tag-create-input"
+                placeholder="New tag name…"
+                value={newTagName}
+                onChange={e => setNewTagName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleCreateTag(); }}
+                maxLength={30}
+              />
+              <button
+                className="ml-tag-create-btn"
+                onClick={handleCreateTag}
+                disabled={!newTagName.trim()}
+              >
+                <Plus size={16} strokeWidth={2.5} />
+              </button>
+            </div>
+            {/* Existing tags */}
+            <div className="ml-sheet-options ml-tag-list">
+              {userTags.map(tag => (
+                <div key={tag.id} className="ml-tag-row">
+                  {editingTagId === tag.id ? (
+                    <div className="ml-tag-edit-row">
+                      <input
+                        type="text"
+                        className="ml-tag-create-input"
+                        value={editingTagName}
+                        onChange={e => setEditingTagName(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleRenameTag(tag.id); }}
+                        autoFocus
+                      />
+                      <button className="ml-tag-save-btn" onClick={() => handleRenameTag(tag.id)}>
+                        <Check size={14} strokeWidth={2.5} />
+                      </button>
+                      <button className="ml-tag-cancel-btn" onClick={() => setEditingTagId(null)}>✕</button>
+                    </div>
+                  ) : (
+                    <>
+                      <span className="ml-tag-row-dot" style={{ background: tag.color }} />
+                      <span className="ml-tag-row-name">{tag.emoji} {tag.name}</span>
+                      <span className="ml-tag-row-count">
+                        {meals.filter(m => (m.tags || []).includes(tag.name)).length}
+                      </span>
+                      <button
+                        className="ml-tag-row-action"
+                        onClick={() => { setEditingTagId(tag.id); setEditingTagName(tag.name); }}
+                        title="Rename"
+                      >
+                        <Pencil size={13} strokeWidth={2} />
+                      </button>
+                      <button
+                        className="ml-tag-row-action ml-tag-row-delete"
+                        onClick={() => handleDeleteTag(tag.id)}
+                        title="Delete"
+                      >
+                        <Trash2 size={13} strokeWidth={2} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              ))}
+              {userTags.length === 0 && (
+                <p style={{ textAlign: 'center', color: 'var(--text-light)', fontSize: 13, padding: 16 }}>
+                  No tags yet — create one above
+                </p>
+              )}
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+      </AnimatePresence>
+
+      {/* ── Bulk Tag Picker sheet (multi-select mode) ── */}
+      <AnimatePresence>
+      {showBulkTagPicker && (
+        <motion.div
+          key="bulk-tag-picker"
+          className="ml-overlay"
+          onClick={() => setShowBulkTagPicker(false)}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <motion.div
+            className="ml-sheet"
+            onClick={e => e.stopPropagation()}
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', stiffness: 320, damping: 34 }}
+          >
+            <div className="ml-sheet-handle" />
+            <div className="ml-sheet-header">
+              <h3>Tag {selectedIds.size} Meal{selectedIds.size !== 1 ? 's' : ''}</h3>
+              <button className="ml-sheet-close" onClick={() => setShowBulkTagPicker(false)}>✕</button>
+            </div>
+            <div className="ml-sheet-options">
+              {userTags.map(tag => (
+                <button
+                  key={tag.id}
+                  className="ml-sheet-option"
+                  onClick={() => handleBulkTag(tag.name)}
+                >
+                  <span className="ml-tag-row-dot" style={{ background: tag.color }} />
+                  <span>{tag.emoji} {tag.name}</span>
+                </button>
+              ))}
+              {userTags.length === 0 && (
+                <p style={{ textAlign: 'center', color: 'var(--text-light)', fontSize: 13, padding: 16 }}>
+                  No tags yet — create tags in the tag manager first
+                </p>
+              )}
             </div>
           </motion.div>
         </motion.div>
