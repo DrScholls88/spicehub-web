@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import { addToBarInventory, removeFromBarInventory, updateBarBottle } from '../db';
 import { canonicalizeIngredient } from '../lib/barMatch';
@@ -9,6 +9,8 @@ import {
   STORAGE_TIPS, freshnessOf,
 } from '../lib/pantryDomain';
 import { IngredientSprite } from '../lib/barSprites.jsx';
+import PantryIngredientCatalog from './PantryIngredientCatalog.jsx';
+import { ALL_CATALOG_ITEMS } from '../data/pantry/ingredientCatalog';
 
 /**
  * PantryMode — the Kitchen Pantry (P5). The "daytime" counterpart to the
@@ -36,6 +38,13 @@ const FRESH_QUICK_ADDS = [
   'broccoli', 'zucchini', 'sweet potatoes', 'kale', 'avocado',
   'brussels sprouts', 'cauliflower', 'carrots', 'cucumber', 'bananas',
 ];
+
+// How many extra suggestion chips to reveal per scroll-triggered batch, once
+// the curated FRESH_QUICK_ADDS list is exhausted. A plain IntersectionObserver
+// on a sentinel row — not react-window/TanStack Virtual — is enough here: the
+// pool is a few hundred plain strings, the same scale IngredientCatalog.jsx
+// (the Bar's 180+ item browse sheet) already handles with zero virtualization.
+const QUICK_ADD_BATCH = 12;
 
 // ── Simple, alias-light meal matcher (proximity match) ───────────────────────
 // Canonicalizes both sides, then whole-word containment either direction —
@@ -84,6 +93,9 @@ export default function PantryMode({ meals, onViewDetail, onClose, onAddToGrocer
   const [showMatches, setShowMatches] = useState(initialShowMatches);
   const [matchFilter, setMatchFilter] = useState(null); // "cook with this" ingredient
   const [justAdded, setJustAdded] = useState(null);
+  const [showCatalog, setShowCatalog] = useState(false);
+  const [quickAddLimit, setQuickAddLimit] = useState(FRESH_QUICK_ADDS.length);
+  const quickSentinelRef = useRef(null);
 
   // Load the kitchen slice of the unified inventory.
   useEffect(() => {
@@ -109,6 +121,63 @@ export default function PantryMode({ meals, onViewDetail, onClose, onAddToGrocer
     () => records.filter(r => !isStaple(r.ingredient)),
     [records]
   );
+
+  // Canonical names of everything tracked as Fresh — used to mark tiles
+  // "on" in the Browse catalog (PantryIngredientCatalog).
+  const trackedFreshSet = useMemo(
+    () => new Set(perishables.map(r => r.ingredient)),
+    [perishables]
+  );
+
+  // ── Quick-add suggestion pool: curated FRESH_QUICK_ADDS first, then the
+  // massive catalog (already excludes staples by construction — see
+  // data/pantry/ingredientCatalog.js), deduped and minus anything already
+  // tracked. quickAddLimit grows in batches as the user scrolls the 2-row
+  // chip strip, via the IntersectionObserver effect below.
+  const quickAddPool = useMemo(() => {
+    const seen = new Set();
+    const pool = [];
+    for (const name of FRESH_QUICK_ADDS) {
+      const key = name.toLowerCase();
+      if (trackedFreshSet.has(key) || seen.has(key)) continue;
+      seen.add(key);
+      pool.push(name);
+    }
+    for (const name of ALL_CATALOG_ITEMS) {
+      const key = name.toLowerCase();
+      if (trackedFreshSet.has(key) || seen.has(key)) continue;
+      seen.add(key);
+      pool.push(key);
+    }
+    return pool;
+  }, [trackedFreshSet]);
+
+  const visibleQuickAdds = quickAddPool.slice(0, quickAddLimit);
+  const hasMoreQuickAdds = quickAddLimit < quickAddPool.length;
+
+  // Reset the reveal count whenever the pool's composition changes size
+  // dramatically (e.g. several items tracked at once) so it never gets
+  // stuck showing fewer than a full first batch.
+  useEffect(() => {
+    setQuickAddLimit((prev) => Math.max(prev, Math.min(FRESH_QUICK_ADDS.length, quickAddPool.length)));
+  }, [quickAddPool.length]);
+
+  // Progressive reveal — IntersectionObserver on a sentinel row, not a
+  // virtualization library. The pool tops out around 400 plain strings,
+  // the same order of magnitude IngredientCatalog.jsx (Bar) already renders
+  // in full with no virtualization; a sentinel-driven batch reveal is
+  // simpler and has zero new dependencies.
+  useEffect(() => {
+    const el = quickSentinelRef.current;
+    if (!el || !hasMoreQuickAdds) return undefined;
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some(e => e.isIntersecting)) {
+        setQuickAddLimit((prev) => Math.min(quickAddPool.length, prev + QUICK_ADD_BATCH));
+      }
+    }, { root: el.parentElement, rootMargin: '80px', threshold: 0 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasMoreQuickAdds, quickAddPool.length]);
 
   // ── Pantry tokens for the matcher: staples in stock + tracked non-empty ──
   const pantryTokens = useMemo(() => {
@@ -258,12 +327,21 @@ export default function PantryMode({ meals, onViewDetail, onClose, onAddToGrocer
             Quick Add
           </button>
         </div>
-        <div className="pm-quick">
-          {FRESH_QUICK_ADDS.filter(i => !recordByName(i)).slice(0, 7).map(item => (
+        <div className="pm-quick-head">
+          <span className="pm-quick-label">Quick Add</span>
+          <button className="pm-quick-browse-link" onClick={() => setShowCatalog(true)}>
+            Browse all 400+ →
+          </button>
+        </div>
+        <div className="pm-quick pm-quick--wrap">
+          {visibleQuickAdds.map(item => (
             <button key={item} className="pm-quick-chip" onClick={() => addFresh(item)}>
               + {item}
             </button>
           ))}
+          {hasMoreQuickAdds && (
+            <span ref={quickSentinelRef} className="pm-quick-sentinel" aria-hidden="true" />
+          )}
         </div>
 
         {/* ── Scene: fresh shelf + staples cabinet ── */}
@@ -516,6 +594,18 @@ export default function PantryMode({ meals, onViewDetail, onClose, onAddToGrocer
               </div>
             );
           })()}
+        </AnimatePresence>
+
+        {/* ── Browse catalog — the "massively expanded" 400+ item sheet ── */}
+        <AnimatePresence>
+          {showCatalog && (
+            <PantryIngredientCatalog
+              stocked={trackedFreshSet}
+              onAdd={addFresh}
+              onRemove={removeItem}
+              onClose={() => setShowCatalog(false)}
+            />
+          )}
         </AnimatePresence>
       </motion.div>
     </div>
