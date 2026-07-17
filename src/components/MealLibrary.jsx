@@ -587,6 +587,144 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
     return () => document.removeEventListener('keydown', onKey);
   }, [quickPreview]);
 
+  // ── Render Tile ────────────────────────────────────────────────────────────
+  const renderTile = (meal, idx) => (
+    <motion.div
+      key={meal.id || idx}
+      layout
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.1 } }}
+      transition={{ type: 'spring', stiffness: 350, damping: 25 }}
+      className={[
+        'ml-tile',
+        meal.isFavorite ? 'ml-tile-fav-bg' : '',
+        selectMode && selectedIds.has(meal.id) ? 'ml-tile-selected' : '',
+        meal.status === 'failed' ? 'ml-tile-failed' : '',
+      ].filter(Boolean).join(' ')}
+      onClick={() => handleTileClick(meal)}
+      onTouchStart={e => selectMode ? handleLongPressSelect(meal, e) : handleTouchStart(meal, e)}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={e => handleTouchEnd(meal, e)}
+      onTouchCancel={e => handleTouchEnd(meal, e)}
+      onContextMenu={e => {
+        e.preventDefault();
+        if (selectMode) toggleSelect(meal.id);
+        else { hapticLight(); setQuickPreview(meal); }
+      }}
+    >
+      {/* Select checkbox overlay */}
+      {selectMode && (
+        <div className="ml-tile-check">
+          <span>{selectedIds.has(meal.id) ? '✓' : ''}</span>
+        </div>
+      )}
+
+      {/* Image area */}
+      <motion.div className="ml-tile-image" layoutId={`ml-card-img-${meal.id}`}>
+        <CardImage
+          src={meal.imageUrl}
+          alt={meal.name || 'Recipe'}
+          className="ml-tile-img"
+          phClass="ml-tile-placeholder"
+        />
+        {meal.isFavorite && <span className="ml-tile-fav"><Heart size={15} fill="#e53935" color="#e53935" aria-label="Favorite" /></span>}
+        {meal.inRotation && <span className="ml-tile-rotation"><Repeat size={13} strokeWidth={2.5} aria-label="In rotation" /></span>}
+        {meal.category && meal.category !== 'Dinners' && (
+          <span className="ml-tile-cat">{meal.category}</span>
+        )}
+        {/* I-5: low-confidence import → one-tap re-extraction */}
+        {!selectMode && isImprovable(meal) && (
+          <button
+            className="ml-tile-improve"
+            aria-label="Improve this recipe with the latest engine"
+            title="Low-confidence import — tap to re-run extraction"
+            onClick={e => { e.stopPropagation(); hapticLight(); setReExtractMeal(meal); }}
+            onTouchEnd={e => e.stopPropagation()}
+          >
+            <Sparkles size={13} strokeWidth={2.5} aria-hidden="true" /> Improve
+          </button>
+        )}
+        {/* ⋯ menu button — always visible, bottom-right of image */}
+        {!selectMode && (
+          <button
+            className="ml-tile-menu-btn"
+            aria-label="More options"
+            onClick={e => { e.stopPropagation(); hapticLight(); setQuickPreview(meal); }}
+            onTouchEnd={e => e.stopPropagation()}
+          >
+            <MoreHorizontal size={18} strokeWidth={2.5} />
+          </button>
+        )}
+        {/* PiP: play video badge — only on cards with a YouTube/Instagram source */}
+        {!selectMode && onPlayVideo && (() => {
+          const vsrc = getMealVideoSource(meal);
+          if (!vsrc) return null;
+          return (
+            <button
+              className={`ml-tile-play ml-tile-play-${vsrc.platform}`}
+              aria-label={`Play ${vsrc.label} video in floating player`}
+              title={`Play video (${vsrc.label})`}
+              onClick={e => { e.stopPropagation(); hapticLight(); onPlayVideo(meal); }}
+              onTouchEnd={e => e.stopPropagation()}
+            >
+              <Play size={14} fill="#fff" color="#fff" aria-hidden="true" />
+            </button>
+          );
+        })()}
+      </motion.div>
+
+      {/* Info row */}
+      <div className="ml-tile-info">
+        <motion.span className="ml-tile-name" layoutId={`ml-card-title-${meal.id}`}>
+          {/* Category color as a small dot, not a card side-stripe */}
+          <span
+            className="ml-tile-cat-dot"
+            style={{ background: CATEGORY_COLORS[meal.category || 'Dinners'] || '#ccc' }}
+            aria-hidden="true"
+          />
+          {meal.name || 'Untitled Recipe'}
+        </motion.span>
+        <span className="ml-tile-meta">
+          {meal.starterKit && <span className="ml-tile-starter">Starter</span>}
+          {meal.status === 'processing' ? (
+            <><Clock size={12} strokeWidth={2.5} style={{ verticalAlign: '-2px' }} /> Import in progress…</>
+          ) : meal.status === 'failed' ? (
+            <><AlertTriangle size={12} strokeWidth={2.5} style={{ verticalAlign: '-2px' }} /> Import failed — tap to delete</>
+          ) : (
+            `${(meal.ingredients || []).length} ing · ${(meal.directions || []).length} steps`
+          )}
+        </span>
+        {formatAddedDate(meal.importedAt || meal.createdAt || meal.created) && (
+          <span
+            className="ml-tile-added"
+            title={meal.importedAt || meal.createdAt || meal.created}
+          >
+            {formatAddedDate(meal.importedAt || meal.createdAt || meal.created)}
+          </span>
+        )}
+        {/* Notes may be a structured [{title,text}] array (post-2026-06-26 schema)
+            or a legacy flat string — never render either raw, since React throws
+            on plain-object children. This was the root cause of the "Meal Library
+            goes blank" bug: any meal with populated structured notes (starter pack
+            recipes always have them) crashed the whole tile render with no
+            ErrorBoundary to catch it. */}
+        {(() => {
+          const notePreview = meal._notesFlat
+            || (Array.isArray(meal.notes)
+                ? meal.notes.map(n => (typeof n === 'string' ? n : n?.text || '')).filter(Boolean).join(' ')
+                : (typeof meal.notes === 'string' ? meal.notes : ''));
+          if (!notePreview) return null;
+          return (
+            <span className="ml-tile-notes">
+              {notePreview.slice(0, 60)}{notePreview.length > 60 ? '…' : ''}
+            </span>
+          );
+        })()}
+      </div>
+    </motion.div>
+  );
+
   return (
     <div className="ml">
 
