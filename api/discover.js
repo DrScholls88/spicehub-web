@@ -24,16 +24,25 @@ const FEED_TIMEOUT_MS = 8000;
  * actual post categories come from the RSS <category> elements.
  */
 const SOURCES = {
-  seriouseats:    { name: 'Serious Eats',       feedUrl: 'https://www.seriouseats.com/rss', emoji: '🔬', tags: ['technique', 'comfort'] },
-  budgetbytes:    { name: 'Budget Bytes',        feedUrl: 'https://www.budgetbytes.com/feed/', emoji: '💰', tags: ['budget', 'weeknight'] },
-  recipetineats:  { name: 'RecipeTin Eats',      feedUrl: 'https://www.recipetineats.com/feed/', emoji: '🍳', tags: ['weeknight', 'comfort'] },
-  minimalistbaker:{ name: 'Minimalist Baker',    feedUrl: 'https://minimalistbaker.com/feed/', emoji: '🌱', tags: ['vegan', 'simple'] },
-  smittenkitchen: { name: 'Smitten Kitchen',     feedUrl: 'https://smittenkitchen.com/feed/', emoji: '🏙️', tags: ['comfort', 'baking'] },
-  pinchofyum:     { name: 'Pinch of Yum',        feedUrl: 'https://pinchofyum.com/feed', emoji: '🤌', tags: ['weeknight', 'comfort'] },
-  halfbakedharvest:{ name: 'Half Baked Harvest', feedUrl: 'https://www.halfbakedharvest.com/feed/', emoji: '🌾', tags: ['seasonal', 'comfort'] },
-  cookieandkate:  { name: 'Cookie and Kate',     feedUrl: 'https://cookieandkate.com/feed/', emoji: '🥗', tags: ['vegetarian', 'healthy'] },
-  sallysbaking:   { name: "Sally's Baking",      feedUrl: 'https://sallysbakingaddiction.com/feed/', emoji: '🧁', tags: ['baking', 'dessert'] },
-  damndelicious:  { name: 'Damn Delicious',      feedUrl: 'https://damndelicious.net/feed/', emoji: '🔥', tags: ['weeknight', 'simple'] },
+  // ── Original 10 ────────────────────────────────────────────────────
+  seriouseats:      { name: 'Serious Eats',        feedUrl: 'https://www.seriouseats.com/rss',              emoji: '🔬', tags: ['technique', 'comfort'] },
+  budgetbytes:      { name: 'Budget Bytes',         feedUrl: 'https://www.budgetbytes.com/feed/',            emoji: '💰', tags: ['budget', 'weeknight'] },
+  recipetineats:    { name: 'RecipeTin Eats',       feedUrl: 'https://www.recipetineats.com/feed/',          emoji: '🍳', tags: ['weeknight', 'comfort'] },
+  minimalistbaker:  { name: 'Minimalist Baker',     feedUrl: 'https://minimalistbaker.com/feed/',            emoji: '🌱', tags: ['vegan', 'simple'] },
+  smittenkitchen:   { name: 'Smitten Kitchen',      feedUrl: 'https://smittenkitchen.com/feed/',             emoji: '🏙️', tags: ['comfort', 'baking'] },
+  pinchofyum:       { name: 'Pinch of Yum',         feedUrl: 'https://pinchofyum.com/feed',                 emoji: '🤌', tags: ['weeknight', 'comfort'] },
+  halfbakedharvest: { name: 'Half Baked Harvest',   feedUrl: 'https://www.halfbakedharvest.com/feed/',       emoji: '🌾', tags: ['seasonal', 'comfort'] },
+  cookieandkate:    { name: 'Cookie and Kate',      feedUrl: 'https://cookieandkate.com/feed/',              emoji: '🥗', tags: ['vegetarian', 'healthy'] },
+  sallysbaking:     { name: "Sally's Baking",       feedUrl: 'https://sallysbakingaddiction.com/feed/',      emoji: '🧁', tags: ['baking', 'dessert'] },
+  damndelicious:    { name: 'Damn Delicious',       feedUrl: 'https://damndelicious.net/feed/',              emoji: '🔥', tags: ['weeknight', 'simple'] },
+  // ── Expansion (2026-07-16) ─────────────────────────────────────────
+  loveandlemons:    { name: 'Love & Lemons',        feedUrl: 'https://www.loveandlemons.com/feed/',          emoji: '🍋', tags: ['vegetarian', 'seasonal'] },
+  ambitiouskitchen: { name: 'Ambitious Kitchen',     feedUrl: 'https://www.ambitiouskitchen.com/feed/',       emoji: '💪', tags: ['healthy', 'mealprep'] },
+  gimmesomeoven:    { name: 'Gimme Some Oven',       feedUrl: 'https://www.gimmesomeoven.com/feed/',          emoji: '🫕', tags: ['comfort', 'weeknight'] },
+  skinnytaste:      { name: 'Skinnytaste',           feedUrl: 'https://www.skinnytaste.com/feed/',            emoji: '⚖️', tags: ['healthy', 'weeknight'] },
+  acouplecooks:     { name: 'A Couple Cooks',        feedUrl: 'https://www.acouplecooks.com/feed/',           emoji: '👫', tags: ['healthy', 'vegetarian'] },
+  mediterraneandish:{ name: 'Mediterranean Dish',    feedUrl: 'https://www.themediterraneandish.com/feed/',   emoji: '🫒', tags: ['healthy', 'comfort'] },
+  feastingathome:   { name: 'Feasting at Home',      feedUrl: 'https://www.feastingathome.com/feed/',         emoji: '🍽️', tags: ['seasonal', 'technique'] },
 };
 
 // ─── Minimal RSS parser ──────────────────────────────────────────────────────
@@ -57,14 +66,26 @@ function extractAllTags(xml, tag) {
   return results;
 }
 
-function extractImage(contentEncoded, description) {
-  // Try content:encoded first (higher quality images)
+function extractImage(itemXml, contentEncoded, description) {
+  // 1. content:encoded <img src="..."> — highest quality, most blogs
   const imgRe = /src=["']([^"']+\.(?:jpg|jpeg|png|webp)[^"']*)/i;
   let m = contentEncoded.match(imgRe);
   if (m) return m[1].replace(/&amp;/g, '&');
-  // Fallback to description
+
+  // 2. <media:content url="..."> — Skinnytaste, some WordPress themes
+  const mediaRe = /<media:content[^>]+url=["']([^"']+)/i;
+  m = itemXml.match(mediaRe);
+  if (m) return m[1].replace(/&amp;/g, '&');
+
+  // 3. <enclosure url="..."> — podcast-style feeds that attach images
+  const encRe = /<enclosure[^>]+url=["']([^"']+(?:jpg|jpeg|png|webp)[^"']*)/i;
+  m = itemXml.match(encRe);
+  if (m) return m[1].replace(/&amp;/g, '&');
+
+  // 4. description fallback
   m = description.match(imgRe);
   if (m) return m[1].replace(/&amp;/g, '&');
+
   return '';
 }
 
@@ -101,11 +122,11 @@ function parseRssFeed(xml, sourceKey, limit) {
     const contentEncoded = extractTag(itemXml, 'content:encoded');
     const categories = extractAllTags(itemXml, 'category').map(c => stripHtml(c));
 
-    // Skip non-recipe posts (giveaways, roundups, announcements)
-    const skipPatterns = /giveaway|sweepstakes|gift\s*card|roundup|announcement|sponsored/i;
+    // Skip non-recipe posts (giveaways, product roundups, gear reviews, announcements)
+    const skipPatterns = /giveaway|sweepstakes|gift\s*card|roundup|announcement|sponsored|best .+(?:to buy|we tested|we tried)|pepper grinder|kitchen gadget|product review/i;
     if (skipPatterns.test(title) || skipPatterns.test(categories.join(' '))) continue;
 
-    const imageUrl = extractImage(contentEncoded, description);
+    const imageUrl = extractImage(itemXml, contentEncoded, description);
     const snippet = stripHtml(description).slice(0, 200);
 
     if (!title || !link) continue;

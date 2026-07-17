@@ -296,7 +296,7 @@ export default function PantryMode({ meals, onViewDetail, onClose, onAddToGrocer
                       onClick={() => openLedger(rec.ingredient)}
                       title={rec.displayName || rec.ingredient}
                     >
-                      <span className="pm-tile-dish pm-tile-dish--crate">
+                      <span className="pm-tile-dish">
                         <IngredientSprite name={rec.ingredient} size={36} />
                       </span>
                       <span className="pm-tile-name">{rec.displayName || rec.ingredient}</span>
@@ -339,7 +339,7 @@ export default function PantryMode({ meals, onViewDetail, onClose, onAddToGrocer
                         onClick={() => openLedger(name)}
                         title={stocked ? name : `${name} — out of stock`}
                       >
-                        <span className="pm-tile-dish pm-tile-dish--jar">
+                        <span className="pm-tile-dish">
                           <IngredientSprite name={name} size={30} />
                         </span>
                         <span className="pm-tile-name">{name}</span>

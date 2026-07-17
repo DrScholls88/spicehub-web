@@ -2,8 +2,9 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { ChefHat, UtensilsCrossed, MoreHorizontal, Play, Sparkles, Heart, Repeat, Clock, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { downloadMealsFile, importMealsFromJson, shareMealsFile } from '../sync';
-import { toggleRotation, bulkSetRotation } from '../db';
+import { toggleRotation, bulkSetRotation, getUserTags, addUserTag, deleteUserTag, renameUserTag, setMealTags, bulkSetMealTags } from '../db';
 import db from '../db';
+import { Tag, Plus, Pencil, Trash2, Check } from 'lucide-react';
 import useBackHandler from '../hooks/useBackHandler';
 import SafeMediaImage from './SafeMediaImage';
 import ReExtractSheet from './ReExtractSheet';
@@ -157,6 +158,15 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const [userTags, setUserTags] = useState([]);
+  const [activeTags, setActiveTags] = useState([]); // active tag names for filtering
+  const [collapsedSections, setCollapsedSections] = useState({}); // { category: true }
+  const [showTagManager, setShowTagManager] = useState(false);
+  const [showTagPicker, setShowTagPicker] = useState(null); // meal id for single-meal tag picker
+  const [showBulkTagPicker, setShowBulkTagPicker] = useState(false); // bulk tag picker
+  const [newTagName, setNewTagName] = useState('');
+  const [editingTagId, setEditingTagId] = useState(null);
+  const [editingTagName, setEditingTagName] = useState('');
   const restoreRef = useRef(null);
   const categoryScrollRef = useRef(null);
   const longPressTimer = useRef(null);
@@ -168,6 +178,16 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
   const sheetCurrentDragY = useRef(0);
 
   const [reimportingPhotoId, setReimportingPhotoId] = useState(null);
+
+  // ── Load user tags from DB ────────────────────────────────────────────────
+  const refreshTags = useCallback(async () => {
+    const tags = await getUserTags();
+    setUserTags(tags);
+  }, []);
+
+  useEffect(() => { refreshTags(); }, [refreshTags]);
+  // Also refresh tags when meals reload (parent may have changed them)
+  useEffect(() => { refreshTags(); }, [meals, refreshTags]);
 
   // ── Filtered + sorted meal list ────────────────────────────────────────────
   const filtered = meals.filter(m => {
@@ -192,7 +212,10 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
       matchCat = mins != null && mins <= QUICK_WEEKNIGHT_MAX_MIN;
     }
     else matchCat = (m.category || 'Dinners').toLowerCase() === category.toLowerCase();
-    return matchSearch && matchCat;
+    // Tag filter: if any tags are active, meal must have ALL of them
+    const matchTags = activeTags.length === 0
+      || activeTags.every(t => (m.tags || []).includes(t));
+    return matchSearch && matchCat && matchTags;
   });
 
   const rotationCount = meals.filter(m => m.inRotation).length;
@@ -421,6 +444,89 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
     exitSelectMode();
   }, [selectedIds, onReload, onToast, exitSelectMode]);
 
+  // ── Tag filter toggle ─────────────────────────────────────────────────────
+  const handleTagToggle = useCallback((tagName) => {
+    hapticLight();
+    setActiveTags(prev =>
+      prev.includes(tagName) ? prev.filter(t => t !== tagName) : [...prev, tagName]
+    );
+  }, []);
+
+  // ── Tag management ──────────────────────────────────────────────────────
+  const handleCreateTag = useCallback(async () => {
+    if (!newTagName.trim()) return;
+    const TAG_COLORS = ['#4CAF50', '#2196F3', '#FF9800', '#E91E63', '#9C27B0', '#00BCD4', '#FF5722', '#607D8B', '#795548', '#CDDC39'];
+    const color = TAG_COLORS[userTags.length % TAG_COLORS.length];
+    await addUserTag({ name: newTagName.trim(), color, emoji: '🏷️' });
+    setNewTagName('');
+    await refreshTags();
+  }, [newTagName, userTags.length, refreshTags]);
+
+  const handleDeleteTag = useCallback(async (tagId) => {
+    const tag = userTags.find(t => t.id === tagId);
+    if (!tag) return;
+    if (!window.confirm(`Delete "${tag.name}" tag? It will be removed from all meals.`)) return;
+    await deleteUserTag(tagId);
+    setActiveTags(prev => prev.filter(t => t !== tag.name));
+    await refreshTags();
+    onReload?.();
+  }, [userTags, refreshTags, onReload]);
+
+  const handleRenameTag = useCallback(async (tagId) => {
+    if (!editingTagName.trim()) return;
+    await renameUserTag(tagId, editingTagName.trim());
+    setEditingTagId(null);
+    setEditingTagName('');
+    await refreshTags();
+    onReload?.();
+  }, [editingTagName, refreshTags, onReload]);
+
+  // ── Single-meal tag assignment ──────────────────────────────────────────
+  const handleToggleMealTag = useCallback(async (mealId, tagName) => {
+    hapticLight();
+    const meal = meals.find(m => m.id === mealId);
+    if (!meal) return;
+    const current = Array.isArray(meal.tags) ? meal.tags : [];
+    const newTags = current.includes(tagName)
+      ? current.filter(t => t !== tagName)
+      : [...current, tagName];
+    await setMealTags(mealId, newTags);
+    onReload?.();
+  }, [meals, onReload]);
+
+  // ── Bulk tag assignment ─────────────────────────────────────────────────
+  const handleBulkTag = useCallback(async (tagName) => {
+    if (selectedIds.size === 0) return;
+    await bulkSetMealTags([...selectedIds], tagName, true);
+    onReload?.();
+    onToast?.(`Tagged ${selectedIds.size} meal${selectedIds.size !== 1 ? 's' : ''} with "${tagName}"`);
+    setShowBulkTagPicker(false);
+    exitSelectMode();
+  }, [selectedIds, onReload, onToast, exitSelectMode]);
+
+  // ── Section collapse toggle ─────────────────────────────────────────────
+  const toggleSection = useCallback((sectionKey) => {
+    hapticLight();
+    setCollapsedSections(prev => ({ ...prev, [sectionKey]: !prev[sectionKey] }));
+  }, []);
+
+  // ── Group sorted meals by category for collapsible sections ──────────────
+  const groupedByCategory = (() => {
+    // Only group when viewing All, no search, no tag filter
+    if (category !== 'All' || search || activeTags.length > 0) return null;
+    const groups = {};
+    for (const meal of sorted) {
+      const cat = meal.category || 'Dinners';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(meal);
+    }
+    // Sort groups by CATEGORY_OPTIONS order, unknown cats at end
+    const catOrder = CATEGORY_OPTIONS.reduce((m, c, i) => { m[c] = i; return m; }, {});
+    return Object.entries(groups).sort(([a], [b]) =>
+      (catOrder[a] ?? 999) - (catOrder[b] ?? 999)
+    );
+  })();
+
   // ── Re-import photo ───────────────────────────────────────────────────────
   const handleReimportPhoto = useCallback(async (meal) => {
     const sourceUrl = meal.link || meal.sourceUrl;
@@ -527,6 +633,34 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
         </div>
       </div>
 
+      {/* ── Tag filter chips ── */}
+      {userTags.length > 0 && (
+        <div className="ml-tags-scroll">
+          <div className="ml-tags-track">
+            {userTags.map(tag => (
+              <button
+                key={tag.id}
+                className={`ml-tag-chip${activeTags.includes(tag.name) ? ' ml-tag-active' : ''}`}
+                onClick={() => handleTagToggle(tag.name)}
+                style={activeTags.includes(tag.name) ? { background: tag.color, borderColor: tag.color, color: '#fff' } : undefined}
+              >
+                <Tag size={11} strokeWidth={2.5} /> {tag.name}
+                {(() => {
+                  const count = meals.filter(m => (m.tags || []).includes(tag.name)).length;
+                  return count > 0 ? <span className="ml-tag-count">{count}</span> : null;
+                })()}
+              </button>
+            ))}
+            <button
+              className="ml-tag-chip ml-tag-manage"
+              onClick={() => { hapticLight(); setShowTagManager(true); }}
+            >
+              <Pencil size={11} strokeWidth={2.5} /> Manage
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Multi-select toolbar ── */}
       <AnimatePresence>
       {selectMode && (
@@ -546,6 +680,13 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
             disabled={selectedIds.size === 0}
           >
             📁 Category
+          </button>
+          <button
+            className="ml-select-toolbar-btn"
+            onClick={() => setShowBulkTagPicker(true)}
+            disabled={selectedIds.size === 0}
+          >
+            🏷️ Tag
           </button>
           <button
             className="ml-select-toolbar-btn"
@@ -582,10 +723,10 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
             transition={{ duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
           >
             <div className="ml-empty-icon"><ChefHat size={32} strokeWidth={1.75} /></div>
-            {search || category !== 'All' ? (
+            {search || category !== 'All' || activeTags.length > 0 ? (
               <>
                 <p className="ml-empty-text">No meals match your search.</p>
-                <p className="ml-empty-hint">Try a different keyword or category.</p>
+                <p className="ml-empty-hint">Try a different keyword, category, or tag.</p>
               </>
             ) : (
               <>
@@ -593,7 +734,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                 <p className="ml-empty-hint">Load the starter pack for ready-to-spin meals, or import a recipe from a link.</p>
               </>
             )}
-            {!search && category === 'All' && (
+            {!search && category === 'All' && activeTags.length === 0 && (
               <div className="ml-empty-actions">
                 {onLoadStarterPack && (
                   <button className="ml-empty-cta" type="button" onClick={onLoadStarterPack}>
@@ -610,154 +751,36 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
               </div>
             )}
           </motion.div>
-        ) : (
-          <AnimatePresence mode="popLayout">
-          {sorted.map((meal, idx) => (
-            <motion.div
-              key={meal.id}
-              layout="position"
-              initial={{ opacity: 0, y: 14, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.88, transition: { duration: 0.14 } }}
-              transition={{
-                type: 'spring',
-                stiffness: 480,
-                damping: 32,
-                delay: Math.min(idx * 0.03, 0.22),
-              }}
-              whileHover={!selectMode ? {
-                y: -3,
-                scale: 1.02,
-                transition: { type: 'spring', stiffness: 300, damping: 20, delay: 0 },
-              } : undefined}
-              whileTap={{ scale: 0.96, transition: { duration: 0.1 } }}
-              className={[
-                'ml-tile',
-                selectMode && selectedIds.has(meal.id) ? 'ml-tile-selected' : '',
-                meal.status === 'failed' ? 'ml-tile-failed' : '',
-              ].filter(Boolean).join(' ')}
-              onClick={() => handleTileClick(meal)}
-              onTouchStart={e => selectMode ? handleLongPressSelect(meal, e) : handleTouchStart(meal, e)}
-              onTouchMove={handleTouchMove}
-              onTouchEnd={e => handleTouchEnd(meal, e)}
-              onTouchCancel={e => handleTouchEnd(meal, e)}
-              onContextMenu={e => {
-                e.preventDefault();
-                if (selectMode) toggleSelect(meal.id);
-                else { hapticLight(); setQuickPreview(meal); }
-              }}
-            >
-              {/* Select checkbox overlay */}
-              {selectMode && (
-                <div className="ml-tile-check">
-                  <span>{selectedIds.has(meal.id) ? '✓' : ''}</span>
+        ) : groupedByCategory ? (
+          /* ── Collapsible sections by category ── */
+          groupedByCategory.map(([catName, catMeals]) => (
+            <div key={catName} className="ml-section">
+              <button
+                className="ml-section-header"
+                onClick={() => toggleSection(catName)}
+                aria-expanded={!collapsedSections[catName]}
+              >
+                <span
+                  className="ml-section-dot"
+                  style={{ background: CATEGORY_COLORS[catName] || '#ccc' }}
+                />
+                <span className="ml-section-title">{catName}</span>
+                <span className="ml-section-count">{catMeals.length}</span>
+                <span className={`ml-section-chevron${collapsedSections[catName] ? ' ml-section-chevron-collapsed' : ''}`}>▾</span>
+              </button>
+              {!collapsedSections[catName] && (
+                <div className="ml-section-grid">
+                  <AnimatePresence mode="popLayout">
+                  {catMeals.map((meal, idx) => renderTile(meal, idx))}
+                  </AnimatePresence>
                 </div>
               )}
-
-              {/* Image area */}
-              <motion.div className="ml-tile-image" layoutId={`ml-card-img-${meal.id}`}>
-                <CardImage
-                  src={meal.imageUrl}
-                  alt={meal.name || 'Recipe'}
-                  className="ml-tile-img"
-                  phClass="ml-tile-placeholder"
-                />
-                {meal.isFavorite && <span className="ml-tile-fav"><Heart size={15} fill="#e53935" color="#e53935" aria-label="Favorite" /></span>}
-                {meal.inRotation && <span className="ml-tile-rotation"><Repeat size={13} strokeWidth={2.5} aria-label="In rotation" /></span>}
-                {meal.category && meal.category !== 'Dinners' && (
-                  <span className="ml-tile-cat">{meal.category}</span>
-                )}
-                {/* I-5: low-confidence import → one-tap re-extraction */}
-                {!selectMode && isImprovable(meal) && (
-                  <button
-                    className="ml-tile-improve"
-                    aria-label="Improve this recipe with the latest engine"
-                    title="Low-confidence import — tap to re-run extraction"
-                    onClick={e => { e.stopPropagation(); hapticLight(); setReExtractMeal(meal); }}
-                    onTouchEnd={e => e.stopPropagation()}
-                  >
-                    <Sparkles size={13} strokeWidth={2.5} aria-hidden="true" /> Improve
-                  </button>
-                )}
-                {/* ⋯ menu button — always visible, bottom-right of image */}
-                {!selectMode && (
-                  <button
-                    className="ml-tile-menu-btn"
-                    aria-label="More options"
-                    onClick={e => { e.stopPropagation(); hapticLight(); setQuickPreview(meal); }}
-                    onTouchEnd={e => e.stopPropagation()}
-                  >
-                    <MoreHorizontal size={18} strokeWidth={2.5} />
-                  </button>
-                )}
-                {/* PiP: play video badge — only on cards with a YouTube/Instagram source */}
-                {!selectMode && onPlayVideo && (() => {
-                  const vsrc = getMealVideoSource(meal);
-                  if (!vsrc) return null;
-                  return (
-                    <button
-                      className={`ml-tile-play ml-tile-play-${vsrc.platform}`}
-                      aria-label={`Play ${vsrc.label} video in floating player`}
-                      title={`Play video (${vsrc.label})`}
-                      onClick={e => { e.stopPropagation(); hapticLight(); onPlayVideo(meal); }}
-                      onTouchEnd={e => e.stopPropagation()}
-                    >
-                      <Play size={14} fill="#fff" color="#fff" aria-hidden="true" />
-                    </button>
-                  );
-                })()}
-              </motion.div>
-
-              {/* Info row */}
-              <div className="ml-tile-info">
-                <motion.span className="ml-tile-name" layoutId={`ml-card-title-${meal.id}`}>
-                  {/* Category color as a small dot, not a card side-stripe */}
-                  <span
-                    className="ml-tile-cat-dot"
-                    style={{ background: CATEGORY_COLORS[meal.category || 'Dinners'] || '#ccc' }}
-                    aria-hidden="true"
-                  />
-                  {meal.name || 'Untitled Recipe'}
-                </motion.span>
-                <span className="ml-tile-meta">
-                  {meal.starterKit && <span className="ml-tile-starter">Starter</span>}
-                  {meal.status === 'processing' ? (
-                    <><Clock size={12} strokeWidth={2.5} style={{ verticalAlign: '-2px' }} /> Import in progress…</>
-                  ) : meal.status === 'failed' ? (
-                    <><AlertTriangle size={12} strokeWidth={2.5} style={{ verticalAlign: '-2px' }} /> Import failed — tap to delete</>
-                  ) : (
-                    `${(meal.ingredients || []).length} ing · ${(meal.directions || []).length} steps`
-                  )}
-                </span>
-                {formatAddedDate(meal.importedAt || meal.createdAt || meal.created) && (
-                  <span
-                    className="ml-tile-added"
-                    title={meal.importedAt || meal.createdAt || meal.created}
-                  >
-                    {formatAddedDate(meal.importedAt || meal.createdAt || meal.created)}
-                  </span>
-                )}
-                {/* Notes may be a structured [{title,text}] array (post-2026-06-26 schema)
-                    or a legacy flat string — never render either raw, since React throws
-                    on plain-object children. This was the root cause of the "Meal Library
-                    goes blank" bug: any meal with populated structured notes (starter pack
-                    recipes always have them) crashed the whole tile render with no
-                    ErrorBoundary to catch it. */}
-                {(() => {
-                  const notePreview = meal._notesFlat
-                    || (Array.isArray(meal.notes)
-                        ? meal.notes.map(n => (typeof n === 'string' ? n : n?.text || '')).filter(Boolean).join(' ')
-                        : (typeof meal.notes === 'string' ? meal.notes : ''));
-                  if (!notePreview) return null;
-                  return (
-                    <span className="ml-tile-notes">
-                      {notePreview.slice(0, 60)}{notePreview.length > 60 ? '…' : ''}
-                    </span>
-                  );
-                })()}
-              </div>
-            </motion.div>
-          ))}
+            </div>
+          ))
+        ) : (
+          /* ── Flat list (filtered / searched / tagged) ── */
+          <AnimatePresence mode="popLayout">
+          {sorted.map((meal, idx) => renderTile(meal, idx))}
           </AnimatePresence>
         )}
       </div>

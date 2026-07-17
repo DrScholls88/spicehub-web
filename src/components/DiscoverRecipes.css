@@ -124,15 +124,27 @@
   border: none;
 }
 
+/* ── Filter rows shared ───────────────────────────────────────────── */
+/* Both scroll rows need explicit stacking context so overflow-x: auto
+   doesn't create implicit layers that z-fight with each other. */
+.discover-filter-section {
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+
 /* ── Source pills (horizontal scroll) ─────────────────────────────── */
 .discover-sources {
   display: flex;
   gap: 6px;
   overflow-x: auto;
-  padding-bottom: 8px;
-  margin-bottom: 2px;
+  overflow-y: visible;
+  padding: 2px 0 6px;
+  margin-bottom: 8px;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
+  position: relative;
+  z-index: 2;
 }
 .discover-sources::-webkit-scrollbar { display: none; }
 
@@ -141,7 +153,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 10px;
+  padding: 6px 11px;
   border-radius: 999px;
   border: 1px solid var(--border, #e0e0e0);
   background: transparent;
@@ -149,7 +161,7 @@
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
-  min-height: 32px;
+  min-height: 34px;
   transition: all 0.15s;
 }
 .discover-source-pill-active {
@@ -158,7 +170,7 @@
   color: #fff;
 }
 .discover-source-pill-name {
-  max-width: 100px;
+  max-width: 110px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -168,10 +180,13 @@
   display: flex;
   gap: 7px;
   overflow-x: auto;
-  padding-bottom: 10px;
-  margin-bottom: 2px;
+  overflow-y: visible;
+  padding: 2px 0 6px;
+  margin-bottom: 6px;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
+  position: relative;
+  z-index: 1;
 }
 .discover-chips::-webkit-scrollbar { display: none; }
 

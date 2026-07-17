@@ -117,6 +117,19 @@ const P = {
   tempehK:     { body: '#e8dcb8', label: '#c9b98a', cap: '#a1927a', accent: '#f5eeda' },
   seitanK:     { body: '#8a5a3a', label: '#6d4527', cap: '#4e321c', accent: '#b58259' },
   hummusK:     { body: '#f0e2b6', label: '#d9c48a', cap: '#b8a06a', accent: '#faf3d8' },
+
+  // ── Catalog expansion 2026-07-16 — more produce/fruit/pantry variety ─────
+  beetK:        { body: '#ad1457', label: '#880e4f', cap: '#4a0026', accent: '#d81b60' },
+  eggplantK:    { body: '#4a148c', label: '#6a1b9a', cap: '#311b52', accent: '#7b1fa2' },
+  grapeK:       { body: '#6a1b9a', label: '#8e24aa', cap: '#4a148c', accent: '#ab47bc' },
+  peachK:       { body: '#ffab91', label: '#ff7043', cap: '#d84315', accent: '#ffccbc' },
+  tropicalK:    { body: '#ffca28', label: '#ff8f00', cap: '#e65100', accent: '#ffe082' },
+  melonK:       { body: '#aed581', label: '#7cb342', cap: '#33691e', accent: '#dcedc8' },
+  driedFruitK:  { body: '#8d6e42', label: '#6d4c2f', cap: '#4e342e', accent: '#c9a876' },
+  nutK:         { body: '#b08968', label: '#8d6e42', cap: '#6d4c2f', accent: '#dcc9a3' },
+  seedK:        { body: '#7c8a3c', label: '#556b2f', cap: '#33691e', accent: '#aed581' },
+  teaK:         { body: '#4e7a3d', label: '#2e5c22', cap: '#1b3a14', accent: '#7cb342' },
+  snackK:       { body: '#e8c07d', label: '#c9a256', cap: '#a8823a', accent: '#f5dca3' },
 };
 
 // Sentinel: spice jars use a hashed palette so the many small-jar spices

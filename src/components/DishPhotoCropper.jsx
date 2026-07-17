@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
-import { X as XIcon } from 'lucide-react';
+import { X as XIcon, RotateCw, FlipHorizontal2, FlipVertical2, Sun, Contrast } from 'lucide-react';
 import { cropRegionFromPage } from '../lib/photoImportEngine.js';
 import { hapticLight, hapticSuccess } from '../haptics';
 
@@ -10,6 +10,9 @@ import { hapticLight, hapticSuccess } from '../haptics';
  * scanned pages. Full-screen overlay (portal) with a draggable, corner-
  * resizable crop rect, page switcher when the scan had multiple pages, and
  * a "Use full page" shortcut.
+ *
+ * Now also supports: 90° rotation, horizontal/vertical flip,
+ * brightness and contrast sliders.
  *
  * Crop state is normalized (0–1 of the displayed image) so it maps 1:1 onto
  * the original-resolution page at apply time via cropRegionFromPage.
@@ -28,6 +31,14 @@ export default function DishPhotoCropper({ pages, initialPage = 0, initialBox = 
   const [imgSize, setImgSize] = useState({ w: 0, h: 0 }); // displayed px
   const canvasRef = useRef(null);
   const gestureRef = useRef(null); // { mode, startX, startY, startRect }
+
+  // ── Transform state ───────────────────────────────────────────────────────
+  const [rotation, setRotation]     = useState(0);   // 0, 90, 180, 270
+  const [flipH, setFlipH]           = useState(false);
+  const [flipV, setFlipV]           = useState(false);
+  const [brightness, setBrightness] = useState(0);   // -100…100
+  const [contrast, setContrast]     = useState(0);   // -100…100
+  const [showAdjust, setShowAdjust] = useState(false); // toggle brightness/contrast panel
 
   // Reset the crop when switching pages (vision box only applies to its page).
   const switchPage = useCallback((idx) => {
@@ -91,11 +102,36 @@ export default function DishPhotoCropper({ pages, initialPage = 0, initialBox = 
     setRect({ x: 0, y: 0, w: 1, h: 1 });
   }, []);
 
+  // ── Transform handlers ──────────────────────────────────────────────────
+  const handleRotate = useCallback(() => {
+    hapticLight();
+    setRotation(r => (r + 90) % 360);
+    // Reset crop rect on rotation since aspect ratio changes.
+    setRect(DEFAULT_RECT);
+  }, []);
+
+  const handleFlipH = useCallback(() => {
+    hapticLight();
+    setFlipH(f => !f);
+  }, []);
+
+  const handleFlipV = useCallback(() => {
+    hapticLight();
+    setFlipV(f => !f);
+  }, []);
+
+  const handleResetAdjust = useCallback(() => {
+    hapticLight();
+    setBrightness(0);
+    setContrast(0);
+  }, []);
+
   const handleApply = useCallback(async () => {
     if (applying) return;
     setApplying(true);
     try {
-      const dataUrl = await cropRegionFromPage(pages[pageIdx].dataUrl, rect);
+      const transforms = { rotation, flipH, flipV, brightness, contrast };
+      const dataUrl = await cropRegionFromPage(pages[pageIdx].dataUrl, rect, transforms);
       if (dataUrl) {
         hapticSuccess();
         onApply(dataUrl);
@@ -105,7 +141,7 @@ export default function DishPhotoCropper({ pages, initialPage = 0, initialBox = 
     } finally {
       setApplying(false);
     }
-  }, [applying, pages, pageIdx, rect, onApply, onClose]);
+  }, [applying, pages, pageIdx, rect, rotation, flipH, flipV, brightness, contrast, onApply, onClose]);
 
   // Escape closes the cropper (capture phase so the sheet's handler doesn't fire).
   useEffect(() => {
@@ -127,6 +163,22 @@ export default function DishPhotoCropper({ pages, initialPage = 0, initialBox = 
     height: `${rect.h * 100}%`,
   };
 
+  // CSS transform for the preview image — rotates/flips visually while keeping
+  // the crop rect in un-transformed coordinate space.
+  const imgTransform = [
+    rotation ? `rotate(${rotation}deg)` : '',
+    flipH ? 'scaleX(-1)' : '',
+    flipV ? 'scaleY(-1)' : '',
+  ].filter(Boolean).join(' ') || 'none';
+
+  // CSS filter for brightness / contrast preview.
+  const imgFilter = (brightness !== 0 || contrast !== 0)
+    ? `brightness(${1 + brightness / 100}) contrast(${1 + contrast / 100})`
+    : 'none';
+
+  const hasAnyTransform = rotation !== 0 || flipH || flipV;
+  const hasAnyAdjust = brightness !== 0 || contrast !== 0;
+
   return createPortal(
     <motion.div
       className="dish-crop-overlay"
@@ -145,9 +197,113 @@ export default function DishPhotoCropper({ pages, initialPage = 0, initialBox = 
         </button>
       </div>
 
+      {/* ── Transform toolbar ─────────────────────────────────────────────── */}
+      <div className="dish-crop-toolbar">
+        <button
+          type="button"
+          className="dish-crop-tool-btn"
+          onClick={handleRotate}
+          aria-label="Rotate 90° clockwise"
+          title="Rotate 90°"
+        >
+          <RotateCw size={20} strokeWidth={1.75} />
+        </button>
+        <button
+          type="button"
+          className={`dish-crop-tool-btn${flipH ? ' active' : ''}`}
+          onClick={handleFlipH}
+          aria-label="Flip horizontal"
+          title="Flip horizontal"
+        >
+          <FlipHorizontal2 size={20} strokeWidth={1.75} />
+        </button>
+        <button
+          type="button"
+          className={`dish-crop-tool-btn${flipV ? ' active' : ''}`}
+          onClick={handleFlipV}
+          aria-label="Flip vertical"
+          title="Flip vertical"
+        >
+          <FlipVertical2 size={20} strokeWidth={1.75} />
+        </button>
+
+        <span className="dish-crop-tool-sep" />
+
+        <button
+          type="button"
+          className={`dish-crop-tool-btn${showAdjust ? ' active' : ''}`}
+          onClick={() => { hapticLight(); setShowAdjust(s => !s); }}
+          aria-label="Brightness & contrast"
+          title="Brightness & contrast"
+        >
+          <Sun size={20} strokeWidth={1.75} />
+        </button>
+
+        {(hasAnyTransform || hasAnyAdjust) && (
+          <button
+            type="button"
+            className="dish-crop-tool-btn dish-crop-tool-reset"
+            onClick={() => {
+              hapticLight();
+              setRotation(0);
+              setFlipH(false);
+              setFlipV(false);
+              setBrightness(0);
+              setContrast(0);
+              setRect(DEFAULT_RECT);
+            }}
+            aria-label="Reset all transforms"
+            title="Reset all"
+          >
+            Reset
+          </button>
+        )}
+      </div>
+
+      {/* ── Brightness / Contrast panel (collapsible) ────────────────────── */}
+      {showAdjust && (
+        <div className="dish-crop-adjust-panel">
+          <label className="dish-crop-slider-row">
+            <Sun size={16} strokeWidth={1.5} />
+            <input
+              type="range"
+              min={-100}
+              max={100}
+              value={brightness}
+              onChange={e => setBrightness(Number(e.target.value))}
+              className="dish-crop-slider"
+            />
+            <span className="dish-crop-slider-val">{brightness > 0 ? '+' : ''}{brightness}</span>
+          </label>
+          <label className="dish-crop-slider-row">
+            <Contrast size={16} strokeWidth={1.5} />
+            <input
+              type="range"
+              min={-100}
+              max={100}
+              value={contrast}
+              onChange={e => setContrast(Number(e.target.value))}
+              className="dish-crop-slider"
+            />
+            <span className="dish-crop-slider-val">{contrast > 0 ? '+' : ''}{contrast}</span>
+          </label>
+          {hasAnyAdjust && (
+            <button type="button" className="dish-crop-adjust-reset" onClick={handleResetAdjust}>
+              Reset adjustments
+            </button>
+          )}
+        </div>
+      )}
+
       <div className="dish-crop-stage" onPointerMove={onPointerMove} onPointerUp={endGesture} onPointerCancel={endGesture}>
         <div className="dish-crop-canvas" ref={canvasRef}>
-          <img src={pages[pageIdx]?.dataUrl} alt={`Scan page ${pageIdx + 1}`} onLoad={onImgLoad} draggable={false} />
+          <img
+            src={pages[pageIdx]?.dataUrl}
+            alt={`Scan page ${pageIdx + 1}`}
+            onLoad={onImgLoad}
+            draggable={false}
+            style={{ transform: imgTransform, filter: imgFilter }}
+          />
 
           {/* Dimmed shade around the crop (4 panels — cheap, no clip-path repaints) */}
           <div className="dish-crop-shade" style={{ left: 0, top: 0, right: 0, height: px.top }} />
@@ -188,7 +344,7 @@ export default function DishPhotoCropper({ pages, initialPage = 0, initialBox = 
           Use full page
         </button>
         <button type="button" className="dish-crop-btn dish-crop-btn-primary" onClick={handleApply} disabled={applying}>
-          {applying ? 'Cropping…' : 'Use this crop'}
+          {applying ? 'Applying…' : 'Use this crop'}
         </button>
       </div>
     </motion.div>,

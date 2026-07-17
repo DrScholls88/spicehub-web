@@ -169,35 +169,36 @@ export default function DiscoverRecipes({ onClose, onSelectUrl }) {
               )}
             </div>
 
-            {/* ── Source pills ─────────────────────────────────────── */}
-            <div className="discover-sources" role="tablist" aria-label="Recipe sources">
-              {sourceList.map(src => (
-                <button
-                  key={src.key}
-                  role="tab"
-                  aria-selected={activeSource === src.key}
-                  className={`discover-source-pill${activeSource === src.key ? ' discover-source-pill-active' : ''}`}
-                  onClick={() => handleSourceTap(src.key)}
-                >
-                  <span aria-hidden="true">{src.emoji}</span>
-                  <span className="discover-source-pill-name">{src.name}</span>
-                </button>
-              ))}
-            </div>
+            {/* ── Filter rows ──────────────────────────────────────── */}
+            <div className="discover-filter-section">
+              <div className="discover-sources" role="tablist" aria-label="Recipe sources">
+                {sourceList.map(src => (
+                  <button
+                    key={src.key}
+                    role="tab"
+                    aria-selected={activeSource === src.key}
+                    className={`discover-source-pill${activeSource === src.key ? ' discover-source-pill-active' : ''}`}
+                    onClick={() => handleSourceTap(src.key)}
+                  >
+                    <span aria-hidden="true">{src.emoji}</span>
+                    <span className="discover-source-pill-name">{src.name}</span>
+                  </button>
+                ))}
+              </div>
 
-            {/* ── Category chips ───────────────────────────────────── */}
-            <div className="discover-chips" role="tablist" aria-label="Recipe categories">
-              {DISCOVER_CATEGORIES.map(cat => (
-                <button
-                  key={cat.id}
-                  role="tab"
-                  aria-selected={activeCategory === cat.id}
-                  className={`discover-chip${activeCategory === cat.id ? ' discover-chip-active' : ''}`}
-                  onClick={() => handleCategoryTap(cat.id)}
-                >
-                  <span aria-hidden="true">{cat.emoji}</span> {cat.label}
-                </button>
-              ))}
+              <div className="discover-chips" role="tablist" aria-label="Recipe categories">
+                {DISCOVER_CATEGORIES.map(cat => (
+                  <button
+                    key={cat.id}
+                    role="tab"
+                    aria-selected={activeCategory === cat.id}
+                    className={`discover-chip${activeCategory === cat.id ? ' discover-chip-active' : ''}`}
+                    onClick={() => handleCategoryTap(cat.id)}
+                  >
+                    <span aria-hidden="true">{cat.emoji}</span> {cat.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* ── Results ──────────────────────────────────────────── */}

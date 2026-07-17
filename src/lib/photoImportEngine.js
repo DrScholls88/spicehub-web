@@ -243,22 +243,72 @@ export async function cropDishPhotoFromPage(pageDataUrl, box) {
  * cropRegionFromPage — manual-crop variant used by DishPhotoCropper. Takes a
  * normalized 0–1 rect { x, y, w, h } and applies NO sanity gates (the human
  * is the sanity gate).
+ *
+ * Optional `transforms` object:
+ *   rotation   — 0 | 90 | 180 | 270 (CW degrees, applied to source BEFORE crop)
+ *   flipH      — boolean (horizontal mirror)
+ *   flipV      — boolean (vertical mirror)
+ *   brightness — -100…100 (0 = no change)
+ *   contrast   — -100…100 (0 = no change)
  */
-export async function cropRegionFromPage(pageDataUrl, rect01) {
+export async function cropRegionFromPage(pageDataUrl, rect01, transforms) {
   try {
     const img = await loadImage(pageDataUrl);
-    const sx = Math.max(0, Math.round(rect01.x * img.naturalWidth));
-    const sy = Math.max(0, Math.round(rect01.y * img.naturalHeight));
-    const sw = Math.min(img.naturalWidth - sx, Math.round(rect01.w * img.naturalWidth));
-    const sh = Math.min(img.naturalHeight - sy, Math.round(rect01.h * img.naturalHeight));
+    const rot = (transforms?.rotation || 0) % 360;
+    const swapped = rot === 90 || rot === 270;
+    // After rotation the logical image dimensions may swap.
+    const srcW = swapped ? img.naturalHeight : img.naturalWidth;
+    const srcH = swapped ? img.naturalWidth  : img.naturalHeight;
+
+    const sx = Math.max(0, Math.round(rect01.x * srcW));
+    const sy = Math.max(0, Math.round(rect01.y * srcH));
+    const sw = Math.min(srcW - sx, Math.round(rect01.w * srcW));
+    const sh = Math.min(srcH - sy, Math.round(rect01.h * srcH));
     if (sw <= 2 || sh <= 2) return null;
 
     const scale = Math.min(1, DISH_PHOTO_MAX_EDGE / Math.max(sw, sh));
+    const outW = Math.max(1, Math.round(sw * scale));
+    const outH = Math.max(1, Math.round(sh * scale));
+
+    // Step 1: draw source with rotation + flip onto a full-size scratch canvas.
+    const scratch = document.createElement('canvas');
+    scratch.width  = srcW;
+    scratch.height = srcH;
+    const sctx = scratch.getContext('2d');
+    sctx.save();
+    // Move origin to centre, rotate, flip, then draw.
+    sctx.translate(srcW / 2, srcH / 2);
+    if (rot) sctx.rotate((rot * Math.PI) / 180);
+    if (transforms?.flipH) sctx.scale(-1, 1);
+    if (transforms?.flipV) sctx.scale(1, -1);
+    // After rotation the image's natural w/h are swapped relative to the canvas.
+    sctx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
+    sctx.restore();
+
+    // Step 2: crop region from scratch → output canvas.
     const canvas = document.createElement('canvas');
-    canvas.width = Math.max(1, Math.round(sw * scale));
-    canvas.height = Math.max(1, Math.round(sh * scale));
+    canvas.width  = outW;
+    canvas.height = outH;
     const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(scratch, sx, sy, sw, sh, 0, 0, outW, outH);
+
+    // Step 3: brightness / contrast via pixel manipulation.
+    const bri = transforms?.brightness || 0;
+    const con = transforms?.contrast   || 0;
+    if (bri !== 0 || con !== 0) {
+      const imageData = ctx.getImageData(0, 0, outW, outH);
+      const d = imageData.data;
+      const factor = (259 * (con + 255)) / (255 * (259 - con));
+      for (let i = 0; i < d.length; i += 4) {
+        for (let c = 0; c < 3; c++) {
+          let v = d[i + c] + bri;
+          v = factor * (v - 128) + 128;
+          d[i + c] = Math.max(0, Math.min(255, Math.round(v)));
+        }
+      }
+      ctx.putImageData(imageData, 0, 0);
+    }
+
     return canvas.toDataURL('image/jpeg', 0.82);
   } catch (err) {
     console.warn('[PhotoImport] manual crop failed:', err);
