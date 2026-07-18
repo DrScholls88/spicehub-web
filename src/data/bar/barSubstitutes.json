@@ -1,0 +1,130 @@
+{
+  "_comment": "Global ingredient substitute groups. Unlike barAliases (exact synonyms), these are 'close enough' swaps where the drink changes but still works. Used by barMatch.js to expand shelf matching. Per-recipe substitutes (on individual drink ingredients) override these.",
+  "substitutes": [
+    {
+      "group": "citrus juice",
+      "members": ["lime juice", "lemon juice"],
+      "note": "Flavor changes but acid ratio works 1:1"
+    },
+    {
+      "group": "sweet citrus juice",
+      "members": ["orange juice", "grapefruit juice"],
+      "note": "Both are sweeter citrus; adjust sweetener to taste"
+    },
+    {
+      "group": "American whiskey",
+      "members": ["bourbon", "rye"],
+      "note": "Bourbon sweeter, rye spicier; both work in most whiskey cocktails"
+    },
+    {
+      "group": "light rum",
+      "members": ["white rum", "gold rum", "light rum"],
+      "note": "Gold adds slight caramel; works in most rum cocktails"
+    },
+    {
+      "group": "agave spirit",
+      "members": ["blanco tequila", "mezcal"],
+      "note": "Mezcal adds smokiness; split or sub in most tequila drinks"
+    },
+    {
+      "group": "aged tequila",
+      "members": ["reposado tequila", "anejo tequila"],
+      "note": "Both oak-aged; anejo is richer but works in stirred drinks"
+    },
+    {
+      "group": "liquid sweetener",
+      "members": ["simple syrup", "honey syrup", "agave nectar", "demerara syrup"],
+      "note": "All provide sweetness at similar concentration; flavor profile shifts"
+    },
+    {
+      "group": "rich sweetener",
+      "members": ["demerara syrup", "maple syrup", "brown sugar syrup"],
+      "note": "Deep/caramel sweeteners; use same quantity"
+    },
+    {
+      "group": "orange liqueur",
+      "members": ["triple sec", "cointreau", "grand marnier", "curacao"],
+      "note": "Cointreau is drier, Grand Marnier is richer; all orange-forward"
+    },
+    {
+      "group": "nut liqueur",
+      "members": ["amaretto", "frangelico"],
+      "note": "Amaretto is almond, Frangelico is hazelnut; both sweet and nutty"
+    },
+    {
+      "group": "herbal liqueur",
+      "members": ["chartreuse", "benedictine", "strega"],
+      "note": "Complex herbal profiles; not identical but similar role in cocktails"
+    },
+    {
+      "group": "coffee liqueur",
+      "members": ["kahlua", "mr black", "coffee liqueur", "tia maria"],
+      "note": "Mr Black is drier; all provide coffee flavor"
+    },
+    {
+      "group": "dry vermouth style",
+      "members": ["dry vermouth", "lillet blanc", "blanc vermouth"],
+      "note": "Lillet is sweeter; works as a lighter sub in martini-style drinks"
+    },
+    {
+      "group": "sweet vermouth style",
+      "members": ["sweet vermouth", "cocchi americano", "punt e mes"],
+      "note": "Cocchi lighter, Punt e Mes more bitter; similar role in stirred drinks"
+    },
+    {
+      "group": "aromatic bitters",
+      "members": ["angostura bitters", "aromatic bitters"],
+      "note": "Angostura is the standard; any aromatic bitter works similarly"
+    },
+    {
+      "group": "citrus bitters",
+      "members": ["orange bitters", "grapefruit bitters", "lemon bitters"],
+      "note": "All add citrus complexity as a supporting dash"
+    },
+    {
+      "group": "dairy cream",
+      "members": ["heavy cream", "half and half", "whole milk"],
+      "note": "Richness decreases; texture changes but role is the same"
+    },
+    {
+      "group": "non-dairy cream",
+      "members": ["coconut cream", "oat milk", "coconut milk"],
+      "note": "Vegan swaps; coconut cream closest to heavy cream in body"
+    },
+    {
+      "group": "egg white substitute",
+      "members": ["egg white", "aquafaba"],
+      "note": "Aquafaba is vegan; same frothy texture in sours"
+    },
+    {
+      "group": "carbonated mixer",
+      "members": ["tonic water", "soda water"],
+      "note": "Tonic is bitter/sweet, soda is neutral; only sometimes interchangeable"
+    },
+    {
+      "group": "ginger carbonation",
+      "members": ["ginger beer", "ginger ale"],
+      "note": "Ginger beer is spicier and stronger; ginger ale is milder"
+    },
+    {
+      "group": "dark spirit base",
+      "members": ["dark rum", "aged rum", "spiced rum"],
+      "note": "All bring depth and warmth; spiced rum adds vanilla/cinnamon"
+    },
+    {
+      "group": "london dry gin",
+      "members": ["london dry gin", "plymouth gin"],
+      "note": "Plymouth is softer; both work in classic gin cocktails"
+    },
+    {
+      "group": "maraschino style",
+      "members": ["maraschino liqueur", "kirsch", "cherry heering"],
+      "note": "All cherry-forward; maraschino is drier, heering is sweeter"
+    },
+    {
+      "group": "absinthe rinse",
+      "members": ["absinthe", "pastis", "herbsaint"],
+      "note": "All anise-flavored; used as rinse or dash in Sazerac-style drinks"
+    }
+  ]
+}

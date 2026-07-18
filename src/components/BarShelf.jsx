@@ -966,6 +966,64 @@ function SaloonDoor({ open = false }) {
   );
 }
 
+function SwingingGate({ onOpenPantry }) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  const handleClick = (e) => {
+    e.stopPropagation();
+    if (navigator.vibrate) navigator.vibrate(15);
+    setIsOpen(!isOpen);
+    playCreak();
+    if (onOpenPantry) {
+      setTimeout(() => {
+        onOpenPantry();
+      }, 350);
+    }
+  };
+
+  return (
+    <motion.button
+      className="saloon-gate-wrap"
+      onClick={handleClick}
+      aria-label="Swing gate to enter the Kitchen Pantry"
+      title="Swinging Gate — Go to Pantry"
+      style={{
+        position: 'absolute',
+        top: '6px',
+        left: 0,
+        width: '64px',
+        height: '90px',
+        background: 'none',
+        border: 'none',
+        padding: 0,
+        cursor: 'pointer',
+        zIndex: 6,
+        transformOrigin: 'left center',
+        perspective: '200px',
+        display: 'block',
+        outline: 'none',
+      }}
+      animate={{ rotateY: isOpen ? -85 : 0 }}
+      transition={{ type: 'spring', stiffness: 120, damping: 14 }}
+      whileHover={{ filter: 'brightness(1.12)' }}
+      whileTap={{ scale: 0.98 }}
+    >
+      <svg width="64" height="90" viewBox="0 0 64 90" style={{ imageRendering: 'pixelated' }}>
+        <rect x="0" y="0" width="6" height="90" fill="#4e2f1a" />
+        <rect x="6" y="10" width="52" height="70" fill="#6b3a1f" rx="1" />
+        <rect x="8" y="14" width="48" height="14" fill="#7d4b28" rx="1" />
+        <rect x="8" y="34" width="48" height="22" fill="#7d4b28" rx="1" />
+        <rect x="8" y="62" width="48" height="14" fill="#7d4b28" rx="1" />
+        <line x1="12" y1="20" x2="52" y2="70" stroke="#5a3018" strokeWidth="4" />
+        <rect x="0" y="16" width="8" height="6" fill="#c8a882" />
+        <rect x="0" y="68" width="8" height="6" fill="#c8a882" />
+        <rect x="54" y="42" width="8" height="6" fill="#c8a882" />
+      </svg>
+    </motion.button>
+  );
+}
+
+
 function SteamParticles({ count = 5 }) {
   return (
     <div className="saloon-steam-wrap" aria-hidden="true">
@@ -2882,37 +2940,6 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
               </>
             )}
 
-            {/* P5: Cookhouse door → the Kitchen Pantry (right side of the back wall) */}
-            {onOpenPantry && (
-              <motion.button
-                className="saloon-cookhouse-door"
-                onClick={() => { if (navigator.vibrate) navigator.vibrate(15); playCreak(); onOpenPantry(); }}
-                aria-label="Through to the Cookhouse (Kitchen Pantry)"
-                title="Cookhouse — the Kitchen Pantry"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ type: 'spring', stiffness: 260, damping: 24, delay: 0.5 }}
-                whileHover={{ filter: 'brightness(1.12)' }}
-                whileTap={{ scale: 0.97 }}
-              >
-                <span className="saloon-cookhouse-lintel" aria-hidden="true">COOKHOUSE</span>
-                <span className="saloon-cookhouse-panel" aria-hidden="true">
-                  <span className="saloon-cookhouse-hat" aria-hidden="true">
-                    {/* Pixel chef hat */}
-                    <svg width="22" height="18" viewBox="0 0 22 18" style={{ imageRendering: 'pixelated' }}>
-                      <rect x="4" y="2" width="14" height="8" fill="#f5f0e6" rx="3" />
-                      <rect x="2" y="5" width="5" height="5" fill="#f5f0e6" rx="2" />
-                      <rect x="15" y="5" width="5" height="5" fill="#f5f0e6" rx="2" />
-                      <rect x="5" y="10" width="12" height="5" fill="#e8e0d0" />
-                      <rect x="5" y="13" width="12" height="2" fill="#c9bfa8" />
-                    </svg>
-                  </span>
-                  <span className="saloon-cookhouse-steam" aria-hidden="true">
-                    <i /><i /><i />
-                  </span>
-                </span>
-              </motion.button>
-            )}
 
             {/* Lantern glow tracks bartender with spring lag */}
             <div
@@ -3105,6 +3132,107 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
                 )}
                 {/* Framer Motion floating music notes when chiptune is playing */}
                 <FloatingNotes active={chiptuneOn && !isGrabbed && !isFlying} />
+
+                {/* Quips layer — nested inside bartender component */}
+                {(() => {
+                  const barWidth = barTopRef.current?.clientWidth || 360;
+                  const bubbleDir = bartenderX < 120
+                    ? 'bs-bt-speech--right'
+                    : bartenderX > barWidth - 180
+                      ? 'bs-bt-speech--left'
+                      : facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right';
+                  return (
+                    <div className="bs-quips-layer" style={{ left: 0 }}>
+                      {/* ── Post-toss shame quip ── */}
+                      {tossQuip && !isFlying && !isGrabbed && bartenderState === 'idle' && (
+                        <motion.div
+                          className={`bs-bt-speech bs-bt-speech-shame ${bubbleDir}`}
+                          initial={{ scale: 0, opacity: 0 }}
+                          animate={{ scale: 1, opacity: 1 }}
+                          exit={{ scale: 0, opacity: 0 }}
+                          transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+                        >
+                          <span>{tossQuip}</span>
+                        </motion.div>
+                      )}
+
+                      {/* ── Wake "!" exclamation (surprised without a joke) ── */}
+                      {bartenderState === 'surprised' && !jokeText && !surpriseResult && !secretCocktailActive && !isFlying && !isGrabbed && (
+                        <div className={`bs-bt-speech bs-bt-speech-wake ${bubbleDir}`}>
+                          <span className="bs-wake-exclaim">!</span>
+                        </div>
+                      )}
+
+                      {/* ── Secret Pour Combination unlock ── */}
+                      {secretCocktailActive && (
+                        <div className={`bs-bt-speech bs-bt-speech-secret ${bubbleDir}`} style={{ maxWidth: 'min(260px, 65vw)' }}>
+                          <span>★ PROHIBITION SPECIAL ★</span>
+                          <span className="bs-secret-sub">Top-shelf locked recipe unlocked!</span>
+                        </div>
+                      )}
+
+                      {/* ── Joke easter egg (tap 5x) ── */}
+                      {jokeText && (
+                        <div className={`bs-bt-speech bs-bt-speech-joke ${bubbleDir}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
+                          <span>{jokeText}</span>
+                        </div>
+                      )}
+                      {/* ── Surprise Me result ── */}
+                      {surpriseResult && !selectedDrink && (
+                        <div className={`bs-bt-speech bs-bt-speech-surprise ${bubbleDir}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
+                          <span>Special: {surpriseResult.name}</span>
+                          {surpriseResult.isDrink && (
+                            <button
+                              className="bs-surprise-view-btn"
+                              onClick={(e) => { e.stopPropagation(); onViewDetail(surpriseResult.drink); }}
+                            >
+                              VIEW
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {bartenderState === 'presenting' && selectedDrink && !jokeText && !surpriseResult && !secretCocktailActive && (
+                        <div className={`bs-bt-speech ${bubbleDir}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
+                          <span>Here ya go!</span>
+                        </div>
+                      )}
+                      {bartenderState === 'swigging' && swigQuip && (
+                        <div className={`bs-bt-speech bs-bt-speech-swig ${bubbleDir}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
+                          <span>{swigQuip}</span>
+                        </div>
+                      )}
+                      {bartenderState === 'tipping' && (
+                        <div className={`bs-bt-speech bs-bt-speech-tip ${bubbleDir}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
+                          <span>{spotlightQuip || idleQuipText}</span>
+                        </div>
+                      )}
+                      <AnimatePresence>
+                        {bubbleVisible && bartenderState === 'idle' && !selectedDrink && !jokeText && !surpriseResult && !secretCocktailActive && (
+                          <motion.div
+                            className={`bs-bt-speech bs-bt-speech-idle ${bubbleDir}`}
+                            style={{ maxWidth: 'min(240px, 60vw)' }}
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -6, transition: { duration: 0.35 } }}
+                            transition={{ duration: 0.22, ease: 'easeOut' }}
+                          >
+                            <AnimatePresence mode="wait">
+                              <motion.span
+                                key={spotlightQuip || idleQuipText}
+                                initial={{ opacity: 0, y: 5 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -4 }}
+                                transition={{ duration: 0.22, ease: 'easeOut' }}
+                              >
+                                {spotlightQuip || idleQuipText}
+                              </motion.span>
+                            </AnimatePresence>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  );
+                })()}
               </motion.div>
             </motion.div>
 
@@ -3129,114 +3257,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
               </div>
             )}
 
-            {/* Quips layer — spring elastic lag so bubbles trail the bartender */}
-            {(() => {
-              // Position-aware bubble direction: extend toward center of screen,
-              // never off the left or right edge regardless of facing direction.
-              const barWidth = barTopRef.current?.clientWidth || 360;
-              const bubbleDir = bartenderX < 120
-                ? 'bs-bt-speech--right'                           // too close to left edge → open right
-                : bartenderX > barWidth - 180
-                  ? 'bs-bt-speech--left'                          // too close to right edge → open left
-                  : facingRight ? 'bs-bt-speech--left' : 'bs-bt-speech--right'; // default: away from face
-              return (
-                <div
-                  className="bs-quips-layer"
-                  style={{
-                    left: `${bartenderX}px`,
-                    transition: 'left 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)',
-                  }}
-                >
-                  {/* ── Post-toss shame quip ── */}
-                  {tossQuip && !isFlying && !isGrabbed && bartenderState === 'idle' && (
-                    <motion.div
-                      className={`bs-bt-speech bs-bt-speech-shame ${bubbleDir}`}
-                      initial={{ scale: 0, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
-                      exit={{ scale: 0, opacity: 0 }}
-                      transition={{ type: 'spring', stiffness: 400, damping: 20 }}
-                    >
-                      <span>{tossQuip}</span>
-                    </motion.div>
-                  )}
 
-                  {/* ── Wake "!" exclamation (surprised without a joke) ── */}
-                  {bartenderState === 'surprised' && !jokeText && !surpriseResult && !secretCocktailActive && !isFlying && !isGrabbed && (
-                    <div className={`bs-bt-speech bs-bt-speech-wake ${bubbleDir}`}>
-                      <span className="bs-wake-exclaim">!</span>
-                    </div>
-                  )}
-
-                  {/* ── Secret Pour Combination unlock ── */}
-                  {secretCocktailActive && (
-                    <div className={`bs-bt-speech bs-bt-speech-secret ${bubbleDir}`} style={{ maxWidth: 'min(260px, 65vw)' }}>
-                      <span>★ PROHIBITION SPECIAL ★</span>
-                      <span className="bs-secret-sub">Top-shelf locked recipe unlocked!</span>
-                    </div>
-                  )}
-
-                  {/* ── Joke easter egg (tap 5x) ── */}
-                  {jokeText && (
-                    <div className={`bs-bt-speech bs-bt-speech-joke ${bubbleDir}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
-                      <span>{jokeText}</span>
-                    </div>
-                  )}
-                  {/* ── Surprise Me result ── */}
-                  {surpriseResult && !selectedDrink && (
-                    <div className={`bs-bt-speech bs-bt-speech-surprise ${bubbleDir}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
-                      <span>Special: {surpriseResult.name}</span>
-                      {surpriseResult.isDrink && (
-                        <button
-                          className="bs-surprise-view-btn"
-                          onClick={(e) => { e.stopPropagation(); onViewDetail(surpriseResult.drink); }}
-                        >
-                          VIEW
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  {bartenderState === 'presenting' && selectedDrink && !jokeText && !surpriseResult && !secretCocktailActive && (
-                    <div className={`bs-bt-speech ${bubbleDir}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
-                      <span>Here ya go!</span>
-                    </div>
-                  )}
-                  {bartenderState === 'swigging' && swigQuip && (
-                    <div className={`bs-bt-speech bs-bt-speech-swig ${bubbleDir}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
-                      <span>{swigQuip}</span>
-                    </div>
-                  )}
-                  {bartenderState === 'tipping' && (
-                    <div className={`bs-bt-speech bs-bt-speech-tip ${bubbleDir}`} style={{ maxWidth: 'min(240px, 60vw)' }}>
-                      <span>{spotlightQuip || idleQuipText}</span>
-                    </div>
-                  )}
-                  <AnimatePresence>
-                    {bubbleVisible && bartenderState === 'idle' && !selectedDrink && !jokeText && !surpriseResult && !secretCocktailActive && (
-                      <motion.div
-                        className={`bs-bt-speech bs-bt-speech-idle ${bubbleDir}`}
-                        style={{ maxWidth: 'min(240px, 60vw)' }}
-                        initial={{ opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -6, transition: { duration: 0.35 } }}
-                        transition={{ duration: 0.22, ease: 'easeOut' }}
-                      >
-                        <AnimatePresence mode="wait">
-                          <motion.span
-                            key={spotlightQuip || idleQuipText}
-                            initial={{ opacity: 0, y: 5 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -4 }}
-                            transition={{ duration: 0.22, ease: 'easeOut' }}
-                          >
-                            {spotlightQuip || idleQuipText}
-                          </motion.span>
-                        </AnimatePresence>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              );
-            })()}
           </div>
 
           {/* ── New arrival toast ── */}
@@ -3306,8 +3327,9 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
                   )}
                 </AnimatePresence>
               </div>
-              {/* Walkthrough gap — bartender's legs show here, now at ~80% */}
-              <div className="bs-bar-gap bs-bar-gap-right" aria-hidden="true" />
+              <div className="bs-bar-gap bs-bar-gap-right" aria-hidden="true">
+                <SwingingGate onOpenPantry={onOpenPantry} />
+              </div>
               <div className="bs-bar-seg-r">
                 <div className="bs-bar-coaster bs-bar-coaster-2" />
               </div>

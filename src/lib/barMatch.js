@@ -16,10 +16,12 @@
 import categoriesData from '../data/bar/barCategories.json';
 import aliasesData from '../data/bar/barAliases.json';
 import derivedData from '../data/bar/barDerived.json';
+import substitutesData from '../data/bar/barSubstitutes.json';
 
 const CATEGORIES = (categoriesData && categoriesData.categories) || {};
 const ALIAS_GROUPS = (aliasesData && aliasesData.groups) || [];
 const DERIVED = (derivedData && derivedData.derived) || [];
+const SUBSTITUTE_GROUPS = (substitutesData && substitutesData.substitutes) || [];
 
 // Measurement / filler words stripped during canonicalization so that
 // "2 oz fresh lime juice" and "lime juice" collapse to the same token.
@@ -72,6 +74,27 @@ const INTERCHANGEABLE = new Set(
     .filter(([, def]) => def && def.interchangeable)
     .map(([cat]) => cat)
 );
+
+// ── Global substitute map: ingredient → Set of substitutes ───────────────────
+// Built from barSubstitutes.json. For each member of a group, map it to all
+// OTHER members of the same group. These are "close enough" swaps (not exact
+// aliases — those are handled by ALIAS_TO_CANONICAL).
+const SUBSTITUTE_MAP = (() => {
+  const map = new Map();
+  for (const group of SUBSTITUTE_GROUPS) {
+    const members = (group && Array.isArray(group.members)) ? group.members : [];
+    if (members.length < 2) continue;
+    for (const member of members) {
+      const canon = member.toLowerCase().trim();
+      if (!map.has(canon)) map.set(canon, new Set());
+      for (const other of members) {
+        const otherCanon = other.toLowerCase().trim();
+        if (otherCanon !== canon) map.get(canon).add(otherCanon);
+      }
+    }
+  }
+  return map;
+})();
 
 // ── Normalization helpers ─────────────────────────────────────────────────────
 
@@ -139,7 +162,18 @@ function ingredientSatisfied(ingCanon, shelf) {
     if (ingWords.every(w => tokWords.includes(w))) return true;
   }
 
-  // 3. category-level match (interchangeable categories only)
+  // 3. global substitute match (from barSubstitutes.json)
+  const subs = SUBSTITUTE_MAP.get(ingCanon);
+  if (subs) {
+    for (const sub of subs) {
+      if (shelf.tokens.has(sub)) return true;
+      // Also check alias-resolved form of substitute
+      const subAlias = ALIAS_TO_CANONICAL.get(sub);
+      if (subAlias && shelf.tokens.has(subAlias)) return true;
+    }
+  }
+
+  // 4. category-level match (interchangeable categories only)
   const ingCat = categorizeBottle(ingCanon);
   if (ingCat && INTERCHANGEABLE.has(ingCat) && shelf.categories.has(ingCat)) {
     return true;
@@ -188,16 +222,42 @@ export function matchDrink(drink, inventoryNames) {
 
   const shelf = buildShelf(inventoryNames);
 
+  // Build per-recipe substitute lookup from ingredientsStructured if available.
+  // Maps canonical food name → array of substitute food names.
+  const perRecipeSubs = new Map();
+  if (Array.isArray(drink?.ingredientsStructured)) {
+    for (const si of drink.ingredientsStructured) {
+      if (si?.food && Array.isArray(si.substitutes) && si.substitutes.length) {
+        const key = canonicalizeIngredient(si.food);
+        perRecipeSubs.set(key, si.substitutes.map(s => canonicalizeIngredient(s.food)));
+      }
+    }
+  }
+
   for (const ing of ingredients) {
     const canon = canonicalizeIngredient(ing);
     if (ingredientSatisfied(canon, shelf)) {
       result.matched.push(ing);
     } else {
-      const d = isDerivable(canon, shelf);
-      if (d) {
-        result.derivable.push({ ingredient: ing, ...d });
-      } else {
-        result.missing.push(ing);
+      // Check per-recipe substitutes before falling to derivable/missing.
+      const recipeSubs = perRecipeSubs.get(canon);
+      let subMatch = false;
+      if (recipeSubs) {
+        for (const sub of recipeSubs) {
+          if (ingredientSatisfied(sub, shelf)) {
+            result.matched.push(ing);
+            subMatch = true;
+            break;
+          }
+        }
+      }
+      if (!subMatch) {
+        const d = isDerivable(canon, shelf);
+        if (d) {
+          result.derivable.push({ ingredient: ing, ...d });
+        } else {
+          result.missing.push(ing);
+        }
       }
     }
   }

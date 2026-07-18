@@ -187,6 +187,19 @@ db.version(18).stores({
   return Promise.all([seedTags, backfillTags]);
 });
 
+// v19: Bar expansion — strength on barInventory for ABV calculation.
+// No new indexes (glass/method/abv/strength are unindexed display fields).
+// Existing barInventory rows gain `strength: null` so abvCalculator.js has a
+// consistent shape. Drinks gain glass/method/abv/garnish via seed library or
+// next import — no migration needed for schemaless Dexie fields.
+db.version(19).stores({
+  barInventory: 'ingredient',
+}).upgrade(tx => {
+  return tx.table('barInventory').toCollection().modify(row => {
+    if (row.strength === undefined) row.strength = null;
+  });
+});
+
 export default db;
 
 // ── User Tags helpers (v18) ─────────────────────────────────────────────────
@@ -425,6 +438,7 @@ export async function addToBarInventory(ingredient, meta = {}) {
       qty: meta.qty ?? existing?.qty,
       notes: meta.notes ?? existing?.notes,
       qtyLevel: meta.qtyLevel ?? existing?.qtyLevel, // P3 semantic stock enum — preserve on re-add
+      strength: meta.strength ?? existing?.strength ?? null, // ABV 0-100, for abvCalculator.js
       addedAt: existing?.addedAt ?? new Date().toISOString(),
     });
   } catch (e) {
@@ -440,7 +454,7 @@ export async function updateBarBottle(ingredient, patch = {}) {
     if (!existing) return;
     // qtyLevel: P3 semantic stock enum (string, additive beside legacy qty).
     // addedAt: refreshed on restock for the pantry freshness indicator.
-    const allowed = ['displayName', 'category', 'subcategory', 'brand', 'qty', 'notes', 'qtyLevel', 'addedAt'];
+    const allowed = ['displayName', 'category', 'subcategory', 'brand', 'qty', 'notes', 'qtyLevel', 'strength', 'addedAt'];
     const next = { ...existing };
     for (const field of allowed) {
       if (field in patch) next[field] = patch[field];

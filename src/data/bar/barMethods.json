@@ -1,0 +1,50 @@
+{
+  "_comment": "Cocktail preparation methods with dilution percentage. dilution_pct is the estimated water added during preparation, used in ABV calculation (Morgenthaler formula). Used by abvCalculator.js.",
+  "methods": {
+    "shake": {
+      "name": "Shake",
+      "dilution_pct": 25,
+      "description": "Shake with ice in a cocktail shaker"
+    },
+    "stir": {
+      "name": "Stir",
+      "dilution_pct": 17,
+      "description": "Stir with ice in a mixing glass"
+    },
+    "build": {
+      "name": "Build",
+      "dilution_pct": 5,
+      "description": "Build directly in the serving glass over ice"
+    },
+    "blend": {
+      "name": "Blend",
+      "dilution_pct": 10,
+      "description": "Blend with ice in an electric blender"
+    },
+    "muddle": {
+      "name": "Muddle",
+      "dilution_pct": 15,
+      "description": "Muddle ingredients to release oils and juices"
+    },
+    "layer": {
+      "name": "Layer",
+      "dilution_pct": 0,
+      "description": "Float ingredients in layers using a bar spoon"
+    },
+    "dry_shake": {
+      "name": "Dry Shake",
+      "dilution_pct": 0,
+      "description": "Shake without ice to emulsify egg white or cream"
+    },
+    "float": {
+      "name": "Float",
+      "dilution_pct": 0,
+      "description": "Float an ingredient on top of the drink"
+    },
+    "throw": {
+      "name": "Throw",
+      "dilution_pct": 15,
+      "description": "Pour repeatedly between two vessels to aerate and chill"
+    }
+  }
+}

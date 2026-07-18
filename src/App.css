@@ -17981,10 +17981,10 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   z-index: 2; /* aligned with layering contract */
 }
 
-/* Quips layer — positioned absolutely, left driven by JS spring */
+/* Quips layer — nested inside the bartender wrap component */
 .saloon-mid .bs-quips-layer {
   position: absolute;
-  bottom: 134px; /* synced with bartender raise: 120 + 14px = 134px */
+  bottom: 172px; /* positioned above the bartender sprite (height 168px) */
   z-index: 100;
 }
 
@@ -18653,11 +18653,11 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
    Positioned on back wall right-of-center; parchment WANTED posters           */
 .wall-bounty-board {
   position: absolute;
-  right: 4%;
+  right: 1.5%;
   top: auto;
   bottom: 178px; /* matches chalkboard — higher, recedes into backdrop */
-  width: 21%;
-  max-width: 100px;
+  width: 25%;
+  max-width: 120px;
   min-width: 74px;
   opacity: 0.82;
   background: transparent;
@@ -22088,7 +22088,7 @@ select:focus-visible,
 
 /* ── 1. Quote box: float higher + clear the sprite so it never obstructs ── */
 .saloon-mid .bs-quips-layer {
-  bottom: 156px; /* was 134px — clears the hat with breathing room */
+  bottom: 172px;
 }
 .bs-bt-speech--left  { --bubble-x: calc(-100% - 26px); }
 .bs-bt-speech--right { --bubble-x: calc(  0% + 26px);  }
