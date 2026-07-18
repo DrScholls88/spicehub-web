@@ -1,0 +1,90 @@
+{
+  "_comment": "Cocktail glass types with volume. Used for drink display, filtering, and CookMode. Sourced from Bar Assistant's domain model.",
+  "glasses": {
+    "rocks": {
+      "name": "Rocks / Old Fashioned",
+      "volume_ml": 300,
+      "aliases": ["old fashioned", "lowball", "rocks glass"]
+    },
+    "highball": {
+      "name": "Highball",
+      "volume_ml": 350,
+      "aliases": ["highball glass", "tall glass"]
+    },
+    "collins": {
+      "name": "Collins",
+      "volume_ml": 420,
+      "aliases": ["collins glass", "tom collins glass"]
+    },
+    "coupe": {
+      "name": "Coupe",
+      "volume_ml": 180,
+      "aliases": ["coupe glass", "champagne coupe"]
+    },
+    "martini": {
+      "name": "Martini",
+      "volume_ml": 180,
+      "aliases": ["martini glass", "cocktail glass", "v-shaped glass"]
+    },
+    "nick_nora": {
+      "name": "Nick & Nora",
+      "volume_ml": 150,
+      "aliases": ["nick and nora", "nick & nora glass"]
+    },
+    "hurricane": {
+      "name": "Hurricane",
+      "volume_ml": 440,
+      "aliases": ["hurricane glass", "poco grande"]
+    },
+    "copper_mug": {
+      "name": "Copper Mug",
+      "volume_ml": 350,
+      "aliases": ["moscow mule mug", "mule mug", "copper cup"]
+    },
+    "wine": {
+      "name": "Wine Glass",
+      "volume_ml": 350,
+      "aliases": ["wine glass", "red wine glass", "white wine glass"]
+    },
+    "champagne_flute": {
+      "name": "Champagne Flute",
+      "volume_ml": 180,
+      "aliases": ["flute", "champagne glass", "sparkling wine glass"]
+    },
+    "shot": {
+      "name": "Shot Glass",
+      "volume_ml": 45,
+      "aliases": ["shot", "shooter", "jigger glass"]
+    },
+    "tiki": {
+      "name": "Tiki Mug",
+      "volume_ml": 350,
+      "aliases": ["tiki glass", "tiki cup", "ceramic tiki"]
+    },
+    "snifter": {
+      "name": "Snifter",
+      "volume_ml": 180,
+      "aliases": ["brandy snifter", "cognac glass", "balloon glass"]
+    },
+    "irish_coffee": {
+      "name": "Irish Coffee",
+      "volume_ml": 240,
+      "aliases": ["irish coffee glass", "irish coffee mug", "footed mug"]
+    },
+    "julep": {
+      "name": "Julep Cup",
+      "volume_ml": 300,
+      "aliases": ["julep tin", "mint julep cup"]
+    },
+    "margarita": {
+      "name": "Margarita",
+      "volume_ml": 300,
+      "aliases": ["margarita glass", "coupette"]
+    },
+    "glencairn": {
+      "name": "Glencairn",
+      "volume_ml": 175,
+      "aliases": ["glencairn glass", "whisky nosing glass", "whiskey tasting glass"]
+    }
+  }
+}

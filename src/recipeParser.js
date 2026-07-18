@@ -633,6 +633,8 @@ function _buildExtractionPrompt(rawText, { hintTitle = '', type = 'meal' } = {})
   "directions": ["string Ã¢â‚¬â€ one clear step per array item (e.g. 'Muddle mint in shaker', 'Shake with ice', 'Strain into coupe')"],
   "glass": "string or null Ã¢â‚¬â€ e.g. 'coupe', 'rocks', 'highball', 'martini', 'collins', 'nick & nora'",
   "garnish": "string or null Ã¢â‚¬â€ e.g. 'lime wheel', 'orange peel', 'mint sprig'",
+  "method": "string or null Ã¢â‚¬â€ e.g. 'shake', 'stir', 'build', 'blend', 'muddle'",
+  "abv": "number or null Ã¢â‚¬â€ estimated ABV percentage (e.g. 18 for a margarita)",
   "servings": "string or null Ã¢â‚¬â€ usually '1' for cocktails",
   "notes": "string or null"
 }`
@@ -1299,7 +1301,7 @@ async function _structureWithAIClientLegacy(rawText, { title: hintTitle = '', im
       servings: parsed.servings || null,
       cookTime: parsed.cookTime || null,
       notes: parsed.notes || null,
-      ...(type === 'drink' ? { glass: parsed.glass || null, garnish: parsed.garnish || null, _type: 'drink' } : { _type: 'meal' }),
+      ...(type === 'drink' ? { glass: parsed.glass || null, garnish: parsed.garnish || null, method: parsed.method || null, abv: typeof parsed.abv === 'number' ? parsed.abv : null, _type: 'drink' } : { _type: 'meal' }),
     };
     return finalizeAIRecipe(legacyThin, { hintTitle, imageUrl, sourceUrl, author, via: 'gemini-client-legacy' });
   } catch {
@@ -1365,7 +1367,7 @@ export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl
       servings: r.servings || null,
       cookTime: r.cookTime || null,
       notes: r.notes || null,
-      ...(type === 'drink' ? { glass: r.glass || null, garnish: r.garnish || null, _type: 'drink' } : { _type: 'meal' }),
+      ...(type === 'drink' ? { glass: r.glass || null, garnish: r.garnish || null, method: r.method || null, abv: typeof r.abv === 'number' ? r.abv : null, _type: 'drink' } : { _type: 'meal' }),
     };
     return finalizeAIRecipe(serverThin, { hintTitle, imageUrl, sourceUrl, author, via: 'server-legacy' });
   } catch {

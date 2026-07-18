@@ -617,7 +617,7 @@ export const DISPLAY_SCHEMA = {
          'prepTime', 'cookTime', 'totalTime', 'cuisine', 'course', 'dishType',
          'dietaryTags', 'notes', 'sourceUrl'],
   drink: ['title', 'imageUrl', 'ingredients', 'directions', 'glass', 'garnish',
-          'method', 'notes', 'sourceUrl'],
+          'method', 'abv', 'notes', 'sourceUrl'],
 };
 
 // -----------------------------------------------------------------------------
@@ -969,6 +969,7 @@ export const RECIPE_SCHEMA = {
     glass: { type: 'string' },   // drink only
     garnish: { type: 'string' }, // drink only
     method: { type: 'string' },  // drink only
+    abv: { type: 'number' },     // drink only — estimated ABV %
     notes: {
       type: 'array',
       items: {
@@ -1429,6 +1430,7 @@ export function thinFromStructured(structured = {}) {
       glass: structured.glass || '',
       garnish: structured.garnish || '',
       method: structured.method || '',
+      abv: typeof structured.abv === 'number' ? structured.abv : null,
     };
   }
   return {
