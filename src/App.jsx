@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import db, { importSeedMeals, removeStarterKitMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getStoreMemory, getCookingLog, getWeekHistory, saveWeekToHistory, toggleRotation, addBatchQueueItems, getBatchQueueItems, updateBatchQueueItem, getLearnedAliases, moveMealToBar, moveDrinkToMeals } from './db';
+import db, { importSeedMeals, removeStarterKitMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getStoreMemory, getCookingLog, getWeekHistory, saveWeekToHistory, toggleRotation, addBatchQueueItems, getBatchQueueItems, updateBatchQueueItem, getLearnedAliases, moveMealToBar, moveDrinkToMeals, getCustomDayTags, addCustomDayTag, deleteCustomDayTag } from './db';
 import { buildStarterKitMeals, STARTER_KIT_SEED_FLAG } from './data/starterKitMeals';
 import { checkStorageQuota, checkAndRecommendCleanup } from './storageManager';
 import { initializeBackgroundSync } from './backgroundSync';
@@ -86,13 +86,21 @@ function localDateKey(date) {
   return `${y}-${m}-${d}`;
 }
 
-// Special "non-meal" day options
+// Special "non-meal" day options — built-in quick-assign tags for planner days
 const SPECIAL_DAYS = [
-  { id: '__eat_out__', name: 'Eat Out', icon: '🍽️' },
-  { id: '__leftovers__', name: 'Leftovers', icon: '📦' },
-  { id: '__dealers_choice__', name: "Dealer's Choice", icon: '🎲' },
-  { id: '__pizza_movie__', name: 'Pizza & Movie Night', icon: '🍕' },
-  { id: '__skip__', name: 'No Plan', icon: '⏭️' },
+  { id: '__eat_out__',        name: 'Eat Out',          icon: '🍽️' },
+  { id: '__leftovers__',      name: 'Leftovers',        icon: '📦' },
+  { id: '__dealers_choice__', name: "Dealer's Choice",   icon: '🎲' },
+  { id: '__pizza__',          name: 'Pizza',             icon: '🍕' },
+  { id: '__grill__',          name: 'Grill Night',       icon: '🔥' },
+  { id: '__tacos__',          name: 'Tacos',             icon: '🌮' },
+  { id: '__nachos__',         name: 'Nachos',            icon: '🧀' },
+  { id: '__pasta__',          name: 'Pasta Night',       icon: '🍝' },
+  { id: '__soup__',           name: 'Soup Night',        icon: '🍲' },
+  { id: '__sandwiches__',     name: 'Sandwiches',        icon: '🥪' },
+  { id: '__salad__',          name: 'Salad Night',       icon: '🥗' },
+  { id: '__breakfast__',      name: 'Breakfast for Dinner', icon: '🥞' },
+  { id: '__skip__',           name: 'No Plan',           icon: '⏭️' },
 ];
 
 export default function App() {
@@ -101,6 +109,36 @@ export default function App() {
   const [meals, setMeals] = useState([]);
   const [drinks, setDrinks] = useState([]);
   const [weekPlan, setWeekPlan] = useState(Array(7).fill(null));
+  // Custom day tags — user-created quick-assign options for the planner
+  const [customDayTags, setCustomDayTags] = useState([]);
+  const loadCustomDayTags = useCallback(async () => {
+    const tags = await getCustomDayTags();
+    setCustomDayTags(tags);
+  }, []);
+  useEffect(() => { loadCustomDayTags(); }, [loadCustomDayTags]);
+
+  const handleAddCustomDayTag = useCallback(async ({ name, icon }) => {
+    await addCustomDayTag({ name, icon });
+    await loadCustomDayTags();
+  }, [loadCustomDayTags]);
+
+  const handleDeleteCustomDayTag = useCallback(async (id) => {
+    await deleteCustomDayTag(id);
+    await loadCustomDayTags();
+  }, [loadCustomDayTags]);
+
+  // Merge built-in + custom day tags for WeekView
+  const allSpecialDays = useMemo(() => {
+    const custom = customDayTags.map(t => ({
+      id: `__custom_${t.id}__`,
+      name: t.name,
+      icon: t.icon || '🏷️',
+      _custom: true,
+      _dbId: t.id,
+    }));
+    return [...SPECIAL_DAYS, ...custom];
+  }, [customDayTags]);
+
   // A-1: household dietary preference + cached recency map for Smart Auto-Plan
   const [dietaryPref, setDietaryPref] = useState(loadDietaryPref);
   const recencyMapRef = useRef(new Map());
@@ -1498,7 +1536,7 @@ useEffect(() => {
             days={DAYS}
             weekPlan={weekPlan}
             meals={meals}
-            specialDays={SPECIAL_DAYS}
+            specialDays={allSpecialDays}
             onGenerate={generateWeek}
             onSmartPlan={smartPlanWeek}
             dietaryPref={dietaryPref}
@@ -1528,6 +1566,8 @@ useEffect(() => {
               const names = skipped.map(k => labels[k] || k).join(', ');
               showToast(`Not enough meals match ${names} — showing the full rotation instead`, 'info', 3600);
             }}
+            onAddCustomDayTag={handleAddCustomDayTag}
+            onDeleteCustomDayTag={handleDeleteCustomDayTag}
           />
         )}
         {tab === 'library' && (

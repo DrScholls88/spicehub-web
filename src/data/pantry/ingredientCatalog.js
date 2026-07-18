@@ -92,7 +92,7 @@ export const INGREDIENT_CATALOG = [
     emoji: '🧀',
     items: [
       'Milk', 'Whole Milk', 'Skim Milk', 'Half and Half', 'Heavy Cream', 'Buttermilk',
-      'Oat Milk', 'Almond Milk', 'Soy Milk', 'Cashew Milk', 'Coconut Milk (Carton)',
+      'Oat Milk', 'Almond Milk', 'Soy Milk', 'Cashew Milk',
       'Vegan Cheese', 'Vegan Butter', 'Cheddar Cheese', 'Mozzarella Cheese',
       'Parmesan Cheese', 'Feta Cheese', 'Goat Cheese', 'Cream Cheese', 'Cottage Cheese',
       'Ricotta Cheese', 'String Cheese', 'Shredded Mexican Blend', 'Sour Cream',
