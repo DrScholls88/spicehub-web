@@ -200,7 +200,68 @@ db.version(19).stores({
   });
 });
 
+// v20: Custom day-tag builder for planner quick-assign + expanded default meal tags.
+// customDayTags stores user-created quick-assign day options (icon, name).
+// Also seeds additional default userTags for broader categorization.
+db.version(20).stores({
+  customDayTags: '++id, &name',
+}).upgrade(async tx => {
+  // Expanded default meal tags — only add if not already present
+  const newDefaults = [
+    { name: 'Pasta',       color: '#FF7043', emoji: '🍝', sortOrder: 10 },
+    { name: 'Asian',       color: '#26A69A', emoji: '🥡', sortOrder: 11 },
+    { name: 'Mexican',     color: '#EF5350', emoji: '🌮', sortOrder: 12 },
+    { name: 'Grill',       color: '#8D6E63', emoji: '🔥', sortOrder: 13 },
+    { name: 'Sandwiches',  color: '#FFA726', emoji: '🥪', sortOrder: 14 },
+    { name: 'Dump & Bake', color: '#AB47BC', emoji: '🫕', sortOrder: 15 },
+    { name: 'Holiday',     color: '#D32F2F', emoji: '🎄', sortOrder: 16 },
+    { name: 'Vegan',       color: '#66BB6A', emoji: '🌱', sortOrder: 17 },
+    { name: 'Meat',        color: '#A1887F', emoji: '🥩', sortOrder: 18 },
+    { name: 'Seafood',     color: '#42A5F5', emoji: '🐟', sortOrder: 19 },
+    { name: 'Slow Cooker', color: '#78909C', emoji: '🍲', sortOrder: 20 },
+    { name: 'Instant Pot', color: '#5C6BC0', emoji: '⏱️', sortOrder: 21 },
+    { name: 'One-Pot',     color: '#26C6DA', emoji: '🥘', sortOrder: 22 },
+    { name: 'Appetizers',  color: '#EC407A', emoji: '🧆', sortOrder: 23 },
+  ];
+  const tagsTable = tx.table('userTags');
+  const existing = await tagsTable.toArray();
+  const existingNames = new Set(existing.map(t => t.name.toLowerCase()));
+  const toAdd = newDefaults.filter(t => !existingNames.has(t.name.toLowerCase()));
+  if (toAdd.length > 0) await tagsTable.bulkAdd(toAdd);
+});
+
 export default db;
+
+// ── Custom Day Tags helpers (v20) ───────────────────────────────────────────
+export async function getCustomDayTags() {
+  try {
+    return await db.customDayTags.toArray();
+  } catch (e) {
+    console.warn('[SpiceHub DB] getCustomDayTags failed:', e);
+    return [];
+  }
+}
+
+export async function addCustomDayTag({ name, icon }) {
+  if (!name || !name.trim()) return null;
+  const trimmed = name.trim();
+  try {
+    const existing = await db.customDayTags.where('name').equalsIgnoreCase(trimmed).first();
+    if (existing) return existing.id;
+    return await db.customDayTags.add({ name: trimmed, icon: icon || '🏷️' });
+  } catch (e) {
+    console.warn('[SpiceHub DB] addCustomDayTag failed:', e);
+    return null;
+  }
+}
+
+export async function deleteCustomDayTag(id) {
+  try {
+    await db.customDayTags.delete(id);
+  } catch (e) {
+    console.warn('[SpiceHub DB] deleteCustomDayTag failed:', e);
+  }
+}
 
 // ── User Tags helpers (v18) ─────────────────────────────────────────────────
 export async function getUserTags() {

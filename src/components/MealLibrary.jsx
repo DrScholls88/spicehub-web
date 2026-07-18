@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { ChefHat, UtensilsCrossed, MoreHorizontal, Play, Sparkles, Heart, Repeat, Clock, AlertTriangle, Tag, Plus, Pencil, Trash2, Check } from 'lucide-react';
+import { ChefHat, UtensilsCrossed, MoreHorizontal, Play, Sparkles, Heart, Repeat, Clock, AlertTriangle, Tag, Plus, Pencil, Trash2, Check, Grid2x2, Grid3x3, List, HelpCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { downloadMealsFile, importMealsFromJson, shareMealsFile } from '../sync';
 import { toggleRotation, bulkSetRotation, getUserTags, addUserTag, deleteUserTag, renameUserTag, setMealTags, bulkSetMealTags } from '../db';
@@ -166,6 +166,10 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
   const [newTagName, setNewTagName] = useState('');
   const [editingTagId, setEditingTagId] = useState(null);
   const [editingTagName, setEditingTagName] = useState('');
+  const [gridLayout, setGridLayout] = useState(() => {
+    try { return localStorage.getItem('ml-grid-layout') || '2x'; } catch { return '2x'; }
+  }); // '2x' | '3x' | 'list'
+  const [showRotationTip, setShowRotationTip] = useState(false);
   const restoreRef = useRef(null);
   const categoryScrollRef = useRef(null);
   const longPressTimer = useRef(null);
@@ -177,6 +181,12 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
   const sheetCurrentDragY = useRef(0);
 
   const [reimportingPhotoId, setReimportingPhotoId] = useState(null);
+
+  const handleGridChange = useCallback((layout) => {
+    setGridLayout(layout);
+    hapticLight();
+    try { localStorage.setItem('ml-grid-layout', layout); } catch {}
+  }, []);
 
   // ── Load user tags from DB ────────────────────────────────────────────────
   const refreshTags = useCallback(async () => {
@@ -739,15 +749,88 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
   return (
     <div className="ml">
 
-      {/* ── Search bar ── */}
-      <div className="ml-search-zone">
+      {/* ── Search bar + rotation tooltip + grid toggle ── */}
+      <div className="ml-search-zone" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}>
+          <button
+            className="ml-rotation-tip-btn"
+            onClick={() => { setShowRotationTip(p => !p); hapticLight(); }}
+            aria-label="How does the spinner work?"
+            style={{
+              background: 'none', border: 'none', padding: 4, cursor: 'pointer',
+              color: 'var(--text-muted, #999)', display: 'flex',
+              transition: 'color .2s cubic-bezier(.32,.72,0,1)',
+            }}
+          >
+            <HelpCircle size={16} strokeWidth={2} />
+          </button>
+          <AnimatePresence>
+            {showRotationTip && (
+              <motion.div
+                initial={{ opacity: 0, y: -6, scale: 0.92 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -4, scale: 0.95 }}
+                transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                style={{
+                  position: 'absolute', top: '100%', left: 0, zIndex: 40,
+                  marginTop: 6, padding: '10px 14px', borderRadius: 10,
+                  background: 'var(--surface-raised, #1a1a1a)',
+                  border: '1px solid var(--border, #333)',
+                  boxShadow: '0 8px 24px rgba(0,0,0,.25)',
+                  fontSize: 12, lineHeight: 1.45, color: 'var(--text, #eee)',
+                  maxWidth: 220, whiteSpace: 'normal',
+                }}
+              >
+                <span style={{ fontWeight: 600 }}>🎰 Spinner pulls from "The Rotation"</span>
+                <br />
+                Only meals tagged with <span style={{ color: 'var(--primary, #FF6B35)', fontWeight: 600 }}>🔄 The Rotation</span> are used by the weekly planner spinner. Add more meals to keep it fresh!
+                <button
+                  onClick={() => setShowRotationTip(false)}
+                  style={{
+                    display: 'block', marginTop: 8, padding: '4px 10px',
+                    fontSize: 11, borderRadius: 6, border: '1px solid var(--border, #333)',
+                    background: 'transparent', color: 'var(--text-muted, #888)',
+                    cursor: 'pointer', width: '100%',
+                  }}
+                >Got it</button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
         <input
           type="text"
           placeholder="Search… (-exclude)"
           className="ml-search-input"
           value={search}
           onChange={e => setSearch(e.target.value)}
+          style={{ flex: 1 }}
         />
+        <div className="ml-grid-toggle" style={{
+          display: 'flex', gap: 2, padding: 2, borderRadius: 8,
+          background: 'var(--surface-raised, #1a1a1a)',
+          border: '1px solid var(--border, #2a2a2a)',
+        }}>
+          {[
+            { id: '2x', icon: <Grid2x2 size={15} strokeWidth={2} />, label: '2 columns' },
+            { id: '3x', icon: <Grid3x3 size={15} strokeWidth={2} />, label: '3 columns' },
+            { id: 'list', icon: <List size={15} strokeWidth={2} />, label: 'List view' },
+          ].map(opt => (
+            <button
+              key={opt.id}
+              aria-label={opt.label}
+              onClick={() => handleGridChange(opt.id)}
+              style={{
+                padding: '5px 7px', borderRadius: 6, border: 'none',
+                background: gridLayout === opt.id ? 'var(--primary, #FF6B35)' : 'transparent',
+                color: gridLayout === opt.id ? '#fff' : 'var(--text-muted, #888)',
+                cursor: 'pointer', display: 'flex', alignItems: 'center',
+                transition: 'all .2s cubic-bezier(.32,.72,0,1)',
+              }}
+            >
+              {opt.icon}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* ── Category filter chips ── */}
@@ -863,7 +946,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
       </AnimatePresence>
 
       {/* ── Gallery grid ── */}
-      <div className="ml-gallery">
+      <div className={`ml-gallery ml-layout-${gridLayout}`}>
         {filtered.length === 0 ? (
           <motion.div
             className="ml-empty-state"
@@ -918,7 +1001,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                 <span className={`ml-section-chevron${collapsedSections[catName] ? ' ml-section-chevron-collapsed' : ''}`}>▾</span>
               </button>
               {!collapsedSections[catName] && (
-                <div className="ml-section-grid">
+                <div className={`ml-section-grid ml-layout-${gridLayout}`}>
                   <AnimatePresence mode="popLayout">
                   {catMeals.map((meal, idx) => renderTile(meal, idx))}
                   </AnimatePresence>

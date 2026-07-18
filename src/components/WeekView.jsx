@@ -159,6 +159,10 @@ const ANIMATIONS_CSS = `
     border-style: dashed;
     border-color: var(--border);
   }
+  @keyframes fadeSlideDown {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
   @keyframes wv-groceryPulse {
     0%, 100% { box-shadow: 0 0 0 1px #43a047, 0 2px 16px rgba(67,160,71,0.18); }
     50%      { box-shadow: 0 0 0 2px #43a047, 0 2px 20px rgba(67,160,71,0.30); }
@@ -267,22 +271,34 @@ const ANIMATIONS_CSS = `
   }
   .wv-tl-next-collapsed:active { transform: scale(0.98); }
   .wv-tl-toggle {
-    display: flex; gap: 2px; padding: 2px;
-    background: var(--surface); border-radius: 10px;
+    display: flex; gap: 0; padding: 3px;
+    background: var(--surface); border-radius: 12px;
+    position: relative;
+    border: 1.5px solid var(--border);
   }
   .wv-tl-toggle-btn {
-    padding: 5px 10px; border-radius: 8px; border: none;
+    padding: 7px 14px; border-radius: 9px; border: none;
     font-size: 12px; font-weight: 700; cursor: pointer;
-    display: flex; align-items: center; gap: 4px;
-    transition: all 0.2s cubic-bezier(0.23,1,0.32,1);
+    display: flex; align-items: center; gap: 5px;
+    transition: color 0.25s cubic-bezier(0.32,0.72,0,1);
     -webkit-tap-highlight-color: transparent;
+    position: relative; z-index: 2;
+    background: transparent;
   }
   .wv-tl-toggle-btn.active {
-    background: var(--card); color: var(--text);
-    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    color: var(--text);
   }
   .wv-tl-toggle-btn:not(.active) {
-    background: transparent; color: var(--text-muted);
+    color: var(--text-muted);
+  }
+  .wv-tl-toggle-btn:active { transform: scale(0.95); }
+  .wv-tl-toggle-pill {
+    position: absolute; top: 3px; bottom: 3px;
+    border-radius: 9px;
+    background: var(--card);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.10), 0 0 0 0.5px rgba(0,0,0,0.04);
+    z-index: 1;
+    transition: left 0.3s cubic-bezier(0.32,0.72,0,1), width 0.3s cubic-bezier(0.32,0.72,0,1);
   }
   @media (prefers-reduced-motion: reduce) {
     .wv-tl-card, .wv-tl-spin-chip, .wv-tl-next-collapsed,
@@ -320,6 +336,8 @@ export default function WeekView({
   spinConstraints = null,
   fridgeInventoryNames = [],
   onSpinConstraintsSkipped = null,
+  onAddCustomDayTag,
+  onDeleteCustomDayTag,
 }) {
   const today = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
   const currentWeekMonday = useMemo(() => getMonday(today), [today]);
@@ -359,6 +377,9 @@ export default function WeekView({
   const [grocerySelectMode, setGrocerySelectMode] = useState(false);
   const [groceryDays, setGroceryDays] = useState(new Set());
   const [justCompletedSpin, setJustCompletedSpin] = useState(false);
+  const [showCustomDayTagInput, setShowCustomDayTagInput] = useState(false);
+  const [newDayTagName, setNewDayTagName] = useState('');
+  const [newDayTagIcon, setNewDayTagIcon] = useState('🏷️');
 
   const longPressTimerRef     = useRef(null);
   const longPressRafRef       = useRef(null);
@@ -519,6 +540,24 @@ export default function WeekView({
   }, []);
   const closePicker = useCallback(() => setPickerDay(null), []);
 
+  // Determine if activeDate falls in the current week — if not, assignments
+  // must route through onSpinnerComplete (saves to weekHistory) rather than
+  // onSetDay (only writes weekPlan — the current week).
+  const isActiveDateCurrentWeek = useMemo(() => {
+    const activeMon = getMonday(activeDate);
+    return activeMon.getTime() === currentWeekMonday.getTime();
+  }, [activeDate, currentWeekMonday]);
+
+  // Spin a single future-week day: opens the spinner targeted at exactly that date.
+  const handleSpinForDate = useCallback((date) => {
+    const dates = [date];
+    const indices = dates.map(d => d.getDay() === 0 ? 6 : d.getDay() - 1);
+    setSpinnerTargetDates(dates);
+    setSpinnerSelectedIndices(indices);
+    navigator.vibrate?.([40, 25, 40]);
+    onGenerate();
+  }, [onGenerate]);
+
   const renderPicker = () => {
     if (pickerDay === null) return null;
     const { meal: currentMeal } = getMealForDate(activeDate);
@@ -532,28 +571,139 @@ export default function WeekView({
             <h3>Choose for {DAY_FULL[pickerDay]}</h3>
             <button className="pk-close" onClick={closePicker}>✕</button>
           </div>
-          {!isPastDay && (
-            <div className="pk-specials">
+          {!isPastDay && (<>
+            <div className="pk-specials" style={{ maxHeight: 120, overflowY: 'auto', flexWrap: 'wrap' }}>
               {specialDays.map(s => (
                 <button key={s.id} className="pk-chip"
-                  onClick={() => { onSetSpecial(pickerDay, s.id); closePicker(); }}>
+                  onClick={() => {
+                    if (isActiveDateCurrentWeek) {
+                      onSetSpecial(pickerDay, s.id);
+                    } else {
+                      onSpinnerComplete([{ date: activeDate, meal: { ...s, _special: true } }]);
+                    }
+                    closePicker();
+                  }}
+                  style={{ position: 'relative' }}
+                >
                   <span>{s.icon}</span> {s.name}
+                  {s._custom && onDeleteCustomDayTag && (
+                    <span
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (window.confirm(`Remove "${s.name}" from quick options?`)) {
+                          onDeleteCustomDayTag(s._dbId);
+                        }
+                      }}
+                      style={{
+                        marginLeft: 4, fontSize: 10, opacity: 0.5,
+                        cursor: 'pointer', lineHeight: 1,
+                      }}
+                    >✕</span>
+                  )}
                 </button>
               ))}
+              {onAddCustomDayTag && (
+                <button
+                  className="pk-chip"
+                  onClick={() => setShowCustomDayTagInput(true)}
+                  style={{ borderStyle: 'dashed', opacity: 0.7 }}
+                >
+                  <Plus size={12} strokeWidth={2.5} /> Custom
+                </button>
+              )}
               {currentMeal && (
                 <button className="pk-chip clear"
-                  onClick={() => { onSetSpecial(pickerDay, null); closePicker(); }}>
+                  onClick={() => {
+                    if (isActiveDateCurrentWeek) {
+                      onSetSpecial(pickerDay, null);
+                    } else {
+                      onSpinnerComplete([{ date: activeDate, meal: null }]);
+                    }
+                    closePicker();
+                  }}>
                   ✕ Clear
                 </button>
               )}
             </div>
-          )}
+            {showCustomDayTagInput && (
+              <div className="pk-custom-input" style={{
+                display: 'flex', gap: 6, alignItems: 'center', padding: '6px 0',
+                animation: 'fadeSlideDown .25s cubic-bezier(.32,.72,0,1)',
+              }}>
+                <input
+                  autoFocus
+                  value={newDayTagName}
+                  onChange={e => setNewDayTagName(e.target.value)}
+                  placeholder="Tag name…"
+                  maxLength={20}
+                  style={{
+                    flex: 1, padding: '7px 10px', borderRadius: 8,
+                    border: '1px solid var(--border, #3a3a3a)',
+                    background: 'var(--surface-raised, #1e1e1e)',
+                    color: 'var(--text, #fff)', fontSize: 13,
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && newDayTagName.trim()) {
+                      onAddCustomDayTag({ name: newDayTagName.trim(), icon: newDayTagIcon });
+                      setNewDayTagName(''); setShowCustomDayTagInput(false);
+                    } else if (e.key === 'Escape') {
+                      setShowCustomDayTagInput(false); setNewDayTagName('');
+                    }
+                  }}
+                />
+                <select
+                  value={newDayTagIcon}
+                  onChange={e => setNewDayTagIcon(e.target.value)}
+                  style={{
+                    padding: '6px 4px', borderRadius: 8, fontSize: 16,
+                    border: '1px solid var(--border, #3a3a3a)',
+                    background: 'var(--surface-raised, #1e1e1e)',
+                    color: 'var(--text, #fff)', width: 44, textAlign: 'center',
+                  }}
+                >
+                  {['🏷️','🍖','🥘','🫕','🥙','🍱','🥓','🧆','🌯','🥗','🫔','🍛'].map(em => (
+                    <option key={em} value={em}>{em}</option>
+                  ))}
+                </select>
+                <button
+                  disabled={!newDayTagName.trim()}
+                  onClick={() => {
+                    if (newDayTagName.trim()) {
+                      onAddCustomDayTag({ name: newDayTagName.trim(), icon: newDayTagIcon });
+                      setNewDayTagName(''); setShowCustomDayTagInput(false);
+                    }
+                  }}
+                  style={{
+                    padding: '6px 12px', borderRadius: 8, fontWeight: 600, fontSize: 12,
+                    background: newDayTagName.trim() ? 'var(--accent, #FF6B35)' : '#333',
+                    color: '#fff', border: 'none', cursor: newDayTagName.trim() ? 'pointer' : 'default',
+                    transition: 'background .2s cubic-bezier(.32,.72,0,1)',
+                  }}
+                >Add</button>
+                <button
+                  onClick={() => { setShowCustomDayTagInput(false); setNewDayTagName(''); }}
+                  style={{
+                    padding: '6px 8px', borderRadius: 8, fontSize: 12,
+                    background: 'transparent', color: 'var(--text-muted, #888)',
+                    border: '1px solid var(--border, #3a3a3a)', cursor: 'pointer',
+                  }}
+                >✕</button>
+              </div>
+            )}
+          </>)}
           <div className="pk-list">
             {meals.map(meal => {
               const isCur = currentMeal && !currentMeal._special && currentMeal.id === meal.id;
               return (
                 <div key={meal.id} className={`pk-item ${isCur ? 'current' : ''}`}
-                  onClick={() => { onSetDay(pickerDay, meal); closePicker(); }}>
+                  onClick={() => {
+                    if (isActiveDateCurrentWeek) {
+                      onSetDay(pickerDay, meal);
+                    } else {
+                      onSpinnerComplete([{ date: activeDate, meal }]);
+                    }
+                    closePicker();
+                  }}>
                   <MealImage src={meal.imageUrl} alt="" className="pk-img" fallbackClass="pk-img-ph" />
                   <div className="pk-info">
                     <span className="pk-name">{meal.name}</span>
@@ -662,20 +812,7 @@ export default function WeekView({
           </div>
         )}
 
-        <div className="wv-tl-toggle">
-          <button
-            className={`wv-tl-toggle-btn ${viewMode === 'timeline' ? 'active' : ''}`}
-            onClick={() => setViewMode('timeline')}
-          >
-            <List size={14} strokeWidth={2.5} /> List
-          </button>
-          <button
-            className={`wv-tl-toggle-btn ${viewMode === 'month' ? 'active' : ''}`}
-            onClick={() => setViewMode('month')}
-          >
-            <CalendarDays size={14} strokeWidth={2.5} /> Month
-          </button>
-        </div>
+        <ViewToggle viewMode={viewMode} onChangeMode={setViewMode} />
 
         {viewMode === 'month' && (
           <button onClick={handleNextMonth} style={NAV_BTN}>›</button>
@@ -752,6 +889,7 @@ export default function WeekView({
               });
             }}
             onRespin={onRespin}
+            onSpinForDate={handleSpinForDate}
             grocerySelectMode={grocerySelectMode}
             groceryDays={groceryDays}
             onGroceryToggle={handleGroceryToggle}
@@ -803,6 +941,7 @@ export default function WeekView({
                     });
                   }}
                   onRespin={onRespin}
+                  onSpinForDate={handleSpinForDate}
                   grocerySelectMode={grocerySelectMode}
                   groceryDays={groceryDays}
                   onGroceryToggle={handleGroceryToggle}
@@ -975,12 +1114,21 @@ export default function WeekView({
         activeDate={activeDate}
         today={today}
         getMealForDate={getMealForDate}
+        isCurrentWeek={isActiveDateCurrentWeek}
         onClose={() => setShowDetailPanel(false)}
         onToggleLock={onToggleLock}
         onViewDetail={(meal) => { setShowDetailPanel(false); onViewDetail(meal); }}
         onRespin={(dow) => { onRespin(dow); setShowDetailPanel(false); }}
+        onSpinForDate={(date) => { handleSpinForDate(date); setShowDetailPanel(false); }}
         onOpenPicker={() => { openPicker(activeDate); setShowDetailPanel(false); }}
-        onClearDay={(dow) => { onSetSpecial(dow, null); setShowDetailPanel(false); }}
+        onClearDay={(dow) => {
+          if (isActiveDateCurrentWeek) {
+            onSetSpecial(dow, null);
+          } else {
+            onSpinnerComplete([{ date: activeDate, meal: null }]);
+          }
+          setShowDetailPanel(false);
+        }}
       />
 
       {showSpinner && (
@@ -1189,12 +1337,55 @@ export default function WeekView({
   );
 }
 
+// ── Premium segmented toggle ─────────────────────────────────────────────────
+function ViewToggle({ viewMode, onChangeMode }) {
+  const toggleRef = useRef(null);
+  const weekBtnRef = useRef(null);
+  const monthBtnRef = useRef(null);
+  const [pillStyle, setPillStyle] = useState({});
+
+  useEffect(() => {
+    const container = toggleRef.current;
+    const activeBtn = viewMode === 'timeline' ? weekBtnRef.current : monthBtnRef.current;
+    if (!container || !activeBtn) return;
+    const cRect = container.getBoundingClientRect();
+    const bRect = activeBtn.getBoundingClientRect();
+    setPillStyle({
+      left: bRect.left - cRect.left,
+      width: bRect.width,
+    });
+  }, [viewMode]);
+
+  return (
+    <div className="wv-tl-toggle" ref={toggleRef}>
+      <div
+        className="wv-tl-toggle-pill"
+        style={{ left: pillStyle.left ?? 3, width: pillStyle.width ?? '50%' }}
+      />
+      <button
+        ref={weekBtnRef}
+        className={`wv-tl-toggle-btn ${viewMode === 'timeline' ? 'active' : ''}`}
+        onClick={() => onChangeMode('timeline')}
+      >
+        <List size={14} strokeWidth={2.5} /> Week
+      </button>
+      <button
+        ref={monthBtnRef}
+        className={`wv-tl-toggle-btn ${viewMode === 'month' ? 'active' : ''}`}
+        onClick={() => onChangeMode('month')}
+      >
+        <CalendarDays size={14} strokeWidth={2.5} /> Month
+      </button>
+    </div>
+  );
+}
+
 const TL_STAGGER_DELAY = 40;
 
 function TimelineWeek({
   weekDates, today, getMealForDate, currentWeekMonday,
   selectMode, selectedDates, onCellClick, onToggleSelect,
-  onRespin, grocerySelectMode, groceryDays, onGroceryToggle,
+  onRespin, onSpinForDate, grocerySelectMode, groceryDays, onGroceryToggle,
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '0 12px' }}>
@@ -1292,6 +1483,8 @@ function TimelineWeek({
                     e.stopPropagation();
                     if (isCurrent) {
                       onRespin(dow);
+                    } else if (date >= today) {
+                      onSpinForDate?.(date);
                     } else {
                       onCellClick(date);
                     }
@@ -1320,8 +1513,8 @@ function TimelineWeek({
   );
 }
 
-function DetailPanel({ show, activeDate, today, getMealForDate, onClose, onToggleLock,
-  onViewDetail, onRespin, onOpenPicker, onClearDay }) {
+function DetailPanel({ show, activeDate, today, getMealForDate, isCurrentWeek, onClose, onToggleLock,
+  onViewDetail, onRespin, onSpinForDate, onOpenPicker, onClearDay }) {
   const dragControls = useDragControls();
 
   const handleSheetDragEnd = useCallback((_e, info) => {
@@ -1435,14 +1628,26 @@ function DetailPanel({ show, activeDate, today, getMealForDate, onClose, onToggl
                 </motion.p>
               )}
               {!isPast && (
-                <motion.button
-                  className="wv-empty-cta"
-                  variants={wvEmptyItemVariants}
-                  onClick={onOpenPicker}
-                  style={{ ...PRIMARY_BTN, width: '100%' }}
-                >
-                  + Add a Meal
-                </motion.button>
+                <motion.div variants={wvEmptyItemVariants} style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%' }}>
+                  <button
+                    onClick={() => {
+                      if (isCurrentWeek) {
+                        onRespin(dow);
+                      } else {
+                        onSpinForDate?.(activeDate);
+                      }
+                    }}
+                    style={{ ...PRIMARY_BTN, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                  >
+                    <RefreshCw size={15} strokeWidth={2.5} /> Spin a Meal
+                  </button>
+                  <button
+                    onClick={onOpenPicker}
+                    style={{ ...OUTLINE_BTN, width: '100%' }}
+                  >
+                    + Choose from Library
+                  </button>
+                </motion.div>
               )}
             </motion.div>
           ) : isSpecial ? (
@@ -1564,12 +1769,27 @@ function DetailPanel({ show, activeDate, today, getMealForDate, onClose, onToggl
                   <button onClick={() => onViewDetail(meal)} style={OUTLINE_BTN}>
                     <BookOpen size={16} style={{ verticalAlign: 'middle', marginRight: 4 }} /> View Recipe
                   </button>
-                  <button
-                    onClick={() => { onOpenPicker(); }}
-                    style={PRIMARY_BTN}
-                  >
-                    ↩ Use This Meal Today
-                  </button>
+                  {activeDate >= today ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      <button onClick={() => onSpinForDate?.(activeDate)} style={OUTLINE_BTN}>
+                        🔄 Respin
+                      </button>
+                      <button onClick={onOpenPicker} style={OUTLINE_BTN}>
+                        ✏️ Change
+                      </button>
+                      <button onClick={() => onClearDay(dow)}
+                        style={{ ...OUTLINE_BTN, gridColumn: '1 / -1', color: 'var(--danger)', borderColor: 'var(--danger)' }}>
+                        ✕ Remove Meal
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => { onOpenPicker(); }}
+                      style={PRIMARY_BTN}
+                    >
+                      ↩ Use This Meal Today
+                    </button>
+                  )}
                 </div>
               )}
             </div>
