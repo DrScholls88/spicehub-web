@@ -767,32 +767,23 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
           <AnimatePresence>
             {showRotationTip && (
               <motion.div
-                initial={{ opacity: 0, y: -6, scale: 0.92 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: -4, scale: 0.95 }}
+                initial={{ opacity: 0, x: -6, scale: 0.95 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                exit={{ opacity: 0, x: -4, scale: 0.95 }}
                 transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                onClick={() => setShowRotationTip(false)}
                 style={{
-                  position: 'absolute', top: '100%', left: 0, zIndex: 40,
-                  marginTop: 6, padding: '10px 14px', borderRadius: 10,
+                  position: 'absolute', top: '50%', left: '100%', transform: 'translateY(-50%)',
+                  zIndex: 40, marginLeft: 8,
+                  padding: '7px 12px', borderRadius: 8,
                   background: 'var(--surface-raised, #1a1a1a)',
                   border: '1px solid var(--border, #333)',
-                  boxShadow: '0 8px 24px rgba(0,0,0,.25)',
-                  fontSize: 12, lineHeight: 1.45, color: 'var(--text, #eee)',
-                  maxWidth: 220, whiteSpace: 'normal',
+                  boxShadow: '0 4px 16px rgba(0,0,0,.3)',
+                  fontSize: 11, lineHeight: 1.4, color: 'var(--text, #eee)',
+                  whiteSpace: 'nowrap', cursor: 'pointer',
                 }}
               >
-                <span style={{ fontWeight: 600 }}>🎰 Spinner pulls from "The Rotation"</span>
-                <br />
-                Only meals tagged with <span style={{ color: 'var(--primary, #FF6B35)', fontWeight: 600 }}>🔄 The Rotation</span> are used by the weekly planner spinner. Add more meals to keep it fresh!
-                <button
-                  onClick={() => setShowRotationTip(false)}
-                  style={{
-                    display: 'block', marginTop: 8, padding: '4px 10px',
-                    fontSize: 11, borderRadius: 6, border: '1px solid var(--border, #333)',
-                    background: 'transparent', color: 'var(--text-muted, #888)',
-                    cursor: 'pointer', width: '100%',
-                  }}
-                >Got it</button>
+                🎰 Spinner only uses <span style={{ color: 'var(--primary, #FF6B35)', fontWeight: 600 }}>🔄 Rotation</span> meals
               </motion.div>
             )}
           </AnimatePresence>
@@ -866,32 +857,39 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
       </div>
 
       {/* ── Tag filter chips ── */}
-      {userTags.length > 0 && (
-        <div className="ml-tags-scroll">
-          <div className="ml-tags-track">
-            {userTags.map(tag => (
-              <button
-                key={tag.id}
-                className={`ml-tag-chip${activeTags.includes(tag.name) ? ' ml-tag-active' : ''}`}
-                onClick={() => handleTagToggle(tag.name)}
-                style={activeTags.includes(tag.name) ? { background: tag.color, borderColor: tag.color, color: '#fff' } : undefined}
-              >
-                <Tag size={11} strokeWidth={2.5} /> {tag.name}
-                {(() => {
-                  const count = meals.filter(m => (m.tags || []).includes(tag.name)).length;
-                  return count > 0 ? <span className="ml-tag-count">{count}</span> : null;
-                })()}
-              </button>
-            ))}
+      <div className="ml-tags-scroll">
+        <div className="ml-tags-track">
+          {userTags.map(tag => (
+            <button
+              key={tag.id}
+              className={`ml-tag-chip${activeTags.includes(tag.name) ? ' ml-tag-active' : ''}`}
+              onClick={() => handleTagToggle(tag.name)}
+              style={activeTags.includes(tag.name) ? { background: tag.color, borderColor: tag.color, color: '#fff' } : undefined}
+            >
+              <Tag size={11} strokeWidth={2.5} /> {tag.name}
+              {(() => {
+                const count = meals.filter(m => (m.tags || []).includes(tag.name)).length;
+                return count > 0 ? <span className="ml-tag-count">{count}</span> : null;
+              })()}
+            </button>
+          ))}
+          <button
+            className="ml-tag-chip ml-tag-manage"
+            onClick={() => { hapticLight(); setShowTagManager(true); }}
+            style={{ borderStyle: 'dashed', opacity: 0.75 }}
+          >
+            <Plus size={11} strokeWidth={2.5} /> New Label
+          </button>
+          {userTags.length > 0 && (
             <button
               className="ml-tag-chip ml-tag-manage"
               onClick={() => { hapticLight(); setShowTagManager(true); }}
             >
               <Pencil size={11} strokeWidth={2.5} /> Manage
             </button>
-          </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* ── Multi-select toolbar ── */}
       <AnimatePresence>
