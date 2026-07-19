@@ -21197,6 +21197,32 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 .saloon-fg .bs-bar-rail     { z-index: 7; }
 .saloon-fg .saloon-stools   { z-index: 8; }
 
+/* ── Dynamic bartender floor shadow ───────────────────────────────────── */
+.bs-bartender-wrap::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  width: 70%;
+  height: 10px;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0.45) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+  transition: opacity 0.25s cubic-bezier(0.32,0.72,0,1),
+              transform 0.25s cubic-bezier(0.32,0.72,0,1);
+  opacity: 1;
+  z-index: -1;
+}
+.bs-bartender-grabbed::after {
+  opacity: 0.55;
+  transform: translateX(-50%) scaleX(1.25) scaleY(0.7);
+}
+.bs-bartender-flying::after {
+  opacity: 0.25;
+  transform: translateX(-50%) scaleX(1.6) scaleY(0.5);
+}
+
 /* Grabbed bartender floats above everything in the stage */
 .bs-bartender-grabbed {
   z-index: 200 !important;
@@ -21241,6 +21267,8 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
     animation: none !important;
     transition: none !important;
   }
+  .bs-bartender-wrap::after { opacity: 0 !important; }
+  .bounty-poster { animation: none !important; }
 }
 
 
@@ -22200,6 +22228,12 @@ select:focus-visible,
   0%, 100% { opacity: 0.55; }
   50%      { opacity: 1; text-shadow: 0 0 6px rgba(255, 209, 102, 0.7); }
 }
+/* Slot-reel tick: brief glow on each name swap */
+.chalk-reel-tick {
+  text-shadow:
+    0 0 4px rgba(255, 209, 102, 0.8),
+    0 0 8px rgba(255, 209, 102, 0.4);
+}
 .wall-chalkboard--spinning .chalkboard-frame {
   box-shadow:
     0 0 0 1px #7a4515,
@@ -22229,6 +22263,63 @@ select:focus-visible,
   word-break: break-word;
   margin-bottom: 2px;
 }
+/* Idle jiggle — subtle wind-blown tremor on the tacked posters */
+@keyframes bountyJiggle {
+  0%, 100% { transform: rotate(var(--poster-tilt, -2.5deg)); }
+  25%      { transform: rotate(calc(var(--poster-tilt, -2.5deg) + 0.8deg)); }
+  50%      { transform: rotate(calc(var(--poster-tilt, -2.5deg) - 0.5deg)); }
+  75%      { transform: rotate(calc(var(--poster-tilt, -2.5deg) + 0.4deg)); }
+}
+.bounty-poster {
+  animation: bountyJiggle 3.6s ease-in-out infinite;
+  transform-origin: 50% 4px; /* tack point at top */
+  position: relative;
+}
+.bounty-poster:nth-child(1) { --poster-tilt: -2.5deg; animation-delay: 0s;   }
+.bounty-poster:nth-child(2) { --poster-tilt:  2.5deg; animation-delay: 1.2s; }
+
+/* Poster peel — curled corner hint */
+.bounty-poster::before {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 12px;
+  height: 12px;
+  background: linear-gradient(135deg, transparent 40%, #6b3a00 42%, #d4961e 60%);
+  border-radius: 0 0 1px 0;
+  opacity: 0;
+  transform: scaleY(0);
+  transform-origin: bottom right;
+  transition: opacity 0.3s cubic-bezier(0.32,0.72,0,1),
+              transform 0.3s cubic-bezier(0.32,0.72,0,1);
+  pointer-events: none;
+  z-index: 2;
+}
+.bounty-poster:hover::before,
+.bounty-poster:focus-visible::before {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+/* Ingredient hint line revealed on hover */
+.bounty-ingredient-hint {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 3.5px;
+  color: #3a1e00;
+  opacity: 0;
+  max-height: 0;
+  overflow: hidden;
+  transition: opacity 0.25s ease, max-height 0.3s ease;
+  text-shadow: 0 1px 0 rgba(255,200,100,0.3);
+  letter-spacing: 0.3px;
+}
+.bounty-poster:hover .bounty-ingredient-hint,
+.bounty-poster:focus-visible .bounty-ingredient-hint {
+  opacity: 1;
+  max-height: 18px;
+}
+
 .bounty-poster:hover .bounty-mugshot { animation: outlawShifty 0.9s steps(2) infinite; }
 @keyframes outlawShifty {
   0%, 100% { transform: translateX(0); }

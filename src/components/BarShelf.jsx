@@ -184,9 +184,32 @@ function SwingingShingle({ barName, onClickShingle }) {
 // ══════════════════════════════════════════════════════════════════════════════
 // WALL CHALKBOARD — back wall, shows "Today's Special" based on inventory
 // ══════════════════════════════════════════════════════════════════════════════
-function WallChalkboard({ specialDrink, onClick, spinning }) {
+function WallChalkboard({ specialDrink, onClick, spinning, reelNames }) {
+  const [reelText, setReelText] = useState(null);
+  const reelRef = useRef(null);
+
+  // Slot-reel effect: cycle drink names with decelerating intervals
+  useEffect(() => {
+    if (!spinning) { setReelText(null); return; }
+    const pool = (reelNames && reelNames.length > 2)
+      ? reelNames
+      : SURPRISE_CLASSICS.map(c => c.name);
+    let tick = 0;
+    const maxTicks = 14;
+    const step = () => {
+      if (tick >= maxTicks) { reelRef.current = null; return; }
+      setReelText(pool[Math.floor(Math.random() * pool.length)].toUpperCase().slice(0, 16));
+      tick++;
+      // Decelerate: 60ms → ~220ms over 14 ticks
+      const delay = 60 + tick * 12;
+      reelRef.current = setTimeout(step, delay);
+    };
+    step();
+    return () => { if (reelRef.current) clearTimeout(reelRef.current); };
+  }, [spinning, reelNames]);
+
   const drinkName = spinning
-    ? '???'
+    ? (reelText || '???')
     : specialDrink
       ? specialDrink.name.toUpperCase().slice(0, 16)
       : '???';
@@ -216,11 +239,11 @@ function WallChalkboard({ specialDrink, onClick, spinning }) {
           <AnimatePresence mode="wait">
             <motion.div
               key={drinkName}
-              className="chalk-drink-name"
+              className={`chalk-drink-name${spinning ? ' chalk-reel-tick' : ''}`}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8 }}
-              transition={{ duration: 0.28, ease: 'easeOut' }}
+              transition={{ duration: spinning ? 0.06 : 0.28, ease: 'easeOut' }}
             >
               {drinkName}
             </motion.div>
@@ -275,6 +298,7 @@ function WallBountyBoard({ bounties, onClickBounty }) {
                   <PixelOutlaw seed={b.ingredient} size={26} />
                 </div>
                 <div className="bounty-outlaw-name">{outlaw.nickname}</div>
+                <span className="bounty-ingredient-hint">for {b.drinkName}</span>
               </motion.button>
             );
           })}
@@ -2905,6 +2929,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
                 specialDrink={surpriseResult ? { name: surpriseResult.name, ingredients: surpriseResult.drink?.ingredients } : specialDrink}
                 spinning={boardSpin}
                 onClick={handleSurpriseMe}
+                reelNames={drinks.length > 2 ? drinks.map(d => d.name) : null}
               />
               <WallBountyBoard
                 bounties={bounties}
@@ -3089,7 +3114,7 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
             >
               {/* Inner motion.div handles rotation during toss */}
               <motion.div
-                className={`bs-bartender-wrap bs-bartender-draggable${secretFlash ? ' bs-secret-flash' : ''}${isGrabbed ? ' bs-bartender-grabbed' : ''}`}
+                className={`bs-bartender-wrap bs-bartender-draggable${secretFlash ? ' bs-secret-flash' : ''}${isGrabbed ? ' bs-bartender-grabbed' : ''}${isFlying ? ' bs-bartender-flying' : ''}`}
                 style={{ rotate: rotMV, position: 'relative', display: 'inline-block' }}
                 onPointerDown={handleBartenderPointerDown}
                 onPointerUp={handleBartenderPointerUp}
