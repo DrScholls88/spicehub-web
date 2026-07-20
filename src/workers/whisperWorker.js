@@ -2,8 +2,14 @@
  * whisperWorker.js — Web Worker for browser-local Whisper transcription.
  *
  * Runs @huggingface/transformers (Transformers.js v3) in an isolated thread so
- * the main UI stays responsive during model download + inference. Communicates
- * via structured postMessage events:
+ * the main UI stays responsive during model download + inference. The library
+ * is a pinned npm dependency (see package.json) bundled by Vite — not fetched
+ * from a CDN at runtime, so an installed/offline PWA never depends on a live
+ * jsdelivr connection just to boot the worker. Model *weights* still come from
+ * HuggingFace on first use and are cached in IndexedDB by Transformers.js
+ * itself (see loadModel below) — that part is unavoidably network-based no
+ * matter where the JS library ships from. Communicates via structured
+ * postMessage events:
  *
  *   Main → Worker:
  *     { type: 'transcribe', audio: Float32Array, language?: string, model?: string }
@@ -19,7 +25,9 @@
  * subsequent loads are instant (no network).
  */
 
-// Dynamic import so the worker boots fast even before the library is cached.
+// Dynamic import so the worker boots fast — Vite code-splits this into its
+// own chunk, fetched from our own origin only when transcription first runs,
+// not eagerly on worker startup.
 let pipeline = null;
 let transcriber = null;
 let currentModelId = null;
@@ -59,12 +67,9 @@ async function loadModel(modelName) {
 
   self.postMessage({ type: 'progress', status: 'loading-library' });
 
-  // Lazy-load the library on first use
+  // Lazy-load the library on first use — bundled dependency, not a CDN fetch.
   if (!pipeline) {
-    const mod = await import(
-      /* webpackIgnore: true */
-      'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3'
-    );
+    const mod = await import('@huggingface/transformers');
     pipeline = mod.pipeline;
     // Prefer WebGPU when available, fall back to WASM
     if (mod.env) {

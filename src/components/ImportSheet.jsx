@@ -15,6 +15,7 @@ import {
 } from '../recipeParser.js';
 import { importRecipeFromPages, PhotoImportError } from '../lib/photoImportEngine.js';
 import { detectVideoSource } from '../lib/videoSource.js';
+import { WHISPER_MODELS, getPreferredWhisperModel, setPreferredWhisperModel } from '../lib/transcriptionService.js';
 import { cleanUrl } from '../api.js';
 import { ENGINE_PROMPT_VERSION } from '../recipeSchema.js';
 import { humanizeImportStatus } from '../importCopy.js';
@@ -126,6 +127,16 @@ export default function ImportSheet({
   const [itemType, setItemType] = useState(initialItemType);
   const [browserAssistSeed, setBrowserAssistSeed] = useState(null);
   const [capturedText, setCapturedText] = useState('');
+  // Phase 4 (2026-07-20): Whisper model tier — one persisted global choice
+  // (see transcriptionService.js), read fresh on mount so a preference set
+  // in an earlier session sticks. Applies to both the manual "Transcribe
+  // Video" action below and the automatic ASR pass in recipeParser.js.
+  const [whisperModel, setWhisperModel] = useState(() => getPreferredWhisperModel());
+  const toggleWhisperModel = useCallback(() => {
+    const next = whisperModel === 'small' ? 'base' : 'small';
+    setWhisperModel(next);
+    setPreferredWhisperModel(next);
+  }, [whisperModel]);
 
   // ── Input and review state lifted for single CTA ────────────────────────
   const [url, setUrl] = useState(sharedContent?.url || '');
@@ -414,8 +425,14 @@ export default function ImportSheet({
       const captionWeak =
         (result && result._needsBrowserAssist && result._emptyCaption) ||
         (!result || (!result.title && !result.name && !(result.ingredients || []).length));
+      // recipeParser.js's Instagram cascade already tries ASR itself before
+      // giving up (Phase E.3 pre-exit, 2026-07-20) — result._asrAttempted
+      // means that already ran and failed on this exact URL. Retrying the
+      // identical transcription here wouldn't produce a different result,
+      // just double the wait on an already-failed import.
+      const alreadyTriedAsr = !!result?._asrAttempted;
 
-      if (isVideo && captionWeak && !controller.signal.aborted) {
+      if (isVideo && captionWeak && !alreadyTriedAsr && !controller.signal.aborted) {
         setProgressMsg('No caption found — transcribing video audio…');
         setTimeline(t => ({ stage: Math.max(t.stage, 1), chip: 'Video audio' }));
 
@@ -427,6 +444,7 @@ export default function ImportSheet({
             signal: controller.signal,
             type: type || initialItemType,
             imageUrl: result?.capturedImageUrl || '',
+            model: whisperModel,
           });
 
           if (controller.signal.aborted) return;
@@ -481,7 +499,7 @@ export default function ImportSheet({
       setError(err.message || 'Import failed.');
       setPhase('input');
     }
-  }, [initialItemType]);
+  }, [initialItemType, whisperModel]);
 
   const handleUrlImport = useCallback(async (rawUrl, type) => {
     if (!navigator.onLine) {
@@ -661,6 +679,7 @@ export default function ImportSheet({
         },
         signal: controller.signal,
         type: type || itemType || initialItemType,
+        model: whisperModel,
       });
 
       if (controller.signal.aborted) return;
@@ -683,7 +702,7 @@ export default function ImportSheet({
       setError(err.message || 'Transcription failed.');
       setPhase('input');
     }
-  }, [importUrl, itemType, initialItemType]);
+  }, [importUrl, itemType, initialItemType, whisperModel]);
 
   // ── BrowserAssist recipe callback ────────────────────────────────────────
   const handleBrowserAssistRecipe = useCallback((extractedRecipe) => {
@@ -908,13 +927,33 @@ export default function ImportSheet({
                           Retry
                         </button>
                         {detectVideoSource(importUrl) && (
-                          <button
-                            type="button"
-                            className="import-sheet-btn import-sheet-btn-secondary"
-                            onClick={() => executeTranscribeImport(importUrl, itemType)}
-                          >
-                            <Mic size={14} /> Transcribe Video
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              className="import-sheet-btn import-sheet-btn-secondary"
+                              onClick={() => executeTranscribeImport(importUrl, itemType)}
+                            >
+                              <Mic size={14} /> Transcribe Video
+                            </button>
+                            {/* Phase 4 (2026-07-20): model tier toggle. A single
+                                tap-to-cycle chip rather than a two-way segmented
+                                control — one more touch target is cheaper than
+                                two on a mobile error banner. Shows the CURRENT
+                                choice; tapping switches to the other tier. */}
+                            <button
+                              type="button"
+                              className="import-sheet-btn import-sheet-btn-ghost import-sheet-model-toggle"
+                              onClick={toggleWhisperModel}
+                              title={
+                                whisperModel === 'small'
+                                  ? `Best accuracy — ${WHISPER_MODELS.small.label}, slower`
+                                  : `Fast — ${WHISPER_MODELS.base.label}, less accurate on noisy audio`
+                              }
+                            >
+                              <Zap size={14} />
+                              {whisperModel === 'small' ? 'Best accuracy' : 'Fast'}
+                            </button>
+                          </>
                         )}
                         {/* "Try in browser" (BrowserAssist) removed 2026-07-14 — see
                             the commented-out render block further down for why. */}

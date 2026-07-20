@@ -9,7 +9,7 @@
  */
 import { cleanUrl, isInstagramCdnUrl, fetchHtmlViaProxy as fetchHtmlViaProxyFromApi, downloadImageAsDataUrl, proxyImageUrl } from './api.js';
 import { getCachedImport, setCachedImport } from './db.js';
-import { transcribeFromUrl, transcribeFromFile } from './lib/transcriptionService.js';
+import { transcribeFromUrl, transcribeFromFile, getPreferredWhisperModel } from './lib/transcriptionService.js';
 import { isRedditUrl, isRedditPostUrl, tryRedditJson } from './scrapers/redditDiscovery.js';
 import { htmlToMarkdown, htmlLooksLikeRecipe } from './scrapers/markdownConverter.js';
 import { parseIngredient } from 'parse-ingredient';
@@ -3139,16 +3139,48 @@ export async function parseFromUrl(url, onProgress, { type = 'meal', signal } = 
 }
 
 export async function importRecipeFromUrl(url, onProgress, { type = 'meal', signal } = {}) {
-  const TIMEOUT_MS = 45_000;
-  return Promise.race([
-    _importRecipeFromUrlInner(url, onProgress, { type, signal }),
-    new Promise(resolve => setTimeout(() => resolve({
-      _needsBrowserAssist: true, seed: null, capturedCaption: '', _timeoutReason: 'IMPORT_TIMEOUT',
-    }), TIMEOUT_MS)),
-  ]);
+  const DEFAULT_TIMEOUT_MS = 45_000;
+  const MAX_TIMEOUT_MS = 90_000;
+  const startedAt = Date.now();
+
+  const timeoutStub = () => ({
+    _needsBrowserAssist: true, seed: null, capturedCaption: '', _timeoutReason: 'IMPORT_TIMEOUT',
+  });
+
+  let timer = null;
+  let resolveTimeout = null;
+  let currentDeadlineMs = DEFAULT_TIMEOUT_MS;
+  const timeoutPromise = new Promise((resolve) => {
+    resolveTimeout = resolve;
+    timer = setTimeout(() => resolve(timeoutStub()), DEFAULT_TIMEOUT_MS);
+  });
+
+  // Lets a deep call — today, the Instagram video-ASR branch — push the import
+  // deadline out once it knows it's about to run transcription, instead of
+  // racing that against the default 45s budget meant for text-only extraction.
+  // Never shrinks the budget; capped at MAX_TIMEOUT_MS so a hung transcription
+  // can't hold the import open indefinitely.
+  const requestBudget = (wantedTotalMs) => {
+    const cappedWanted = Math.min(MAX_TIMEOUT_MS, wantedTotalMs);
+    if (cappedWanted <= currentDeadlineMs) return;
+    const elapsed = Date.now() - startedAt;
+    const remaining = Math.max(0, cappedWanted - elapsed);
+    currentDeadlineMs = cappedWanted;
+    clearTimeout(timer);
+    timer = setTimeout(() => resolveTimeout(timeoutStub()), remaining);
+  };
+
+  try {
+    return await Promise.race([
+      _importRecipeFromUrlInner(url, onProgress, { type, signal, requestBudget }),
+      timeoutPromise,
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
-async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signal } = {}) {
+async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signal, requestBudget } = {}) {
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ 0. Reddit: zero-auth JSON endpoint (fastest non-Instagram path) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   // Reddit's .json trick gives structured post data with no scraping, no auth,
@@ -3197,7 +3229,7 @@ async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signa
     const instagramRecipe = await importFromInstagram(url, (phaseOrMsg, status, msg, metadata) => {
       if (!onProgress) return;
       onProgress(typeof msg === 'string' ? msg : String(phaseOrMsg || 'Importing Instagram post...'), metadata);
-    }, { type, signal });
+    }, { type, signal, requestBudget });
     if (instagramRecipe && !instagramRecipe._needsManualCaption && !instagramRecipe._error) {
       return instagramRecipe;
     }
@@ -5071,7 +5103,7 @@ async function resolveDisplayableImage(rawUrl, persistFn) {
   return { url: rawUrl, status: 'raw' };
 }
 
-export async function importFromInstagram(url, onProgress = () => {}, { type = 'meal', signal } = {}) {
+export async function importFromInstagram(url, onProgress = () => {}, { type = 'meal', signal, requestBudget } = {}) {
   url = cleanUrl(url);
   const progress = (phase, status, msg) => {
     onProgress(phase, status, msg, { imageUrl: capturedImageUrl, title: capturedTitle });
@@ -5289,16 +5321,67 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
 
   // ── Phase E.3: empty/junk-caption early exit (spec §6) ──────────────────────
   // No subtitles, caption has no recipe signals, and no substantial page text:
-  // don't burn an AI run on junk — hand back the manual sheet immediately with
-  // whatever we captured pre-filled, flagged so the UI can explain why.
-  if (!(videoRecipe && hasRecipeContent(videoRecipe))
+  // this WOULD be a dead end. Before giving up, if the post looks like a video
+  // (reel/tv), try Whisper on the audio — spoken-only Reels are exactly the
+  // case a caption-only pipeline can never rescue. Bounded and best-effort:
+  // any failure here falls straight through to the original manual-caption
+  // exit below, unchanged.
+  const wouldExitEmpty = !(videoRecipe && hasRecipeContent(videoRecipe))
       && isCaptionWeak(capturedCaption || '')
-      && !(capturedRawPageText && capturedRawPageText.trim().length >= 300)) {
+      && !(capturedRawPageText && capturedRawPageText.trim().length >= 300);
+
+  let whisperTranscript = null;
+  let whisperExtractedVia = null;
+  // Set whenever this pass actually ran (and lost) the ASR attempt below, so
+  // callers (importRecipeFromUrl's video-transcription fallback in
+  // ImportSheet.jsx) know not to immediately retry the exact same
+  // transcription on the exact same URL — a second attempt right after a
+  // failed one won't yield a different result, just double the wait.
+  const isVideoPostForAsr = wouldExitEmpty && /\/(reel|tv)\//i.test(url);
+
+  if (isVideoPostForAsr) {
+    // Pull the outer import deadline out to cover a real transcription run —
+    // the default 45s budget is sized for text-only extraction and would
+    // otherwise silently orphan this attempt (see importRecipeFromUrl).
+    const ASR_OUTER_BUDGET_MS = 90_000;
+    const ASR_INNER_TIMEOUT_MS = 40_000;
+    requestBudget?.(ASR_OUTER_BUDGET_MS);
+
+    progress(3, 'running', 'No usable caption — transcribing video audio…');
+    const asrController = new AbortController();
+    if (signal) {
+      if (signal.aborted) asrController.abort();
+      else signal.addEventListener('abort', () => asrController.abort(), { once: true });
+    }
+    const asrTimer = setTimeout(() => asrController.abort(), ASR_INNER_TIMEOUT_MS);
+    try {
+      const transcription = await transcribeFromUrl(url, {
+        onProgress: (_tier, msg) => progress(3, 'running', msg || 'Transcribing video audio…'),
+        signal: asrController.signal,
+        model: getPreferredWhisperModel(),
+      });
+      if (transcription?.transcript && transcription.transcript.trim().length >= 20) {
+        whisperTranscript = transcription.transcript.trim();
+        whisperExtractedVia = transcription.extractedVia || 'whisper';
+        progress(3, 'done', `Audio transcript captured (${whisperTranscript.length} chars, ${whisperExtractedVia})`);
+      } else {
+        progress(3, 'failed', 'No usable audio transcript found');
+      }
+    } catch (e) {
+      console.log('[SpiceHub] Pre-exit ASR attempt failed:', e?.message || e);
+      progress(3, 'failed', 'Audio transcription failed');
+    } finally {
+      clearTimeout(asrTimer);
+    }
+  }
+
+  if (wouldExitEmpty && !whisperTranscript) {
     progress(3, 'failed', 'No recipe text found in this post');
     return {
       _needsManualCaption: true,
       _needsBrowserAssist: true,
       _emptyCaption: true,
+      _asrAttempted: isVideoPostForAsr,
       capturedCaption: capturedCaption || '',
       capturedImageUrl: capturedImageUrl || '',
       capturedTitle: capturedTitle || '',
@@ -5310,8 +5393,10 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
     ? capturedCaption
     : capturedRawPageText?.trim().length >= 100 ? capturedRawPageText : '';
 
-  if (textForGemini) {
-    if (!capturedCaption?.trim().length) {
+  if (textForGemini || whisperTranscript) {
+    if (whisperTranscript && !textForGemini) {
+      progress(3, 'running', '✨ Structuring recipe from audio transcript…');
+    } else if (!capturedCaption?.trim().length) {
       progress(3, 'running', '✨ Trying AI on raw page content…');
     } else {
       progress(3, 'running', '✨ Structuring recipe with Gemini…');
@@ -5322,14 +5407,18 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
       // transcript exists alongside a real caption, pass it as the labeled
       // TRANSCRIPT section (deduped: only when it isn't already the caption text
       // — today's acquire ordering usually folds transcript into the caption).
+      // Whisper (pre-exit ASR, above) takes priority as the transcript source
+      // when present — it's a real spoken-audio transcript, not just subtitle
+      // metadata reconstructed from yt-dlp.
       const igTranscript =
         videoRecipe && videoRecipe._hasSubtitles && capturedCaption?.trim().length >= 20
           ? recipeToText(videoRecipe)
           : null;
-      const igTranscriptForPack =
-        igTranscript && igTranscript.trim() && igTranscript.trim() !== textForGemini.trim()
-          ? igTranscript
-          : null;
+      const igTranscriptForPack = whisperTranscript
+        ? whisperTranscript
+        : (igTranscript && igTranscript.trim() && igTranscript.trim() !== textForGemini.trim()
+            ? igTranscript
+            : null);
       const recipe = cleanStructuredSocialRecipe(await captionToRecipe(textForGemini, {
         title: capturedTitle,
         imageUrl: capturedImageUrl,
@@ -5339,6 +5428,9 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
         transcript: igTranscriptForPack,
         author: capturedAuthor,
       }));
+      if (recipe && whisperExtractedVia) {
+        recipe._transcriptSource = whisperExtractedVia;
+      }
       // Use OR: accept if EITHER ingredients OR directions is non-placeholder
       if (recipe && (!isPlaceholder(recipe.ingredients) || !isPlaceholder(recipe.directions))) {
         progress(3, 'done', 'Recipe structured successfully!');

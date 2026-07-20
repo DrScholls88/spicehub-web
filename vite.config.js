@@ -54,6 +54,16 @@ export default defineConfig({
     environment: 'node',
     setupFiles: ['./src/__tests__/setup.js'],
   },
+  // Web Workers that use a dynamic import() internally (whisperWorker.js now
+  // dynamically imports @huggingface/transformers) force Rollup to code-split
+  // the worker bundle. Code-split builds aren't supported in IIFE/UMD, which
+  // is Vite's default worker.format — must be 'es' or the build fails with
+  // "Invalid value 'iife' for option 'worker.format'". The worker is already
+  // instantiated with { type: 'module' } at runtime (transcriptionService.js),
+  // so this just makes the build format match the runtime format.
+  worker: {
+    format: 'es',
+  },
   plugins: [
     react(),
 VitePWA({
@@ -83,6 +93,18 @@ VitePWA({
         injectionPoint: 'self.__WB_MANIFEST',
         globPatterns: ['**/*.{js,mjs,css,html,ico,png,svg,jpg,webp,wasm,gz}'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+        // @huggingface/transformers (browser Whisper, 2026-07-20) bundles
+        // onnxruntime-web's WASM backend — the SIMD+threaded variant alone is
+        // ~21MB. Don't precache it: Transformers.js manages its own runtime
+        // cache for this file and for model weights (IndexedDB/browser cache,
+        // see whisperWorker.js env.useBrowserCache), so the service worker
+        // doesn't need a copy, and eagerly shipping 21MB to every install for
+        // an optional ASR fallback most sessions never touch would be a real
+        // regression for a "zero-cost, lightweight" PWA. Transcription itself
+        // only ever runs against a URL fetch anyway (there's no offline path
+        // into it), so there's no offline-sovereignty loss from lazy-loading
+        // this on first real use instead of precaching it.
+        globIgnores: ['**/ort-*.wasm', '**/ort-*.mjs'],
       },
       // cleanupOutdatedCaches is called directly in sw.js (workbox-precaching
       // import) — no vite-plugin-pwa `workbox` block needed for it.

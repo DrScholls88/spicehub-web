@@ -94,6 +94,36 @@
 }
 .re-conf-new { color: var(--primary, #e65100); }
 
+/* Whisper trust loop (2026-07-20 P3) — "Re-run with audio" opt-in link and
+   the small note tagging a diff as audio-sourced. Intentionally text-scale,
+   not a full .re-btn: this is a secondary path, the caption re-run stays
+   the default/primary action. */
+.re-audio-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: -6px 0 14px;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--primary, #e65100);
+  cursor: pointer;
+}
+.re-audio-link:active { opacity: 0.7; }
+
+.re-audio-note {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--primary, #e65100);
+}
+
 /* ── Status states (running / offline / error / nochange) ── */
 .re-status {
   display: flex;
