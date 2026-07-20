@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { X as XIcon, RotateCw, FlipHorizontal2, FlipVertical2, Sun, Contrast } from 'lucide-react';
 import { cropRegionFromPage } from '../lib/photoImportEngine.js';
 import { hapticLight, hapticSuccess } from '../haptics';
+import useBackHandler from '../hooks/useBackHandler';
 
 /**
  * DishPhotoCropper — manual crop / re-crop of the recipe card photo from the
@@ -143,18 +144,8 @@ export default function DishPhotoCropper({ pages, initialPage = 0, initialBox = 
     }
   }, [applying, pages, pageIdx, rect, rotation, flipH, flipV, brightness, contrast, onApply, onClose]);
 
-  // Escape closes the cropper (capture phase so the sheet's handler doesn't fire).
-  useEffect(() => {
-    const onKey = (e) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [onClose]);
+  // Hardware back / Escape closes cropper only (above import sheet on the stack).
+  useBackHandler(true, onClose, 'photo-cropper');
 
   const px = {
     left: `${rect.x * 100}%`,

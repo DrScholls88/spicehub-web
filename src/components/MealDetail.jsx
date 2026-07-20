@@ -1,10 +1,10 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import { motion, useDragControls } from 'framer-motion';
-import { X, Share2, Copy, Check, Heart, Star, RefreshCw, Flame, UtensilsCrossed, Loader2, CheckCircle2, XCircle, Camera, ChefHat, Martini, FileDown } from 'lucide-react';
-import db from '../db';
+import { X, Share2, Copy, Check, Heart, Star, RefreshCw, Flame, UtensilsCrossed, ChefHat, Martini, FileDown, Play, Images, Pencil } from 'lucide-react';
 import PhotoGallery from './PhotoGallery';
 import { NUTRITION_LABELS } from '../recipeSchema';
 import { formatNutritionValue, formatIngredientLine } from '../utils/displayFormatter';
+import { getMealVideoSource } from '../lib/videoSource';
 
 function CopyLinkButton({ url }) {
   const [copied, setCopied] = useState(false);
@@ -22,7 +22,7 @@ function CopyLinkButton({ url }) {
   );
 }
 
-export default function MealDetail({ meal, onClose, onShare, onExport, onToggleFavorite, onRate, onStartCook, onStartMix, onToggleRotation, isDrink = false, onPhotoUpdated, onMoveToBar }) {
+export default function MealDetail({ meal, onClose, onShare, onExport, onToggleFavorite, onRate, onStartCook, onStartMix, onToggleRotation, isDrink = false, onMoveToBar, onPlayVideo, onEdit }) {
   // ── Drag-down-to-dismiss ──
   const sheetRef = useRef(null);
   const dragControls = useDragControls();
@@ -34,43 +34,67 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
   }, [onClose]);
   const scaleOptions = [
     { value: 1.0, label: '1×' },
-    { value: 1.5, label: '1.5×' },
     { value: 2.0, label: '2×' },
+    { value: 3.0, label: '3×' },
+    { value: 4.0, label: '4×' },
   ];
   const [scaleFactor, setScaleFactor] = useState(1.0);
 
   // ── PhotoSwipe lightbox ────────────────────────────────────────────────────────
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
 
-  // ── Re-import photo ───────────────────────────────────────────────────────────
-  // Local imageUrl override so the new photo shows immediately without parent re-render.
-  const [localImageUrl, setLocalImageUrl] = useState(meal.imageUrl || null);
-  const [photoState, setPhotoState] = useState(null); // null | 'loading' | 'done' | 'none'
+  const localImageUrl = meal.imageUrl || null;
   const sourceUrl = meal.link || meal.sourceUrl || null;
 
-  const handleReimportPhoto = useCallback(async () => {
-    if (!sourceUrl) { setPhotoState('none'); return; }
-    setPhotoState('loading');
-    try {
-      const res = await fetch('/api/import/photo-only', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: sourceUrl }),
-        signal: AbortSignal.timeout(30000),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (data.ok && data.imageUrl) {
-        await db.meals.update(meal.id, { imageUrl: data.imageUrl });
-        setLocalImageUrl(data.imageUrl);
-        setPhotoState('done');
-        onPhotoUpdated?.(meal.id, data.imageUrl);
-      } else {
-        setPhotoState('none');
-      }
-    } catch {
-      setPhotoState('none');
+  // ── Re-import — runs the meal back through the Import Engine ─────────────────
+  // Was a photo-only "find a better photo" fetch; now a full re-import so the
+  // whole recipe (not just the image) gets refreshed, same as the Source
+  // section's Re-import action below.
+  const handleReimport = useCallback(() => {
+    if (!sourceUrl) return;
+    if (window.__spicehubTriggerImport) {
+      window.__spicehubTriggerImport(sourceUrl);
+      onClose();
+    } else {
+      navigator.clipboard.writeText(sourceUrl).catch(() => {});
+      alert('Link copied — open Import to re-import this recipe.');
     }
-  }, [sourceUrl, meal.id, onPhotoUpdated]);
+  }, [sourceUrl, onClose]);
+
+  // ── Photo gallery — swipeable when the import captured more than one photo.
+  // Multi-page photo/PDF Vision scans persist every page as meal._scanPages
+  // (see lib/photoImportEngine.js); Instagram/Reddit carousels persist extras
+  // as meal._carouselImages (see CoverPicker.jsx). Either way, the chosen
+  // cover (localImageUrl) leads, followed by whichever extra photos exist,
+  // deduped by src so the cover never appears twice.
+  const galleryImages = useMemo(() => {
+    const list = [];
+    const seen = new Set();
+    const push = (src) => {
+      if (!src || seen.has(src)) return;
+      seen.add(src);
+      list.push({ src, title: meal.name });
+    };
+    push(localImageUrl);
+    const extras = Array.isArray(meal._scanPages) && meal._scanPages.length > 1
+      ? meal._scanPages
+      : Array.isArray(meal._carouselImages)
+        ? meal._carouselImages.map(c => c?.dataUrl || c?.url)
+        : [];
+    for (const src of extras) push(src);
+    return list;
+  }, [localImageUrl, meal._scanPages, meal._carouselImages, meal.name]);
+
+  const hasGallery = galleryImages.length > 1;
+
+  const openLightboxAt = useCallback((idx) => {
+    setLightboxIndex(idx);
+    setLightboxOpen(true);
+  }, []);
+
+  // ── PiP: floating video player — same source resolver MealLibrary tiles use.
+  const videoSource = useMemo(() => (onPlayVideo ? getMealVideoSource(meal) : null), [onPlayVideo, meal]);
 
   // Scale + format ingredients: prefer structured data (display formatter with
   // unicode fractions + auto-pluralization), fall back to regex for legacy records.
@@ -127,13 +151,14 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
         <div className="modal-header">
           <h2>{meal.name}</h2>
           <div className="modal-header-actions">
+            {onEdit && <button className="btn-icon" onClick={onEdit} title="Edit recipe" aria-label="Edit recipe"><Pencil size={18} strokeWidth={1.75} /></button>}
             <button className="btn-icon" onClick={onShare} title="Share" aria-label="Share recipe"><Share2 size={18} strokeWidth={1.75} /></button>
             {onExport && <button className="btn-icon" onClick={onExport} title="Export options" aria-label="Export recipe"><FileDown size={18} strokeWidth={1.75} /></button>}
             <button className="btn-icon" onClick={onClose} aria-label="Close"><X size={18} strokeWidth={1.75} /></button>
           </div>
         </div>
 
-        {/* ── Recipe image with re-import photo button ── */}
+        {/* ── Recipe image with PiP, gallery swipe, and re-import controls ── */}
         <div className="detail-image-wrap">
           {localImageUrl ? (
             <img
@@ -141,40 +166,56 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
               alt={meal.name}
               className="detail-image"
               style={{ cursor: 'zoom-in' }}
-              onClick={() => setLightboxOpen(true)}
+              onClick={() => openLightboxAt(0)}
               onError={e => { e.target.style.display = 'none'; }}
             />
           ) : (
             <div className="detail-image-placeholder"><UtensilsCrossed size={32} strokeWidth={1.75} /></div>
           )}
-          {localImageUrl && (
+          {galleryImages.length > 0 && (
             <PhotoGallery
-              images={[{ src: localImageUrl, title: meal.name }]}
+              images={galleryImages}
+              index={lightboxIndex}
               open={lightboxOpen}
               onClose={() => setLightboxOpen(false)}
             />
           )}
-          {/* Re-import photo button — shown when there's a source URL to scrape */}
+
+          {/* PiP: play video badge — parity with the MealLibrary tile control */}
+          {videoSource && (
+            <button
+              className={`detail-play-btn detail-play-btn-${videoSource.platform}`}
+              aria-label={`Play ${videoSource.label} video in floating player`}
+              title={`Play video (${videoSource.label})`}
+              onClick={() => onPlayVideo(meal)}
+            >
+              <Play size={16} fill="#fff" color="#fff" aria-hidden="true" />
+            </button>
+          )}
+
+          {/* Swipe-to-view badge — only when the import captured multiple photos
+              (multi-page photo/PDF Vision scans, Instagram/Reddit carousels) */}
+          {hasGallery && (
+            <button
+              className="detail-photo-count"
+              onClick={() => openLightboxAt(0)}
+              aria-label={`View all ${galleryImages.length} photos — swipe to browse`}
+              title="Swipe to view all photos"
+            >
+              <Images size={13} strokeWidth={2} aria-hidden="true" /> 1/{galleryImages.length}
+            </button>
+          )}
+
+          {/* Re-import — runs the whole recipe back through the Import Engine */}
           {sourceUrl && (
             <button
-              className={`detail-reimport-photo-btn${photoState === 'done' ? ' photo-found' : photoState === 'none' ? ' photo-none' : ''}`}
-              onClick={handleReimportPhoto}
-              disabled={photoState === 'loading'}
-              title={localImageUrl ? 'Find a better photo' : 'Find a photo for this recipe'}
-              aria-label="Re-import photo"
+              className="detail-reimport-photo-btn"
+              onClick={handleReimport}
+              title="Re-run this recipe through the Import Engine"
+              aria-label="Re-import"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
             >
-              {photoState === 'loading' ? (
-                <Loader2 size={16} strokeWidth={1.75} style={{ animation: 'spin 0.8s linear infinite' }} />
-              ) : photoState === 'done' ? (
-                <><CheckCircle2 size={16} strokeWidth={1.75} /> Photo updated</>
-              ) : photoState === 'none' ? (
-                <><XCircle size={16} strokeWidth={1.75} /> No photo found</>
-              ) : localImageUrl ? (
-                <Camera size={16} strokeWidth={1.75} />
-              ) : (
-                <><Camera size={16} strokeWidth={1.75} /> Find Photo</>
-              )}
+              <RefreshCw size={16} strokeWidth={1.75} /> Re-Import
             </button>
           )}
         </div>
@@ -365,16 +406,17 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
           </div>
         )}
 
-        {/* Recovery path for a drink recipe mis-imported into the Meal Library */}
+        {/* Recovery path for a drink recipe mis-imported into the Meal Library —
+            a rare correction, not a primary action, so it's a small sub-option
+            rather than a full-width launch button. */}
         {onMoveToBar && (
-          <div className="detail-section" style={{ paddingBottom: 20 }}>
+          <div className="detail-section detail-moveto-bar-row" style={{ paddingBottom: 20, textAlign: 'center' }}>
             <button
-              className="cook-mode-launch-btn mix-mode-launch-btn"
+              className="detail-moveto-bar-link"
               onClick={() => { onClose(); onMoveToBar(meal); }}
-              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
               title="This looks like it belongs in the Bar? Move it over."
             >
-              <Martini size={18} strokeWidth={1.75} /> Move to Bar
+              <Martini size={14} strokeWidth={1.75} /> Move to Bar
             </button>
           </div>
         )}

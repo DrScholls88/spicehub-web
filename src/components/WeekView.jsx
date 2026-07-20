@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { X, Lock, Star, BookOpen, UtensilsCrossed, ChevronDown, ChevronRight, MoreVertical, Plus, RefreshCw, CheckSquare, ShoppingCart, CalendarDays, List } from 'lucide-react';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import MealSpinner from './MealSpinner';
+import useBackHandler from '../hooks/useBackHandler';
 import { filterMealsByConstraints } from '../lib/weekPlanner';
 
 // ── MealImage helper ──────────────────────────────────────────────────────────
@@ -377,6 +378,12 @@ export default function WeekView({
   const [grocerySelectMode, setGrocerySelectMode] = useState(false);
   const [groceryDays, setGroceryDays] = useState(new Set());
   const [justCompletedSpin, setJustCompletedSpin] = useState(false);
+
+  // Hardware back / edge-swipe / Escape — innermost Plan UI first (Track 1)
+  useBackHandler(!!pickerDay, () => setPickerDay(null), 'week-picker');
+  useBackHandler(showDetailPanel, () => setShowDetailPanel(false), 'week-detail');
+  useBackHandler(selectMode, () => { setSelectMode(false); setSelectedDates(new Set()); }, 'week-select');
+  useBackHandler(grocerySelectMode, () => { setGrocerySelectMode(false); setGroceryDays(new Set()); }, 'week-grocery-select');
   const [showCustomDayTagInput, setShowCustomDayTagInput] = useState(false);
   const [newDayTagName, setNewDayTagName] = useState('');
   const [newDayTagIcon, setNewDayTagIcon] = useState('🏷️');

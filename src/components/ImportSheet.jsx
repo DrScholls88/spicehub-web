@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence, MotionConfig, useDragControls } from 'framer-motion';
 import { X, Sparkles, Check, ArrowLeft, Zap, Mic } from 'lucide-react';
 import './ImportSheet.css';
+import useBackHandler from '../hooks/useBackHandler';
 import { hapticTap, hapticSuccess, hapticError } from '../haptics';
 import {
   importRecipeFromUrl,
@@ -329,25 +330,48 @@ export default function ImportSheet({
     }
   }, [phase, onClose]);
 
+  // Track 2: stepped back — loading/review/assist step down before sheet closes.
+  // App still owns the outer 'import' layer (closes sheet on input phase).
+  const handleSteppedBack = useCallback(() => {
+    if (backgrounded) {
+      setBackgrounded(false);
+      return;
+    }
+    if (showDiscardConfirm) {
+      setShowDiscardConfirm(false);
+      return;
+    }
+    if (phase === 'browserAssist') {
+      setPhase('input');
+      return;
+    }
+    if (phase === 'review') {
+      setShowDiscardConfirm(false);
+      setRecipe(null);
+      setPhase('input');
+      return;
+    }
+    if (phase === 'loading') {
+      try { abortRef.current?.abort(); } catch { /* */ }
+      setPhase('input');
+      setError('');
+      return;
+    }
+    onClose();
+  }, [backgrounded, showDiscardConfirm, phase, onClose]);
+
+  useBackHandler(
+    !backgrounded && (phase === 'loading' || phase === 'review' || phase === 'browserAssist' || showDiscardConfirm),
+    handleSteppedBack,
+    showDiscardConfirm ? 'import-discard' : `import-${phase}`,
+  );
+
   // ── Slide-down-to-dismiss: drag release handler ──────────────────────────
   const handleSheetDragEnd = useCallback((_e, info) => {
     if (info.offset.y > 100 || info.velocity.y > 500) {
       handleCloseRequest();
     }
   }, [handleCloseRequest]);
-
-  // ── Escape Key Scrim Handler ──────────────────────────────────────────────
-  useEffect(() => {
-    if (backgrounded) return;
-    const handleGlobalKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        handleCloseRequest();
-      }
-    };
-    window.addEventListener('keydown', handleGlobalKeyDown);
-    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [backgrounded, handleCloseRequest]);
 
   // ── Execute URL Import ───────────────────────────────────────────────────
   const executeUrlImport = useCallback(async (rawUrl, type) => {

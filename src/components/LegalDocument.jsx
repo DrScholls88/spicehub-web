@@ -6,13 +6,14 @@ import {
   TERMS_OF_SERVICE_SECTIONS,
   THIRD_PARTY_NOTICES,
 } from '../legal/legalContent';
+import useBackHandler from '../hooks/useBackHandler';
 
 /**
  * LegalDocument — read-only viewer for Privacy Policy / Terms of Service /
  * Third-Party Licenses. Renders content from plain JS data (no markdown
  * parser, no dangerouslySetInnerHTML) so there's no injection surface here.
  *
- * Dismissible (Escape key, backdrop click, close button) — unlike
+ * Dismissible (back / Escape / backdrop / close) — unlike
  * ConsentGate/AgeGate, this is just informational, not a blocking gate.
  *
  * Props:
@@ -22,14 +23,11 @@ import {
 export default function LegalDocument({ doc, onClose }) {
   const closeBtnRef = useRef(null);
 
+  useBackHandler(true, onClose, `legal-${doc || 'doc'}`);
+
   useEffect(() => {
     closeBtnRef.current?.focus();
-    const handleKey = (e) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handleKey);
-    return () => document.removeEventListener('keydown', handleKey);
-  }, [onClose]);
+  }, []);
 
   const { title, body } = getDocContent(doc);
 
