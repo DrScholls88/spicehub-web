@@ -230,6 +230,24 @@ db.version(20).stores({
   if (toAdd.length > 0) await tagsTable.bulkAdd(toAdd);
 });
 
+// v21: Fix broken custom-tag ordering. `sortOrder` has been written onto every
+// userTags record since v18 (and reorderUserTags/addUserTag both query it),
+// but the field was never added to this table's Dexie index — only
+// '++id, &name' was ever declared. Calling `.orderBy('sortOrder')` on a
+// non-indexed keyPath throws a Dexie SchemaError, which getUserTags() (and
+// addUserTag's maxOrder lookup) silently swallowed via try/catch. Net effect:
+// getUserTags() has always resolved to [], so custom tags never rendered in
+// the Meal Library label bar or the Edit Recipe Labels picker, and
+// addUserTag()'s own maxOrder query threw *before* reaching db.userTags.add(),
+// so newly "created" tags silently never got written at all.
+db.version(21).stores({
+  userTags: '++id, &name, sortOrder',
+}).upgrade(tx => {
+  return tx.table('userTags').toCollection().modify(tag => {
+    if (typeof tag.sortOrder !== 'number') tag.sortOrder = 0;
+  });
+});
+
 export default db;
 
 // ── Custom Day Tags helpers (v20) ───────────────────────────────────────────
