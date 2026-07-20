@@ -27,6 +27,33 @@ const WHISPER_MODELS = {
 const DEFAULT_MODEL = 'base';
 const AUDIO_SAMPLE_RATE = 16000; // Whisper expects 16 kHz mono
 
+// ── User model-tier preference (Phase 4, 2026-07-20) ────────────────────────
+// One global choice, persisted across imports/sessions, applied everywhere
+// Whisper runs — the automatic pre-empty-exit pass in recipeParser.js, the
+// manual "Transcribe Video" button, and ReExtractSheet's "Re-run with audio".
+// Kept here (not in a component) so every caller reads the same source of
+// truth without prop-drilling a model choice through the import cascade.
+const MODEL_PREF_KEY = 'spicehub_whisper_model';
+
+/** Read the user's preferred Whisper model tier, falling back to DEFAULT_MODEL. */
+export function getPreferredWhisperModel() {
+  try {
+    const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(MODEL_PREF_KEY) : null;
+    return stored && WHISPER_MODELS[stored] ? stored : DEFAULT_MODEL;
+  } catch {
+    return DEFAULT_MODEL;
+  }
+}
+
+/** Persist the user's preferred Whisper model tier. Ignores unknown tiers. */
+export function setPreferredWhisperModel(modelName) {
+  try {
+    if (typeof localStorage !== 'undefined' && WHISPER_MODELS[modelName]) {
+      localStorage.setItem(MODEL_PREF_KEY, modelName);
+    }
+  } catch { /* localStorage unavailable (private mode, quota) — non-fatal */ }
+}
+
 // ── Singleton worker management ─────────────────────────────────────────────
 let _worker = null;
 let _workerModelLoaded = false;

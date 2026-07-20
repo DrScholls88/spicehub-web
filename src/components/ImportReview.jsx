@@ -661,9 +661,16 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
   // ── Import details — one plain-language line, replacing the old stack of
   //    engine / source / image / normalization strips. Still visible, but no
   //    longer four separate muted blocks pushing the recipe down the page.
+  // Whisper (2026-07-20 P0 ASR-before-empty-exit): recipe._transcriptSource is
+  // only set when a real spoken-audio transcript fed the structuring step —
+  // plain-language, no "Whisper"/model jargon, same convention as the rest of
+  // this line.
+  const usedAudioTranscript = !!recipe._transcriptSource;
+
   const importDetailParts = [
     sourceLabel ? `From ${sourceLabel}` : null,
     engineName || null,
+    usedAudioTranscript ? 'used audio transcript' : null,
     imageStatusLabel || null,
     visionErrorLabel || null,
     correctionCount > 0 ? `tidied ${correctionCount} line${correctionCount === 1 ? '' : 's'}` : null,

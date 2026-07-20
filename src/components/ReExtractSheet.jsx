@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Sparkles, Check, RefreshCw, WifiOff, ArrowRight } from 'lucide-react';
-import { captionToRecipe, scoreExtractionConfidence } from '../recipeParser.js';
+import { X, Sparkles, Check, RefreshCw, WifiOff, ArrowRight, Mic } from 'lucide-react';
+import { captionToRecipe, transcribeVideoForRecipe, scoreExtractionConfidence } from '../recipeParser.js';
 import { ENGINE_PROMPT_VERSION } from '../recipeSchema.js';
 import { hapticLight, hapticSuccess, hapticError } from '../haptics';
+import { getMealVideoSource } from '../lib/videoSource.js';
+import { getPreferredWhisperModel } from '../lib/transcriptionService.js';
 import './ReExtractSheet.css';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -141,6 +143,10 @@ export default function ReExtractSheet({ meal, onClose, onSaved }) {
   const [proposed, setProposed] = useState(null);
   const [newConfidence, setNewConfidence] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
+  // Which pass produced (or is producing) `proposed` — drives status copy and
+  // which fields get tagged on save. Whisper trust-loop (2026-07-20 P3):
+  // 'audio' means transcribeVideoForRecipe ran instead of the cached caption.
+  const [mode, setMode] = useState('caption'); // 'caption' | 'audio'
   // Per-section accept choices: 'new' | 'current'
   const [choices, setChoices] = useState({ title: 'new', ingredients: 'new', directions: 'new' });
   const abortRef = useRef(false);
@@ -148,20 +154,37 @@ export default function ReExtractSheet({ meal, onClose, onSaved }) {
   const itemType = meal?.itemType || meal?.type || 'meal';
   const curIngredients = useMemo(() => (meal?.ingredients || []).filter(Boolean), [meal]);
   const curDirections = useMemo(() => (meal?.directions || []).filter(Boolean), [meal]);
+  // Only offer "Re-run with audio" when the saved link is a video we know how
+  // to play/transcribe (same detector the PiP player and ImportSheet's manual
+  // "Transcribe Video" button already use) — no dead-end button for a plain
+  // website recipe.
+  const videoSource = useMemo(() => getMealVideoSource(meal), [meal]);
+  const hasVideoSource = !!videoSource;
 
-  const runExtraction = useCallback(async () => {
-    if (!meal?.sourceCaption) { setErrorMsg('No saved caption to re-read.'); setPhase('error'); return; }
+  const runExtraction = useCallback(async (source = 'caption') => {
+    if (source === 'audio') {
+      if (!videoSource) { setErrorMsg('No video link saved for this recipe.'); setPhase('error'); return; }
+    } else if (!meal?.sourceCaption) {
+      setErrorMsg('No saved caption to re-read.'); setPhase('error'); return;
+    }
+    setMode(source);
     if (!navigator.onLine) { setPhase('offline'); return; }
     abortRef.current = false;
     setPhase('running');
     setErrorMsg('');
     try {
-      const result = await captionToRecipe(meal.sourceCaption, {
-        title: meal.name || meal.title || '',
-        imageUrl: meal.imageUrl || '',
-        sourceUrl: meal.link || meal.sourceUrl || '',
-        type: itemType,
-      });
+      const result = source === 'audio'
+        ? await transcribeVideoForRecipe(videoSource.originalUrl, {
+            type: itemType,
+            imageUrl: meal.imageUrl || '',
+            model: getPreferredWhisperModel(),
+          })
+        : await captionToRecipe(meal.sourceCaption, {
+            title: meal.name || meal.title || '',
+            imageUrl: meal.imageUrl || '',
+            sourceUrl: meal.link || meal.sourceUrl || '',
+            type: itemType,
+          });
       if (abortRef.current) return;
       const normalized = result ? normalizeForReview(result, itemType) : null;
       // Re-extraction must NEVER lose steps: if this pass returned no directions
@@ -174,7 +197,9 @@ export default function ReExtractSheet({ meal, onClose, onSaved }) {
         normalized.ingredients = curIngredients.slice();
       }
       if (!normalized || (!normalized.ingredients.length && !normalized.directions.length)) {
-        setErrorMsg("The new pass couldn't pull a cleaner recipe from the saved caption.");
+        setErrorMsg(source === 'audio'
+          ? "Couldn't find a usable recipe in the video's audio."
+          : "The new pass couldn't pull a cleaner recipe from the saved caption.");
         setPhase('error');
         return;
       }
@@ -190,20 +215,25 @@ export default function ReExtractSheet({ meal, onClose, onSaved }) {
       if (abortRef.current) return;
       console.error('[ReExtractSheet] re-run failed:', err);
       hapticError();
-      setErrorMsg(err?.message || 'Re-extraction failed. Try again.');
+      setErrorMsg(err?.message || (source === 'audio' ? 'Audio transcription failed. Try again.' : 'Re-extraction failed. Try again.'));
       setPhase('error');
     }
-  }, [meal, itemType, curIngredients, curDirections]);
+  }, [meal, itemType, curIngredients, curDirections, videoSource]);
 
-  // Kick off automatically on open.
+  // Kick off automatically on open — caption re-run is still the default;
+  // audio is an explicit opt-in via the button below.
   useEffect(() => {
-    runExtraction();
+    runExtraction('caption');
     return () => { abortRef.current = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleSave = useCallback(() => {
     if (!proposed) return;
+    // Only credit this save as audio-sourced if the audio pass actually
+    // contributed accepted content — picking "keep current" for everything
+    // shouldn't relabel a recipe that didn't actually change.
+    const tookNewContent = choices.ingredients === 'new' || choices.directions === 'new';
     const merged = {
       ...meal,
       name: choices.title === 'new' ? (proposed.name || proposed.title || meal.name) : meal.name,
@@ -215,10 +245,13 @@ export default function ReExtractSheet({ meal, onClose, onSaved }) {
       engineVersion: ENGINE_PROMPT_VERSION,
       extractedAt: new Date().toISOString(),
       sourceCaption: meal.sourceCaption, // keep caption for future re-runs
+      _transcriptSource: mode === 'audio' && tookNewContent
+        ? (proposed._transcriptSource || 'whisper')
+        : meal._transcriptSource,
     };
     hapticSuccess();
     onSaved(merged);
-  }, [proposed, meal, choices, newConfidence, curIngredients, curDirections, onSaved]);
+  }, [proposed, meal, choices, newConfidence, mode, curIngredients, curDirections, onSaved]);
 
   const setChoice = (section, value) => setChoices((c) => ({ ...c, [section]: value }));
 
@@ -264,12 +297,31 @@ export default function ReExtractSheet({ meal, onClose, onSaved }) {
             )}
           </div>
 
+          {/* Whisper trust loop (2026-07-20 P3): only shown when the saved
+              link is a video we know how to transcribe. Always visible
+              (not just on low confidence) so the user can opt in whenever
+              they suspect the caption missed something the audio has. */}
+          {hasVideoSource && phase !== 'running' && (
+            <button
+              type="button"
+              className="re-audio-link"
+              onClick={() => { hapticLight(); runExtraction('audio'); }}
+            >
+              <Mic size={13} strokeWidth={2.2} />
+              {mode === 'audio' ? 'Re-run with audio again' : 'Re-run with audio instead'}
+            </button>
+          )}
+
           <AnimatePresence mode="wait" initial={false}>
             {phase === 'running' && (
               <motion.div key="running" className="re-status" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <RefreshCw size={26} className="re-spin" />
-                <p>Re-reading the saved caption with the latest engine…</p>
-                <span className="re-status-sub">No re-download — using the text we already saved.</span>
+                <p>{mode === 'audio' ? "Transcribing the video's audio…" : 'Re-reading the saved caption with the latest engine…'}</p>
+                <span className="re-status-sub">
+                  {mode === 'audio'
+                    ? 'This can take up to a minute for longer videos.'
+                    : 'No re-download — using the text we already saved.'}
+                </span>
               </motion.div>
             )}
 
@@ -278,14 +330,14 @@ export default function ReExtractSheet({ meal, onClose, onSaved }) {
                 <WifiOff size={26} />
                 <p>You're offline.</p>
                 <span className="re-status-sub">Re-extraction needs a connection. Reconnect and try again.</span>
-                <button className="re-btn re-btn-ghost" onClick={runExtraction}>Try again</button>
+                <button className="re-btn re-btn-ghost" onClick={() => runExtraction(mode)}>Try again</button>
               </motion.div>
             )}
 
             {phase === 'error' && (
               <motion.div key="error" className="re-status" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <p className="re-error-text">{errorMsg}</p>
-                <button className="re-btn re-btn-ghost" onClick={runExtraction}>Try again</button>
+                <button className="re-btn re-btn-ghost" onClick={() => runExtraction(mode)}>Try again</button>
               </motion.div>
             )}
 
@@ -293,12 +345,21 @@ export default function ReExtractSheet({ meal, onClose, onSaved }) {
               <motion.div key="nochange" className="re-status" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <Check size={26} />
                 <p>Already up to date.</p>
-                <span className="re-status-sub">The current engine produced the same recipe — nothing to improve right now.</span>
+                <span className="re-status-sub">
+                  {mode === 'audio'
+                    ? 'The audio transcript produced the same recipe — nothing to improve right now.'
+                    : 'The current engine produced the same recipe — nothing to improve right now.'}
+                </span>
               </motion.div>
             )}
 
             {phase === 'diff' && proposed && (
               <motion.div key="diff" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+                {mode === 'audio' && (
+                  <p className="re-audio-note">
+                    <Mic size={12} strokeWidth={2.2} /> Proposed from the video's audio transcript
+                  </p>
+                )}
                 <DiffSection
                   label="Title"
                   current={[meal?.name || meal?.title || ''].filter(Boolean)}

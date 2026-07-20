@@ -1478,6 +1478,12 @@
 .import-sheet-error-actions .import-sheet-btn-dismiss {
   margin-left: auto;
 }
+/* Phase 4 (2026-07-20): model-tier toggle chip — a setting, not an action,
+   so it reads lighter than Retry/Transcribe Video next to it. */
+.import-sheet-error-actions .import-sheet-model-toggle {
+  border: 1px dashed var(--sh-border, currentColor);
+  opacity: 0.85;
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Back-to-review button
