@@ -5,16 +5,13 @@ import { useRef, useCallback } from 'react';
  *
  * iOS users expect to be able to swipe a bottom sheet down to close it.
  * This hook provides touch handlers and a ref for the sheet element.
+ * Dismiss calls the same onDismiss as hardware back / X.
  *
  * @param {Function} onDismiss - Called when the sheet is swiped down past threshold
  * @param {Object} [options]
  * @param {number} [options.threshold=120] - Pixels of downward drag to trigger dismiss
  * @param {number} [options.velocityThreshold=0.5] - px/ms velocity that also triggers dismiss
  * @returns {{ sheetRef, handleTouchStart, handleTouchMove, handleTouchEnd }}
- *
- * @example
- *   const { sheetRef, handleTouchStart, handleTouchMove, handleTouchEnd } = useSwipeDismiss(onClose);
- *   <div ref={sheetRef} onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
  */
 export default function useSwipeDismiss(onDismiss, options = {}) {
   const { threshold = 120, velocityThreshold = 0.5 } = options;
@@ -26,14 +23,11 @@ export default function useSwipeDismiss(onDismiss, options = {}) {
   const isDraggingRef = useRef(false);
 
   const handleTouchStart = useCallback((e) => {
-    // Only track single-finger touches
     if (e.touches.length !== 1) return;
 
     const sheet = sheetRef.current;
     if (!sheet) return;
 
-    // Only allow swipe-to-dismiss if scrolled to the top
-    // This prevents dismissal when user is scrolling content
     const scrollableParent = findScrollableParent(e.target, sheet);
     if (scrollableParent && scrollableParent.scrollTop > 5) return;
 
@@ -48,14 +42,11 @@ export default function useSwipeDismiss(onDismiss, options = {}) {
 
     const deltaY = e.touches[0].clientY - startYRef.current;
 
-    // Only track downward drags (positive deltaY)
     if (deltaY < 0) {
-      // Swiping up — reset and let normal scroll handle it
       resetDrag();
       return;
     }
 
-    // After 10px of downward movement, commit to the drag gesture
     if (deltaY > 10) {
       isDraggingRef.current = true;
     }
@@ -64,10 +55,8 @@ export default function useSwipeDismiss(onDismiss, options = {}) {
 
     currentYRef.current = deltaY;
 
-    // Apply visual transform with rubber-band effect
     const sheet = sheetRef.current;
     if (sheet) {
-      // Diminishing returns after threshold — feels natural
       const translate = deltaY < threshold
         ? deltaY
         : threshold + (deltaY - threshold) * 0.3;
@@ -75,11 +64,8 @@ export default function useSwipeDismiss(onDismiss, options = {}) {
       sheet.style.transition = 'none';
       sheet.style.transform = `translateY(${translate}px)`;
 
-      // Fade the overlay proportionally
-      const overlay = sheet.parentElement;
-      if (overlay && overlay.classList.contains('fm-overlay') ||
-          overlay && overlay.classList.contains('st-overlay') ||
-          overlay && overlay.classList.contains('bfm-overlay')) {
+      const overlay = findOverlayParent(sheet);
+      if (overlay) {
         const opacity = Math.max(0.1, 0.5 - (deltaY / (threshold * 3)));
         overlay.style.background = `rgba(0,0,0,${opacity})`;
       }
@@ -95,14 +81,11 @@ export default function useSwipeDismiss(onDismiss, options = {}) {
 
     const sheet = sheetRef.current;
 
-    // Dismiss if dragged past threshold OR fast enough velocity
     if (isDraggingRef.current && (deltaY > threshold || velocity > velocityThreshold)) {
-      // Animate out
       if (sheet) {
         sheet.style.transition = 'transform 0.25s cubic-bezier(0.32,0.72,0,1)';
         sheet.style.transform = 'translateY(100%)';
       }
-      // Call dismiss after animation
       setTimeout(() => {
         if (sheet) {
           sheet.style.transform = '';
@@ -111,7 +94,6 @@ export default function useSwipeDismiss(onDismiss, options = {}) {
         onDismiss();
       }, 250);
     } else {
-      // Snap back
       if (sheet) {
         sheet.style.transition = 'transform 0.25s cubic-bezier(0.32,0.72,0,1)';
         sheet.style.transform = 'translateY(0)';
@@ -121,8 +103,7 @@ export default function useSwipeDismiss(onDismiss, options = {}) {
           }
         }, 250);
       }
-      // Restore overlay
-      const overlay = sheet?.parentElement;
+      const overlay = findOverlayParent(sheet);
       if (overlay) {
         overlay.style.background = '';
       }
@@ -141,9 +122,26 @@ export default function useSwipeDismiss(onDismiss, options = {}) {
   return { sheetRef, handleTouchStart, handleTouchMove, handleTouchEnd };
 }
 
-/**
- * Walk up the DOM from target to container looking for a scrollable element
- */
+function findOverlayParent(sheet) {
+  if (!sheet) return null;
+  let el = sheet.parentElement;
+  while (el && el !== document.body) {
+    if (
+      el.hasAttribute?.('data-sheet-overlay') ||
+      el.classList?.contains('fm-overlay') ||
+      el.classList?.contains('st-overlay') ||
+      el.classList?.contains('bfm-overlay') ||
+      el.classList?.contains('agegate-backdrop') ||
+      el.classList?.contains('legaldoc-backdrop') ||
+      el.classList?.contains('igzip-modal-backdrop')
+    ) {
+      return el;
+    }
+    el = el.parentElement;
+  }
+  return sheet.parentElement;
+}
+
 function findScrollableParent(target, container) {
   let el = target;
   while (el && el !== container) {

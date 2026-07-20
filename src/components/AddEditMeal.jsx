@@ -1,7 +1,9 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, useDragControls } from 'framer-motion';
+import { Tag } from 'lucide-react';
 import { parseFromUrl, isSocialMediaUrl, getSocialPlatform } from '../recipeParser';
 import { importRecipeFromPages } from '../lib/photoImportEngine.js';
+import { getUserTags } from '../db';
 
 // Auto-expand a textarea to fit its content (call on mount + onChange)
 function autoExpand(el) {
@@ -32,6 +34,19 @@ export default function AddEditMeal({
   const [link, setLink] = useState(meal?.link || '');
   const [imageUrl, setImageUrl] = useState(meal?.imageUrl || '');
   const notesRef = useRef(null);
+
+  // Custom labels (MealLibrary's userTags) — previously only manageable via
+  // the Library's quick-preview "⋯" sheet, not from the Edit Recipe form
+  // itself. Meal-only (drinks don't have this tag system).
+  const [tags, setTags] = useState(meal?.tags || []);
+  const [availableTags, setAvailableTags] = useState([]);
+  useEffect(() => {
+    if (!isMealMode) return;
+    getUserTags().then(setAvailableTags);
+  }, [isMealMode]);
+  const toggleTag = useCallback((name) => {
+    setTags(prev => prev.includes(name) ? prev.filter(t => t !== name) : [...prev, name]);
+  }, []);
 
   const [importUrl, setImportUrl] = useState('');
   const [showImportUrl, setShowImportUrl] = useState(false);
@@ -136,6 +151,7 @@ export default function AddEditMeal({
       ...(isEdit ? { id: meal.id } : {}),
       name: name.trim(),
       ...(isMealMode && category ? { category } : {}),
+      ...(isMealMode ? { tags } : {}),
       ingredients: ingredients.filter(i => i.trim()).length ? ingredients.filter(i => i.trim()) : ['No ingredients listed'],
       directions: directions.filter(d => d.trim()).length ? directions.filter(d => d.trim()) : ['No directions listed'],
       notes: notes.trim(),
@@ -339,6 +355,27 @@ export default function AddEditMeal({
                     onClick={() => setCategory(c)}
                   >
                     {c}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Custom labels (MealLibrary's userTags) — was only editable from
+              the Library's "⋯" quick-preview sheet, not from here. */}
+          {isMealMode && availableTags.length > 0 && (
+            <div className="form-group">
+              <label>Labels</label>
+              <div className="category-picker">
+                {availableTags.map(t => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    className={`meal-cat-chip meal-tag-chip${tags.includes(t.name) ? ' active' : ''}`}
+                    style={tags.includes(t.name) ? { background: t.color, borderColor: t.color, color: '#fff' } : undefined}
+                    onClick={() => toggleTag(t.name)}
+                  >
+                    <Tag size={11} strokeWidth={2.5} /> {t.name}
                   </button>
                 ))}
               </div>

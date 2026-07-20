@@ -69,12 +69,7 @@ export default function FloatingVideoPlayer({ source, meal, isOnline = true, onC
     hapticTap();
   }, [x]);
 
-  // ── Esc closes ────────────────────────────────────────────────────────────
-  useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  // Escape/back: App registers useBackHandler(!!pipVideo) — no local Escape
 
   // ── Cook Mode step-sync (decoupled via window events) ───────────────────────
   // Cook Mode broadcasts the active step + its video timestamp; we mirror that

@@ -316,6 +316,19 @@ export async function deleteUserTag(id) {
   }
 }
 
+// reorderUserTags — persist a new display order for custom labels after a
+// drag-to-reorder gesture in the MealLibrary label bar (long-press to enter
+// edit mode). Takes tag ids in the desired order and rewrites sortOrder
+// sequentially so getUserTags()'s existing orderBy('sortOrder') picks it up.
+export async function reorderUserTags(orderedIds) {
+  if (!Array.isArray(orderedIds) || orderedIds.length === 0) return;
+  try {
+    await Promise.all(orderedIds.map((id, i) => db.userTags.update(id, { sortOrder: i })));
+  } catch (e) {
+    console.warn('[SpiceHub DB] reorderUserTags failed:', e);
+  }
+}
+
 export async function renameUserTag(id, newName) {
   if (!newName || !newName.trim()) return;
   const trimmed = newName.trim();

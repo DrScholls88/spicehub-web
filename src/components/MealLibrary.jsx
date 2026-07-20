@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { ChefHat, UtensilsCrossed, MoreHorizontal, Play, Sparkles, Heart, Repeat, Clock, AlertTriangle, Tag, Plus, Pencil, Trash2, Check, Grid2x2, Grid3x3, List, HelpCircle } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { ChefHat, UtensilsCrossed, MoreHorizontal, Play, Sparkles, Heart, Repeat, Clock, AlertTriangle, Tag, Plus, Pencil, Trash2, Check, X, Grid2x2, Grid3x3, List, HelpCircle } from 'lucide-react';
+import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { downloadMealsFile, importMealsFromJson, shareMealsFile } from '../sync';
-import { toggleRotation, bulkSetRotation, getUserTags, addUserTag, deleteUserTag, renameUserTag, setMealTags, bulkSetMealTags } from '../db';
+import { toggleRotation, bulkSetRotation, getUserTags, addUserTag, deleteUserTag, renameUserTag, reorderUserTags, setMealTags, bulkSetMealTags } from '../db';
 import db from '../db';
 import useBackHandler from '../hooks/useBackHandler';
 import SafeMediaImage from './SafeMediaImage';
@@ -175,6 +175,12 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
   const longPressTimer = useRef(null);
   const touchStartPos = useRef(null); // {x, y} at touchStart — cancel long-press on scroll
 
+  // Long-press-to-rearrange/delete for custom tag chips only (built-in
+  // categories stay fixed order — see project_meallibrary_label_bar memory).
+  const [tagEditMode, setTagEditMode] = useState(false);
+  const tagLongPressTimer = useRef(null);
+  const tagTouchStartPos = useRef(null);
+
   // Swipe-to-dismiss state for quickPreview sheet
   const sheetRef = useRef(null);
   const sheetDragStartY = useRef(null);
@@ -330,6 +336,48 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
       setSelectedIds(new Set([meal.id]));
     }, LONG_PRESS_MS);
   }, [selectMode]);
+
+  // ── Long-press a custom tag chip → enter rearrange/delete mode ───────────
+  // Same movement-cancel convention as the meal-tile long-press above, kept
+  // on separate refs/timers since a tag-chip press and a tile press can't
+  // overlap but sharing one timer would be a subtle bug waiting to happen.
+  const cancelTagLongPress = useCallback(() => {
+    if (tagLongPressTimer.current) {
+      clearTimeout(tagLongPressTimer.current);
+      tagLongPressTimer.current = null;
+    }
+    tagTouchStartPos.current = null;
+  }, []);
+
+  const handleTagTouchStart = useCallback((e) => {
+    if (tagEditMode) return;
+    const touch = e.changedTouches?.[0];
+    tagTouchStartPos.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
+    tagLongPressTimer.current = setTimeout(() => {
+      tagLongPressTimer.current = null;
+      hapticLight();
+      setTagEditMode(true);
+    }, LONG_PRESS_MS);
+  }, [tagEditMode]);
+
+  const handleTagTouchMove = useCallback((e) => {
+    if (!tagTouchStartPos.current || !tagLongPressTimer.current) return;
+    const touch = e.changedTouches?.[0];
+    if (!touch) return;
+    const dx = Math.abs(touch.clientX - tagTouchStartPos.current.x);
+    const dy = Math.abs(touch.clientY - tagTouchStartPos.current.y);
+    if (dx > MOVE_THRESHOLD_PX || dy > MOVE_THRESHOLD_PX) cancelTagLongPress();
+  }, [cancelTagLongPress]);
+
+  const handleTagTouchEnd = useCallback(() => {
+    cancelTagLongPress();
+  }, [cancelTagLongPress]);
+
+  // Drag-reorder inside edit mode — optimistic local order + persisted sortOrder.
+  const handleReorderTags = useCallback((newOrder) => {
+    setUserTags(newOrder);
+    reorderUserTags(newOrder.map(t => t.id)).catch(() => {});
+  }, []);
 
   // ── Swipe-to-dismiss on quickPreview sheet ────────────────────────────────
   const handleSheetTouchStart = useCallback((e) => {
@@ -824,13 +872,27 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
         </div>
       </div>
 
-      {/* ── Category filter chips ── */}
-      <div className="ml-categories-scroll" ref={categoryScrollRef}>
-        <div className="ml-categories-track">
+      {/* ── Unified label bar — built-in categories + custom tags in one row.
+          "+" (compact, no text) sits first, ahead of "All", and opens the tag
+          manager to create a new label. Long-press a custom tag chip enters
+          rearrange/delete mode (drag to reorder, ✕ to delete) — built-in
+          categories stay fixed since they're structural (grouping/colors
+          live elsewhere), not user data. ── */}
+      <div className="ml-labels-scroll" ref={categoryScrollRef}>
+        <div className="ml-labels-track">
+          <button
+            className="ml-label-add-btn"
+            onClick={() => { hapticLight(); setShowTagManager(true); }}
+            aria-label="Create a new label"
+            title="Create a new label"
+          >
+            <Plus size={16} strokeWidth={2.5} />
+          </button>
+
           {MEAL_CATEGORIES.map(c => (
             <motion.button
               key={c}
-              className={`ml-category-chip${category === c ? ' ml-active' : ''}${c === '🔄 The Rotation' ? ' ml-rotation-chip' : ''}`}
+              className={`ml-label-chip${category === c ? ' ml-active' : ''}${c === '🔄 The Rotation' ? ' ml-rotation-chip' : ''}`}
               onClick={() => setCategory(c)}
               whileTap={{ scale: 0.93 }}
               style={{ position: 'relative', overflow: 'hidden' }}
@@ -853,36 +915,67 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
               )}
             </motion.button>
           ))}
-        </div>
-      </div>
 
-      {/* ── Tag filter chips ── */}
-      <div className="ml-tags-scroll">
-        <div className="ml-tags-track">
-          {userTags.map(tag => (
-            <button
-              key={tag.id}
-              className={`ml-tag-chip${activeTags.includes(tag.name) ? ' ml-tag-active' : ''}`}
-              onClick={() => handleTagToggle(tag.name)}
-              style={activeTags.includes(tag.name) ? { background: tag.color, borderColor: tag.color, color: '#fff' } : undefined}
+          {tagEditMode ? (
+            <Reorder.Group
+              as="div"
+              axis="x"
+              values={userTags}
+              onReorder={handleReorderTags}
+              className="ml-labels-reorder-group"
             >
-              <Tag size={11} strokeWidth={2.5} /> {tag.name}
-              {(() => {
-                const count = meals.filter(m => (m.tags || []).includes(tag.name)).length;
-                return count > 0 ? <span className="ml-tag-count">{count}</span> : null;
-              })()}
-            </button>
-          ))}
-          <button
-            className="ml-tag-chip ml-tag-manage"
-            onClick={() => { hapticLight(); setShowTagManager(true); }}
-            style={{ borderStyle: 'dashed', opacity: 0.75 }}
-          >
-            <Plus size={11} strokeWidth={2.5} /> New Label
-          </button>
-          {userTags.length > 0 && (
+              {userTags.map(tag => (
+                <Reorder.Item
+                  as="div"
+                  key={tag.id}
+                  value={tag}
+                  layout
+                  className="ml-label-chip ml-label-chip--tag ml-label-chip--editing"
+                  whileDrag={{ scale: 1.08, zIndex: 2, boxShadow: '0 6px 16px -4px rgba(0,0,0,0.35)' }}
+                >
+                  <Tag size={11} strokeWidth={2.5} /> {tag.name}
+                  <button
+                    type="button"
+                    className="ml-label-chip-remove"
+                    onClick={(e) => { e.stopPropagation(); hapticLight(); handleDeleteTag(tag.id); }}
+                    aria-label={`Delete ${tag.name} label`}
+                  >
+                    <X size={11} strokeWidth={3} />
+                  </button>
+                </Reorder.Item>
+              ))}
+            </Reorder.Group>
+          ) : (
+            userTags.map(tag => (
+              <button
+                key={tag.id}
+                className={`ml-label-chip ml-label-chip--tag${activeTags.includes(tag.name) ? ' ml-tag-active' : ''}`}
+                onClick={() => handleTagToggle(tag.name)}
+                onTouchStart={handleTagTouchStart}
+                onTouchMove={handleTagTouchMove}
+                onTouchEnd={handleTagTouchEnd}
+                onTouchCancel={handleTagTouchEnd}
+                style={activeTags.includes(tag.name) ? { background: tag.color, borderColor: tag.color, color: '#fff' } : undefined}
+              >
+                <Tag size={11} strokeWidth={2.5} /> {tag.name}
+                {(() => {
+                  const count = meals.filter(m => (m.tags || []).includes(tag.name)).length;
+                  return count > 0 ? <span className="ml-label-count">{count}</span> : null;
+                })()}
+              </button>
+            ))
+          )}
+
+          {tagEditMode ? (
             <button
-              className="ml-tag-chip ml-tag-manage"
+              className="ml-label-chip ml-label-done-btn"
+              onClick={() => { hapticLight(); setTagEditMode(false); }}
+            >
+              <Check size={12} strokeWidth={3} /> Done
+            </button>
+          ) : userTags.length > 0 && (
+            <button
+              className="ml-label-chip ml-label-manage-btn"
               onClick={() => { hapticLight(); setShowTagManager(true); }}
             >
               <Pencil size={11} strokeWidth={2.5} /> Manage

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { DRINK_RESPONSIBLY_TEXT } from '../legal/legalContent';
+// Escape/back handled by App useBackHandler(showAgeGate) — avoid double listeners
 
 const AGE_GATE_KEY = 'spicehub_age_verified';
 
@@ -36,12 +37,7 @@ export default function AgeGate({ onConfirm, onCancel }) {
 
   useEffect(() => {
     checkboxRef.current?.focus();
-    const handleKey = (e) => {
-      if (e.key === 'Escape') onCancel?.();
-    };
-    document.addEventListener('keydown', handleKey);
-    return () => document.removeEventListener('keydown', handleKey);
-  }, [onCancel]);
+  }, []);
 
   const handleConfirm = () => {
     if (!checked) return;

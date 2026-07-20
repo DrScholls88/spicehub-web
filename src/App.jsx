@@ -31,6 +31,7 @@ import { ThemeSettings } from './components/ThemeProvider';
 import { isMobileDevice } from './isMobile';
 import useOnlineStatus, { onOnlineStatusChange } from './hooks/useOnlineStatus';
 import useBackHandler from './hooks/useBackHandler';
+import useRootBackGuard from './hooks/useRootBackGuard';
 import useSwipeDismiss from './hooks/useSwipeDismiss';
 import { planWeek, pickForSlot, buildRecencyMap } from './lib/weekPlanner';
 import { getInventory } from './lib/pantryDomain';
@@ -295,12 +296,12 @@ export default function App() {
   const storageSwipe = useSwipeDismiss(() => setShowStorageManager(false));
   const settingsSwipe = useSwipeDismiss(() => setShowSettings(false));
 
-  // ── Hardware back button handlers (Android PWA) ─────────────────────────────
-  // Order matters: later entries are higher priority (LIFO stack)
+  // ── Hardware back button handlers (Android PWA / iOS swipe / Escape) ────────
+  // LIFO: innermost layer closes first. Central stack in navigation/backStack.js.
   useBackHandler(!!detailItem, () => setDetailItem(null), 'detail');
   useBackHandler(editMeal !== null, () => setEditMeal(null), 'edit-meal');
   useBackHandler(editDrink !== null, () => setEditDrink(null), 'edit-drink');
-  useBackHandler(!!showImportFor, () => setShowImportFor(null), 'import');
+  useBackHandler(!!showImportFor, () => { setShowImportFor(null); setSharedContent(null); }, 'import');
   useBackHandler(showFridge, () => setShowFridge(false), 'fridge');
   // Refresh the Fridge widget telemetry + spin-constraint pool whenever the
   // Pantry overlay closes, since that's the only place inventory is edited.
@@ -313,8 +314,6 @@ export default function App() {
   useBackHandler(showBarFridge, () => setShowBarFridge(false), 'bar-fridge');
   useBackHandler(showDiscover, () => setShowDiscover(false), 'discover-landing');
   useBackHandler(!!cookModeMeal, () => setCookModeMeal(null), 'cook-mode');
-  // Floating video PiP: mobile back / back-gesture closes the player instead of
-  // navigating away from the app.
   useBackHandler(!!pipVideo, () => setPipVideo(null), 'pip-video');
   useBackHandler(!!mixModeDrink, () => setMixModeDrink(null), 'mix-mode');
   useBackHandler(showSpinner, () => setShowSpinner(false), 'spinner');
@@ -324,11 +323,16 @@ export default function App() {
   useBackHandler(showBatchQueue, () => setShowBatchQueue(false), 'batch-queue');
   useBackHandler(!!batchReviewItem, () => setBatchReviewItem(null), 'batch-review');
   useBackHandler(showZipImport, () => setShowZipImport(false), 'zip-import');
+  useBackHandler(!!exportSheet, () => setExportSheet(null), 'export');
+  useBackHandler(showAgeGate, () => setShowAgeGate(false), 'age-gate');
 
   const showToast = useCallback((message, type = 'success', duration = 2500) => {
     setToast({ message, type });
     setTimeout(() => setToast(null), duration);
   }, []);
+
+  // Double-back-to-exit at root + history sentinel (Track 0)
+  useRootBackGuard(showToast);
 
   // ── I-2 Post-share quick action auto-dismiss (8s) ─────────────────────────
   useEffect(() => {
@@ -1659,6 +1663,12 @@ useEffect(() => {
             onStartCook={isDrink(detailItem) ? null : startCookMode}
             onStartMix={isDrink(detailItem) ? startMixMode : null}
             onMoveToBar={isDrink(detailItem) ? null : handleMoveMealToBar}
+            onPlayVideo={openPipForMeal}
+            onEdit={() => {
+              const item = detailItem;
+              setDetailItem(null);
+              if (isDrink(item)) setEditDrink(item); else setEditMeal(item);
+            }}
             isDrink={isDrink(detailItem)}
           />
         )}
@@ -1800,7 +1810,7 @@ useEffect(() => {
       )}
 
       {showStorageManager && (
-        <div className="st-overlay" onClick={() => setShowStorageManager(false)}>
+        <div className="st-overlay" data-sheet-overlay onClick={() => setShowStorageManager(false)}>
           <div className="st-sheet" ref={storageSwipe.sheetRef} onClick={e => e.stopPropagation()}
             onTouchStart={storageSwipe.handleTouchStart} onTouchMove={storageSwipe.handleTouchMove} onTouchEnd={storageSwipe.handleTouchEnd}>
             <div className="st-handle" />
@@ -1815,7 +1825,7 @@ useEffect(() => {
       )}
 
       {showSettings && (
-        <div className="st-overlay" onClick={() => setShowSettings(false)}>
+        <div className="st-overlay" data-sheet-overlay onClick={() => setShowSettings(false)}>
           <div className="st-sheet" ref={settingsSwipe.sheetRef} onClick={e => e.stopPropagation()}
             onTouchStart={settingsSwipe.handleTouchStart} onTouchMove={settingsSwipe.handleTouchMove} onTouchEnd={settingsSwipe.handleTouchEnd}>
             <div className="st-handle" />

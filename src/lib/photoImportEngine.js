@@ -651,7 +651,9 @@ export async function transcribePagesOnline(uploadPages, { signal, onProgress } 
  * @param {AbortSignal} [opts.signal]
  * @returns {Promise<object>} structured recipe (captionToRecipe shape) plus:
  *        sourceCaption, _visionEngine, _extractionSource, _ocrDraft,
- *        _dishPhotoBox, _scanPageCount, imageUrl/image, _imageStatus,
+ *        _dishPhotoBox, _scanPageCount, _scanPages (compressed data URLs for
+ *        every captured page, in order — powers the MealDetail photo swipe
+ *        gallery for multi-page scans), imageUrl/image, _imageStatus,
  *        _visionError (present only when cloud tiers failed before OCR ran)
  * @throws {PhotoImportError}
  */
@@ -772,6 +774,12 @@ export async function importRecipeFromPages(pages, { type = 'meal', onProgress, 
   recipe._ocrDraft = contract.engine === 'tesseract';
   recipe._dishPhotoBox = contract.dishPhoto || null;
   recipe._scanPageCount = pages.length;
+  // Persist every captured page (already-compressed upload copies, in reading
+  // order) so the saved recipe can offer a swipeable gallery later — MealDetail
+  // shows these when a multi-page photo/PDF scan produced more than one page.
+  // Previously only _scanPageCount (a bare number) survived past this point;
+  // the pages themselves were discarded once transcription/crop finished.
+  recipe._scanPages = uploadPages;
   if (visionError) {
     // Cloud tiers failed but Tesseract still produced a readable draft — carry
     // the real reason so the review UI can say why (Component 3, spec

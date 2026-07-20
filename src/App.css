@@ -1817,12 +1817,64 @@ body::before {
   opacity: 0.6;
   cursor: default;
 }
-.detail-reimport-photo-btn.photo-found {
-  background: rgba(46, 125, 50, 0.85);
+
+/* PiP: play-video badge on the recipe detail hero image — bottom-left,
+   mirrors .ml-tile-play (MealLibrary tile) at a slightly larger touch size
+   since the detail image is much bigger than a tile thumbnail. */
+.detail-play-btn {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.9);
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 3;
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  transition: background 0.15s, transform 0.1s;
 }
-.detail-reimport-photo-btn.photo-none {
-  background: rgba(100, 100, 100, 0.70);
+.detail-play-btn:active { transform: scale(0.9); }
+.detail-play-btn-youtube { background: rgba(255, 0, 0, 0.78); border-color: rgba(255, 255, 255, 0.95); }
+.detail-play-btn-instagram {
+  background: linear-gradient(135deg, rgba(240, 148, 51, 0.9), rgba(188, 42, 141, 0.9), rgba(150, 47, 191, 0.9));
+  border-color: rgba(255, 255, 255, 0.95);
 }
+
+/* Swipe-to-view photo count pill — shown only when the import captured more
+   than one photo (multi-page photo/PDF scan, or an Instagram/Reddit
+   carousel). Tapping opens the same PhotoGallery lightbox, which already
+   supports swipe/pinch across every captured photo. */
+.detail-photo-count {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 20px;
+  border: none;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  z-index: 3;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  transition: background 0.15s, transform 0.1s;
+}
+.detail-photo-count:active { transform: scale(0.94); }
 
 .detail-section {
   margin-bottom: var(--space-lg);
@@ -4081,7 +4133,7 @@ body::before {
   font-size: 12px;
   font-weight: 600;
   border: 1.5px solid #ffe0b2;
-  background: white;
+  background: var(--surface-2);
   color: var(--primary);
   cursor: pointer;
   white-space: nowrap;
@@ -4097,6 +4149,20 @@ body::before {
 
 .meal-cat-chip:hover:not(.active) {
   background: #fff3e0;
+}
+
+[data-theme="dark"] .meal-cat-chip:hover:not(.active),
+[data-theme="auto"][data-system-dark="true"] .meal-cat-chip:hover:not(.active) {
+  background: rgba(255, 224, 178, 0.16);
+}
+
+/* Custom label chips inside Edit Recipe's Labels picker — same base look as
+   .meal-cat-chip, plus flex alignment so the leading <Tag> icon lines up
+   with the label text (meal-cat-chip has no display:flex on its own). */
+.meal-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 /* ── Inline category tag in card ── */
@@ -4969,6 +5035,37 @@ body::before {
   border: 1px solid #ffe0b2;
 }
 
+/* Recipe scale selector (1×/2×/3×/4×) — previously unstyled (bare default
+   button appearance), which is the reason these read as too small/cramped
+   for older users and eyes. Generous touch target + bold, legible label. */
+.scale-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.btn-scale {
+  min-width: 60px;
+  min-height: 48px;
+  padding: 10px 18px;
+  border: 1.5px solid #ffe0b2;
+  border-radius: 12px;
+  background: #fff;
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+.btn-scale:hover { border-color: var(--primary); }
+.btn-scale:active { transform: scale(0.96); }
+.btn-scale.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(255, 152, 0, 0.35);
+}
+
 .btn-scaler {
   background: none;
   border: none;
@@ -5242,7 +5339,15 @@ body::before {
 }
 
 /* ── Category chips (horizontal scroll, no wrapping) ── */
-.ml-categories-scroll {
+/* ── Unified label bar (2026-07-20) — built-in categories + custom tags in
+   one scrolling row. Was two separate rows (.ml-categories-* and .ml-tag-*)
+   with a hardcoded background:white on the category chip that made it
+   illegible in dark mode (near-white text on a white chip) and washed-out
+   in light mode (barely-there border against a plain white page). Both now
+   read off theme-aware --surface-2 / --border / --text, so dark mode just
+   works via the existing [data-theme=dark] root variable overrides —
+   no separate dark-mode override needed for the base chip. */
+.ml-labels-scroll {
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
@@ -5252,26 +5357,28 @@ body::before {
   border-bottom: 1px solid var(--border);
 }
 
-.ml-categories-scroll::-webkit-scrollbar {
+.ml-labels-scroll::-webkit-scrollbar {
   display: none;
 }
 
-.ml-categories-track {
+.ml-labels-track {
   display: flex;
+  align-items: center;
   gap: 8px;
   padding: 0 16px 12px;
   flex-wrap: nowrap;
 }
 
-.ml-category-chip {
+.ml-label-chip {
   display: inline-flex;
   align-items: center;
+  gap: 4px;
   justify-content: center;
   height: 36px;
   padding: 0 16px;
   border: 1.5px solid var(--border);
   border-radius: 18px;
-  background: white;
+  background: var(--surface-2);
   color: var(--text);
   font-size: 14px;
   font-weight: 600;
@@ -5282,16 +5389,97 @@ body::before {
   -webkit-tap-highlight-color: transparent;
 }
 
-.ml-category-chip:active {
+.ml-label-chip:active {
   transform: scale(0.97);
 }
 
-.ml-category-chip.ml-active {
+.ml-label-chip.ml-active {
   background: var(--primary);
   color: white;
   border-color: var(--primary);
   box-shadow: 0 2px 8px rgba(230, 81, 0, 0.3);
 }
+
+/* Custom tag chips — smaller/lighter than the fixed-category chips so the
+   two families stay visually distinguishable even sharing one row. */
+.ml-label-chip--tag {
+  height: 30px;
+  padding: 0 11px;
+  font-size: 12px;
+  color: var(--text-light);
+}
+
+/* "+" add-label trigger — first in the bar, ahead of "All" */
+.ml-label-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border: 1.5px dashed var(--border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--primary);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s, transform 0.1s;
+}
+.ml-label-add-btn:active { transform: scale(0.9); }
+
+.ml-label-manage-btn,
+.ml-label-done-btn {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: transparent;
+}
+.ml-label-done-btn {
+  background: var(--primary);
+  color: #fff;
+}
+
+.ml-label-count {
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  padding: 1px 5px;
+  min-width: 16px;
+  text-align: center;
+}
+[data-theme="dark"] .ml-label-count { background: rgba(255, 255, 255, 0.1); }
+.ml-tag-active .ml-label-count { background: rgba(255, 255, 255, 0.25); }
+
+/* Rearrange/delete mode (long-press a custom tag chip) */
+.ml-labels-reorder-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.ml-label-chip--editing {
+  position: relative;
+  padding-right: 26px;
+  border-color: var(--primary);
+  cursor: grab;
+}
+.ml-label-chip--editing:active { cursor: grabbing; }
+.ml-label-chip-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: var(--danger, #ef5350);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.ml-label-chip-remove:active { transform: scale(0.85); }
 
 /* ── Notion-style Gallery Grid ── */
 .ml-gallery {
@@ -5890,59 +6078,11 @@ body::before {
 }
 
 /* ── Tag filter chips ── */
-.ml-tags-scroll {
-  overflow-x: auto;
-  overflow-y: hidden;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-  padding: 6px 0 0;
-}
-.ml-tags-scroll::-webkit-scrollbar { display: none; }
-
-.ml-tags-track {
-  display: flex;
-  gap: 6px;
-  padding: 0 16px 8px;
-  flex-wrap: nowrap;
-}
-
-.ml-tag-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 30px;
-  padding: 0 11px;
-  border: 1.5px solid var(--border);
-  border-radius: 15px;
-  background: var(--surface-2, #f5f5f5);
-  color: var(--text-light, #888);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  white-space: nowrap;
-  flex-shrink: 0;
-  transition: all 0.15s;
-  -webkit-tap-highlight-color: transparent;
-}
-.ml-tag-chip:active { transform: scale(0.95); }
+/* .ml-tag-active is still used as a modifier on the unified .ml-label-chip
+   (see .ml-labels-track in MealLibrary.jsx) — the rest of the old two-row
+   tag bar (.ml-tags-scroll/track, .ml-tag-chip, .ml-tag-manage,
+   .ml-tag-count) was replaced by .ml-labels-* above. */
 .ml-tag-active { color: #fff; font-weight: 700; }
-.ml-tag-manage {
-  color: var(--primary);
-  border-color: var(--primary);
-  background: transparent;
-}
-.ml-tag-count {
-  font-size: 10px;
-  font-weight: 700;
-  background: rgba(0,0,0,0.08);
-  border-radius: 8px;
-  padding: 1px 5px;
-  min-width: 16px;
-  text-align: center;
-}
-.ml-tag-active .ml-tag-count {
-  background: rgba(255,255,255,0.25);
-}
 
 /* ── Collapsible sections ── */
 .ml-section {
@@ -6138,15 +6278,12 @@ body::before {
 .ml-qp-tag-active { color: #fff; font-weight: 700; }
 
 /* ── Dark mode additions ── */
-[data-theme="dark"] .ml-tag-chip {
-  background: rgba(255,255,255,0.06);
-  border-color: rgba(255,255,255,0.12);
-}
-[data-theme="dark"] .ml-tag-manage {
+/* .ml-label-chip (the unified category+tag bar) needs no dark override —
+   it reads var(--surface-2)/var(--border)/var(--text), which the
+   [data-theme="dark"] root block already redefines. */
+[data-theme="dark"] .ml-label-manage-btn,
+[data-theme="dark"] .ml-label-done-btn {
   border-color: var(--primary);
-}
-[data-theme="dark"] .ml-tag-count {
-  background: rgba(255,255,255,0.1);
 }
 [data-theme="dark"] .ml-section-count {
   background: rgba(255,255,255,0.08);
@@ -12087,6 +12224,7 @@ body::before {
   background: rgba(0, 0, 0, 0.5);
   z-index: 500;
   animation: fadeIn 0.2s ease-out;
+  overscroll-behavior: none;
 }
 
 .st-sheet {
@@ -12275,6 +12413,27 @@ body::before {
 .mix-mode-launch-btn:active {
   box-shadow: 0 2px 8px rgba(123, 31, 162, 0.25);
 }
+
+/* Move to Bar — recovery path for a drink mis-imported into the Meal
+   Library. Rare correction, not a primary action, so it's a small pill
+   sub-option instead of the full-width Start Cooking/Mixing CTA style. */
+.detail-moveto-bar-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid rgba(123, 31, 162, 0.25);
+  border-radius: 20px;
+  background: rgba(123, 31, 162, 0.06);
+  color: #7b1fa2;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s, transform 0.1s;
+}
+.detail-moveto-bar-link:hover { background: rgba(123, 31, 162, 0.12); }
+.detail-moveto-bar-link:active { transform: scale(0.96); }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    BAR AREA — BarShelf (bs-), BarLibrary (bl-), BarFridgeMode (bf-)
@@ -21850,6 +22009,7 @@ select:focus-visible,
   justify-content: center;
   padding: var(--space-md);
   overflow-y: auto;
+  overscroll-behavior: none;
 }
 
 .consentgate-sheet,
@@ -22006,6 +22166,7 @@ select:focus-visible,
   display: flex;
   align-items: flex-end;
   justify-content: center;
+  overscroll-behavior: none;
 }
 
 .legaldoc-sheet {
