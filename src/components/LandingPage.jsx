@@ -1422,7 +1422,7 @@ export default function LandingPage({
           onClick={onOpenStats}
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          whileHover={{ scale: 1.02, backgroundColor: '#faf7f0', boxShadow: 'var(--shadow)' }}
+          whileHover={{ scale: 1.02, backgroundColor: 'var(--surface-2)', boxShadow: 'var(--shadow)' }}
           whileTap={{ scale: 0.98 }}
           style={{
             ...STYLES.statsStrip,

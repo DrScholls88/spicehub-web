@@ -548,6 +548,10 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
       ? current.filter(t => t !== tagName)
       : [...current, tagName];
     await setMealTags(mealId, newTags);
+    // Quick-preview holds its own snapshot of the meal (set at open time), so
+    // a reload alone doesn't touch it — without this the tapped chip only
+    // shows as active after closing and reopening the sheet.
+    setQuickPreview(prev => prev && prev.id === mealId ? { ...prev, tags: newTags } : prev);
     onReload?.();
   }, [meals, onReload]);
 

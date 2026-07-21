@@ -40,14 +40,24 @@ describe('api/extract — JSON-LD extraction', () => {
     expect(r.candidate.directions.length).toBe(5);
   });
 
-  it('wprm: empty JSON-LD stub is NOT accepted as a candidate', () => {
+  it('wprm: empty JSON-LD stub falls through to the WPRM plugin-card extractor', () => {
     const html = loadFixture('html', 'wprm.html');
     const r = extractFromHtml(html, 'https://saltfatacidmeat.example.com/smash-burger-tacos/');
-    // The stub has no content — server must not return it as a candidate;
-    // markdown still carries the WPRM markup content for the AI tier.
-    expect(r.candidate).toBeNull();
-    expect(r.jsonLd).toBeTruthy();             // kept as context
-    expect(r.markdown).toMatch(/ground beef/i); // content survives isolation
+    // The JSON-LD stub itself has no content, so extractFromHtml correctly
+    // skips it as a candidate — but extractPluginCandidate (added since this
+    // test was written; see tests/import/corpus.plugins.test.js) now picks
+    // the recipe straight out of the WPRM plugin markup instead of falling
+    // all the way through to markdown + an AI call. Real candidate, not a
+    // regression: the stub is still kept as context, and markdown still
+    // carries the same content as a second signal.
+    expect(r.acquiredVia).toBe('plugin:wprm');
+    expect(r.candidate).toBeTruthy();
+    expect(r.candidate._pluginType).toBe('wprm');
+    expect(r.candidate.name).toMatch(/smash burger tacos/i);
+    expect(r.candidate.ingredients.length).toBeGreaterThan(0);
+    expect(r.candidate.directions.length).toBeGreaterThan(0);
+    expect(r.jsonLd).toBeTruthy();               // stub kept as context
+    expect(r.markdown).toMatch(/ground beef/i);  // content survives isolation too
     expect(r.markdown).toMatch(/special sauce/i);
   });
 

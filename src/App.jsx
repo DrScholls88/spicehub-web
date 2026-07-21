@@ -1838,22 +1838,21 @@ useEffect(() => {
                 <h3>Theme</h3>
                 <ThemeSettings />
               </div>
-              {/* PWA Install — only shown when browser supports it or on mobile */}
-              <div className="st-section st-install-section">
-                <h3>App</h3>
-                {!isStandalone && (
-                  <button
-                    className="st-install-btn"
-                    onClick={() => {
-                      // Reset dismissal so banner can reappear, then trigger install
-                      localStorage.removeItem('pwa-install-dismissed');
-                      handleInstallApp();
-                    }}
-                  >
-                    <span className="st-install-icon">📲</span>
-                    <span>Add to Home Screen</span>
-                  </button>
-                )}
+                {/* PWA Install — shown in Settings on every tab (consistent header) */}
+                <div className="st-section st-install-section">
+                  <h3>App</h3>
+                  {!isStandalone && (
+                    <button
+                      className="st-install-btn"
+                      onClick={() => {
+                        localStorage.removeItem('pwa-install-dismissed');
+                        handleInstallApp();
+                      }}
+                    >
+                      <span className="st-install-icon">📲</span>
+                      <span>Add to Home Screen</span>
+                    </button>
+                  )}
                 {/* Storage moved here from the header (feedback 2026-07-15:
                     header decluttering) */}
                 <button
