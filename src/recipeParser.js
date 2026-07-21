@@ -10,7 +10,7 @@
 import { cleanUrl, isInstagramCdnUrl, fetchHtmlViaProxy as fetchHtmlViaProxyFromApi, downloadImageAsDataUrl, proxyImageUrl } from './api.js';
 import { getCachedImport, setCachedImport } from './db.js';
 import { transcribeFromUrl, transcribeFromFile, getPreferredWhisperModel } from './lib/transcriptionService.js';
-import { isRedditUrl, isRedditPostUrl, tryRedditJson } from './scrapers/redditDiscovery.js';
+import { isRedditUrl, tryRedditJson } from './scrapers/redditDiscovery.js';
 import { htmlToMarkdown, htmlLooksLikeRecipe } from './scrapers/markdownConverter.js';
 import { parseIngredient } from 'parse-ingredient';
 import {
@@ -30,6 +30,7 @@ import { normalizeIngredient, resolveUnit } from './utils/ingredientNormalizer.j
 import { stripJunkLines, isJunkLine, BAIT_ONLY_RE, countQuantityLines } from './import/junk.js';
 import { acquireWebsitePack } from './import/acquire/website.js';
 import { acquireInstagramPack } from './import/acquire/instagram.js';
+import { acquirePinterestPack } from './import/acquire/pinterest.js';
 import { selectHeroImage, persistCarousel } from './import/images.js';
 import { packHasCompleteCandidate, createContextPack, packFromCaption } from './import/contextPack.js';
 import { structurePack, serverStructurePack } from './import/structure/gemini.js';
@@ -37,6 +38,8 @@ import { structurePack, serverStructurePack } from './import/structure/gemini.js
 // ── Null-byte sanitizer ─────────────────────────────────────────────────────
 // LLMs occasionally emit null bytes or control characters in JSON output.
 // Strip them before JSON.parse to prevent silent parse failures.
+// eslint-disable-next-line no-control-regex -- intentional: matches literal
+// null bytes to strip before JSON.parse (see comment above), not a typo.
 const RE_NULLS = /[\x00]|\\u0000/g;
 function sanitizeLLMResponse(text) {
   if (!text) return '';
@@ -104,7 +107,7 @@ export function generateTitleFromIngredients(ingredients = [], type = 'meal') {
   const items = (ingredients || [])
     .map(i => (typeof i === 'string' ? i : i?.name || ''))
     .map(s => structureIngredient(s).item || s)
-    .map(s => s.replace(/^[•\-\*]\s*/, '').replace(/\(.*?\)/g, '').trim())
+    .map(s => s.replace(/^[•\-*]\s*/, '').replace(/\(.*?\)/g, '').trim())
     .filter(s => s && s.length > 1 && s.length < 30 && !/^(salt|pepper|water|oil|to taste)$/i.test(s));
 
   if (items.length === 0) return type === 'drink' ? 'Imported Drink' : 'Imported Recipe';
@@ -141,10 +144,10 @@ export function sanitizeRecipeTitle(raw) {
  *   "Ã¢â‚¬Â¢ 3 tbsp olive oil"      Ã¢â€ â€™ { quantity: "3", unit: "tbsp", item: "olive oil" }
  */
 export function structureIngredient(raw = '') {
-  const text = raw.replace(/^[\u2022\-\*]\s*/, '').trim(); // strip bullets
+  const text = raw.replace(/^[\u2022\-*]\s*/, '').trim(); // strip bullets
   const UNITS = /^(cups?|tbsp|tablespoons?|tsp|teaspoons?|oz|ounces?|lbs?|pounds?|grams?|g|kg|ml|liters?|l|cloves?|pieces?|pinch(?:es)?|dash(?:es)?|handfuls?|slices?|cans?|packages?|pkgs?|bunches?|heads?|stalks?|sprigs?|leaves?)/i;
   // Match: optional fraction/decimal/integer, optional unit, rest = item
-  const m = text.match(/^(\d+(?:[\/\.]\d+)?(?:\s+\d+\/\d+)?)\s+(?:(\S+)\s+)?(.*)/);
+  const m = text.match(/^(\d+(?:[\/.]\d+)?(?:\s+\d+\/\d+)?)\s+(?:(\S+)\s+)?(.*)/);
   if (!m) return { quantity: '', unit: '', item: text };
   const [, qty, maybeUnit, rest] = m;
   if (maybeUnit && UNITS.test(maybeUnit)) {
@@ -172,7 +175,7 @@ export function buildStructuredFields(ingredients = [], directions = []) {
   return {
     ingredients_structured: ings.map(structureIngredient),
     directions_structured:  dirs.map(structureDirection),
-    ingredients_text: ings.map(i => i.replace(/^[\u2022\-\*]\s*/, '')).join(' '),
+    ingredients_text: ings.map(i => i.replace(/^[\u2022\-*]\s*/, '')).join(' '),
     directions_text:  dirs.join(' '),
   };
 }
@@ -521,7 +524,7 @@ export function parseManualCaption(captionText, sourceUrl) {
 function _cleanTitle(title = '', ingredients = []) {
   let t = String(title).trim();
   // Strip leading labels that leak from OCR/photo scans or scraped headers.
-  t = t.replace(/^(recipe|title|dish|name)\s*[:\-]\s*/i, '');
+  t = t.replace(/^(recipe|title|dish|name)\s*[:-]\s*/i, '');
   // Strip trailing social patterns: "This Weeknight Win recipe is", "save this", "link in bio", etc.
   t = t.replace(/[!.]\s*(this|these|the|my|our|a|an)\s+(weeknight|easy|quick|best|amazing|perfect|simple|delicious|favorite|favourite|ultimate)\b.*$/i, '');
   // Strip trailing "recipe is/recipe that/recipe you" fragments
@@ -1539,8 +1542,8 @@ export async function captionToRecipe(captionText, { title = '', imageUrl = '', 
   // Pre-normalize: if the text has no newlines but has runs of 3+ spaces, those
   // are almost certainly encoded newlines from an Instagram embed extraction. Convert
   // them so parseCaption can split sections properly.
-  const textForParse = !textForAI.includes('\n') && /   /.test(textForAI)
-    ? textForAI.replace(/   +/g, '\n').replace(/[ \t]+/g, ' ')
+  const textForParse = !textForAI.includes('\n') && / {3}/.test(textForAI)
+    ? textForAI.replace(/ {2} +/g, '\n').replace(/[ \t]+/g, ' ')
     : textForAI;
 
   // Spec C: the offline fallback now runs the deterministic parser, so no-API /
@@ -2091,6 +2094,9 @@ function findJsonLdRecipes(html) {
   let m;
   while ((m = re.exec(html)) !== null) {
     try {
+      // eslint-disable-next-line no-control-regex -- intentional: strips
+      // stray control bytes some sites embed in JSON-LD blocks, which would
+      // otherwise throw a silent JSON.parse failure.
       const data = JSON.parse(m[1].replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, ' ').trim());
       const recipe = extractRecipeFromJsonLd(Array.isArray(data) ? data : [data]);
       if (recipe) results.push(recipe);
@@ -2183,6 +2189,13 @@ export function isInstagramUrl(urlStr) {
   try {
     const host = new URL(urlStr).hostname.replace(/^www\./, '');
     return host === 'instagram.com' || host.endsWith('.instagram.com');
+  } catch { return false; }
+}
+
+export function isPinterestUrl(urlStr) {
+  try {
+    const host = new URL(urlStr).hostname.replace(/^www\./, '');
+    return host === 'pinterest.com' || host.endsWith('.pinterest.com') || host === 'pin.it';
   } catch { return false; }
 }
 
@@ -2370,7 +2383,11 @@ async function extractInstagramEmbed(url) {
 }
 
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Convert embed extraction result Ã¢â€ â€™ recipe format Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-function handleEmbedResult(data, sourceUrl) {
+// Unused (no callers anywhere in src/) but left in place rather than deleted —
+// prefixed per this file's existing "_" = intentionally-unused convention
+// (eslint varsIgnorePattern: '^[A-Z_]') instead of guessing it's safe to
+// remove outright.
+function _handleEmbedResult(data, sourceUrl) {
   if (!data || !data.ok) return null;
 
   const caption = stripSocialMetaPrefix(data.caption || '');
@@ -2460,7 +2477,9 @@ export function resetServerDetection() {
  * Instagram captions often list ingredients as: "2 eggs, 1 cup flour, butter, salt"
  * or use emoji separators: "Ã°Å¸Â¥Å¡ 2 eggs Ã°Å¸Â§Ë† butter Ã°Å¸Â§â‚¬ cheese"
  */
-function tryCommaDelimitedParse(text) {
+// Unused (no callers anywhere in src/) but left in place rather than deleted —
+// same intentionally-unused convention as _handleEmbedResult above.
+function _tryCommaDelimitedParse(text) {
   if (!text || text.length < 20) return null;
 
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
@@ -2533,8 +2552,6 @@ function parseSpokenTranscript(text) {
   const SPOKEN_DIRECTION_RE = /\b(?:preheat|mix|stir|cook|bake|fry|saut[ÃƒÂ©e]|boil|simmer|chop|dice|slice|fold|whisk|pour|drain|season|sprinkle|spread|roll|knead|let it|set aside|cover|flip|turn|remove|place|combine|toss|serve|plate|garnish|shake|muddle|strain|build|rim|express|float|swizzle|jigger|churn)\b/i;
 
   for (const sentence of sentences) {
-    const lc = sentence.toLowerCase();
-
     // Check if it mentions ingredient quantities
     const hasQuantity = QUANTITY_MENTION_RE.test(sentence) ||
       /\b\d+\s*(?:\/\d+)?\s*(?:cup|tsp|tbsp|oz|lb|g|ml)\b/i.test(sentence);
@@ -2820,7 +2837,11 @@ function parseRecipeFromServerJsonLd(recipe) {
  * @param {string|null} [fetchedHtml] - Already-fetched HTML (to extract WP post ID)
  * @returns {object|null} Recipe object or null
  */
-async function tryEndpointNudging(url, fetchedHtml = null) {
+// Note: `fetchedHtml` is accepted (callers already have it — see call site)
+// but not currently read in this body; kept + prefixed rather than dropped
+// since the JSDoc above documents real intent (skip a redundant fetch when
+// slug-extraction needs the HTML) that just never got wired up.
+async function tryEndpointNudging(url, _fetchedHtml = null) {
   try {
     const u = new URL(url);
     const origin = u.origin;
@@ -3239,7 +3260,21 @@ async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signa
     return null;
   }
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ 2. Video/Social URLs: try Agent extraction, then yt-dlp, then CORS proxy Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── 1b. Pinterest: dedicated acquirer (schema.org heavy) ──
+  if (isPinterestUrl(url)) {
+    console.log('[SpiceHub] Pinterest URL — trying Pinterest-specific extraction...');
+    if (onProgress) onProgress('Extracting from Pinterest...');
+    const pinterestPack = await acquirePinterestPack(url, { signal });
+    if (pinterestPack) {
+      const structured = await structurePack(pinterestPack, { type, sourceType: 'pinterest' });
+      if (structured) {
+        const thin = thinFromStructured(structured);
+        return finalizeAIRecipe(thin, { sourceUrl: url, sourceType: 'pinterest' });
+      }
+    }
+  }
+
+  // ── 2. Video/Social URLs: try Agent extraction, then yt-dlp, then CORS proxy ──
   if (isSocialMediaUrl(url)) {
     console.log('[SpiceHub] Social/video URL Ã¢â‚¬â€ trying extraction pipeline...');
 
@@ -4280,7 +4315,7 @@ export function parseIngredientLine(text) {
  * Returns: { ingredients: [...], directions: [...] }
  *   Each string is normalized and trimmed.
  */
-export function smartClassifyLines(lines, sourceElement = null) {
+export function smartClassifyLines(lines, _sourceElement = null) {
   const ingredients = [];
   const directions = [];
 
@@ -4748,10 +4783,9 @@ export function parseVisualJSON(visualJson, url) {
     return { _error: true, name: 'Imported Recipe', ingredients: [], directions: [] };
   }
 
-  const { nodes, viewport = { width: 390, height: 844 }, scrollY = 0 } = visualJson;
+  const { nodes, viewport = { width: 390, height: 844 } } = visualJson;
   const sourceUrl = url || visualJson.url || '';
   const vpH = viewport.height || 844;
-  const vpW = viewport.width || 390;
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const parseFontSize = (s) => parseFloat(s) || 14;
@@ -4763,7 +4797,7 @@ export function parseVisualJSON(visualJson, url) {
   };
 
   // Ingredient-line patterns: starts with bullet, fraction, digit+unit, or common measure
-  const INGREDIENT_PATTERN = /^[\u2022\-\*\u00bc\u00bd\u00be\u2153\u2154\u215b\d]|^\s*(cup|tbsp|tsp|tablespoon|teaspoon|pound|lb|oz|gram|ml|clove|pinch|dash|handful|slice|piece)/i;
+  const INGREDIENT_PATTERN = /^[\u2022\-*\u00bc\u00bd\u00be\u2153\u2154\u215b\d]|^\s*(cup|tbsp|tsp|tablespoon|teaspoon|pound|lb|oz|gram|ml|clove|pinch|dash|handful|slice|piece)/i;
   const INSTRUCTION_PATTERN = /^\d+[\.\)]\s|^Step\s+\d+/i;
 
   // Visual weight score (higher = more prominent)
@@ -4879,6 +4913,10 @@ export function parseVisualJSON(visualJson, url) {
   const confidence = Math.min(classified / Math.min(total, 15), 1);
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Debug logging (development only) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // eslint-disable-next-line no-undef -- isomorphic guard: `process` only
+  // exists under Node/SSR contexts, guarded by `typeof` before use, but the
+  // browser-globals ESLint config for this file has no `process` global to
+  // check the second operand against.
   const isDev = (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development')
     || (typeof import.meta !== 'undefined' && import.meta.env?.DEV);
   if (isDev) {
@@ -5486,7 +5524,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
           return finalRecipe;
         }
       }
-    } catch (err) {
+    } catch {
       // Gemini failed — fall back to yt-dlp result if available
       if (videoRecipe && hasRecipeContent(videoRecipe)) {
         progress(3, 'done', 'Using video extraction (AI unavailable)');

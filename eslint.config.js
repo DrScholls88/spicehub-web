@@ -11,7 +11,9 @@ export default defineConfig([
   // linting them is meaningless: it just produces hundreds of errors for
   // undeclared bundler/Node globals and obfuscated identifiers in someone
   // else's minified code, telling us nothing about our own source.
-  globalIgnores(['dist', 'public/tesseract']),
+  // 'src/lib/photoswipe' is the same story — vendored minified PhotoSwipe
+  // gallery build, imported as opaque JS, never hand-edited.
+  globalIgnores(['dist', 'public/tesseract', 'src/lib/photoswipe']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [
@@ -38,6 +40,18 @@ export default defineConfig([
     },
     rules: {
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      // Historical encoding corruption (mojibake — UTF-8 punctuation like em
+      // dashes/arrows/bullets re-encoded through the wrong codepage at some
+      // point) left irregular Unicode whitespace scattered through JSDoc
+      // comment headers across the codebase — purely decorative, zero
+      // runtime effect. Those bytes can't be reliably hand-repaired via
+      // string-literal edit tools (verified: neither the raw bytes nor their
+      // escaped form round-trips through edit matching), so skip comments
+      // for this rule specifically rather than leave ~60 unfixable false
+      // positives in every lint run. Does NOT skip strings/regexes/JSX text —
+      // if this rule fires outside a comment, it's a real signal worth
+      // looking at, not more of the same noise.
+      'no-irregular-whitespace': ['error', { skipComments: true }],
     },
   },
   // Node-context files: the Vite/Vitest config, Express server, /api

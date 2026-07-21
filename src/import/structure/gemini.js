@@ -72,6 +72,20 @@ export const IG_RECONCILIATION = [
 ].join('\n');
 
 /**
+ * PINTEREST_RECONCILIATION — appended for Pinterest pins (sourceType === 'pinterest').
+ * Pinterest recipe pins usually have excellent schema.org/Recipe data.
+ * We prefer the structured data, fall back to the pin description, and never invent.
+ */
+export const PINTEREST_RECONCILIATION = [
+  'PINTEREST PIN RULES.',
+  '- Prefer structured data (JSON-LD / Recipe schema) when present — it is usually the most accurate.',
+  '- The pin description / caption is secondary; use it only to fill missing fields.',
+  '- Never invent ingredients or steps. If the pin has no usable recipe content, return low confidence.',
+  '- Clean Pinterest CDN image URLs (strip size/query params) before emitting.',
+  '- Extract the original pinner / creator name when available.',
+].join('\n');
+
+/**
  * PACK_RESPONSE_SCHEMA — RECIPE_SCHEMA plus an optional provenance array so
  * the model reports which source each major field came from (auditable,
  * feeds ImportReview badges). Additive: consumers that ignore it are safe.
@@ -137,6 +151,7 @@ export async function geminiPackRequest(model, contents, clientKey, { mode = 'ex
   const systemParts = [{ text: SYSTEM_INSTRUCTION }, { text: RECONCILIATION_RULES }];
   if (mode === 'verify') systemParts.push({ text: VERIFIER_RULES });
   if (sourceType === 'instagram') systemParts.push({ text: IG_RECONCILIATION });
+  if (sourceType === 'pinterest') systemParts.push({ text: PINTEREST_RECONCILIATION });
 
   try {
     const res = await fetch(endpoint, {
