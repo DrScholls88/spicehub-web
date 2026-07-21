@@ -196,6 +196,11 @@ export default function App() {
     window.matchMedia?.('(display-mode: standalone)')?.matches ||
     window.navigator?.standalone === true
   );
+
+  // Detect iOS (Safari) for install button label
+  const isIOS = () => typeof window !== 'undefined' &&
+    /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+
   const [showFridge, setShowFridge] = useState(false);
   // Two doors into the same PantryMode room: the "What can I cook" tile jumps
   // straight to the proximity-match panel, the "Pantry" tile opens to the
@@ -1841,7 +1846,7 @@ useEffect(() => {
                 {/* PWA Install — shown in Settings on every tab (consistent header) */}
                 <div className="st-section st-install-section">
                   <h3>App</h3>
-                  {!isStandalone && (
+                  {!isStandalone && (deferredPrompt || isIOS()) && (
                     <button
                       className="st-install-btn"
                       onClick={() => {
@@ -1850,7 +1855,9 @@ useEffect(() => {
                       }}
                     >
                       <span className="st-install-icon">📲</span>
-                      <span>Add to Home Screen</span>
+                      <span>
+                        {deferredPrompt ? 'Install to phone' : 'Add to Home Screen'}
+                      </span>
                     </button>
                   )}
                 {/* Storage moved here from the header (feedback 2026-07-15:
