@@ -201,6 +201,14 @@ export default function App() {
   const isIOS = () => typeof window !== 'undefined' &&
     /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
 
+  // Detect Android — the "Install to phone" label/flow shouldn't depend on
+  // whether Chrome has actually fired beforeinstallprompt yet (it's gated by
+  // Chrome's own engagement heuristics and won't refire every session), so
+  // this is a plain UA check used to keep the button visible on Android even
+  // before/without a captured deferredPrompt.
+  const isAndroid = () => typeof window !== 'undefined' &&
+    /Android/.test(navigator.userAgent);
+
   const [showFridge, setShowFridge] = useState(false);
   // Two doors into the same PantryMode room: the "What can I cook" tile jumps
   // straight to the proximity-match panel, the "Pantry" tile opens to the
@@ -656,6 +664,12 @@ export default function App() {
       if (outcome === 'accepted') showToast('SpiceHub installed! 🎉', 'success');
       setShowInstallBanner(false);
       setDeferredPrompt(null);
+    } else if (isAndroid()) {
+      // Android/Chrome without a captured native prompt yet (Chrome only
+      // fires beforeinstallprompt under its own engagement heuristics, so
+      // this can't be relied on to always be available) — manual fallback.
+      showToast('Tap ⋮ menu → "Install app" (or "Add to Home screen")', 'info', 4000);
+      setShowInstallBanner(false);
     } else {
       // iOS Safari fallback instruction
       showToast('Tap Share → "Add to Home Screen"', 'info', 4000);
@@ -1846,7 +1860,7 @@ useEffect(() => {
                 {/* PWA Install — shown in Settings on every tab (consistent header) */}
                 <div className="st-section st-install-section">
                   <h3>App</h3>
-                  {!isStandalone && (deferredPrompt || isIOS()) && (
+                  {!isStandalone && (deferredPrompt || isAndroid() || isIOS()) && (
                     <button
                       className="st-install-btn"
                       onClick={() => {
@@ -1856,7 +1870,7 @@ useEffect(() => {
                     >
                       <span className="st-install-icon">📲</span>
                       <span>
-                        {deferredPrompt ? 'Install to phone' : 'Add to Home Screen'}
+                        {deferredPrompt || isAndroid() ? 'Install to phone' : 'Add to Home Screen'}
                       </span>
                     </button>
                   )}
