@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import { getBarInventoryRecords, addToBarInventory, removeFromBarInventory, updateBarBottle } from '../db';
 import { matchDrink, pickSurprise, categorizeBottle } from '../lib/barMatch';
@@ -61,6 +61,8 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose, onAddToGr
   const [showCatalog, setShowCatalog] = useState(false); // browse premade ingredients
   const [drinksFilter, setDrinksFilter] = useState(null); // P3: "using: gin" chip in drinks panel
   const [lastAdded, setLastAdded] = useState(null); // P3: sparkle on freshly added bottle
+  const [undoItem, setUndoItem] = useState(null); // { record, timer }
+  const longPressRef = useRef(null);
 
   // Flat canonical-name list drives the match engine.
   const shelfItems = useMemo(() => shelfRecords.map(r => r.ingredient), [shelfRecords]);
@@ -111,9 +113,31 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose, onAddToGr
   const quickAdd = useCallback((item) => addByName(item), [addByName]);
 
   const removeItem = useCallback((item) => {
+    const stashed = shelfRecords.find(r => r.ingredient === item);
     setShelfRecords(prev => prev.filter(r => r.ingredient !== item));
-    removeFromBarInventory(item);
-  }, []);
+    setUndoItem(prev => { if (prev?.timer) clearTimeout(prev.timer); return null; });
+    const timer = setTimeout(() => {
+      removeFromBarInventory(item);
+      setUndoItem(null);
+    }, 5000);
+    setUndoItem({ record: stashed || { ingredient: item }, timer });
+    if (navigator.vibrate) navigator.vibrate([12, 30, 12]);
+  }, [shelfRecords]);
+
+  const undoRemove = useCallback(() => {
+    if (!undoItem) return;
+    clearTimeout(undoItem.timer);
+    if (undoItem.record?.ingredient) {
+      setShelfRecords(prev => [...prev, undoItem.record]);
+    }
+    setUndoItem(null);
+    if (navigator.vibrate) navigator.vibrate(8);
+  }, [undoItem]);
+
+  // Cleanup undo timer on unmount.
+  useEffect(() => () => {
+    if (undoItem?.timer) clearTimeout(undoItem.timer);
+  }, [undoItem]);
 
   const clearAll = useCallback(() => {
     shelfRecords.forEach(r => removeFromBarInventory(r.ingredient));
@@ -217,6 +241,38 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose, onAddToGr
       onViewDetail(pick.drink);
     }
   }, [scoredDrinks, onViewDetail]);
+
+  // Long-press: step qty down one level without opening edit sheet.
+  const handleBottlePressStart = useCallback((name) => {
+    longPressRef.current = setTimeout(() => {
+      longPressRef.current = 'fired';
+      const rec = shelfRecords.find(r => r.ingredient === name);
+      const level = rec?.qtyLevel || 'FULL';
+      const idx = QTY_LEVELS.indexOf(level);
+      if (idx > 0) {
+        const next = QTY_LEVELS[idx - 1];
+        setShelfRecords(prev => prev.map(r => (r.ingredient === name ? { ...r, qtyLevel: next } : r)));
+        updateBarBottle(name, { qtyLevel: next });
+        if (navigator.vibrate) navigator.vibrate([20, 40, 20]);
+      } else {
+        // Already EMPTY — long-press restocks to FULL
+        setShelfRecords(prev => prev.map(r => (r.ingredient === name ? { ...r, qtyLevel: 'FULL' } : r)));
+        updateBarBottle(name, { qtyLevel: 'FULL' });
+        if (navigator.vibrate) navigator.vibrate([10, 20, 10, 20, 10]);
+      }
+    }, 450);
+  }, [shelfRecords]);
+
+  const handleBottlePressEnd = useCallback((e) => {
+    if (longPressRef.current === 'fired') {
+      e?.preventDefault?.();
+      longPressRef.current = null;
+      return true;
+    }
+    if (longPressRef.current) clearTimeout(longPressRef.current);
+    longPressRef.current = null;
+    return false;
+  }, []);
 
   const drinksOpen = showDrinks || partyMode;
 
@@ -330,6 +386,7 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose, onAddToGr
                     {row.map(rec => {
                       const isDry = rec.qtyLevel === 'EMPTY';
                       const isSparkling = rec.ingredient === lastAdded;
+                      const fill = QTY_FILL[rec.qtyLevel] ?? 3;
                       return (
                         <motion.button
                           key={rec.ingredient}
@@ -341,10 +398,12 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose, onAddToGr
                           ].filter(Boolean).join(' ')}
                           variants={bottlePopV}
                           whileTap={{ scale: 0.9, y: 2 }}
-                          onClick={() => { if (!partyMode) setEditingBottle(rec); }}
-                          title={isDry ? `${rec.displayName || rec.ingredient} — run dry` : (rec.displayName || rec.ingredient)}
+                          onPointerDown={() => handleBottlePressStart(rec.ingredient)}
+                          onPointerUp={(e) => { if (!handleBottlePressEnd(e) && !partyMode) setEditingBottle(rec); }}
+                          onPointerLeave={() => handleBottlePressEnd()}
+                          title={`${rec.displayName || rec.ingredient} · ${QTY_LABEL[rec.qtyLevel] || 'Full up'} · Hold to adjust`}
                         >
-                          <IngredientSprite name={rec.ingredient} size={48} />
+                          <IngredientSprite name={rec.ingredient} size={48} fillLevel={fill} />
                           {isDry && <span className="mybar-bottle-dry-tag" aria-hidden="true">DRY</span>}
                           {isSparkling && (
                             <span className="mybar-bottle-sparkles" aria-hidden="true">
@@ -353,6 +412,12 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose, onAddToGr
                           )}
                           <span className="mybar-bottle-label">
                             {rec.brand || rec.displayName || rec.ingredient}
+                          </span>
+                          {/* Inline stock dots */}
+                          <span className="mybar-bottle-qty" aria-label={QTY_LABEL[rec.qtyLevel] || 'Full up'}>
+                            {[1, 2, 3].map(i => (
+                              <span key={i} className={`mybar-bottle-qty-dot${fill >= i ? ' mybar-bottle-qty-dot--on' : ''}`} />
+                            ))}
                           </span>
                         </motion.button>
                       );
@@ -527,6 +592,24 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose, onAddToGr
               onRemove={removeItem}
               onClose={() => setShowCatalog(false)}
             />
+          )}
+        </AnimatePresence>
+
+        {/* Undo toast — 5-second window to restore tossed bottles */}
+        <AnimatePresence>
+          {undoItem && (
+            <motion.div
+              className="pm-undo-toast"
+              initial={{ y: 60, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 60, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+            >
+              <span className="pm-undo-text">
+                Tossed <strong>{undoItem.record?.displayName || undoItem.record?.ingredient}</strong>
+              </span>
+              <button className="pm-undo-btn" onClick={undoRemove}>UNDO</button>
+            </motion.div>
           )}
         </AnimatePresence>
       </motion.div>

@@ -70,10 +70,13 @@ function CardImage({ src, alt, className, phClass }) {
   );
 }
 
-// Assignable category options (no 'All' or 'The Rotation' — those are filter views)
-const CATEGORY_OPTIONS = ['Dinners', 'Breakfasts', 'Lunches', 'Desserts', 'Sides', 'Tailgate', 'Snacks'];
+// ── Meal "Type" — the structural role of a meal (single-select, one per meal).
+// Shown as section grouping headers in the gallery, not as filter chips.
+const TYPE_OPTIONS = ['Dinners', 'Breakfasts', 'Lunches', 'Desserts', 'Sides', 'Tailgate', 'Snacks'];
+// Legacy alias for external consumers (AddEditMeal, etc.)
+const CATEGORY_OPTIONS = TYPE_OPTIONS;
 
-const CATEGORY_COLORS = {
+const TYPE_COLORS = {
   Dinners:    '#e07b4f',
   Breakfasts: '#f4c56a',
   Lunches:    '#6dbf8d',
@@ -82,13 +85,19 @@ const CATEGORY_COLORS = {
   Tailgate:   '#c97040',
   Snacks:     '#9b8fe0',
 };
+// Legacy alias
+const CATEGORY_COLORS = TYPE_COLORS;
 
-// Smart filters — computed views, not assignable categories (like Rotation).
-const FIVE_OR_LESS = '5️⃣ 5 Ingredients or Less';
-const QUICK_WEEKNIGHT = '⚡ Quick Weeknight';
+// ── Smart view filters — computed views, not assignable.
+const FIVE_OR_LESS = '5 or Less';
+const QUICK_WEEKNIGHT = 'Quick';
 const QUICK_WEEKNIGHT_MAX_MIN = 30;
 
-export const MEAL_CATEGORIES = ['All', '🔄 The Rotation', FIVE_OR_LESS, QUICK_WEEKNIGHT, ...CATEGORY_OPTIONS];
+// View tabs: these are the top-level view modes, NOT assignable to meals.
+const VIEW_FILTERS = ['All', 'The Rotation', FIVE_OR_LESS, QUICK_WEEKNIGHT];
+
+// Legacy export for anything consuming MEAL_CATEGORIES externally
+export const MEAL_CATEGORIES = [...VIEW_FILTERS, ...CATEGORY_OPTIONS];
 
 // Count ingredients from the structured list (source of truth) with a fallback
 // to the legacy array/string field for meals not yet upgraded.
@@ -220,7 +229,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
       && negativeTokens.every(t => !searchable.includes(t));
     let matchCat;
     if (category === 'All') matchCat = true;
-    else if (category === '🔄 The Rotation') matchCat = !!m.inRotation;
+    else if (category === 'The Rotation') matchCat = !!m.inRotation;
     else if (category === FIVE_OR_LESS) matchCat = getIngredientCount(m) > 0 && getIngredientCount(m) <= 5;
     else if (category === QUICK_WEEKNIGHT) {
       const mins = getTotalMinutes(m);
@@ -469,6 +478,18 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
     }
     exitSelectMode();
   };
+
+  // ── Single-meal type change (quick-preview) ────────────────────────────
+  const handleSetMealType = useCallback(async (mealId, newType) => {
+    try {
+      await db.meals.update(mealId, { category: newType });
+      onReload?.();
+      // Update quickPreview in place so the chip reflects instantly
+      setQuickPreview(prev => prev && prev.id === mealId ? { ...prev, category: newType } : prev);
+    } catch (err) {
+      onToast?.('Failed to update type: ' + err.message, 'error');
+    }
+  }, [onReload, onToast]);
 
   // ── Batch set category ────────────────────────────────────────────────────
   const handleBatchSetCategory = useCallback(async (newCategory) => {
@@ -876,49 +897,39 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
         </div>
       </div>
 
-      {/* ── Unified label bar — built-in categories + custom tags in one row.
-          "+" (compact, no text) sits first, ahead of "All", and opens the tag
-          manager to create a new label. Long-press a custom tag chip enters
-          rearrange/delete mode (drag to reorder, ✕ to delete) — built-in
-          categories stay fixed since they're structural (grouping/colors
-          live elsewhere), not user data. ── */}
+      {/* ── Row 1: View filter tabs — smart computed views (not assignable) ── */}
+      <div className="ml-view-filters">
+        {VIEW_FILTERS.map(v => (
+          <motion.button
+            key={v}
+            className={`ml-view-tab${category === v ? ' ml-view-active' : ''}`}
+            onClick={() => { hapticLight(); setCategory(v); }}
+            whileTap={{ scale: 0.96 }}
+          >
+            {v === 'The Rotation' ? '🔄 Rotation' : v}
+            {v === 'The Rotation' && rotationCount > 0 ? ` (${rotationCount})` : ''}
+            {category === v && (
+              <motion.span
+                layoutId="ml-view-indicator"
+                className="ml-view-underline"
+                transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+              />
+            )}
+          </motion.button>
+        ))}
+      </div>
+
+      {/* ── Row 2: Tag chips — user-created multi-select labels ── */}
       <div className="ml-labels-scroll" ref={categoryScrollRef}>
         <div className="ml-labels-track">
           <button
             className="ml-label-add-btn"
             onClick={() => { hapticLight(); setShowTagManager(true); }}
-            aria-label="Create a new label"
-            title="Create a new label"
+            aria-label="Create a new tag"
+            title="Create a new tag"
           >
             <Plus size={16} strokeWidth={2.5} />
           </button>
-
-          {MEAL_CATEGORIES.map(c => (
-            <motion.button
-              key={c}
-              className={`ml-label-chip${category === c ? ' ml-active' : ''}${c === '🔄 The Rotation' ? ' ml-rotation-chip' : ''}`}
-              onClick={() => setCategory(c)}
-              whileTap={{ scale: 0.93 }}
-              style={{ position: 'relative', overflow: 'hidden' }}
-            >
-              {c}{c === '🔄 The Rotation' && rotationCount > 0 ? ` (${rotationCount})` : ''}
-              {category === c && (
-                <motion.span
-                  layoutId="ml-active-indicator"
-                  style={{
-                    position: 'absolute',
-                    bottom: 0,
-                    left: '4px',
-                    right: '4px',
-                    height: '2px',
-                    borderRadius: '1px',
-                    background: 'var(--primary)',
-                  }}
-                  transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-                />
-              )}
-            </motion.button>
-          ))}
 
           {tagEditMode ? (
             <Reorder.Group
@@ -977,7 +988,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
             >
               <Check size={12} strokeWidth={3} /> Done
             </button>
-          ) : userTags.length > 0 && (
+          ) : (
             <button
               className="ml-label-chip ml-label-manage-btn"
               onClick={() => { hapticLight(); setShowTagManager(true); }}
@@ -1006,7 +1017,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
             onClick={() => setShowCategoryPicker(true)}
             disabled={selectedIds.size === 0}
           >
-            📁 Category
+            📁 Type
           </button>
           <button
             className="ml-select-toolbar-btn"
@@ -1301,11 +1312,19 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
               <motion.h3 className="ml-qp-title" layoutId={`ml-card-title-${quickPreview.id}`}>
                 {quickPreview.name || 'Untitled Recipe'}
               </motion.h3>
-              {quickPreview.category && quickPreview.category !== 'Dinners' && (
-                <span className="ml-tile-cat" style={{ position: 'static', marginBottom: 8 }}>
-                  {quickPreview.category}
-                </span>
-              )}
+              {/* ── Type picker (single-select) ── */}
+              <div className="ml-qp-type-row">
+                {TYPE_OPTIONS.map(t => (
+                  <button
+                    key={t}
+                    className={`ml-qp-type-chip${(quickPreview.category || 'Dinners') === t ? ' ml-qp-type-active' : ''}`}
+                    style={(quickPreview.category || 'Dinners') === t ? { background: TYPE_COLORS[t], borderColor: TYPE_COLORS[t], color: '#fff' } : undefined}
+                    onClick={() => handleSetMealType(quickPreview.id, t)}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
               {(quickPreview.created || quickPreview.createdAt) && (
                 <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', marginBottom: 8 }}>
                   Added: {new Date(quickPreview.created || quickPreview.createdAt).toLocaleDateString()}
@@ -1448,7 +1467,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
           >
             <div className="ml-sheet-handle" />
             <div className="ml-sheet-header">
-              <h3>Set Category</h3>
+              <h3>Set Type</h3>
               <button className="ml-sheet-close" onClick={() => setShowCategoryPicker(false)}>✕</button>
             </div>
             <p className="ml-sheet-subtitle">

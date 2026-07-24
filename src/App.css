@@ -24,7 +24,12 @@
   --surface: #f5f0e8;
   --text: #2c2c2c;
   --text-light: #666666;
-  --text-muted: #999999;
+  /* was #999999 — 2.85:1 against --card/--bg, below WCAG AA's 4.5:1 for
+     normal text. --text-muted is used everywhere as secondary/meta text
+     (counts, timestamps, subtitles) so this was reading as washed-out across
+     MealLibrary, Landing, etc. #6d6d6d clears 4.5:1 against --card, --bg,
+     and --surface-2. */
+  --text-muted: #6d6d6d;
   --border: #e8e2d8;
   --danger: #d32f2f;
   --success: #2e7d32;
@@ -1311,8 +1316,39 @@ body::before {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 8px 20px 12px;
+  padding: 8px 20px 10px;
+}
+.pk-specials-pinned {
   border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+}
+.pk-specials-food {
+  padding-top: 4px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.pk-expand-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 20px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.15s;
+}
+.pk-expand-toggle:active { color: var(--primary); }
+.pk-expand-count {
+  font-size: 10px;
+  background: var(--surface-2, #f0f0f0);
+  border-radius: 8px;
+  padding: 1px 6px;
+  font-weight: 700;
 }
 
 .pk-chip {
@@ -3681,15 +3717,7 @@ body::before {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
-.ml-rotation-chip {
-  border: 2px solid var(--primary) !important;
-  font-weight: 700 !important;
-}
-
-.ml-rotation-chip.ml-active {
-  background: var(--primary) !important;
-  color: white !important;
-}
+/* .ml-rotation-chip removed — rotation is now a view tab in .ml-view-filters */
 
 /* ── Responsive: desktop ── */
 @media (min-width: 768px) {
@@ -5348,12 +5376,55 @@ body::before {
    read off theme-aware --surface-2 / --border / --text, so dark mode just
    works via the existing [data-theme=dark] root variable overrides —
    no separate dark-mode override needed for the base chip. */
+/* ── View filter segmented control — smart views (All, Rotation, Quick, 5 or Less) ── */
+.ml-view-filters {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 10px 16px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.ml-view-tab {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.18s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.ml-view-tab.ml-view-active {
+  color: var(--primary);
+}
+
+.ml-view-underline {
+  position: absolute;
+  bottom: 0;
+  left: 8px;
+  right: 8px;
+  height: 2.5px;
+  border-radius: 2px;
+  background: var(--primary);
+}
+
 .ml-labels-scroll {
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
-  padding: 12px 0 0;
+  padding: 10px 0 0;
   margin-bottom: 0;
   border-bottom: 1px solid var(--border);
 }
@@ -6251,6 +6322,31 @@ body::before {
   flex-shrink: 0;
   font-size: 14px;
 }
+
+/* ── Quick-preview type picker row ── */
+.ml-qp-type-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+.ml-qp-type-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border: 1.5px solid var(--border);
+  border-radius: 13px;
+  background: var(--surface-2, #f5f5f5);
+  color: var(--text-light, #888);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.32, 0.72, 0, 1);
+  -webkit-tap-highlight-color: transparent;
+}
+.ml-qp-type-chip:active { transform: scale(0.93); }
+.ml-qp-type-active { font-weight: 700; }
 
 /* ── Quick-preview tag chips ── */
 .ml-qp-tags {
@@ -11310,7 +11406,10 @@ body::before {
   --surface-2: #2a2520;
   --text: #f5f0e8;
   --text-light: #b0a898;
-  --text-muted: #786e64;
+  /* was #786e64 — 2.97:1 against --card/--surface-2/--bg, same WCAG-AA
+     failure as the light-mode token above (see :root). #968e86 clears
+     4.5:1 against all three dark surfaces. */
+  --text-muted: #968e86;
   --border: #3e3730;
   --primary: #66bb6a;
   --primary-light: #81c784;
@@ -11585,6 +11684,10 @@ body::before {
 [data-theme="dark"] .pk-chip.clear {
   color: var(--danger);
   border-color: #5c2020;
+}
+
+[data-theme="dark"] .pk-expand-count {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 [data-theme="dark"] .pk-item {
@@ -23718,6 +23821,131 @@ select:focus-visible,
   background: rgba(255, 240, 235, 0.9);
   letter-spacing: 0.5px;
 }
+/* ── Inline qty dots on tiles (3-cell mini stock bar) ── */
+.pm-tile-qty {
+  display: flex;
+  gap: 2px;
+  justify-content: center;
+  margin-top: 1px;
+}
+.pm-tile-qty-dot {
+  width: 6px;
+  height: 3px;
+  border-radius: 1.5px;
+  background: rgba(120, 100, 70, 0.15);
+  transition: background 0.2s;
+}
+.pm-tile-qty-dot--on {
+  background: #5aa361;
+}
+/* LOW = only 1 dot lit → amber */
+.pm-tile-qty-dot--on:first-child:last-of-type,
+.pm-tile-qty .pm-tile-qty-dot--on ~ .pm-tile-qty-dot:not(.pm-tile-qty-dot--on) {
+  /* handled by count below */
+}
+/* Color the dots by fill level via adjacent sibling count:
+   1 dot on (LOW) = amber, 2 (MEDIUM) = goldenrod, 3 (FULL) = green */
+.pm-tile-qty-dot--on + .pm-tile-qty-dot:not(.pm-tile-qty-dot--on) ~ .pm-tile-qty-dot {
+  /* no filled dots after the first gap — already handled */
+}
+
+/* ── Collapsed staple group header ── */
+.pm-staple-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 4px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  border-bottom: 1px solid rgba(120, 100, 70, 0.18);
+}
+.pm-staple-group-header .pm-staple-group-title {
+  margin: 0;
+  border-bottom: none;
+  padding-bottom: 0;
+  flex: 0 0 auto;
+}
+.pm-staple-group-summary {
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+  color: var(--text-muted);
+  flex: 1;
+  text-align: right;
+  white-space: nowrap;
+}
+.pm-staple-chevron {
+  font-size: 10px;
+  color: #8a7355;
+  transition: transform 0.2s ease;
+  flex: 0 0 auto;
+}
+.pm-staple-chevron--open {
+  transform: rotate(90deg);
+}
+
+/* ── Undo toast (shared between Pantry and Bar) ── */
+.pm-undo-toast {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #3a2f20;
+  color: #f5eed6;
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  z-index: 90;
+  font-size: 13px;
+}
+.pm-undo-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pm-undo-btn {
+  flex: 0 0 auto;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  background: #c88f4a;
+  color: #2a1f10;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.pm-undo-btn:active {
+  transform: scale(0.95);
+  background: #d9a55c;
+}
+
+/* ── Inline bottle qty dots (Bar shelves) ── */
+.mybar-bottle-qty {
+  display: flex;
+  gap: 2px;
+  justify-content: center;
+  margin-top: 1px;
+}
+.mybar-bottle-qty-dot {
+  width: 5px;
+  height: 2.5px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.15);
+  transition: background 0.2s;
+}
+.mybar-bottle-qty-dot--on {
+  background: #5aa361;
+}
+
 .pm-fresh-dot {
   position: absolute;
   top: 7px;
@@ -23745,13 +23973,13 @@ select:focus-visible,
 .pm-staple-group { margin-top: 12px; }
 .pm-staple-group:first-of-type { margin-top: 6px; }
 .pm-staple-group-title {
-  margin: 0 0 6px;
-  padding-bottom: 4px;
+  margin: 0;
+  padding-bottom: 0;
   font-family: 'Press Start 2P', monospace;
   font-size: 7px;
   letter-spacing: 1px;
   color: #8a7355;
-  border-bottom: 1px solid rgba(120, 100, 70, 0.22);
+  border-bottom: none;
 }
 .pm-grid--staple {
   grid-template-columns: repeat(3, 1fr);
