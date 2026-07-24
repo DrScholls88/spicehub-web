@@ -725,7 +725,7 @@ function Produce({ shape, c, s }) {
 }
 
 // Public render component.
-export function IngredientSprite({ name, size = 44, glow = false }) {
+export function IngredientSprite({ name, size = 44, glow = false, fillLevel }) {
   const spec = spriteSpec(name);
   const c = spec.palette;
   const wrapCls = `bar-sprite ${glow ? 'bar-sprite--glow' : ''}`;
@@ -748,6 +748,34 @@ export function IngredientSprite({ name, size = 44, glow = false }) {
     case 'bottle':
     default:         inner = <Bottle shape={spec.shape} c={c} s={size} />; break;
   }
+
+  // Fill-level overlay: dims the "empty" portion of the sprite.
+  // fillLevel follows QTY_FILL enum: 0=EMPTY, 1=LOW, 2=MEDIUM, 3=FULL.
+  // 0 (EMPTY) is handled by the existing CSS class `mybar-bottle--dry`.
+  // 3 (FULL) and undefined need no overlay.
+  if (fillLevel !== undefined && fillLevel >= 1 && fillLevel <= 2) {
+    const emptyPct = fillLevel === 1 ? 67 : 33; // LOW=67% empty, MEDIUM=33% empty
+    inner = (
+      <span style={{ position: 'relative', display: 'inline-block' }}>
+        {inner}
+        <span
+          className="bar-sprite-fill-overlay"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: `${emptyPct}%`,
+            background: 'linear-gradient(to bottom, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.15) 100%)',
+            pointerEvents: 'none',
+            borderRadius: '2px',
+          }}
+          aria-hidden="true"
+        />
+      </span>
+    );
+  }
+
   return <span className={wrapCls} title={name}>{inner}</span>;
 }
 

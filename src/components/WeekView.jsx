@@ -385,6 +385,7 @@ export default function WeekView({
   useBackHandler(selectMode, () => { setSelectMode(false); setSelectedDates(new Set()); }, 'week-select');
   useBackHandler(grocerySelectMode, () => { setGrocerySelectMode(false); setGroceryDays(new Set()); }, 'week-grocery-select');
   const [showCustomDayTagInput, setShowCustomDayTagInput] = useState(false);
+  const [showFoodShortcuts, setShowFoodShortcuts] = useState(false);
   const [newDayTagName, setNewDayTagName] = useState('');
   const [newDayTagIcon, setNewDayTagIcon] = useState('🏷️');
 
@@ -579,8 +580,11 @@ export default function WeekView({
             <button className="pk-close" onClick={closePicker}>✕</button>
           </div>
           {!isPastDay && (<>
-            <div className="pk-specials" style={{ maxHeight: 120, overflowY: 'auto', flexWrap: 'wrap' }}>
-              {specialDays.map(s => (
+            {(() => {
+              const PINNED_IDS = new Set(['__eat_out__', '__leftovers__', '__dealers_choice__', '__skip__']);
+              const pinned = specialDays.filter(s => PINNED_IDS.has(s.id));
+              const food = specialDays.filter(s => !PINNED_IDS.has(s.id));
+              const renderChip = (s) => (
                 <button key={s.id} className="pk-chip"
                   onClick={() => {
                     if (isActiveDateCurrentWeek) {
@@ -608,30 +612,52 @@ export default function WeekView({
                     >✕</span>
                   )}
                 </button>
-              ))}
-              {onAddCustomDayTag && (
-                <button
-                  className="pk-chip"
-                  onClick={() => setShowCustomDayTagInput(true)}
-                  style={{ borderStyle: 'dashed', opacity: 0.7 }}
-                >
-                  <Plus size={12} strokeWidth={2.5} /> Custom
-                </button>
-              )}
-              {currentMeal && (
-                <button className="pk-chip clear"
-                  onClick={() => {
-                    if (isActiveDateCurrentWeek) {
-                      onSetSpecial(pickerDay, null);
-                    } else {
-                      onSpinnerComplete([{ date: activeDate, meal: null }]);
-                    }
-                    closePicker();
-                  }}>
-                  ✕ Clear
-                </button>
-              )}
-            </div>
+              );
+              return (
+                <>
+                  {/* Pinned row — always visible utility options */}
+                  <div className="pk-specials pk-specials-pinned">
+                    {pinned.map(renderChip)}
+                    {currentMeal && (
+                      <button className="pk-chip clear"
+                        onClick={() => {
+                          if (isActiveDateCurrentWeek) {
+                            onSetSpecial(pickerDay, null);
+                          } else {
+                            onSpinnerComplete([{ date: activeDate, meal: null }]);
+                          }
+                          closePicker();
+                        }}>
+                        ✕ Clear
+                      </button>
+                    )}
+                  </div>
+                  {/* Expandable row — food shortcuts + custom tags */}
+                  <button
+                    className="pk-expand-toggle"
+                    onClick={() => setShowFoodShortcuts(v => !v)}
+                  >
+                    {showFoodShortcuts ? '▾ Food shortcuts' : '▸ Food shortcuts'}
+                    <span className="pk-expand-count">{food.length}</span>
+                  </button>
+                  {showFoodShortcuts && (
+                    <div className="pk-specials pk-specials-food" style={{ animation: 'fadeSlideDown .2s cubic-bezier(.32,.72,0,1)' }}>
+                      {food.map(renderChip)}
+                      {onAddCustomDayTag && (
+                        <button
+                          className="pk-chip"
+                          onClick={() => setShowCustomDayTagInput(true)}
+                          style={{ borderStyle: 'dashed', opacity: 0.7 }}
+                        >
+                          <Plus size={12} strokeWidth={2.5} /> Custom
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+
             {showCustomDayTagInput && (
               <div className="pk-custom-input" style={{
                 display: 'flex', gap: 6, alignItems: 'center', padding: '6px 0',

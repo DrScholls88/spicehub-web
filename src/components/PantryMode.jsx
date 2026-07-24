@@ -96,6 +96,9 @@ export default function PantryMode({ meals, onViewDetail, onClose, onAddToGrocer
   const [showCatalog, setShowCatalog] = useState(false);
   const [quickAddLimit, setQuickAddLimit] = useState(FRESH_QUICK_ADDS.length);
   const quickSentinelRef = useRef(null);
+  const [collapsedGroups, setCollapsedGroups] = useState(new Set());
+  const [undoItem, setUndoItem] = useState(null); // { record, timer }
+  const longPressRef = useRef(null);
 
   // Load the kitchen slice of the unified inventory.
   useEffect(() => {
@@ -248,9 +251,85 @@ export default function PantryMode({ meals, onViewDetail, onClose, onAddToGrocer
 
   const removeItem = useCallback((name) => {
     const key = String(name).toLowerCase().trim();
+    // Stash the record for undo, then hide from UI immediately.
+    const stashed = records.find(r => r.ingredient === key);
     setRecords(prev => prev.filter(r => r.ingredient !== key));
-    removeFromBarInventory(key);
     setLedger(null);
+    // Clear any prior undo timer.
+    setUndoItem(prev => { if (prev?.timer) clearTimeout(prev.timer); return null; });
+    const timer = setTimeout(() => {
+      removeFromBarInventory(key);
+      setUndoItem(null);
+    }, 5000);
+    setUndoItem({ record: stashed || { ingredient: key }, timer });
+    if (navigator.vibrate) navigator.vibrate([12, 30, 12]);
+  }, [records]);
+
+  // Undo: restore the stashed record and cancel the pending delete.
+  const undoRemove = useCallback(() => {
+    if (!undoItem) return;
+    clearTimeout(undoItem.timer);
+    if (undoItem.record?.ingredient) {
+      setRecords(prev => [...prev, undoItem.record]);
+    }
+    setUndoItem(null);
+    if (navigator.vibrate) navigator.vibrate(8);
+  }, [undoItem]);
+
+  // Cleanup undo timer on unmount.
+  useEffect(() => () => {
+    if (undoItem?.timer) clearTimeout(undoItem.timer);
+  }, [undoItem]);
+
+  // Auto-collapse fully-stocked staple groups on first load.
+  useEffect(() => {
+    if (!loaded) return;
+    const fullyStocked = new Set();
+    for (const group of STAPLE_GROUPS) {
+      if (group.items.every(name => stapleStocked(name))) {
+        fullyStocked.add(group.label);
+      }
+    }
+    setCollapsedGroups(fullyStocked);
+  }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggleGroup = useCallback((label) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label); else next.add(label);
+      return next;
+    });
+    if (navigator.vibrate) navigator.vibrate(6);
+  }, []);
+
+  // Long-press: step qty down one level without opening ledger.
+  const handleTilePressStart = useCallback((name) => {
+    longPressRef.current = setTimeout(() => {
+      longPressRef.current = 'fired';
+      const rec = recordByName(name);
+      const level = rec?.qtyLevel || 'FULL';
+      const idx = QTY_LEVELS.indexOf(level);
+      if (idx > 0) {
+        setLevel(name, QTY_LEVELS[idx - 1]);
+        if (navigator.vibrate) navigator.vibrate([20, 40, 20]);
+      } else {
+        // Already EMPTY — long-press restocks to FULL
+        setLevel(name, 'FULL', { restock: true });
+        if (navigator.vibrate) navigator.vibrate([10, 20, 10, 20, 10]);
+      }
+    }, 450);
+  }, [recordByName, setLevel]);
+
+  const handleTilePressEnd = useCallback((e) => {
+    if (longPressRef.current === 'fired') {
+      // Suppress the click event that would open ledger.
+      e?.preventDefault?.();
+      longPressRef.current = null;
+      return true; // signal: was long-press
+    }
+    if (longPressRef.current) clearTimeout(longPressRef.current);
+    longPressRef.current = null;
+    return false;
   }, []);
 
   const openLedger = useCallback((name) => {
@@ -359,6 +438,7 @@ export default function PantryMode({ meals, onViewDetail, onClose, onAddToGrocer
                 {perishables.map(rec => {
                   const fr = rec.qtyLevel === 'EMPTY' ? null : freshnessOf(rec.addedAt);
                   const isDry = rec.qtyLevel === 'EMPTY';
+                  const fill = QTY_FILL[rec.qtyLevel] ?? 3;
                   return (
                     <motion.button
                       key={rec.ingredient}
@@ -371,13 +451,21 @@ export default function PantryMode({ meals, onViewDetail, onClose, onAddToGrocer
                       ].filter(Boolean).join(' ')}
                       variants={tileV}
                       whileTap={{ scale: 0.93 }}
-                      onClick={() => openLedger(rec.ingredient)}
-                      title={rec.displayName || rec.ingredient}
+                      onPointerDown={() => handleTilePressStart(rec.ingredient)}
+                      onPointerUp={(e) => { if (!handleTilePressEnd(e)) openLedger(rec.ingredient); }}
+                      onPointerLeave={() => handleTilePressEnd()}
+                      title={`${rec.displayName || rec.ingredient} · ${QTY_LABEL[rec.qtyLevel] || 'Full up'} · Hold to adjust`}
                     >
                       <span className="pm-tile-dish">
-                        <IngredientSprite name={rec.ingredient} size={36} />
+                        <IngredientSprite name={rec.ingredient} size={36} fillLevel={fill} />
                       </span>
                       <span className="pm-tile-name">{rec.displayName || rec.ingredient}</span>
+                      {/* Inline stock dots — 3 cells mirroring the ledger stepper */}
+                      <span className="pm-tile-qty" aria-label={QTY_LABEL[rec.qtyLevel] || 'Full up'}>
+                        {[1, 2, 3].map(i => (
+                          <span key={i} className={`pm-tile-qty-dot${fill >= i ? ' pm-tile-qty-dot--on' : ''}`} />
+                        ))}
+                      </span>
                       <span
                         className={`pm-status-bar${fr ? ` pm-status-bar--${fr}` : ''}`}
                         title={fr ? freshDotTitle[fr] : undefined}
@@ -401,33 +489,60 @@ export default function PantryMode({ meals, onViewDetail, onClose, onAddToGrocer
               <span aria-hidden="true">🏺</span> STAPLES
               <span className="pm-zone-hint">THE DRY PANTRY (Staples Vault)</span>
             </h3>
-            {STAPLE_GROUPS.map(group => (
-              <div className="pm-staple-group" key={group.label}>
-                <h4 className="pm-staple-group-title">{group.label}</h4>
-                <motion.div className="pm-grid pm-grid--staple" variants={zoneV} initial="hidden" animate="visible">
-                  {group.items.map(name => {
-                    const stocked = stapleStocked(name);
-                    return (
-                      <motion.button
-                        key={name}
-                        type="button"
-                        className={`pm-tile pm-tile--staple ${stocked ? '' : 'pm-tile--out'}`}
-                        variants={tileV}
-                        whileTap={{ scale: 0.93 }}
-                        onClick={() => openLedger(name)}
-                        title={stocked ? name : `${name} — out of stock`}
-                      >
-                        <span className="pm-tile-dish">
-                          <IngredientSprite name={name} size={30} />
-                        </span>
-                        <span className="pm-tile-name">{name}</span>
-                        {!stocked && <span className="pm-out-tag">OUT</span>}
-                      </motion.button>
-                    );
-                  })}
-                </motion.div>
-              </div>
-            ))}
+            {STAPLE_GROUPS.map(group => {
+              const stockedCount = group.items.filter(n => stapleStocked(n)).length;
+              const isCollapsed = collapsedGroups.has(group.label);
+              return (
+                <div className="pm-staple-group" key={group.label}>
+                  <button
+                    type="button"
+                    className="pm-staple-group-header"
+                    onClick={() => toggleGroup(group.label)}
+                    aria-expanded={!isCollapsed}
+                  >
+                    <h4 className="pm-staple-group-title">{group.label}</h4>
+                    <span className="pm-staple-group-summary">
+                      {stockedCount}/{group.items.length} stocked
+                    </span>
+                    <span className={`pm-staple-chevron${isCollapsed ? '' : ' pm-staple-chevron--open'}`} aria-hidden="true">▸</span>
+                  </button>
+                  {!isCollapsed && (
+                    <motion.div className="pm-grid pm-grid--staple" variants={zoneV} initial="hidden" animate="visible">
+                      {group.items.map(name => {
+                        const stocked = stapleStocked(name);
+                        const rec = recordByName(name);
+                        const level = rec?.qtyLevel || (stocked ? 'FULL' : 'EMPTY');
+                        const fill = QTY_FILL[level] ?? (stocked ? 3 : 0);
+                        return (
+                          <motion.button
+                            key={name}
+                            type="button"
+                            className={`pm-tile pm-tile--staple ${stocked ? '' : 'pm-tile--out'}`}
+                            variants={tileV}
+                            whileTap={{ scale: 0.93 }}
+                            onPointerDown={() => handleTilePressStart(name)}
+                            onPointerUp={(e) => { if (!handleTilePressEnd(e)) openLedger(name); }}
+                            onPointerLeave={() => handleTilePressEnd()}
+                            title={`${name} · ${QTY_LABEL[level] || 'Full up'} · Hold to adjust`}
+                          >
+                            <span className="pm-tile-dish">
+                              <IngredientSprite name={name} size={30} fillLevel={fill} />
+                            </span>
+                            <span className="pm-tile-name">{name}</span>
+                            <span className="pm-tile-qty" aria-label={QTY_LABEL[level] || 'Full up'}>
+                              {[1, 2, 3].map(i => (
+                                <span key={i} className={`pm-tile-qty-dot${fill >= i ? ' pm-tile-qty-dot--on' : ''}`} />
+                              ))}
+                            </span>
+                            {!stocked && <span className="pm-out-tag">OUT</span>}
+                          </motion.button>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -605,6 +720,24 @@ export default function PantryMode({ meals, onViewDetail, onClose, onAddToGrocer
               onRemove={removeItem}
               onClose={() => setShowCatalog(false)}
             />
+          )}
+        </AnimatePresence>
+
+        {/* ── Undo toast — 5-second window to restore removed items ── */}
+        <AnimatePresence>
+          {undoItem && (
+            <motion.div
+              className="pm-undo-toast"
+              initial={{ y: 60, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 60, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+            >
+              <span className="pm-undo-text">
+                Removed <strong>{undoItem.record?.displayName || undoItem.record?.ingredient}</strong>
+              </span>
+              <button className="pm-undo-btn" onClick={undoRemove}>UNDO</button>
+            </motion.div>
           )}
         </AnimatePresence>
       </motion.div>
