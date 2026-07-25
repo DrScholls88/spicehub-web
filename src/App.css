@@ -555,7 +555,7 @@ body::before {
   cursor: pointer;
   padding: 8px;
   border-radius: var(--radius-sm);
-  transition: background 0.15s;
+  transition: background 0.15s, color 0.15s;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -564,6 +564,11 @@ body::before {
   min-height: 44px;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+  /* Lucide icons render via stroke="currentColor" with no color set here,
+     <button> falls back to the browser's system "buttontext" color instead
+     of inheriting the app's theme — untied to --text/data-theme, so it can
+     land close to the card/backdrop color in either mode. Pin it. */
+  color: var(--text-light);
 }
 
 .btn-icon:hover {
@@ -5019,14 +5024,21 @@ body::before {
   border: none;
   font-size: 20px;
   cursor: pointer;
-  transition: filter 0.2s, transform 0.2s;
+  transition: filter 0.2s, transform 0.2s, color 0.2s;
   padding: 4px;
   opacity: 0.5;
+  /* Star uses fill="currentColor" — same unset-color-on-<button> bug as
+     .btn-icon (falls back to the browser's system button color instead of
+     the theme). Muted outline tone; filled state below overrides to gold. */
+  color: var(--text-light);
 }
 
 .star-btn.filled {
   opacity: 1;
   filter: drop-shadow(0 0 2px rgba(255, 193, 7, 0.6));
+  /* WCAG-checked gold — 3:1 against light --card, 4.9:1 against dark --card,
+     unlike the raw #ffd700 used elsewhere for badges which is ~1.4:1 on white. */
+  color: #c18a00;
 }
 
 .star-btn:hover {
@@ -5166,6 +5178,11 @@ body::before {
   justify-content: center;
   transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s, transform 0.2s;
   flex-shrink: 0;
+  /* Unfavorited state — JSX sets style={{ color: isFavorite ? '#e53935' :
+     'inherit' }}, and 'inherit' was pulling from the browser's unset
+     <button> system color instead of the theme. Filled/favorited state is
+     unaffected (JSX pins it to #e53935 directly). */
+  color: var(--text-light);
 }
 
 .heart-btn-detail:hover {
@@ -5291,7 +5308,7 @@ body::before {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 6px 12px;
-  background: #fafafa;
+  background: var(--surface-2);
   border-radius: 10px;
   padding: 12px;
 }
@@ -5308,7 +5325,10 @@ body::before {
 }
 .detail-nutrition-label {
   font-size: 12px;
-  color: var(--text-secondary, #666);
+  /* --text-secondary was never defined anywhere — this always used the
+     #666 fallback, which fails contrast in dark mode (2.57:1 against
+     --card). Same bug as detail-description-bar's inline style. */
+  color: var(--text-light);
   font-weight: 500;
 }
 .detail-nutrition-value {
@@ -7433,6 +7453,27 @@ body::before {
 .gl-btn-store.gl-btn-store-assigned {
   background: transparent;
   color: #FF6B35;
+}
+
+/* Deep-link "search this item on [Store]" — Phase 3, harmonization plan */
+.gl-btn-search {
+  width: 40px;
+  height: 44px;
+  border: none;
+  background: transparent;
+  color: rgba(245, 255, 245, 0.35);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
+  -webkit-tap-highlight-color: transparent;
+}
+.gl-btn-search:active {
+  transform: scale(0.92);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 /* ── Pantry & Remove buttons ── */
@@ -24299,6 +24340,18 @@ select:focus-visible,
   font-weight: 600;
   cursor: pointer;
 }
+.pm-ledger-rundry {
+  padding: 11px 14px;
+  border: 1px solid rgba(217, 119, 6, 0.5);
+  border-radius: 10px;
+  background: transparent;
+  color: #b06a05;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pm-ledger-rundry:active { transform: scale(0.98); }
 .pm-ledger-cook {
   flex: 1;
   padding: 11px 14px;

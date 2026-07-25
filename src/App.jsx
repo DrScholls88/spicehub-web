@@ -34,7 +34,8 @@ import useBackHandler from './hooks/useBackHandler';
 import useRootBackGuard from './hooks/useRootBackGuard';
 import useSwipeDismiss from './hooks/useSwipeDismiss';
 import { planWeek, pickForSlot, buildRecencyMap } from './lib/weekPlanner';
-import { getInventory } from './lib/pantryDomain';
+import { getInventory, isStaple } from './lib/pantryDomain';
+import { normalizeIngredient } from './utils/ingredientNormalizer.js';
 import { loadLandingLayout, saveLandingLayout, loadSpinConstraints, saveSpinConstraints } from './lib/landingLayout';
 import { renderRecipeExport, exportViaShare } from './utils/exportRenderer.js';
 import { compressRecipeImage } from './imageCompressor.js';
@@ -169,6 +170,18 @@ export default function App() {
     () => fridgeInventory.map(r => r.ingredient).filter(Boolean),
     [fridgeInventory]
   );
+  // Phase 2a (Grocery↔Pantry harmonization): canonical-name lookup so grocery
+  // building can cheaply ask "is this already in the real pantry, and at what
+  // qtyLevel" without re-scanning the array per ingredient.
+  const fridgeInventoryByCanon = useMemo(() => {
+    const map = new Map();
+    for (const rec of fridgeInventory) {
+      const canon = normalizeIngredient(rec.ingredient || '')?.canonical
+        || String(rec.ingredient || '').toLowerCase().trim();
+      if (canon) map.set(canon, rec);
+    }
+    return map;
+  }, [fridgeInventory]);
   const refreshFridgeInventory = useCallback(async () => {
     try {
       const records = await getInventory({ domain: 'kitchen' });
@@ -1116,6 +1129,25 @@ useEffect(() => {
   // ── Grocery list ──────────────────────────────────────────────────────────────
   // dayIndices: optional DOW indices. options.plan: override weekPlan (post-spin).
   // options.merge (default true): keep checked/store for matching names on rebuild.
+  // Real Pantry↔Grocery harmonization (Phase 2a): cross-check every ingredient
+  // against the actual kitchen inventory (fridgeInventory — the kitchen-domain
+  // slice of the unified db.barInventory, see pantryDomain.getInventory)
+  // instead of dumping everything onto the list unconditionally. Two ways an
+  // ingredient is already covered:
+  //   1. It has an explicit barInventory record and isn't marked EMPTY.
+  //   2. It's a staple (pantryDomain.isStaple) with NO explicit record — the
+  //      "always assumed stocked" default — UNLESS the user has explicitly
+  //      run it dry (an explicit EMPTY record always wins over the default).
+  // Covered items still show up, just muted in Grocery's "Pantry Covered"
+  // section (item.covered = true) — never silently hidden — so a real
+  // shortage is always one tap away from becoming an active grocery item.
+  const resolveIngredientCoverage = useCallback((foodName) => {
+    const canon = normalizeIngredient(foodName || '')?.canonical || String(foodName || '').toLowerCase().trim();
+    const rec = canon ? fridgeInventoryByCanon.get(canon) : null;
+    if (rec) return rec.qtyLevel !== 'EMPTY';
+    return isStaple(foodName);
+  }, [fridgeInventoryByCanon]);
+
   const buildGroceryList = useCallback((dayIndices, options = {}) => {
     const planSource = Array.isArray(options.plan) ? options.plan : weekPlan;
     const merge = options.merge !== false;
@@ -1143,7 +1175,8 @@ useEffect(() => {
           if (!items[key]) {
             const rememberedStore = storeMemory[key] || '';
             const category = si.category || categorizeIngredient(si.name || name);
-            items[key] = { name, checked: false, store: rememberedStore, category, _struct: si };
+            const covered = resolveIngredientCoverage(si.name || base);
+            items[key] = { name, checked: false, store: rememberedStore, category, _struct: si, covered };
           }
         });
         return;
@@ -1158,7 +1191,8 @@ useEffect(() => {
         if (!items[key]) {
           const rememberedStore = storeMemory[key] || '';
           const category = metaMap[key] || categorizeIngredient(ing);
-          items[key] = { name: ing, checked: false, store: rememberedStore, category };
+          const covered = resolveIngredientCoverage(ing);
+          items[key] = { name: ing, checked: false, store: rememberedStore, category, covered };
         }
       });
     });
@@ -1176,36 +1210,57 @@ useEffect(() => {
           checked: !!prev.checked,
           store: item.store || prev.store || '',
           category: item.category || prev.category || '',
+          // A manual promote/demote in Grocery (Phase 2b) always outranks the
+          // freshly-recomputed coverage guess on rebuild.
+          covered: typeof prev.covered === 'boolean' ? prev.covered : item.covered,
         };
       });
     }
 
     setGroceryItems(next);
     setTab('grocery');
-  }, [weekPlan, groceryItems]);
+  }, [weekPlan, groceryItems, resolveIngredientCoverage]);
 
   // Keep the early-declared ref pointing at the latest buildGroceryList
   // (see handleSpinnerCompleteForDates — avoids use-before-init in deps).
   useEffect(() => { buildGroceryListRef.current = buildGroceryList; }, [buildGroceryList]);
 
-  // ── Add quest items to grocery (Bar → Grocery bridge) ───────────────────────
+  // ── Add quest items to grocery (Kitchen/Bar → Grocery bridge) ────────────
+  // Used by Almost-There meal/drink cards AND Pantry/My Bar's Run Dry action.
+  // An ingredient can already be sitting in groceryItems as a `covered: true`
+  // row from a prior buildGroceryList pass (see Phase 2a) — that's not a
+  // duplicate to silently skip, it's exactly the item that just ran out.
+  // Un-cover + re-activate it in place instead of adding a second row.
   const handleAddToGrocery = useCallback((questItems) => {
     if (!questItems || questItems.length === 0) return;
     const storeMemory = window._storeMemory || {};
     setGroceryItems(prev => {
-      const existingKeys = new Set(prev.map(i => i.name.toLowerCase().trim()));
-      const newItems = questItems
-        .filter(qi => !existingKeys.has(qi.name.toLowerCase().trim()))
-        .map(qi => ({
+      const byKey = new Map(prev.map((i, idx) => [i.name.toLowerCase().trim(), idx]));
+      const next = [...prev];
+      const additions = [];
+      for (const qi of questItems) {
+        const key = qi.name.toLowerCase().trim();
+        const existingIdx = byKey.get(key);
+        if (existingIdx !== undefined) {
+          const existing = next[existingIdx];
+          if (existing.covered || existing.checked) {
+            next[existingIdx] = { ...existing, covered: false, checked: false };
+          }
+          // else: already an active, uncovered row for this ingredient — leave it.
+          continue;
+        }
+        additions.push({
           name: qi.name,
           checked: false,
-          store: storeMemory[qi.name.toLowerCase().trim()] || '',
+          covered: false,
+          store: storeMemory[key] || '',
           tag: qi.tag || 'bar-quest',
           questDrinkId: qi.questDrinkId,
           questName: qi.questName,
-        }));
-      if (newItems.length === 0) return prev;
-      return [...prev, ...newItems];
+        });
+      }
+      if (additions.length === 0 && next.every((item, i) => item === prev[i])) return prev;
+      return [...next, ...additions];
     });
     const count = questItems.length;
     showToast(`📜 ${count} ingredient${count !== 1 ? 's' : ''} added to grocery quest!`, 'success');
@@ -1616,6 +1671,8 @@ useEffect(() => {
             onPlayVideo={openPipForMeal}
             onLoadStarterPack={handleAddStarterKit}
             onMoveToBar={handleMoveMealToBar}
+            fridgeInventory={fridgeInventory}
+            onAddMissingToGrocery={handleAddToGrocery}
           />
         )}
         {tab === 'bar' && (

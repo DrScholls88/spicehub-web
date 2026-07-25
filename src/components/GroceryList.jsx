@@ -23,15 +23,30 @@ const DEPT_EMOJI = {
   'Garnish':           '🍒',
 };
 
+// searchUrl: item name gets URL-encoded and appended. Deep-link search only —
+// no cart automation, no credentials (see harmonization plan Phase 3; the
+// credential-based Hy-Vee cart integrations in the source doc were rejected
+// outright). Every pattern below was verified live 2026-07-25, not guessed:
+// Trader Joe's DOES have a real product search (contrary to earlier
+// assumption); Costco's is /s?keyword= not /CatalogSearch?keyword=; Hy-Vee's
+// param is `search`, not `q`. NewPi CoOp's own site search is blog/content
+// only (no product catalog), so it's deliberately omitted rather than
+// shipping a misleading link — same reasoning as `other`, which has no real
+// site to link to at all.
 const STORES = [
-  { id: 'target',     name: 'Target',       color: '#cc0000', logo: 'https://www.google.com/s2/favicons?domain=target.com&sz=32' },
-  { id: 'traderjoes', name: "Trader Joe's",  color: '#c41e3a', logo: 'https://www.google.com/s2/favicons?domain=traderjoes.com&sz=32' },
-  { id: 'hyvee',      name: 'HyVee',         color: '#e31837', logo: 'https://www.google.com/s2/favicons?domain=hy-vee.com&sz=32' },
-  { id: 'costco',     name: 'Costco',        color: '#005daa', logo: 'https://www.google.com/s2/favicons?domain=costco.com&sz=32' },
+  { id: 'target',     name: 'Target',       color: '#cc0000', logo: 'https://www.google.com/s2/favicons?domain=target.com&sz=32', searchUrl: 'https://www.target.com/s?searchTerm=' },
+  { id: 'traderjoes', name: "Trader Joe's",  color: '#c41e3a', logo: 'https://www.google.com/s2/favicons?domain=traderjoes.com&sz=32', searchUrl: 'https://www.traderjoes.com/home/search?q=' },
+  { id: 'hyvee',      name: 'HyVee',         color: '#e31837', logo: 'https://www.google.com/s2/favicons?domain=hy-vee.com&sz=32', searchUrl: 'https://www.hy-vee.com/aisles-online/search?search=' },
+  { id: 'costco',     name: 'Costco',        color: '#005daa', logo: 'https://www.google.com/s2/favicons?domain=costco.com&sz=32', searchUrl: 'https://www.costco.com/s?keyword=' },
   { id: 'newpi',      name: 'NewPi CoOp',    color: '#2d8632', logo: 'https://www.google.com/s2/favicons?domain=newpi.coop&sz=32' },
   { id: 'other',      name: 'Other',         color: '#666',    logo: '' },
 ];
 
+// PANTRY_ID is a LOCAL UI sentinel only (drag-drop target id / picker option
+// key) — it is never persisted and no longer doubles as a fake "store" value.
+// Whether an item is covered by the real pantry/bar inventory lives in
+// item.covered (set by App.jsx's buildGroceryList from db.barInventory via
+// pantryDomain.getInventory — see project_grocery_pantry_fake_toggle memory).
 const PANTRY_ID = '__pantry__';
 const PANTRY_STORE = { id: PANTRY_ID, name: 'In Pantry', color: '#4caf50', logo: '' };
 
@@ -223,14 +238,25 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
     setItems(prev => prev.filter((_, i) => !indices.includes(i)));
   }, [setItems]);
 
-  const markAsPantry = useCallback((indices, names) => {
-    names.forEach(n => rememberStore(n, PANTRY_ID));
-    setItems(prev => prev.map((item, i) => indices.includes(i) ? { ...item, store: PANTRY_ID } : item));
+  // ── Real Pantry↔Grocery sync (Phase 2b) ──────────────────────────────────
+  // Promoting an item is "I bought it" — it really stocks db.barInventory
+  // (qtyLevel: FULL), not just a display-only toggle on the grocery row.
+  const promoteToInventory = useCallback((indices, names) => {
+    names.forEach(n => addToBarInventory(n, { qtyLevel: 'FULL' }));
+    setItems(prev => prev.map((item, i) =>
+      indices.includes(i) ? { ...item, covered: true, checked: true } : item
+    ));
   }, [setItems]);
 
-  const unmarkPantry = useCallback((indices, names) => {
-    names.forEach(n => rememberStore(n, ''));
-    setItems(prev => prev.map((item, i) => indices.includes(i) ? { ...item, store: '' } : item));
+  // Demoting only flips the grocery-side flag back ("actually I still need
+  // this") — it deliberately does NOT touch db.barInventory. A staple's
+  // "assumed stocked" default or a real inventory record should only change
+  // via the Pantry/My Bar screens themselves (Run Dry etc.), not a Grocery
+  // list toggle, so real stock data stays the single source of truth.
+  const demoteFromInventory = useCallback((indices, names) => {
+    setItems(prev => prev.map((item, i) =>
+      indices.includes(i) ? { ...item, covered: false, checked: false } : item
+    ));
   }, [setItems]);
 
   const setStore = useCallback((indices, names, storeId) => {
@@ -246,8 +272,8 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
   const handleDrop = (e, storeId) => {
     e.preventDefault();
     if (draggedItems) {
-      if (storeId === PANTRY_ID) markAsPantry(draggedItems.indices, draggedItems.names);
-      else if (storeId === 'unsorted') unmarkPantry(draggedItems.indices, draggedItems.names);
+      if (storeId === PANTRY_ID) promoteToInventory(draggedItems.indices, draggedItems.names);
+      else if (storeId === 'unsorted') setStore(draggedItems.indices, draggedItems.names, '');
       else setStore(draggedItems.indices, draggedItems.names, storeId);
     }
     setDraggedItems(null);
@@ -272,6 +298,14 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
   const batchAssignStore = (storeId) => {
     selectedItems.forEach(i => rememberStore(items[i].name, storeId));
     setItems(prev => prev.map((item, i) => selectedItems.has(i) ? { ...item, store: storeId } : item));
+    setSelectedItems(new Set());
+    setBatchStoreOverlayOpen(false);
+    setBatchMode(false);
+  };
+
+  const batchPromoteToInventory = () => {
+    const idxs = [...selectedItems];
+    promoteToInventory(idxs, idxs.map(i => items[i].name));
     setSelectedItems(new Set());
     setBatchStoreOverlayOpen(false);
     setBatchMode(false);
@@ -310,7 +344,7 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
       ...s,
       items: items.map((item, i) => ({...item, _idx: i})).filter(i => i.store === s.id && !i.checked),
     })).filter(g => g.items.length > 0);
-    const unsortedItems = items.map((item, i) => ({...item, _idx: i})).filter(i => !i.store && !i.checked && i.store !== PANTRY_ID);
+    const unsortedItems = items.map((item, i) => ({...item, _idx: i})).filter(i => !i.store && !i.checked && !i.covered);
     
     for (const group of storeGroups) {
       lines.push(`\n--- ${group.name} ---`);
@@ -351,36 +385,39 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
   };
 
   // ── "Alchemist's Supply" quest handling ──────────────────────────────────────
+  // Shared by bar-quest and meal-quest items — both are "I bought the missing
+  // ingredient" actions that should really stock it (qtyLevel: FULL), not just
+  // silently record undefined stock like the old bar-only call used to.
   const questToShelf = useCallback((indices, names) => {
-    // Mark items as pantry + add to bar inventory
-    names.forEach(n => {
-      rememberStore(n, PANTRY_ID);
-      addToBarInventory(n);
-    });
+    names.forEach(n => addToBarInventory(n, { qtyLevel: 'FULL' }));
     setItems(prev => prev.map((item, i) =>
-      indices.includes(i) ? { ...item, store: PANTRY_ID, checked: true } : item
+      indices.includes(i) ? { ...item, covered: true, checked: true } : item
     ));
-    if (onToast) onToast(`🍸 Added to your bar shelf!`, 'success');
+    if (onToast) onToast(`✓ Added to your pantry!`, 'success');
     if (navigator.vibrate) navigator.vibrate([30, 20, 30]);
     // Trigger alchemy confetti burst
     setConfettiBurst(prev => prev + 1);
   }, [setItems, onToast]);
 
-  // Group views — use filteredItems so search/filter narrows all sections
-  const rawQuest = filteredItems.filter(i => i.tag === 'bar-quest' && i.store !== PANTRY_ID && !i.checked);
-  const rawUnsorted = filteredItems.filter(i => !i.store && i.tag !== 'bar-quest');
-  const rawPantry = filteredItems.filter(i => i.store === PANTRY_ID);
+  // Group views — use filteredItems so search/filter narrows all sections.
+  // Quest tags: 'bar-quest' (missing cocktail ingredient) and 'meal-quest'
+  // (missing recipe ingredient, added via MealLibrary's pantry-match badge)
+  // share the same Alchemist's Supply rail — both close a Kitchen/Bar → Grocery loop.
+  const isQuestTag = t => t === 'bar-quest' || t === 'meal-quest';
+  const rawQuest = filteredItems.filter(i => isQuestTag(i.tag) && !i.covered && !i.checked);
+  const rawUnsorted = filteredItems.filter(i => !i.store && !isQuestTag(i.tag) && !i.covered);
+  const rawPantry = filteredItems.filter(i => i.covered);
 
   const questList = rawQuest; // quest items are already unique — no consolidation needed
   const unsortedList = consolidateItems(rawUnsorted);
   const pantryList = consolidateItems(rawPantry);
-  
+
   const byStore = STORES.map(s => ({
     ...s,
-    items: consolidateItems(filteredItems.filter(i => i.store === s.id)),
+    items: consolidateItems(filteredItems.filter(i => i.store === s.id && !i.covered)),
   })).filter(g => g.items.length > 0);
 
-  const activeItems = items.filter(i => i.store !== PANTRY_ID);
+  const activeItems = items.filter(i => !i.covered);
   const checkedCount = activeItems.filter(i => i.checked).length;
   const progressPercent = activeItems.length > 0 ? Math.round((checkedCount / activeItems.length) * 100) : 0;
 
@@ -566,7 +603,7 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
               <button className="gl-sheet-close" onClick={() => setBatchStoreOverlayOpen(false)}>✕</button>
             </div>
             <div className="gl-sheet-content">
-              <button className="gl-store-option" style={{ borderLeftColor: '#4caf50' }} onClick={() => batchAssignStore(PANTRY_ID)}>
+              <button className="gl-store-option" style={{ borderLeftColor: '#4caf50' }} onClick={batchPromoteToInventory}>
                 <span className="gl-store-logo-letter" style={{ background: '#4caf50', width: 28, height: 28, fontSize: 15, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', borderRadius: '50%', color: 'white', fontWeight: 700, flexShrink: 0 }}>✓</span>
                 <span className="gl-store-option-name">In Pantry</span>
               </button>
@@ -595,7 +632,7 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
               <span className="gl-section-count gl-quest-count">{questList.length}</span>
             </div>
             <div className="gl-quest-subtitle">
-              Missing ingredients for your cocktail quests
+              Missing ingredients from your recipe & cocktail matches
             </div>
             {questList.map(item => (
               <motion.div
@@ -620,7 +657,7 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
                   </label>
                   {item.questName && (
                     <span className="gl-quest-drink-tag">
-                      🍸 {item.questName}
+                      {item.tag === 'meal-quest' ? '🍳' : '🍸'} {item.questName}
                     </span>
                   )}
                 </div>
@@ -647,7 +684,7 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
               cat,
               items: consolidateItems(
                 filteredItems.filter(i => {
-                  if (i.store === PANTRY_ID || i.tag === 'bar-quest') return false;
+                  if (i.covered || isQuestTag(i.tag)) return false;
                   const c = i.category || categorizeIngredient(i.name);
                   return c === cat;
                 })
@@ -669,7 +706,7 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
                     onToggleCheck={() => toggleCheck(item.indices)}
                     onToggleSelect={() => toggleSelect(item.indices)}
                     onSetStore={(storeId) => setStore(item.indices, item.names, storeId)}
-                    onMarkPantry={() => markAsPantry(item.indices, item.names)}
+                    onPromote={() => promoteToInventory(item.indices, item.names)}
                     onRemove={() => removeItem(item.indices)}
                     onDragStart={(e) => handleDragStart(e, item.indices, item.names)}
                     stores={STORES}
@@ -695,7 +732,7 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
                     onToggleCheck={() => toggleCheck(item.indices)}
                     onToggleSelect={() => toggleSelect(item.indices)}
                     onSetStore={(storeId) => setStore(item.indices, item.names, storeId)}
-                    onMarkPantry={() => markAsPantry(item.indices, item.names)}
+                    onPromote={() => promoteToInventory(item.indices, item.names)}
                     onRemove={() => removeItem(item.indices)}
                     onDragStart={(e) => handleDragStart(e, item.indices, item.names)}
                     stores={STORES}
@@ -728,11 +765,13 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
                     onToggleCheck={() => toggleCheck(item.indices)}
                     onToggleSelect={() => toggleSelect(item.indices)}
                     onSetStore={(storeId) => setStore(item.indices, item.names, storeId)}
-                    onMarkPantry={() => markAsPantry(item.indices, item.names)}
+                    onPromote={() => promoteToInventory(item.indices, item.names)}
                     onRemove={() => removeItem(item.indices)}
                     onDragStart={(e) => handleDragStart(e, item.indices, item.names)}
                     stores={STORES}
                     isAssigned
+                    searchUrl={group.searchUrl}
+                    searchStoreName={group.name}
                   />
                 ))}
               </motion.div>
@@ -757,7 +796,7 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
                   <span className="gl-item-text gl-item-text-pantry">{item.name} {item.quantity > 1 && <span style={{marginLeft:4, opacity: 0.6}}>×{item.quantity}</span>}</span>
                 </div>
                 <div className="gl-item-actions">
-                  <button className="gl-btn-unpantry" onClick={() => unmarkPantry(item.indices, item.names)}>↩</button>
+                  <button className="gl-btn-unpantry" onClick={() => demoteFromInventory(item.indices, item.names)}>↩</button>
                   <button className="gl-btn-remove" onClick={() => removeItem(item.indices)}>✕</button>
                 </div>
               </motion.div>
@@ -771,7 +810,7 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
 }
 
 // ── Individual grocery item ──
-function GroceryItem({ item, batchMode, isSelected, onToggleCheck, onToggleSelect, onSetStore, onMarkPantry, onRemove, stores, isAssigned, onDragStart }) {
+function GroceryItem({ item, batchMode, isSelected, onToggleCheck, onToggleSelect, onSetStore, onPromote, onRemove, stores, isAssigned, onDragStart, searchUrl, searchStoreName }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const x = useMotionValue(0);
   
@@ -784,8 +823,8 @@ function GroceryItem({ item, batchMode, isSelected, onToggleCheck, onToggleSelec
     const threshold = 60;
     if (info.offset.x > threshold && onRemove) {
       onRemove();
-    } else if (info.offset.x < -threshold && onMarkPantry) {
-      onMarkPantry();
+    } else if (info.offset.x < -threshold && onPromote) {
+      onPromote();
     }
   };
 
@@ -834,6 +873,20 @@ function GroceryItem({ item, batchMode, isSelected, onToggleCheck, onToggleSelec
 
         {!batchMode && (
           <div className="gl-item-actions" style={{ paddingRight: '8px' }}>
+            {searchUrl && (
+              <button
+                type="button"
+                className="gl-btn-search"
+                title={`Search this item on ${searchStoreName || 'the store site'}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const query = item._fuzzyCanonical || item._ingredientBase || item.name;
+                  window.open(searchUrl + encodeURIComponent(query), '_blank', 'noopener,noreferrer');
+                }}
+              >
+                🔍
+              </button>
+            )}
             <button className={`gl-btn-store ${isAssigned ? 'gl-btn-store-assigned' : ''}`} onClick={() => setPickerOpen(true)}>
               {isAssigned ? '◈' : '◇'}
             </button>
@@ -850,7 +903,7 @@ function GroceryItem({ item, batchMode, isSelected, onToggleCheck, onToggleSelec
                     <motion.div key="backdrop" initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="gl-picker-backdrop" style={{position:'fixed', zIndex: 900}} onClick={() => setPickerOpen(false)}></motion.div>
                     <motion.div key="picker" initial={{opacity:0, scale:0.95}} animate={{opacity:1, scale:1}} exit={{opacity:0, scale:0.95}} className="gl-item-picker" style={{position: 'fixed', zIndex: 901, right: '40px', bottom: 'auto', top: '50%', transform: 'translateY(-50%)'}}>
                       <div style={{fontSize: 12, fontWeight: 700, padding: '8px 12px', borderBottom: '1px solid var(--border)', color: 'var(--text-light)'}}>Assign Store</div>
-                      <button className="gl-picker-option" style={{ borderLeftColor: '#4caf50' }} onClick={() => { onMarkPantry(); setPickerOpen(false); }}>
+                      <button className="gl-picker-option" style={{ borderLeftColor: '#4caf50' }} onClick={() => { onPromote(); setPickerOpen(false); }}>
                         <span className="gl-store-logo-letter" style={{ background: '#4caf50', width: 20, height: 20, fontSize: 11 }}>✓</span> In Pantry
                       </button>
                       {stores.map(s => (
