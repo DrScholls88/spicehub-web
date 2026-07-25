@@ -621,7 +621,7 @@ export default function PantryMode({ meals, onViewDetail, onClose, onAddToGrocer
                             e.stopPropagation();
                             onAddToGrocery(match.missing.map(ing => ({
                               name: ing,
-                              tag: 'bar-quest',
+                              tag: 'meal-quest',
                               questName: meal.name,
                             })));
                             if (navigator.vibrate) navigator.vibrate([25, 15, 25]);
@@ -653,6 +653,22 @@ export default function PantryMode({ meals, onViewDetail, onClose, onAddToGrocer
               if (next === level) return;
               setLevel(ledger.ingredient, next, { restock: dir > 0 && next === 'FULL' });
               setLedger(l => ({ ...l, qtyLevel: next, addedAt: dir > 0 && next === 'FULL' ? new Date().toISOString() : l.addedAt }));
+            };
+            // Run Dry — mark EMPTY + push to grocery, routed to its remembered
+            // store by App.jsx's handleAddToGrocery (reads window._storeMemory).
+            // Mirrors BarFridgeMode's runDry (P3) — same loop-closing action,
+            // kitchen side — see project_grocery_pantry_fake_toggle memory.
+            const doRunDry = () => {
+              setLevel(ledger.ingredient, 'EMPTY');
+              setLedger(l => ({ ...l, qtyLevel: 'EMPTY' }));
+              if (onAddToGrocery) {
+                onAddToGrocery([{
+                  name: ledger.displayName || ledger.ingredient,
+                  tag: 'meal-quest',
+                  questName: 'Run Dry',
+                }]);
+              }
+              if (navigator.vibrate) navigator.vibrate([20, 30, 20]);
             };
             return (
               <div className="pm-ledger-overlay" onClick={() => setLedger(null)}>
@@ -700,6 +716,11 @@ export default function PantryMode({ meals, onViewDetail, onClose, onAddToGrocer
                   <div className="pm-ledger-actions">
                     {!staple && !ledger._virtualStaple && (
                       <button className="pm-ledger-remove" onClick={() => removeItem(ledger.ingredient)}>Remove</button>
+                    )}
+                    {onAddToGrocery && (
+                      <button className="pm-ledger-rundry" onClick={doRunDry} title="Mark empty and add to grocery list">
+                        🫙 Run Dry
+                      </button>
                     )}
                     <button className="pm-ledger-cook" onClick={() => cookWithThis(ledger.displayName || ledger.ingredient)}>
                       🍳 Cook with this

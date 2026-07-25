@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { ChefHat, UtensilsCrossed, MoreHorizontal, Play, Sparkles, Heart, Repeat, Clock, AlertTriangle, Tag, Plus, Pencil, Trash2, Check, X, Grid2x2, Grid3x3, List, HelpCircle } from 'lucide-react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { downloadMealsFile, importMealsFromJson, shareMealsFile } from '../sync';
@@ -10,6 +10,7 @@ import ReExtractSheet from './ReExtractSheet';
 import DiscoverRecipes from './DiscoverRecipes';
 import { hapticLight, hapticSuccess } from '../haptics';
 import { getMealVideoSource } from '../lib/videoSource';
+import { buildPantryMatchIndex } from '../lib/pantryMatch.js';
 
 // I-5: a recipe is "improvable" when it was imported with a low-confidence /
 // needs-review flag AND we kept its source caption (so we can re-run extraction
@@ -154,7 +155,7 @@ const fabActionVariants = {
   open: { opacity: 1, y: 0, scale: 1, transition: { type: 'spring', stiffness: 420, damping: 26 } },
 };
 
-export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDetail, onShare, onImport, onImportUrl, onImportZip, onReload, onToast, onToggleFavorite, onRate, onPlayVideo, onLoadStarterPack, onMoveToBar }) {
+export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDetail, onShare, onImport, onImportUrl, onImportZip, onReload, onToast, onToggleFavorite, onRate, onPlayVideo, onLoadStarterPack, onMoveToBar, fridgeInventory = [], onAddMissingToGrocery }) {
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('All');
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
@@ -189,6 +190,16 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
   const [tagEditMode, setTagEditMode] = useState(false);
   const tagLongPressTimer = useRef(null);
   const tagTouchStartPos = useRef(null);
+
+  // Pantry-match badges — Ready to Cook (0 missing) / Almost There (1-2 missing,
+  // staples exempt) — mirrors BarLibrary's proven matchScore/tier pattern,
+  // ported to meals. fridgeInventory is the kitchen-domain slice of the
+  // unified db.barInventory (see pantryDomain.getInventory), so this reflects
+  // real stock, not a separate/stale table.
+  const pantryMatchIndex = useMemo(
+    () => buildPantryMatchIndex(fridgeInventory, meals),
+    [fridgeInventory, meals]
+  );
 
   // Swipe-to-dismiss state for quickPreview sheet
   const sheetRef = useRef(null);
@@ -781,6 +792,29 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
         </motion.span>
         <span className="ml-tile-meta">
           {meal.starterKit && <span className="ml-tile-starter">Starter</span>}
+          {(() => {
+            const match = pantryMatchIndex.get(meal.id || meal.name);
+            if (!match) return null;
+            return (
+              <span
+                className="ml-tile-pantry-match"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 3,
+                  marginRight: 6,
+                  padding: '1px 6px',
+                  borderRadius: 999,
+                  fontSize: 10,
+                  fontWeight: 700,
+                  color: match.tier === 'ready' ? 'var(--success, #16a34a)' : 'var(--warning, #d97706)',
+                  background: match.tier === 'ready' ? 'rgba(22,163,74,0.12)' : 'rgba(217,119,6,0.12)',
+                }}
+              >
+                {match.tier === 'ready' ? '🟢 Ready to cook' : `🟡 Missing ${match.missing.length}`}
+              </span>
+            );
+          })()}
           {meal.status === 'processing' ? (
             <><Clock size={12} strokeWidth={2.5} style={{ verticalAlign: '-2px' }} /> Import in progress…</>
           ) : meal.status === 'failed' ? (
@@ -1326,12 +1360,12 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                 ))}
               </div>
               {(quickPreview.created || quickPreview.createdAt) && (
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', marginBottom: 8 }}>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 8 }}>
                   Added: {new Date(quickPreview.created || quickPreview.createdAt).toLocaleDateString()}
                 </div>
               )}
               {mealEngineLabel(quickPreview._structuredVia) && (
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginBottom: 8 }}>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 8 }}>
                   Parsed by {mealEngineLabel(quickPreview._structuredVia)}
                   {typeof quickPreview.confidence === 'number'
                     ? ` · ${Math.round(quickPreview.confidence * 100)}%`
@@ -1358,6 +1392,50 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                   })}
                 </div>
               )}
+
+              {(() => {
+                const match = pantryMatchIndex.get(quickPreview.id || quickPreview.name);
+                if (!match) return null;
+                return (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 8,
+                      padding: '8px 10px',
+                      marginBottom: 10,
+                      borderRadius: 10,
+                      background: match.tier === 'ready' ? 'rgba(22,163,74,0.1)' : 'rgba(217,119,6,0.1)',
+                    }}
+                  >
+                    <span style={{ fontSize: 12.5, fontWeight: 700, color: match.tier === 'ready' ? 'var(--success, #16a34a)' : 'var(--warning, #d97706)' }}>
+                      {match.tier === 'ready'
+                        ? `🟢 Ready to cook — ${match.matched}/${match.total} on hand`
+                        : `🟡 Almost there — missing ${match.missing.join(', ')}`}
+                    </span>
+                    {match.tier === 'almost' && onAddMissingToGrocery && (
+                      <button
+                        type="button"
+                        className="ml-qp-type-chip"
+                        style={{ flexShrink: 0, whiteSpace: 'nowrap' }}
+                        onClick={e => {
+                          e.stopPropagation();
+                          onAddMissingToGrocery(match.missing.map(name => ({
+                            name,
+                            tag: 'meal-quest',
+                            questName: quickPreview.name,
+                            questMealId: quickPreview.id,
+                          })));
+                          hapticLight();
+                        }}
+                      >
+                        + Add missing to grocery
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
 
               <div className="ml-qp-section">
                 <h4>Ingredients ({(quickPreview.ingredients || []).length})</h4>

@@ -2,8 +2,16 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import SafeMediaImage from '../SafeMediaImage.jsx';
 
+// matches: { ready: [...], almost: [...] } from lib/pantryMatch.js —
+// ready = 0 missing, almost = 1-2 missing (staples never count as missing).
 export default function CookTonightCarousel({ matches, onViewDetail }) {
-  if (!matches?.length) return null;
+  const ready = matches?.ready || [];
+  const almost = matches?.almost || [];
+  const combined = [
+    ...ready.map(m => ({ ...m, tier: 'ready' })),
+    ...almost.map(m => ({ ...m, tier: 'almost' })),
+  ];
+  if (!combined.length) return null;
 
   return (
     <motion.div
@@ -16,7 +24,7 @@ export default function CookTonightCarousel({ matches, onViewDetail }) {
       <div className="landing-section-label">🧊 Cook Tonight — from what you have</div>
       <div className="landing-next-days-wrap">
         <div className="landing-next-days-scroll sh-carousel">
-          {matches.map(({ meal, matched, total, missing, coverage }) => (
+          {combined.map(({ meal, matched, total, missing, tier }) => (
             <motion.button
               key={meal.id || meal.name}
               whileHover={{ y: -4, boxShadow: '0 8px 16px rgba(0,0,0,0.12)' }}
@@ -40,10 +48,10 @@ export default function CookTonightCarousel({ matches, onViewDetail }) {
                 <div style={{
                   fontSize: '10px',
                   fontWeight: '600',
-                  color: coverage >= 0.8 ? 'var(--success, #16a34a)' : 'var(--warning, #d97706)',
+                  color: tier === 'ready' ? 'var(--success, #16a34a)' : 'var(--warning, #d97706)',
                   marginTop: '3px',
                 }}>
-                  {matched}/{total} items ✓
+                  {tier === 'ready' ? '🟢' : '🟡'} {matched}/{total} items
                 </div>
                 {missing.length > 0 && (
                   <div style={{

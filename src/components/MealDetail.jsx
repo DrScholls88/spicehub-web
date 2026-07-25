@@ -277,7 +277,7 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
 
         {/* Description + Yield — shown when LLM extracted a summary */}
         {(meal.description || meal.recipeYield) && (
-          <div className="detail-description-bar" style={{ padding: '0 16px 8px', fontSize: 14, color: 'var(--color-text-secondary, #666)' }}>
+          <div className="detail-description-bar" style={{ padding: '0 16px 8px', fontSize: 14, color: 'var(--text-light)' }}>
             {meal.description && <span>{meal.description}</span>}
             {meal.description && meal.recipeYield && <span> · </span>}
             {meal.recipeYield && <span style={{ fontWeight: 500 }}>{meal.recipeYield}</span>}
