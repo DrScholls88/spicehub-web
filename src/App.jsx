@@ -38,6 +38,7 @@ import { getInventory } from './lib/pantryDomain';
 import { loadLandingLayout, saveLandingLayout, loadSpinConstraints, saveSpinConstraints } from './lib/landingLayout';
 import { renderRecipeExport, exportViaShare } from './utils/exportRenderer.js';
 import { compressRecipeImage } from './imageCompressor.js';
+import { markImportTimestamp } from './components/landing/ImportNudgeBanner.jsx';
 import ConsentGate, { getStoredConsent } from './components/ConsentGate';
 import AgeGate, { isAgeVerified } from './components/AgeGate';
 import LegalFooter from './components/LegalFooter';
@@ -1287,6 +1288,7 @@ useEffect(() => {
       } catch (err) {
         console.error('[handleImport] DB write failed (week):', err);
       }
+      markImportTimestamp();
       const name = real.length === 1 ? (real[0].name || 'Recipe') : `${real.length} recipes`;
       showToast(`"${name}" saved and added to this week`);
       setTab('week');
@@ -1327,6 +1329,7 @@ useEffect(() => {
       ]);
     }
 
+    markImportTimestamp();
     if (!real.length) return;
     const count = real.length;
     const noun = anyDrink && !anyMeal ? (count === 1 ? 'drink' : 'drinks') : (count === 1 ? 'recipe' : 'recipes');
@@ -1551,6 +1554,7 @@ useEffect(() => {
             onCreateMealForDay={handleCreateMealForDay}
             spinConstraints={effectiveSpinConstraints}
             onChangeSpinConstraints={updateSpinConstraints}
+            batchQueueCount={batchQueueCount}
           />
         )}
         {tab === 'home' && <LegalFooter />}
