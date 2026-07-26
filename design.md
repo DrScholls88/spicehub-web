@@ -132,7 +132,9 @@ The test: if you swapped `data-theme` right now, would this element's text and b
 
 - **`--border` contrast** (~1.3:1 light mode) — genuinely low, but fixing it to meet WCAG's 3:1 non-text threshold would visibly darken every card outline/divider app-wide. That's a bigger design call than any single bug report asked for. Revisit only if borders/dividers are specifically called out as hard to see.
 - **Three remaining `var(--text-secondary, #888)` call sites** in `App.css` (outside MealDetail — likely BarLibrary/consent-related) share the §4c bug and haven't been triaged for their actual context/surface yet.
-- **`--sh-*` token namespace** (Import/Export sheets) is architecturally unusual (component-local `:root` tokens rather than the shared set above) — not confirmed broken, but worth a dedicated pass if Import/Export sheet theming is ever reported as inconsistent.
+- **`--sh-*` token namespace** (Import/Export sheets) — turned out to be legitimate, not a bug: it's a component-local `:root` token set defined in `ImportSheet.css` itself, not the shared tokens in §2. Confirmed working (not confirmed broken). Documented here so it isn't re-flagged as "undefined" by a future grep that only checks `App.css`.
+- **Dead CSS**: `.preview-source-input` and `.preview-notes-textarea` in `App.css` are defined but not referenced by any current `.jsx` — found while auditing input font sizes for iOS zoom (§9). Left in place rather than deleted blind; worth a cleanup pass if someone confirms they're truly orphaned.
+- **`.preview-editable-row input`/`textarea`** was defined **three separate times** at different line ranges in `App.css` with different property sets (padding/border-radius/background differ slightly between them) — all three now agree on `font-size: 16px`, but the underlying triplication is itself a maintainability smell worth consolidating someday.
 
 ---
 
@@ -143,5 +145,44 @@ The test: if you swapped `data-theme` right now, would this element's text and b
 - [ ] Every `var(--x, fallback)` has a confirmed, reachable definition of `--x`.
 - [ ] Contrast computed (not eyeballed) for any new text/icon/border color, against light and dark.
 - [ ] Checked in both `data-theme="light"` and `data-theme="dark"` before calling it done.
+- [ ] Any new `<input>`/`<textarea>` is `font-size: 16px` or larger (§9).
+- [ ] Any new full-height container uses `100dvh`, not bare `100vh` (§9).
+- [ ] Any new fixed bottom-anchored element accounts for `env(safe-area-inset-bottom)` (§9).
 - [ ] `App.css` brace-balanced, edited files syntax-checked.
 - [ ] Conventional commit message provided; user runs `npm run build` + git commands themselves per `CLAUDE.md`.
+
+---
+
+## 9. iOS Safari / PWA rules
+
+iOS Safari (and iOS home-screen PWAs, which use the same WebKit engine — there is no alternative rendering engine allowed on iOS) has its own footguns independent of the light/dark theming above. Found via a full audit of the codebase against a third-party iOS compatibility report — most were already handled well; these are the gaps that were real.
+
+### 9a. Every text-entry field must be `font-size: 16px` or larger
+Any `<input>`/`<textarea>` under 16px triggers iOS Safari's automatic page-zoom on focus — the single most common "feels broken on iPhone" complaint, and easy to miss because it's invisible on desktop and on Android. This codebase had **~18 real instances** under 16px as of 2026-07-26, spanning the Add/Edit Recipe form, the entire Import Review flow (`.review-row`, `.import-input-url`, `.import-input-paste`, `.review-notes`), tag creation, and Bar/Pantry inputs — all normalized to 16px. When grepping for these, filter out class names that merely *contain* "input" as a naming convention for buttons/toggles/labels (e.g. `.ml-select-toolbar-btn`, `.import-input-type-chip`) — check the actual selector ends in a bare `input`/`textarea`/`select`, or confirm the class is applied to a real form element in the `.jsx` before "fixing" it.
+
+### 9b. `100vh` doesn't account for iOS's collapsing toolbar; use `100dvh`
+iOS Safari's URL bar/toolbar shows and hides based on scroll direction, and `100vh` is computed against the *largest possible* viewport (toolbar hidden), so content sized with bare `vh` gets clipped or leaves a gap when the toolbar is showing. Fix: declare the `vh` value first, then redeclare with `dvh` immediately after (progressive enhancement — browsers without `dvh` support simply ignore the second line):
+```css
+min-height: 100vh;
+min-height: 100dvh;
+/* same pattern for calc() forms: */
+max-height: calc(100vh - 220px);
+max-height: calc(100dvh - 220px);
+```
+This project already does this correctly for every root-level container; the gaps found were all in nested sheets/split-views that used a bare `calc(100vh - Npx)`.
+
+### 9c. Fixed bottom-anchored elements need `env(safe-area-inset-bottom)`
+Any `position: fixed` element anchored to `bottom: 0` (or a fixed offset) on a device with a home-indicator (iPhone X and later) needs `env(safe-area-inset-bottom)` folded into its bottom offset/padding, or it sits under the home-indicator gesture area. This codebase already does this consistently (`.tab-bar`, `.ml-fab-group`/`.bl-fab-group`, `.import-sheet-footer`, `.re-footer`, `.st-sheet`, `FloatingVideoPlayer`'s `.fvp-panel`/`.fvp-pill` via `@supports (padding: max(0px))` + `max()`) — verified during this audit, not something that needed fixing. Use `max(fixed-px, calc(env(safe-area-inset-bottom) + fixed-px))` (see `FloatingVideoPlayer.css`) when the element needs a minimum offset even on devices without a safe-area inset (older iPhones, Android, desktop).
+
+### 9d. Keyboard-covering-fixed-footer (defense in depth)
+iOS Safari resizes `visualViewport` when the keyboard opens but not always the layout viewport the same way, and `dvh`'s keyboard-awareness has known inconsistencies on some iOS versions. `useKeyboardInset()` (`src/hooks/useKeyboardInset.js`) mirrors the live layout/visual-viewport gap into `--keyboard-inset` (defaults to `0px`, i.e. a no-op) for any fixed footer to fold into its padding as a supplement to — not a replacement for — `dvh` sizing and safe-area padding:
+```css
+padding-bottom: calc(12px + env(safe-area-inset-bottom) + var(--keyboard-inset, 0px));
+```
+Called once near the app root (`App.jsx`). Don't add per-component `visualViewport` listeners — use the shared hook and opt individual fixed footers into the CSS var.
+
+### 9e. Request persistent storage proactively when installed, not just reactively
+iOS reclaims IndexedDB more aggressively than Android under storage pressure or after the app goes unopened for a while. `navigator.storage.persist()` shows no permission dialog on Safari — grant/deny is silent and heuristic-based, weighted toward "installed to home screen" — so there's no UX cost to calling it unprompted once the app detects `isStandalone`, rather than waiting for the user to find the Storage Manager sheet. Done in `App.jsx`'s startup effect, gated on `isStandalone` and `isPersistentStorageGranted()` so it doesn't re-request every launch once granted.
+
+### 9f. Capacitor share-target is configured but not built
+`@capacitor/core` + `@capgo/capacitor-share-target` are real dependencies and `capacitor.config.json` is set up correctly (including `iosShareExtensionTargets`), and the JS-side gating (`Capacitor.isNativePlatform()`) is correct — but there is **no `ios/` Xcode project in this repo** (`npx cap add ios` has never been run, and it's not `.gitignore`d, so it genuinely doesn't exist yet). "Share → SpiceHub" from Instagram only works today via the PWA's own `share_target` manifest entry on Android/Chrome — iOS Safari home-screen PWAs don't support Web Share Target Level 2, and the Capacitor path that would fix that for iOS isn't a shippable artifact yet. Don't tell users to "use the Capacitor build" — it doesn't exist until someone runs the native build step on macOS.

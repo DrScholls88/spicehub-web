@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } fro
 import { AnimatePresence } from 'framer-motion';
 import db, { importSeedMeals, removeStarterKitMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getStoreMemory, getCookingLog, getWeekHistory, saveWeekToHistory, toggleRotation, addBatchQueueItems, getBatchQueueItems, updateBatchQueueItem, getLearnedAliases, moveMealToBar, moveDrinkToMeals, getCustomDayTags, addCustomDayTag, deleteCustomDayTag } from './db';
 import { buildStarterKitMeals, STARTER_KIT_SEED_FLAG } from './data/starterKitMeals';
-import { checkStorageQuota, checkAndRecommendCleanup } from './storageManager';
+import { checkStorageQuota, checkAndRecommendCleanup, requestPersistentStorage, isPersistentStorageGranted } from './storageManager';
 import { initializeBackgroundSync } from './backgroundSync';
 import WeekView from './components/WeekView';
 import LandingPage from './components/LandingPage';
@@ -33,6 +33,7 @@ import useOnlineStatus, { onOnlineStatusChange } from './hooks/useOnlineStatus';
 import useBackHandler from './hooks/useBackHandler';
 import useRootBackGuard from './hooks/useRootBackGuard';
 import useSwipeDismiss from './hooks/useSwipeDismiss';
+import useKeyboardInset from './hooks/useKeyboardInset';
 import { planWeek, pickForSlot, buildRecencyMap } from './lib/weekPlanner';
 import { getInventory, isStaple } from './lib/pantryDomain';
 import { normalizeIngredient } from './utils/ingredientNormalizer.js';
@@ -108,6 +109,7 @@ const SPECIAL_DAYS = [
 
 export default function App() {
   const { isOnline } = useOnlineStatus();
+  useKeyboardInset();
   const [tab, setTab] = useState('home');
   const [meals, setMeals] = useState([]);
   const [drinks, setDrinks] = useState([]);
@@ -466,6 +468,23 @@ export default function App() {
         }
       })
       .catch(err => console.warn('Failed to check storage quota:', err));
+
+    // iOS is far more aggressive than Android about reclaiming IndexedDB
+    // under storage pressure or after the app hasn't been opened in a
+    // while — persistent storage was previously only requested reactively
+    // from the Storage Manager sheet, which most users never open. Ask
+    // proactively once per launch, but only once the app is actually
+    // installed (isStandalone) — asking from a plain browser tab is far
+    // less likely to be granted and Safari's heuristics weigh "installed
+    // to home screen" heavily. navigator.storage.persist() shows no
+    // permission prompt on Safari (grant/deny is silent + heuristic-based),
+    // so this is safe to call unprompted rather than gating it behind a
+    // user action.
+    if (isStandalone) {
+      isPersistentStorageGranted()
+        .then(granted => { if (!granted) return requestPersistentStorage(); })
+        .catch(() => {});
+    }
   }, [loadMeals, loadDrinks]);
 
   // ── Starter Kit auto-seed ─────────────────────────────────────────────────

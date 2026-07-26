@@ -233,7 +233,10 @@
   display: flex;
   gap: 10px;
   padding: 12px 16px;
-  padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  /* var(--keyboard-inset) is a defensive supplement for iOS keyboard edge
+     cases beyond what the sheet's own `max-height: dvh` already handles —
+     see useKeyboardInset.js. Defaults to 0px (no-op) when closed. */
+  padding-bottom: calc(12px + env(safe-area-inset-bottom) + var(--keyboard-inset, 0px));
   border-top: 0.5px solid var(--border, #eee);
   flex: 0 0 auto;
 }
