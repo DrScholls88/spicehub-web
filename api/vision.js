@@ -1,12 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // /api/vision — server-side VISION passthrough for BOTH online tiers (photo/
 // document import, dish-photo hero validation). Keeps GOOGLE_GENERATIVE_AI_API_KEY
-// AND MISTRAL_API_KEY out of the client bundle. See docs/superpowers/specs/
-// 2026-07-07-photo-import-csp-fix-design.md, "Out of scope" §1 (this closed
-// that gap for Gemini) — the same latent gap existed for Mistral (Tier 2 read
-// VITE_MISTRAL_API_KEY directly, shipping it in the client bundle) and is
-// closed here the same way, via ?provider=gemini|mistral (default gemini, so
-// the existing /api/vision?model=... call keeps working unchanged).
+// AND MISTRAL_API_KEY server-side. The client has NO API key fallbacks — all
+// vision calls must route through this proxy.
 //
 // Deliberately a THIN passthrough, not a request/response reshape: the client
 // (src/lib/photoImportEngine.js transcribeWithGemini/transcribeWithMistral,
@@ -55,7 +51,7 @@ function resolveProviderRequest(req) {
   const provider = String(req.query?.provider || '').trim().toLowerCase() === 'mistral' ? 'mistral' : 'gemini';
 
   if (provider === 'mistral') {
-    const apiKey = process.env.MISTRAL_API_KEY || process.env.VITE_MISTRAL_API_KEY;
+    const apiKey = process.env.MISTRAL_API_KEY;
     if (!apiKey) return { provider, error: 'no-server-key' };
     return {
       provider,
@@ -64,7 +60,7 @@ function resolveProviderRequest(req) {
     };
   }
 
-  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.VITE_GOOGLE_AI_KEY;
+  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   if (!apiKey) return { provider, error: 'no-server-key' };
   const model = typeof req.query?.model === 'string' && req.query.model.trim() ? req.query.model.trim() : DEFAULT_GEMINI_MODEL;
   return {

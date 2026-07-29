@@ -63,9 +63,9 @@ function env(key) {
   return (typeof import.meta !== 'undefined' && import.meta.env?.[key]) || null;
 }
 
-const GEMINI_KEY = () => env('VITE_GOOGLE_AI_KEY');
+// Security: API keys are server-only. Vision model/model overrides are still
+// client-safe config (no secret, just a model name string).
 const GEMINI_VISION_MODEL = () => env('VITE_GEMINI_VISION_MODEL') || 'gemini-2.0-flash-lite';
-const MISTRAL_KEY = () => env('VITE_MISTRAL_API_KEY');
 const MISTRAL_MODEL = () => env('VITE_MISTRAL_MODEL') || 'pixtral-12b-latest';
 
 // ── Pure helpers (unit-tested) ──────────────────────────────────────────────
@@ -449,17 +449,12 @@ async function fetchVisionTier(url, init, signal) {
 // ── Adding a new online vision tier ─────────────────────────────────────────
 // Every tier is a function `(uploadPages, { signal }) => Promise<contract>`
 // that: (1) builds a provider-specific request from `uploadPages` (data URLs)
-// + `buildVisionPrompt()`, (2) calls its own server route on /api/vision via
-// `?provider=<name>` FIRST so the API key stays server-side, catching a proxy
-// failure and falling back to a direct call with a client-side VITE_ key only
-// when one is configured (see transcribeWithGemini/transcribeWithMistral for
-// the pattern), (3) parses the response into the shared contract with
-// `parseVisionContract(text, uploadPages.length)`, and (4) returns
-// `{ ...contract, engine: '<name>' }`. Register it in `transcribePagesOnline`
-// below (add a gate/attempt block) and add its endpoint+key branch to
-// `resolveProviderRequest` in api/vision.js. Ollama (local, no proxy needed —
-// call http://localhost:11434 directly) and OpenAI vision (proxy the same way
-// as Mistral, Authorization: Bearer) are the likely next additions.
+// + `buildVisionPrompt()`, (2) calls /api/vision via `?provider=<name>` so
+// the API key stays server-side (no client-side keys), (3) parses the response
+// into the shared contract with `parseVisionContract(text, uploadPages.length)`,
+// and (4) returns `{ ...contract, engine: '<name>' }`. Register it in
+// `transcribePagesOnline` below and add its endpoint+key branch to
+// `resolveProviderRequest` in api/vision.js.
 
 // ── Tier 1: Gemini (all pages, one call) ───────────────────────────────────
 
@@ -474,21 +469,11 @@ async function transcribeWithGemini(uploadPages, { signal } = {}) {
   });
   const init = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body };
 
-  // Server proxy first — keeps the Gemini key out of the client bundle
-  // (docs/superpowers/specs/2026-07-07-photo-import-csp-fix-design.md,
-  // "Out of scope" §1). api/vision.js forwards status/body/Retry-After
-  // untouched, so fetchVisionTier's 429 handling behaves the same either way.
-  let res;
-  try {
-    res = await fetchVisionTier(`/api/vision?model=${GEMINI_VISION_MODEL()}`, init, signal);
-  } catch (proxyErr) {
-    if (proxyErr.name === 'AbortError') throw proxyErr;
-    const key = GEMINI_KEY();
-    if (!key) throw proxyErr; // no client fallback available — surface the proxy's reason
-    console.warn('[PhotoImport] /api/vision proxy failed, falling back to client key:', proxyErr.message);
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_VISION_MODEL()}:generateContent?key=${key}`;
-    res = await fetchVisionTier(endpoint, init, signal);
-  }
+  // Server proxy only — keeps the Gemini key server-side.
+  // Client-key fallback REMOVED (security: VITE_GOOGLE_AI_KEY was exposed).
+  // api/vision.js forwards status/body/Retry-After untouched, so
+  // fetchVisionTier's 429 handling behaves the same either way.
+  const res = await fetchVisionTier(`/api/vision?model=${GEMINI_VISION_MODEL()}`, init, signal);
   const data = await res.json();
   const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
   const contract = parseVisionContract(text, uploadPages.length);
@@ -509,33 +494,20 @@ async function transcribeWithMistral(uploadPages, { signal } = {}) {
   });
   const init = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body };
 
-  // Server proxy first — keeps the Mistral key out of the client bundle, same
-  // as transcribeWithGemini's /api/vision path (this used to be a client-only
-  // VITE_MISTRAL_API_KEY call, which shipped the key in the client bundle).
+  // Server proxy only — keeps the Mistral key server-side.
+  // Client-key fallback REMOVED (security: VITE_MISTRAL_API_KEY was exposed).
   let res;
   try {
     res = await fetchVisionTier('/api/vision?provider=mistral', init, signal);
   } catch (proxyErr) {
     if (proxyErr.name === 'AbortError') throw proxyErr;
-    const key = MISTRAL_KEY();
-    if (!key) {
-      // No client-side key configured — without one there's no direct-call
-      // fallback available, so whatever the proxy just said IS the entire
-      // Mistral attempt. The client key is what signals "Mistral is actually
-      // set up in this environment"; if it's absent, ANY proxy failure here
-      // (a real outage, a missing server key, whatever shape the error takes)
-      // must not be allowed to eclipse Gemini's tier-1 error — that's the
-      // more meaningful signal when Mistral was never really in play.
-      // (Previously this only recognized a specific 503/"no-server-key"
-      // shape, which missed plain 500s and let a coincidental Mistral failure
-      // mask a genuine Gemini error — see photoImportEngine.test.js "does not
-      // fall back when no client key is configured".)
-      proxyErr.notConfigured = true;
-      throw proxyErr;
-    }
-    console.warn('[PhotoImport] /api/vision (mistral) proxy failed, falling back to client key:', proxyErr.message);
-    const mistralInit = { ...init, headers: { ...init.headers, Authorization: `Bearer ${key}` } };
-    res = await fetchVisionTier('https://api.mistral.ai/v1/chat/completions', mistralInit, signal);
+    // Mark as notConfigured only when the proxy is unreachable (network error,
+    // no status) or explicitly reports no key — NOT for real server errors
+    // where Mistral was actually tried (those should surface as-is so the
+    // tier cascade picks the last-tried failure, not Gemini's).
+    const isNoKey = typeof proxyErr.detail === 'string' && proxyErr.detail.includes('no-server-key');
+    proxyErr.notConfigured = !proxyErr.status || isNoKey;
+    throw proxyErr;
   }
   const data = await res.json();
   const text = data?.choices?.[0]?.message?.content;

@@ -3,8 +3,9 @@
 //
 //   npm run test:live
 //
-// Requires VITE_GOOGLE_AI_KEY in the environment / .env. Hits real Gemini with
-// two corpus captions and asserts structural quality + the zero-junk contract.
+// Requires GOOGLE_GENERATIVE_AI_API_KEY (server-side) and a running dev server
+// so /api/structure is available. Hits real Gemini with two corpus captions and
+// asserts structural quality + the zero-junk contract.
 // Budget: ~4 requests per run (primary + possible escalation per caption).
 // ─────────────────────────────────────────────────────────────────────────────
 import { describe, it, expect } from 'vitest';
@@ -19,7 +20,7 @@ describe.runIf(LIVE)('golden corpus — LIVE Gemini end-to-end', () => {
     const r = await structureWithAIClient(caption, {
       title: '', sourceUrl: 'https://www.instagram.com/p/LIVE01/', type: 'meal',
     });
-    expect(r, 'Gemini returned null — check VITE_GOOGLE_AI_KEY').toBeTruthy();
+    expect(r, 'Gemini returned null — check GOOGLE_GENERATIVE_AI_API_KEY and that dev server is running').toBeTruthy();
     expect(r.title || '').toMatch(/lemon|ricotta|pancake/i);
     expect(r.ingredients.length).toBeGreaterThanOrEqual(7);
     expect(r.directions.length).toBeGreaterThanOrEqual(4);
