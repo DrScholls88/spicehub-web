@@ -514,9 +514,9 @@ export function parseManualCaption(captionText, sourceUrl) {
   };
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Client-side Google AI (Gemini) Ã¢â‚¬â€ direct browser call Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-// Uses VITE_GOOGLE_AI_KEY if set. Runs in the browser without a backend hop,
-// giving faster results and working even when the backend server is cold/offline.
+// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Gemini structuring Ã¢â‚¬â€ direct browser call Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// All Gemini calls route through /api/structure (server proxy).
+
 /**
  * Post-processing title cleaner — strips social chrome the AI sometimes leaves.
  * "Sheet Pan Gnocchi! This Weeknight Win recipe is" → "Sheet Pan Gnocchi"
@@ -595,127 +595,31 @@ function _titleFromIngredients(ingredients = []) {
     .join(' & ');
 }
 
-// The API key is bundled into the client build Ã¢â‚¬â€ acceptable for personal/family apps.
-/**
- * Build the Gemini system prompt. Meal vs drink prompts differ materially:
- * cocktails use oz/dash/splash/float units and often have terse directions,
- * while meal recipes tend toward cups/tbsp and step-by-step instructions.
- * Keeping both prompts local (rather than a remote config) makes the engine
- * fully offline-capable for prompt changes.
- */
-function _buildExtractionPrompt(rawText, { hintTitle = '', type = 'meal' } = {}) {
-  // Auto-upgrade to drink schema when text has strong cocktail signals.
-  // Catches Instagram/TikTok cocktail reels where type detection runs before text
-  // is fetched (URL has no cocktail hint, so defaults to 'meal').
-  if (type !== 'drink') {
-    const lower = rawText.toLowerCase();
-    const SPIRITS = ['whiskey','whisky','bourbon','scotch','rye whiskey',' gin ','rum ','tequila',
-      'mezcal','vodka','cognac','brandy','vermouth','campari','aperol','amaretto','kahlua',
-      'baileys','triple sec','cointreau','amaro','bitters','angostura','absinthe','chartreuse',
-      'prosecco','champagne','cava','pisco','sake','soju','grappa','limoncello','curaçao',
-      'maraschino','falernum','orgeat','elderflower liqueur','st. germain','fernet'];
-    const COCKTAIL_ACTIONS = [' shake','shaker','stir and strain','muddle','strain into',
-      'double strain','build in glass','top with ','float the ','garnish with','express the',
-      'rimmed glass','jigger','bar spoon','barspoon','cocktail glass','coupe','rocks glass',
-      'highball glass','nick and nora','mixing glass','hawthorne strain','fine strain'];
-    const UNIT_SIGNALS = [' oz ',' oz,','.5 oz','ml ','1 dash','2 dash','splash of','rinse with',
-      '0.5 oz','0.75 oz','1.5 oz','2 oz','3 oz',' cl ',' part ','barspoon of'];
-    const spiritHits = SPIRITS.filter(w => lower.includes(w)).length;
-    const verbHits   = COCKTAIL_ACTIONS.filter(w => lower.includes(w)).length;
-    const unitHits   = UNIT_SIGNALS.filter(w => lower.includes(w)).length;
-    if ((spiritHits >= 1 && (verbHits + unitHits) >= 1) || (spiritHits + verbHits + unitHits) >= 3) {
-      type = 'drink';
-    }
-  }
-  const isDrink = type === 'drink';
-  const subjectNoun = isDrink ? 'cocktail/drink' : 'recipe';
-  const schema = isDrink
-    ? `{
-  "title": "string Ã¢â‚¬â€ concise drink name, no hashtags, no emojis, no brand names",
-  "ingredients": [{ "name": "string Ã¢â‚¬â€ spirit/mixer/garnish", "amount": "string Ã¢â‚¬â€ e.g. '2 oz', '1 dash', '3 slices', 'splash'" }],
-  "directions": ["string Ã¢â‚¬â€ one clear step per array item (e.g. 'Muddle mint in shaker', 'Shake with ice', 'Strain into coupe')"],
-  "glass": "string or null Ã¢â‚¬â€ e.g. 'coupe', 'rocks', 'highball', 'martini', 'collins', 'nick & nora'",
-  "garnish": "string or null Ã¢â‚¬â€ e.g. 'lime wheel', 'orange peel', 'mint sprig'",
-  "method": "string or null Ã¢â‚¬â€ e.g. 'shake', 'stir', 'build', 'blend', 'muddle'",
-  "abv": "number or null Ã¢â‚¬â€ estimated ABV percentage (e.g. 18 for a margarita)",
-  "servings": "string or null Ã¢â‚¬â€ usually '1' for cocktails",
-  "notes": "string or null"
-}`
-    : `{
-  "title": "string Ã¢â‚¬â€ concise recipe name, no hashtags, no emojis, no brand names",
-  "ingredients": [{ "name": "string", "amount": "string Ã¢â‚¬â€ e.g. '2 cups' or 'to taste'" }],
-  "directions": ["string Ã¢â‚¬â€ one clear cooking step per array item, written as an instruction"],
-  "servings": "string or null",
-  "cookTime": "string or null",
-  "notes": "string or null"
-}`;
-
-  const rulesCommon = `- TITLE: Extract the ${subjectNoun} name only (2-6 words). Remove "on Instagram", "@username", hashtags, emojis. If no explicit title, infer from the dish described.
-- CLEANING: Aggressively strip social chrome: hashtags, @mentions, "link in bio", "save this", "follow me", sponsor lines, timestamps, view/like counts, emoji-only lines, "use code X for Y% off", ebook/meal plan promos.
-- If the text is a spoken/narrated ${subjectNoun} (video transcript), extract what the speaker is describing.
-- If no ${subjectNoun} can be found at all, return: { "error": "not a ${subjectNoun}" }
-- STRICT SORTING (CRITICAL):
-  * INGREDIENT = a food/liquid/spice item, optionally with quantity+unit. Pattern: "[amount] [unit] [food noun]".
-    Examples: "2 cups flour", "1 head cauliflower, chopped", "salt to taste", "olive oil"
-  * DIRECTION = an action step telling the cook what to DO. Pattern: starts with or contains an action verb.
-    Examples: "Preheat oven to 400F", "Toss with oil and spice mix", "Roast for 30 minutes"
-  * Numbered steps (1. 2. 3.) are ALWAYS directions, never ingredients.
-  * Lines with ONLY food nouns + quantities = ingredients[]. Lines with action verbs = directions[].
-  * Mixed lines like "Toss the cauliflower with oil" are DIRECTIONS (action verb present).
-  * Sub-headings like "Spice Mix:" or "For the sauce:" - extract items below them as ingredients, not the heading.
-  * NEVER put an ingredient line into directions[] or a direction into ingredients[].
-- COMPLETENESS: Extract ALL ingredients and ALL steps. Do not summarize or skip items.`;
-
-  const rulesDrink = `- INGREDIENTS: Recognize mixology units: oz, ml, cl, dash, splash, barspoon, part, float, drops. Garnishes (e.g. "3 slices jalapeÃƒÂ±o", "1 orange peel") also go in ingredients.
-- DIRECTIONS: Cocktails often have 2-4 terse steps (shake/stir/strain/pour/top/garnish). Do not pad Ã¢â‚¬â€ brevity is correct.
-- SORTING: Lines with oz/ml/dash + a spirit or mixer name Ã¢â€ â€™ ingredients[]. Action verbs (shake, stir, muddle, build, strain, top, float, garnish, rim) Ã¢â€ â€™ directions[].
-- GLASS / GARNISH: If mentioned anywhere, extract separately into the glass and garnish fields even if they already appear in a direction.`;
-
-  const rulesMeal = `- INGREDIENTS: Each item = one ingredient with its measurement. Normalize fractions (1/2, 3/4). Include prep notes after comma ("1 onion, diced").
-- DIRECTIONS: Each step = one action sentence. Split compound steps at ". Then" / ". Next" / sentence breaks. Keep steps in chronological order.
-- SORTING: Lines with measurements + food words = ingredients[]. Lines with cooking verbs (mix, bake, saute, chop, stir, roast, etc.) = directions[].
-- SECTIONS: If the caption has section headers ("Spice Mix:", "For the topping:"), list those ingredients under ingredients[] with a note, not as directions.`;
-
-  return `You are a ReciME-style ${subjectNoun} extraction assistant. Extract a clean, structured ${subjectNoun} from the following text (from an Instagram caption, TikTok description, YouTube video, or ${isDrink ? 'cocktail/liquor' : 'recipe'} blog).
-
-Return ONLY valid JSON matching this exact schema Ã¢â‚¬â€ no markdown, no explanation:
-${schema}
-
-Extraction rules (follow strictly):
-${rulesCommon}
-${isDrink ? rulesDrink : rulesMeal}
-${hintTitle ? `\nName hint: "${hintTitle}"` : ''}
-
-Text to parse:
----
-${rawText.slice(0, 7000)}
----`;
-}
+// (Legacy _buildExtractionPrompt removed — was only used by the deleted
+// _structureWithAIClientLegacy. All structuring now goes through /api/structure.)
 
 
 /**
- * structureRecipeFromImage — Transcript-first approach:
+ * structureRecipeFromImage — Transcript-first approach via /api/vision proxy:
  *   1. Gemini Vision faithfully TRANSCRIBES all text visible in the image
  *   2. The transcript is routed through captionToRecipe() which uses the
  *      shared SYSTEM_INSTRUCTION + RECIPE_SCHEMA for structuring
  *
- * This ensures photo imports get the exact same sorting rules, section handling,
- * quantity splitting, and validation as caption/URL imports. One prompt to maintain.
+ * NOTE: Currently unused — photoImportEngine.js handles all photo imports.
+ * Kept as a public API for future use. Routed through /api/vision so the
+ * Gemini key stays server-side.
  *
  * @param {string} imageDataUrl - Base64 data URL of the image
  * @param {object} options - { type: 'meal' | 'drink' }
  * @returns {object|null} Structured recipe or null
  */
 export async function structureRecipeFromImage(imageDataUrl, { type = 'meal' } = {}) {
-  const clientKey = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_GOOGLE_AI_KEY : null;
-  if (!clientKey || !imageDataUrl) return null;
+  if (!imageDataUrl) return null;
 
   const base64Data = imageDataUrl.split(',')[1];
   if (!base64Data) return null;
 
-  const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${clientKey}`;
-
-  // Step 1: Vision TRANSCRIBES — does not structure. Faithful text extraction.
+  // Step 1: Vision TRANSCRIBES via server proxy — does not structure.
   const transcribePrompt = `Transcribe ALL text visible in this image as faithfully as possible.
 Preserve line breaks, section headers (like “Ingredients:”, “For the sauce:”), bullet points,
 numbered steps, quantities, and measurements exactly as written.
@@ -724,7 +628,7 @@ name what you see, estimate ingredients you can identify, and suggest likely pre
 If handwritten, do your best to read every word. Output plain text only — no JSON, no markdown.`;
 
   try {
-    const res = await fetch(GEMINI_ENDPOINT, {
+    const res = await fetch('/api/vision?model=gemini-2.0-flash-lite', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1036,139 +940,8 @@ function _enrichWithNormalizer(items = []) {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GROK (xAI) CLIENT — OpenAI-compatible chat completions
-// ─────────────────────────────────────────────────────────────────────────────
-// Mirrors structureWithAIClient but speaks xAI's OpenAI-style API (Bearer auth,
-// messages[], response_format). Reuses the SAME SYSTEM_INSTRUCTION + few-shot +
-// thinFromStructured so output quality/shape matches the Gemini path exactly.
-// Model is env-configurable (VITE_XAI_MODEL); verify the exact id at console.x.ai.
-
-const XAI_ENDPOINT = 'https://api.x.ai/v1/chat/completions';
-const XAI_MODEL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_XAI_MODEL)
-  || 'grok-4-fast-non-reasoning'; // fast, 2M-context, cheap — good fit for extraction
-
-/** Convert Gemini-format few-shot turns ([{role:'user'|'model',parts:[{text}]}]) to OpenAI messages. */
-function geminiTurnsToOpenAIMessages(turns = []) {
-  if (!Array.isArray(turns)) return [];
-  return turns.map((t) => ({
-    role: t.role === 'model' ? 'assistant' : 'user',
-    content: Array.isArray(t.parts)
-      ? t.parts.map((p) => (p && p.text) || '').join('\n')
-      : String(t.content || ''),
-  }));
-}
-
-// Escalation target when the fast model is unsure (env-configurable; verify id
-// at console.x.ai). Confidence floor + correction count trigger a single
-// escalation. Transient HTTP statuses get one retry before we fall back.
-const XAI_MODEL_FLAGSHIP = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_XAI_MODEL_FLAGSHIP) || 'grok-4';
-const GROK_CONFIDENCE_FLOOR = 0.6;
-const GROK_TRANSIENT_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
-
-const _grokKey = () => (typeof import.meta !== 'undefined' ? import.meta.env?.VITE_XAI_API_KEY : null);
-const _sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/**
- * One Grok call. Returns:
- *   { structured }      on success
- *   { transient }       on a retryable failure (429/5xx/timeout/network)
- *   { failed }          on a permanent failure (4xx, empty, unparseable)
- * Never throws.
- */
-async function grokFetchStructured(messages, model) {
-  const key = _grokKey();
-  if (!key) return { failed: true };
-  try {
-    const res = await fetch(XAI_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-      body: JSON.stringify({ model, messages, temperature: 0.1, response_format: { type: 'json_object' } }),
-      signal: AbortSignal.timeout(20000),
-    });
-    if (!res.ok) {
-      if (GROK_TRANSIENT_STATUSES.has(res.status)) return { transient: true, status: res.status };
-      console.warn('[SpiceHub] Grok HTTP', res.status, '(permanent) — will fall back');
-      return { failed: true };
-    }
-    const data = await res.json();
-    const raw = data?.choices?.[0]?.message?.content?.trim();
-    if (!raw) return { failed: true };
-    const jsonText = sanitizeLLMResponse(raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, ''));
-    return { structured: JSON.parse(jsonText) };
-  } catch (err) {
-    // AbortError (timeout) / network error / JSON.parse → treat as transient.
-    return { transient: true, error: err?.message || String(err) };
-  }
-}
-
-/** Grok call with one retry on transient failures. Returns structured | null. */
-async function grokWithRetry(messages, model, retries = 1) {
-  for (let attempt = 0; attempt <= retries; attempt += 1) {
-    const r = await grokFetchStructured(messages, model);
-    if (r.structured) return r.structured;
-    if (r.failed) return null;
-    if (r.transient && attempt < retries) {
-      console.warn(`[SpiceHub] Grok transient${r.status ? ' ' + r.status : ''} — retry ${attempt + 1}/${retries}`);
-      await _sleep(400 * (attempt + 1));
-      continue;
-    }
-  }
-  console.warn('[SpiceHub] Grok transient failure exhausted retries — falling back');
-  return null;
-}
-
-/** Prefer the recipe with higher confidence; tiebreak on fewer corrections + having content. */
-function pickBetterRecipe(a, b) {
-  if (!a) return b;
-  if (!b) return a;
-  const score = (r) => {
-    const conf = typeof r.confidence === 'number' ? r.confidence : 0.5;
-    const corrections = r._postProcessAudit?.movedCount || 0;
-    const hasContent = ((r.ingredients?.length || 0) + (r.directions?.length || 0)) > 0 ? 0 : -1;
-    return conf - 0.03 * corrections + hasContent;
-  };
-  return score(b) > score(a) ? b : a;
-}
-
-export async function structureWithGrokClient(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal', author = '' } = {}) {
-  if (!_grokKey() || !rawText || rawText.trim().length < 20) return null;
-
-  const kind = type === 'drink' ? 'drink' : (detectKindHeuristic(rawText) === 'drink' ? 'drink' : 'meal');
-  const fewShot = geminiTurnsToOpenAIMessages(buildFewShotContents(kind));
-  const userText = hintTitle
-    ? `Name hint: "${hintTitle}"\n\n${rawText.slice(0, 24000)}`
-    : rawText.slice(0, 24000);
-
-  const messages = [
-    { role: 'system', content: SYSTEM_INSTRUCTION },
-    ...fewShot,
-    { role: 'user', content: userText },
-  ];
-
-  // Primary attempt on the fast model (with one transient retry).
-  const primary = await grokWithRetry(messages, XAI_MODEL);
-  if (!primary || !primary.isRecipe) return null;
-
-  console.log('[SpiceHub] Grok extraction OK — groups:', primary.ingredientGroups?.length, 'directions:', primary.directions?.length, 'confidence:', primary.confidence);
-
-  let best = finalizeAIRecipe(thinFromStructured(primary), { hintTitle, imageUrl, sourceUrl, author, via: `grok:${XAI_MODEL}` });
-
-  // Confidence-driven escalation: if the fast model was unsure OR the
-  // deterministic enforcer had to correct ≥3 lines, try the flagship once and
-  // keep whichever result scores better. Bounded to a single escalation.
-  const lowConfidence = typeof primary.confidence === 'number' && primary.confidence < GROK_CONFIDENCE_FLOOR;
-  const manyCorrections = (best._postProcessAudit?.movedCount || 0) >= 3;
-  if ((lowConfidence || manyCorrections) && XAI_MODEL_FLAGSHIP && XAI_MODEL_FLAGSHIP !== XAI_MODEL) {
-    console.log(`[SpiceHub] Grok escalating to ${XAI_MODEL_FLAGSHIP} (confidence ${primary.confidence}, corrections ${best._postProcessAudit?.movedCount || 0})`);
-    const flagship = await grokWithRetry(messages, XAI_MODEL_FLAGSHIP);
-    if (flagship && flagship.isRecipe) {
-      const escalated = finalizeAIRecipe(thinFromStructured(flagship), { hintTitle, imageUrl, sourceUrl, author, via: `grok:${XAI_MODEL_FLAGSHIP}` });
-      best = pickBetterRecipe(best, escalated);
-    }
-  }
-  return best;
-}
+// (Grok/xAI client engine removed — was dead code after 2026-07 unification.
+// All structuring now goes through Gemini via /api/structure server proxy.)
 
 // Gemini models are env-configurable. Primary stays on the cheap flash-lite
 // (free-tier friendly); a stronger flagship is used ONLY for confidence-driven
@@ -1214,29 +987,16 @@ async function geminiGenerateStructured(model, contents, clientKey) {
   }
 }
 
+/**
+ * structureWithAIClient — server-proxy path via /api/structure (serverStructurePack).
+ * Now routes through serverStructurePack (/api/structure proxy) so API keys stay server-side.
+ * now routes everything through the server so the key stays server-side.
+ * Escalation and confidence scoring happen server-side in api/structure.js.
+ */
 export async function structureWithAIClient(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal', author = '' } = {}) {
-  const clientKey = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_GOOGLE_AI_KEY : null;
-  if (!clientKey || !rawText || rawText.trim().length < 20) return null;
+  if (!rawText || rawText.trim().length < 20) return null;
 
-  // Auto-detect drink vs meal from text content when type is still 'meal'
-  const kind = type === 'drink' ? 'drink' : detectKindHeuristic(rawText) === 'drink' ? 'drink' : 'meal';
-
-  // Native structured output (responseSchema) + shared system instruction +
-  // few-shot exemplars, so every path uses the same extraction rules.
-  const fewShotTurns = buildFewShotContents(kind);
-  const userTurn = {
-    role: 'user',
-    parts: [{ text: hintTitle ? `Name hint: "${hintTitle}"\n\n${rawText.slice(0, 8000)}` : rawText.slice(0, 8000) }],
-  };
-  const contents = [...fewShotTurns, userTurn];
-
-  // ── Primary: cheap fast model ──────────────────────────────────────────────
-  const primary = await geminiGenerateStructured(GEMINI_MODEL, contents, clientKey);
-  if (primary.status || primary.error) {
-    console.warn(`[SpiceHub] Gemini schema ${primary.status ? 'HTTP ' + primary.status : 'error ' + primary.error} — trying server structuring`);
-    // Step 5 (2026-07 unification): the legacy prose-prompt fallback is
-    // REMOVED. The fallback is the /api/structure passthrough — identical
-    // schema, identical rules, one brain wherever it runs.
+  try {
     const miniPack = createContextPack({
       sourceUrl, sourceType: 'text', title: hintTitle,
       caption: rawText.slice(0, 50000), acquiredVia: 'caption',
@@ -1246,67 +1006,6 @@ export async function structureWithAIClient(rawText, { title: hintTitle = '', im
       return finalizeAIRecipe(thinFromStructured(structured), { hintTitle, imageUrl, sourceUrl, author, via: 'gemini-pack:server' });
     }
     return null;
-  }
-  if (!primary.structured || !primary.structured.isRecipe) return null;
-  const s = primary.structured;
-  console.log(`[SpiceHub] Gemini (${GEMINI_MODEL}) extraction OK — groups:`, s.ingredientGroups?.length, 'directions:', s.directions?.length, 'confidence:', s.confidence);
-
-  let best = finalizeAIRecipe(thinFromStructured(s), { hintTitle, imageUrl, sourceUrl, author, via: `gemini:${GEMINI_MODEL}` });
-
-  // ── Confidence-driven escalation to a stronger Gemini model ────────────────
-  // Same engine improvement we built for Grok: if the fast model was unsure OR
-  // the deterministic enforcer had to correct ≥3 lines, try the flagship once
-  // and keep whichever scores better. A wrong flagship id just no-ops (we keep
-  // the fast result), so this is safe to leave on.
-  const lowConfidence = typeof s.confidence === 'number' && s.confidence < GEMINI_CONFIDENCE_FLOOR;
-  const manyCorrections = (best._postProcessAudit?.movedCount || 0) >= 3;
-  if ((lowConfidence || manyCorrections) && GEMINI_MODEL_FLAGSHIP && GEMINI_MODEL_FLAGSHIP !== GEMINI_MODEL) {
-    console.log(`[SpiceHub] Gemini escalating to ${GEMINI_MODEL_FLAGSHIP} (confidence ${s.confidence}, corrections ${best._postProcessAudit?.movedCount || 0})`);
-    const esc = await geminiGenerateStructured(GEMINI_MODEL_FLAGSHIP, contents, clientKey);
-    if (esc.structured && esc.structured.isRecipe) {
-      const escalated = finalizeAIRecipe(thinFromStructured(esc.structured), { hintTitle, imageUrl, sourceUrl, author, via: `gemini:${GEMINI_MODEL_FLAGSHIP}` });
-      best = pickBetterRecipe(best, escalated);
-    }
-  }
-  return best;
-}
-
-/** Legacy prose-prompt fallback for when responseSchema isn't supported. */
-async function _structureWithAIClientLegacy(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal', author = '' } = {}) {
-  const clientKey = typeof import.meta !== 'undefined' ? import.meta.env?.VITE_GOOGLE_AI_KEY : null;
-  if (!clientKey) return null;
-
-  const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${clientKey}`;
-  const prompt = _buildExtractionPrompt(rawText, { hintTitle, type });
-
-  try {
-    const res = await fetch(GEMINI_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-      signal: AbortSignal.timeout(14000),
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-    if (!raw) return null;
-    const jsonText = sanitizeLLMResponse(raw.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, ''));
-    const parsed = JSON.parse(jsonText);
-    if (parsed.error) return null;
-    const ingredients = Array.isArray(parsed.ingredients)
-      ? parsed.ingredients.map(ing => typeof ing === 'string' ? ing : [ing.amount, ing.name].filter(Boolean).join(' ').trim()).filter(Boolean)
-      : [];
-    const _dirs = Array.isArray(parsed.directions) ? parsed.directions.filter(Boolean) : [];
-    const legacyThin = {
-      title: parsed.title || '',
-      ingredients,
-      directions: _dirs,
-      servings: parsed.servings || null,
-      cookTime: parsed.cookTime || null,
-      notes: parsed.notes || null,
-      ...(type === 'drink' ? { glass: parsed.glass || null, garnish: parsed.garnish || null, method: parsed.method || null, abv: typeof parsed.abv === 'number' ? parsed.abv : null, _type: 'drink' } : { _type: 'meal' }),
-    };
-    return finalizeAIRecipe(legacyThin, { hintTitle, imageUrl, sourceUrl, author, via: 'gemini-client-legacy' });
   } catch {
     return null;
   }
@@ -1314,7 +1013,7 @@ async function _structureWithAIClientLegacy(rawText, { title: hintTitle = '', im
 
 
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ AI-powered structuring via server /api/structure-recipe (Gemini Flash) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-// Falls back to direct client call if VITE_GOOGLE_AI_KEY is configured.
+// All AI calls route through the server proxy. No client-side API keys.
 // Returns a SpiceHub recipe object on success, null if unavailable.
 export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal', author = '' } = {}) {
   if (!rawText || rawText.trim().length < 20) return null;
@@ -2997,7 +2696,7 @@ function normalizeWprmApiResponse(wprm, sourceUrl) {
 /**
  * Convert fetched HTML to Markdown and structure via Gemini.
  * Called as a final fallback when JSON-LD, microdata, CSS patterns, and server
- * extraction all fail. Requires VITE_GOOGLE_AI_KEY.
+ * extraction all fail. Requires GOOGLE_GENERATIVE_AI_API_KEY on the server.
  *
  * @param {string} html - Raw HTML from CORS proxy
  * @param {string} sourceUrl - Original URL (for link and title extraction)

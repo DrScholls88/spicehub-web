@@ -1,10 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // /api/structure — server-side Gemini structuring passthrough.
 //
-// Spec §4: lets the Gemini key live server-side (GOOGLE_AI_KEY env var) so the
-// client bundle can ship without VITE_GOOGLE_AI_KEY. The client keeps its own
-// key path as a fallback for client-only deploys — structurePack() in
-// src/import/structure/gemini.js decides which path to use.
+// Keeps the Gemini key server-side (GOOGLE_GENERATIVE_AI_API_KEY env var).
+// The client always routes through this proxy — no client-side API keys.
 //
 // SINGLE PROMPT SOURCE: this function imports the exact same system
 // instruction, reconciliation/verifier rules, response schema, and few-shots
@@ -102,7 +100,7 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return res.status(405).json({ ok: false, reason: 'post-only' });
 
-  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.VITE_GOOGLE_AI_KEY;
+  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   if (!apiKey) return res.status(503).json({ ok: false, reason: 'no-server-key' });
 
   const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket?.remoteAddress || 'unknown';

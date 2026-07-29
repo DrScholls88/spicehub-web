@@ -33,7 +33,7 @@ tests/import/
 
 - `npm run test:corpus` — corpus only (offline, deterministic, no API calls)
 - `npm test` — full suite including corpus
-- `npm run test:live` — hits real Gemini with 2 captions (needs `VITE_GOOGLE_AI_KEY`; ~4 requests)
+- `npm run test:live` — hits real Gemini with 2 captions (needs `GOOGLE_GENERATIVE_AI_API_KEY` + running dev server; ~4 requests)
 
 ## Rules
 

@@ -169,8 +169,7 @@ describe('PhotoImportError', () => {
 // Retry-After is stubbed to '0' throughout so the real one-retry backoff
 // (capped at 3s) resolves near-instantly instead of slowing the suite.
 // Gemini now has NO key gate (transcribePagesOnline always attempts it) and
-// goes through /api/vision first; VITE_GOOGLE_AI_KEY is only relevant as the
-// client-side fallback when the proxy itself is unreachable/failing.
+// goes through /api/vision exclusively — no client-side API key fallbacks.
 
 describe('transcribePagesOnline — /api/vision proxy + 429 / rate-limit handling', () => {
   afterEach(() => {
@@ -202,8 +201,6 @@ describe('transcribePagesOnline — /api/vision proxy + 429 / rate-limit handlin
   const isDirectGemini = (url) => String(url).includes('generativelanguage');
 
   it('uses the /api/vision proxy for Gemini with no client key configured at all', async () => {
-    vi.stubEnv('VITE_GOOGLE_AI_KEY', '');
-    vi.stubEnv('VITE_MISTRAL_API_KEY', '');
     let sawProxyCall = false;
     vi.stubGlobal('fetch', vi.fn(async (url) => {
       if (isProxy(url)) { sawProxyCall = true; return resOk(geminiOkBody); }
@@ -217,8 +214,6 @@ describe('transcribePagesOnline — /api/vision proxy + 429 / rate-limit handlin
   });
 
   it('retries once on a proxy 429 (honoring Retry-After), then succeeds', async () => {
-    vi.stubEnv('VITE_GOOGLE_AI_KEY', '');
-    vi.stubEnv('VITE_MISTRAL_API_KEY', '');
     let calls = 0;
     vi.stubGlobal('fetch', vi.fn(async () => {
       calls++;
@@ -231,8 +226,6 @@ describe('transcribePagesOnline — /api/vision proxy + 429 / rate-limit handlin
   });
 
   it('parses Gemini RetryInfo retryDelay from the body when no Retry-After header is sent', async () => {
-    vi.stubEnv('VITE_GOOGLE_AI_KEY', '');
-    vi.stubEnv('VITE_MISTRAL_API_KEY', '');
     let calls = 0;
     vi.stubGlobal('fetch', vi.fn(async () => {
       calls++;
@@ -246,24 +239,17 @@ describe('transcribePagesOnline — /api/vision proxy + 429 / rate-limit handlin
     expect(out.engine).toBe('gemini');
   });
 
-  it('falls back to the direct client-key call when the proxy is unreachable', async () => {
-    vi.stubEnv('VITE_GOOGLE_AI_KEY', 'k');
-    vi.stubEnv('VITE_MISTRAL_API_KEY', '');
-    let directCallSeen = false;
+  it('propagates proxy failure when proxy is unreachable (no client-key fallback)', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url) => {
-      if (isProxy(url)) throw new Error('network down');
-      if (isDirectGemini(url)) { directCallSeen = true; return resOk(geminiOkBody); }
+      if (isGeminiProxy(url)) throw new Error('network down');
+      if (isMistralProxy(url)) throw new Error('network down');
       throw new Error(`unexpected fetch to ${url}`);
     }));
 
-    const out = await transcribePagesOnline(['data:image/jpeg;base64,x']);
-    expect(directCallSeen).toBe(true);
-    expect(out.engine).toBe('gemini');
+    await expect(transcribePagesOnline(['data:image/jpeg;base64,x'])).rejects.toThrow();
   });
 
   it('does not fall back when no client key is configured — surfaces the proxy failure directly', async () => {
-    vi.stubEnv('VITE_GOOGLE_AI_KEY', '');
-    vi.stubEnv('VITE_MISTRAL_API_KEY', '');
     vi.stubGlobal('fetch', vi.fn(async (url) => {
       if (isProxy(url)) return resErr(500, 'proxy exploded');
       throw new Error(`unexpected fetch to ${url}`);
@@ -277,11 +263,9 @@ describe('transcribePagesOnline — /api/vision proxy + 429 / rate-limit handlin
   });
 
   it('falls through to Mistral once the Gemini proxy exhausts its retry', async () => {
-    vi.stubEnv('VITE_GOOGLE_AI_KEY', ''); // no client fallback — proxy failure goes straight to tier 2
-    vi.stubEnv('VITE_MISTRAL_API_KEY', 'm');
     vi.stubGlobal('fetch', vi.fn(async (url) => {
-      if (isProxy(url)) return res429({ 'Retry-After': '0' });
-      if (isMistral(url)) return resOk(mistralOkBody);
+      if (isGeminiProxy(url)) return res429({ 'Retry-After': '0' });
+      if (isMistralProxy(url)) return resOk(mistralOkBody);
       throw new Error(`unexpected fetch to ${url}`);
     }));
 
@@ -290,11 +274,9 @@ describe('transcribePagesOnline — /api/vision proxy + 429 / rate-limit handlin
   });
 
   it('propagates the last-tried tier failure reason (regression: Mistral error was previously dropped)', async () => {
-    vi.stubEnv('VITE_GOOGLE_AI_KEY', '');
-    vi.stubEnv('VITE_MISTRAL_API_KEY', 'm');
     vi.stubGlobal('fetch', vi.fn(async (url) => {
-      if (isProxy(url)) return resErr(500, 'gemini exploded');
-      if (isMistral(url)) return resErr(503, 'mistral exploded');
+      if (isGeminiProxy(url)) return resErr(500, 'gemini exploded');
+      if (isMistralProxy(url)) return resErr(503, 'mistral exploded');
       throw new Error(`unexpected fetch to ${url}`);
     }));
 
@@ -306,8 +288,6 @@ describe('transcribePagesOnline — /api/vision proxy + 429 / rate-limit handlin
   });
 
   it('surfaces status 429 all the way out when every online tier is rate-limited', async () => {
-    vi.stubEnv('VITE_GOOGLE_AI_KEY', '');
-    vi.stubEnv('VITE_MISTRAL_API_KEY', 'm');
     vi.stubGlobal('fetch', vi.fn(async () => res429({ 'Retry-After': '0' })));
 
     await expect(transcribePagesOnline(['data:image/jpeg;base64,x'])).rejects.toMatchObject({
@@ -320,8 +300,6 @@ describe('transcribePagesOnline — /api/vision proxy + 429 / rate-limit handlin
   //    the client bundle; mirrors the Gemini proxy coverage above) ──────────
 
   it('Mistral works via the /api/vision proxy alone, with no client key configured', async () => {
-    vi.stubEnv('VITE_GOOGLE_AI_KEY', '');
-    vi.stubEnv('VITE_MISTRAL_API_KEY', '');
     let sawMistralProxyCall = false;
     vi.stubGlobal('fetch', vi.fn(async (url) => {
       if (isMistralProxy(url)) { sawMistralProxyCall = true; return resOk(mistralOkBody); }
@@ -334,28 +312,25 @@ describe('transcribePagesOnline — /api/vision proxy + 429 / rate-limit handlin
     expect(out.engine).toBe('mistral');
   });
 
-  it('falls back to Mistral\'s direct client-key call when only the Mistral proxy is unreachable', async () => {
-    vi.stubEnv('VITE_GOOGLE_AI_KEY', '');
-    vi.stubEnv('VITE_MISTRAL_API_KEY', 'm');
-    let directMistralSeen = false;
+  it('surfaces Gemini error when Mistral proxy is also unreachable (no client-key fallback)', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url) => {
       if (isGeminiProxy(url)) return resErr(500, 'gemini exploded');
       if (isMistralProxy(url)) throw new Error('network down');
-      if (isMistral(url)) { directMistralSeen = true; return resOk(mistralOkBody); }
       throw new Error(`unexpected fetch to ${url}`);
     }));
 
-    const out = await transcribePagesOnline(['data:image/jpeg;base64,x']);
-    expect(directMistralSeen).toBe(true);
-    expect(out.engine).toBe('mistral');
+    // Mistral proxy failure is marked notConfigured → Gemini's error surfaces
+    await expect(transcribePagesOnline(['data:image/jpeg;base64,x'])).rejects.toMatchObject({
+      status: 500,
+      engine: 'gemini',
+      detail: expect.stringContaining('gemini exploded'),
+    });
   });
 
   it('does not let an unconfigured Mistral tier eclipse a real Gemini failure reason', async () => {
     // Regression guard: Mistral tier 2 is now ALWAYS attempted (no more
     // MISTRAL_KEY() gate), so an unconfigured Mistral must not paper over
     // Gemini's actual error with a generic "no-server-key" 503.
-    vi.stubEnv('VITE_GOOGLE_AI_KEY', '');
-    vi.stubEnv('VITE_MISTRAL_API_KEY', '');
     vi.stubGlobal('fetch', vi.fn(async (url) => {
       if (isMistralProxy(url)) return resErr(503, '{"ok":false,"reason":"no-server-key"}');
       if (isGeminiProxy(url)) return resErr(500, 'gemini real failure');

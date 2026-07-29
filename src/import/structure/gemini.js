@@ -212,16 +212,14 @@ export async function serverStructurePack(pack, { type = 'meal', signal } = {}) 
 
 /**
  * structurePack — ContextPack in, raw RECIPE_SCHEMA object out (or null).
- * Client key path first (no extra hop when the key is bundled), server
- * passthrough when the client has no key. Confidence-driven escalation on the
- * client path; the server does its own escalation.
+ * Always routes through the /api/structure server proxy so the Gemini key
+ * stays server-side. The `clientKey` override is retained only for tests.
  */
 export async function structurePack(pack, { type = 'meal', clientKey: keyOverride, signal } = {}) {
   if (!pack) return null;
-  const clientKey =
-    keyOverride !== undefined
-      ? keyOverride
-      : (typeof import.meta !== 'undefined' ? import.meta.env?.VITE_GOOGLE_AI_KEY : null);
+  // Security: never read VITE_GOOGLE_AI_KEY from the client bundle.
+  // If a test passes an explicit key override, honour it; otherwise go server.
+  const clientKey = keyOverride !== undefined ? keyOverride : null;
   if (!clientKey) return serverStructurePack(pack, { type, signal });
 
   const { contents, mode, kind } = buildPackContents(pack, { type });

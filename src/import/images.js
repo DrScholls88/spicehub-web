@@ -68,11 +68,11 @@ export async function visionValidateDishPhoto(imageDataUrl, { clientKey: keyOver
     return null;
   };
 
-  // Server proxy first — keeps the Gemini key out of the client bundle
-  // (docs/superpowers/specs/2026-07-07-photo-import-csp-fix-design.md,
-  // "Out of scope" §1). Works even without a client key, so the old
-  // `!clientKey → return null` early-out is gone; the client key below is
-  // now purely a fallback for when the proxy itself is unreachable.
+  // Server proxy only — keeps the Gemini key server-side.
+  // Client-key fallback REMOVED (security: VITE_GOOGLE_AI_KEY was exposed in
+  // the browser bundle). If the proxy is unreachable, return null so the caller
+  // accepts the photo optimistically (a wrongly rejected photo hurts more than
+  // a mediocre one).
   try {
     const res = await fetch(`/api/vision?model=${VISION_MODEL}`, {
       method: 'POST',
@@ -81,27 +81,7 @@ export async function visionValidateDishPhoto(imageDataUrl, { clientKey: keyOver
       signal: AbortSignal.timeout(VISION_TIMEOUT_MS),
     });
     if (res.ok) return parseVerdict(await res.json());
-  } catch {
-    /* fall through to the client-key path below */
-  }
-
-  const clientKey =
-    keyOverride ||
-    (typeof import.meta !== 'undefined' ? import.meta.env?.VITE_GOOGLE_AI_KEY : null);
-  if (!clientKey) return null;
-
-  try {
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${VISION_MODEL}:generateContent?key=${clientKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body,
-        signal: AbortSignal.timeout(VISION_TIMEOUT_MS),
-      },
-    );
-    if (!res.ok) return null;
-    return parseVerdict(await res.json());
+    return null;
   } catch {
     return null;
   }
