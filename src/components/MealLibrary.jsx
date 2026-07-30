@@ -11,6 +11,9 @@ import DiscoverRecipes from './DiscoverRecipes';
 import { hapticLight, hapticSuccess } from '../haptics';
 import { getMealVideoSource } from '../lib/videoSource';
 import { buildPantryMatchIndex } from '../lib/pantryMatch.js';
+import SharePickerSheet from './SharePickerSheet';
+import SharedWithYouSection from './SharedWithYouSection';
+import { isFriendsEnabled } from '../lib/supabaseClient';
 
 // I-5: a recipe is "improvable" when it was imported with a low-confidence /
 // needs-review flag AND we kept its source caption (so we can re-run extraction
@@ -180,6 +183,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
     try { return localStorage.getItem('ml-grid-layout') || '2x'; } catch { return '2x'; }
   }); // '2x' | '3x' | 'list'
   const [showRotationTip, setShowRotationTip] = useState(false);
+  const [friendShareMeal, setFriendShareMeal] = useState(null); // meal for SharePickerSheet
   const restoreRef = useRef(null);
   const categoryScrollRef = useRef(null);
   const longPressTimer = useRef(null);
@@ -1085,6 +1089,9 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
       )}
       </AnimatePresence>
 
+      {/* ── Shared with you (friend shares inbox) ── */}
+      <SharedWithYouSection onToast={onToast} onReload={onReload} />
+
       {/* ── Gallery grid ── */}
       <div className={`ml-gallery ml-layout-${gridLayout}`}>
         {filtered.length === 0 ? (
@@ -1476,6 +1483,11 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
               <button onClick={() => { onShare?.(quickPreview); }}>
                 Share
               </button>
+              {isFriendsEnabled() && (
+                <button onClick={() => { setQuickPreview(null); setFriendShareMeal(quickPreview); }}>
+                  👤 Send to Friend
+                </button>
+              )}
               <button onClick={() => { hapticSuccess(); handleToggleRotation(quickPreview); setQuickPreview(null); }}>
                 {quickPreview.inRotation ? '🔄 Remove from Rotation' : '🔄 Add to Rotation'}
               </button>
@@ -1826,6 +1838,15 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
       >
         ···
       </motion.button>
+
+      {/* ── Share to friend picker ── */}
+      <SharePickerSheet
+        open={!!friendShareMeal}
+        onClose={() => setFriendShareMeal(null)}
+        meal={friendShareMeal}
+        itemType="meal"
+        showToast={onToast}
+      />
     </div>
   );
 }

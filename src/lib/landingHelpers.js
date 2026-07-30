@@ -58,6 +58,7 @@ export const diceVariants = {
 
 export const TILE_COLORS = {
   planWeek: '#e65100',
+  spinWeek: '#c62828',
   myMeals: '#2e7d32',
   bar: '#7b1fa2',
   grocery: '#1565c0',

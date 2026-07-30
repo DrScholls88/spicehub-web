@@ -297,6 +297,15 @@ db.version(22).stores({
   try { localStorage.removeItem('spicehub_dietary_pref'); } catch { /* ignore */ }
 });
 
+// v23: Friends & Direct Share — friend list cache + received recipe shares.
+// Additive only (no data transformation). Tables stay empty until user signs in
+// with VITE_FRIENDS_ENABLED=true. See spec:
+// docs/superpowers/specs/2026-07-30-friends-direct-share-design.md
+db.version(23).stores({
+  friends: 'id, otherUserId, username, displayName, avatarId, status, updatedAt',
+  recipeShares: 'id, fromUserId, toUserId, itemType, status, createdAt',
+});
+
 export default db;
 
 // ── Custom Day Tags helpers (v20) ───────────────────────────────────────────

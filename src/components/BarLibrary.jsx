@@ -10,6 +10,8 @@ import { hapticLight } from '../haptics';
 import { getMealVideoSource } from '../lib/videoSource';
 import { RefreshCw } from 'lucide-react';
 import SquigglyText from './SquigglyText';
+import SharePickerSheet from './SharePickerSheet';
+import { isFriendsEnabled } from '../lib/supabaseClient';
 
 // ── Assignable drink categories ──────────────────────────────────────────────
 const DRINK_CATEGORY_OPTIONS = [
@@ -141,6 +143,7 @@ export default function BarLibrary({
   const [fabOpen, setFabOpen]                 = useState(false); // speed-dial: + expands to add/import
   const [reExtractDrink, setReExtractDrink]   = useState(null);  // I-5: drink being re-extracted
   const [reimportingPhotoId, setReimportingPhotoId] = useState(null); // parity w/ Meal Library's Find Photo
+  const [friendShareDrink, setFriendShareDrink] = useState(null); // drink for SharePickerSheet
 
   const longPressTimer    = useRef(null);
   const touchStartPos     = useRef(null);
@@ -852,6 +855,9 @@ export default function BarLibrary({
                 <button className="bl-qp-btn" onClick={() => { setQuickPreview(null); onViewDetail?.(quickPreview); }}>View</button>
                 <button className="bl-qp-btn" onClick={() => { setQuickPreview(null); onEdit?.(quickPreview); }}>Edit</button>
                 <button className="bl-qp-btn" onClick={() => { setQuickPreview(null); onShare?.(quickPreview); }}>Share</button>
+                {isFriendsEnabled() && (
+                  <button className="bl-qp-btn" onClick={() => { setQuickPreview(null); setFriendShareDrink(quickPreview); }}>👤 Send to Friend</button>
+                )}
                 {onPlayVideo && getMealVideoSource(quickPreview) && (
                   <button
                     className="bl-qp-btn"
@@ -981,6 +987,15 @@ export default function BarLibrary({
           </div>
         </>
       )}
+
+      {/* ── Share to friend picker ── */}
+      <SharePickerSheet
+        open={!!friendShareDrink}
+        onClose={() => setFriendShareDrink(null)}
+        meal={friendShareDrink}
+        itemType="drink"
+        showToast={onToast}
+      />
     </div>
   );
 }

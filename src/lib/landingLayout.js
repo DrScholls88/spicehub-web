@@ -13,7 +13,7 @@ const STORAGE_KEY = 'spicehub-landing-layout-v1';
 // Canonical id list + order shipped in the app. Keep in sync with the `tiles`
 // array built in LandingPage.jsx — this is only the fallback/merge reference,
 // LandingPage still owns the actual tile definitions (emoji/title/onClick).
-export const DEFAULT_WIDGET_ORDER = ['planWeek', 'myMeals', 'bar', 'grocery', 'pantry', 'fridge', 'stats'];
+export const DEFAULT_WIDGET_ORDER = ['planWeek', 'spinWeek', 'myMeals', 'bar', 'grocery', 'pantry', 'fridge', 'stats'];
 
 function safeParse(raw) {
   try {
