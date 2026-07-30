@@ -15,6 +15,10 @@ SpiceHub gains a user profile system that preserves its offline-first sovereignt
 
 Supabase (free tier) as thin relay for shared data only. Auth, Realtime, and Postgres included on the free tier. Personal data never leaves the device. The app remains 100% functional without internet — cloud sync is strictly additive.
 
+### Feature flag
+
+The entire Home Group surface ships behind `VITE_HOME_GROUP_ENABLED`. When falsy (or absent), the Settings sheet shows no Home Group section, no Supabase client is initialized, and no sync code runs. This allows the profile data model (v22 migration) to ship and stabilize before the sharing UI is exposed.
+
 ---
 
 ## Section 1: Local Profile Data Model
@@ -52,12 +56,17 @@ drinks: '++id, name, profileId'
 
 `weekPlan`, `groceryItems`, `storeMemory` do NOT get a `profileId`. They represent the household coordination layer and sync to Supabase.
 
+### profileId coverage note (multi-profile future)
+
+v1 stamps `profileId` on `meals`, `drinks`, `barInventory`, `cookingLog` only. The following tables remain unscoped and will require a follow-up migration if multi-profile is added later: `userTags`, `customDayTags`, `weekHistory`, `importQueue`, `batchQueue`, `importDrafts`, `ingredientAliases`, `ingredientFoods`, `ingredientUnits`. This is intentional for v1 (single local profile).
+
 ### Migration (v22)
 
 1. Auto-create a default profile with `isDefault: true`, random UUID, `displayName: "Me"`
 2. Stamp all existing meals/drinks/barInventory/cookingLog with that profile's UUID
 3. Move `spicehub_dietary_pref` from localStorage into the profile record
-4. Zero user action required — existing single-user experience is unchanged
+4. **Update read/write paths:** `App.jsx`'s `loadDietaryPref()` and the dietary save in spin constraints must be updated to read from / write to the profile record instead of `localStorage.getItem('spicehub_dietary_pref')`. The old localStorage key should be deleted after successful migration to avoid stale shadow state.
+5. Zero user action required — existing single-user experience is unchanged
 
 ---
 
@@ -75,7 +84,7 @@ created_by          uuid REFERENCES auth.users(id)
 created_at          timestamptz DEFAULT now()
 ```
 
-Code stored uppercase, input normalized on join. Owner can regenerate (old code invalidated). Rate-limit join attempts via Edge Function.
+Code stored uppercase, input normalized on join. Owner can regenerate (old code invalidated). Rate-limit join attempts via Edge Function: **10 join attempts per code per hour, 5 failed attempts per IP per hour.** Return generic "Invalid or expired code" on failure (do not leak whether the code exists).
 
 ### `home_group_members`
 
@@ -89,7 +98,7 @@ joined_at      timestamptz DEFAULT now()
 PRIMARY KEY (home_group_id, user_id)
 ```
 
-Only `role = 'owner'` can delete group or regenerate invite code. If last owner leaves: promote earliest member, or block leave until explicit transfer.
+Only `role = 'owner'` can delete group or regenerate invite code. **If sole owner attempts to leave: blocked.** Must either transfer ownership to another member first, or delete the group entirely. Auto-promote is surprising for household v1.
 
 ### `shared_week_plan`
 
@@ -104,6 +113,10 @@ updated_at     timestamptz DEFAULT now()
 UNIQUE (home_group_id, day_index, slot)
 ```
 
+### Upsert semantics
+
+All week-plan writes use `ON CONFLICT (home_group_id, day_index, slot) DO UPDATE`. The `id` column is stable once created — the client does NOT generate a new UUID on every edit. If a row for that `(group, day, slot)` already exists, it is updated in place. This prevents duplicate logical slots.
+
 ### `slot_data` contract (strict)
 
 ```typescript
@@ -112,6 +125,7 @@ UNIQUE (home_group_id, day_index, slot)
   imageUrl?: string           // durable public URL only — never blob: or data:
   ingredients: string[]       // plain list for grocery generation on other devices
   servings?: number
+  source_url?: string         // original import link (IG post, recipe site, etc.)
   source_profile_name: string
   source_profile_id?: string  // local UUID of owner (attribution)
   is_special?: boolean        // true for day tags
@@ -120,7 +134,7 @@ UNIQUE (home_group_id, day_index, slot)
 }
 ```
 
-**Critical rule:** If the only image is a local data URL / blob, either omit `imageUrl` or upload a compressed copy to Supabase Storage at assignment time.
+**Image strategy (v1 — deferred Storage upload):** If the recipe's only image is a local `data:` URL or `blob:` URL, **omit `imageUrl` from `slot_data`** entirely. The receiving device sees the meal name and ingredients but no photo. Supabase Storage upload is deferred to a future phase — it introduces bucket setup, RLS, compression, and failure handling that would bloat Phase 1. Public URLs (e.g., from Instagram CDN or recipe sites) are passed through as-is.
 
 ### `shared_grocery_items`
 
@@ -140,9 +154,23 @@ updated_at     timestamptz DEFAULT now()
 
 Index: `(home_group_id, checked, sort_order)` for fast list rendering.
 
+### `shared_recipe_transfers`
+
+```sql
+id             uuid PRIMARY KEY DEFAULT gen_random_uuid()
+home_group_id  uuid REFERENCES home_groups(id) ON DELETE CASCADE
+recipe_data    jsonb NOT NULL          -- full recipe minus private fields (cookCount, lastCooked)
+from_user      uuid REFERENCES auth.users(id)
+to_user        uuid                    -- null = available to any group member
+created_at     timestamptz DEFAULT now()
+claimed_at     timestamptz             -- set when receiver saves; row deleted after
+```
+
+RLS: same membership gate as other shared tables. Ephemeral — claimed rows are deleted immediately; unclaimed rows are deleted after 7 days (Supabase cron or edge function).
+
 ### Cascade deletes
 
-`ON DELETE CASCADE` from `home_groups` → members, week plan, grocery. Group deletion wipes all shared data.
+`ON DELETE CASCADE` from `home_groups` → members, week plan, grocery, recipe transfers. Group deletion wipes all shared data.
 
 ### Row-Level Security (all shared tables)
 
@@ -267,6 +295,18 @@ Users who signed in last week should not re-authenticate on tab reopen.
 - Capacitor builds: must claim the link via Universal Links (iOS) / App Links (Android)
 - Test full flow on iOS home-screen PWA and Capacitor builds
 
+### Auth redirect URLs (must be configured in Supabase dashboard)
+
+| Context | Redirect URL |
+|---------|-------------|
+| Local dev | `http://localhost:5173/auth/callback` |
+| Vercel production | `https://<your-domain>/auth/callback` |
+| Vercel preview | `https://<project>-*.vercel.app/auth/callback` |
+| Capacitor iOS | `com.spicehub.app://auth/callback` (Universal Link) |
+| Capacitor Android | `com.spicehub.app://auth/callback` (App Link) |
+
+The `/auth/callback` route must be handled client-side: parse the token from the URL hash/query, call `supabase.auth.exchangeCodeForSession()` (for PKCE) or let the SDK auto-handle (for implicit), then redirect to the Settings sheet. For Capacitor, register the custom scheme in `capacitor.config.ts` and the native deep-link handlers.
+
 ### Sign-in trigger points
 
 Auth never triggers on app launch. Appears only when user takes an action requiring cloud identity: creating a group, joining via invite code, or (future) enabling multi-device sync.
@@ -304,6 +344,126 @@ sharedSyncQueue: '++id, table, status, createdAt, clientMutationId'
 sharedMeta: 'homeGroupId'
 // { homeGroupId, lastFullSyncAt, lastRealtimeEventAt }
 ```
+
+### Group-create bootstrap
+
+When the owner creates a home group, the current local week plan and grocery list are pushed as the initial shared state. This prevents the partner from joining an empty plan.
+
+1. On successful group creation, read local `weekPlan` (Array(7)) and `groceryItems`
+2. Map each non-null week slot to a `shared_week_plan` row using the week-plan mapper (below)
+3. Map each grocery item to a `shared_grocery_items` row using the grocery mapper (below)
+4. Push all rows to Supabase in a single batch
+5. Subscribe to Realtime
+
+If the local plan is empty, that's fine — the shared plan starts empty too.
+
+### Week-plan mapper (local ↔ cloud)
+
+**Local → cloud (outbound):**
+
+```javascript
+// Local weekPlan[dayIndex] is one of: meal object, special-day object, or null
+function toSlotData(localSlot, profileName) {
+  if (!localSlot) return null  // no row for empty slots
+  
+  // Special day tag
+  if (localSlot.id && localSlot.id.startsWith('__')) {
+    return {
+      name: localSlot.name,
+      ingredients: [],
+      source_profile_name: profileName,
+      is_special: true,
+      special_tag: localSlot.id,
+    }
+  }
+  
+  // Real meal
+  return {
+    name: localSlot.name,
+    imageUrl: isPublicUrl(localSlot.imageUrl) ? localSlot.imageUrl : undefined,
+    ingredients: (localSlot.ingredients || []).map(i => typeof i === 'string' ? i : i.name || ''),
+    servings: localSlot.servings,
+    source_url: localSlot.link || undefined,  // original import URL if available
+    source_profile_name: profileName,
+    source_profile_id: localSlot.profileId,
+    is_special: false,
+  }
+}
+```
+
+**Cloud → local (inbound):**
+
+```javascript
+// Supabase row → local weekPlan slot
+function fromSlotData(row) {
+  if (row.slot_data.is_special) {
+    return {
+      id: row.slot_data.special_tag,
+      name: row.slot_data.name,
+      icon: SPECIAL_TAG_ICONS[row.slot_data.special_tag] || '🏷️',
+    }
+  }
+  return {
+    name: row.slot_data.name,
+    imageUrl: row.slot_data.imageUrl,
+    ingredients: row.slot_data.ingredients,
+    servings: row.slot_data.servings,
+    link: row.slot_data.source_url,             // for "Import to my library"
+    _sharedBy: row.slot_data.source_profile_name,
+    _updatedBy: row.updated_by,
+    _updatedAt: row.updated_at,
+    _isSharedSlot: true,                         // marks as plan-only until imported
+  }
+}
+```
+
+WeekView continues to read/write the local `weekPlan` array. The sync layer is the only code that talks to Supabase.
+
+### Shared slot behavior (plan-only vs. full recipe)
+
+**A shared slot does NOT create a meal in the receiver's library.** The slot_data snapshot is plan-only: name, ingredients list, image, and attribution. CookMode / MealDetail only open if a matching local recipe exists (by name lookup in `db.meals`); otherwise the slot renders as a read-only plan card.
+
+**Two ways for a group member to get the full recipe into their own library:**
+
+1. **Linked import (source_url present):** If the original recipe was imported from a URL (Instagram, recipe site, etc.), the slot card shows an "Import to My Library" button. Tapping it kicks off the existing import engine (`executeUrlImport`) with the `source_url` — the receiver gets their own full copy with directions, notes, nutrition, and all structured data. Once imported, the slot automatically links to the local recipe and CookMode / MealDetail become available.
+
+2. **Full share (no link / manually created recipe):** If the recipe has no `source_url` (it was manually entered or the link was lost), the assigning user can explicitly "Share full recipe" from the slot's overflow menu. This serializes the complete local recipe (including directions, notes, structured ingredients — everything except private fields like cookCount/lastCooked) into a one-time payload pushed to a `shared_recipe_transfers` row in Supabase. The receiver sees a "Save to My Library" prompt; on accept, the full recipe is written to their local `db.meals` and the transfer row is deleted.
+
+The `shared_recipe_transfers` Supabase table (defined in Section 2 schema) stores these one-time payloads. Transfer rows are ephemeral — deleted after claim or after 7 days.
+
+**UX on the receiving device:**
+
+- Slot card shows meal name, image (if public URL), ingredients list, and "Added by [name]"
+- If `source_url` exists: "Import to My Library" button (runs import engine)
+- If a full-share transfer exists for this recipe: "Save to My Library" button (instant local save)
+- If neither: plan-only card with ingredients list (still useful for grocery generation)
+- Once the recipe exists in the local library (by either path): CookMode, MealDetail, and all local features work normally
+
+### Assign-to-slot behavior
+
+When a user assigns a meal to a week-plan slot (existing WeekView UX):
+1. Local `weekPlan[dayIndex]` is updated (existing behavior, unchanged)
+2. `saveWeekPlan()` writes to Dexie (existing behavior, unchanged)
+3. **New:** If in a group, `toSlotData()` creates the snapshot and enqueues a `sharedSyncQueue` upsert for `shared_week_plan` with key `(homeGroupId, dayIndex, 'dinner')`
+4. Queue drains immediately if online, or on reconnect
+
+### Grocery field mapping (local ↔ cloud)
+
+| Local (Dexie `groceryItems`) | Cloud (`shared_grocery_items`) | Notes |
+|------------------------------|-------------------------------|-------|
+| `id` (autoincrement) | — | Local only |
+| `cloudId` (UUID, new field) | `id` (UUID PK) | Generated client-side on first push |
+| `name` | `name` | Direct |
+| `checked` / `isChecked` | `checked` | Normalize to `checked` |
+| `store` | `store` | Direct |
+| — | `quantity` | New cloud field; local can adopt or derive from name |
+| — | `unit` | New cloud field; same |
+| — | `sort_order` | Reordering pushes updated `sort_order` values |
+| — | `added_by` | Set to `auth.uid()` on push |
+| — | `checked_by` | Set to `auth.uid()` on check |
+| — | `updated_at` | Server-managed |
+
+Inbound items from other members are inserted into local Dexie with a `cloudId` for future correlation. Reorder operations push `sort_order` changes for all affected items (debounced 500ms).
 
 ### Grocery ID mapping (local autoincrement ↔ cloud UUID)
 
@@ -520,8 +680,8 @@ When useOnlineStatus flips to online while in a group (debounced 1-2s):
 
 ### Supabase free-tier pause
 
-- Keep-alive via GitHub Actions scheduled workflow — one curl to an Edge Function or `select 1` RPC
-- Document chosen method in the repo (not tribal knowledge)
+- Keep-alive via GitHub Actions scheduled workflow (cron: `0 8 * * *`): one `curl` to a Supabase Edge Function that runs `SELECT 1` and returns 200
+- The workflow file (`.github/workflows/supabase-keepalive.yml`) and the Edge Function are part of Phase 1 deliverables — not tribal knowledge
 - Cold-start UX: loading treatment on shared surfaces only; personal screens stay instant
 
 ### Storage & queue hygiene
@@ -566,3 +726,8 @@ v1 is single local profile per device. If the same Supabase user signs in on a s
 - Real-time collaborative editing (beyond last-write-wins)
 - Shared bar inventory / pantry
 - Role-based permissions beyond owner/member
+- Supabase Storage for recipe image upload (v1 omits non-public images from slot_data)
+- QR-code invite flow
+- Presence indicators (who's viewing the plan right now)
+- Multi-slot days (breakfast/lunch/dinner) — schema supports it, UI deferred
+- `profileId` on `userTags`, `customDayTags`, `weekHistory`, `importQueue`, `batchQueue`, etc. (needed for multi-profile only)

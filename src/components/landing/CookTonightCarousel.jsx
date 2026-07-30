@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import SafeMediaImage from '../SafeMediaImage.jsx';
+import RecipeCard from '../RecipeCard.jsx';
 
 // matches: { ready: [...], almost: [...] } from lib/pantryMatch.js —
 // ready = 0 missing, almost = 1-2 missing (staples never count as missing).
@@ -23,50 +23,21 @@ export default function CookTonightCarousel({ matches, onViewDetail }) {
     >
       <div className="landing-section-label">🧊 Cook Tonight — from what you have</div>
       <div className="landing-next-days-wrap">
-        <div className="landing-next-days-scroll sh-carousel">
+        <div
+          className="landing-next-days-scroll sh-carousel"
+          style={{ display: 'flex', gap: '12px', paddingBottom: '8px' }}
+        >
           {combined.map(({ meal, matched, total, missing, tier }) => (
-            <motion.button
+            <RecipeCard
               key={meal.id || meal.name}
-              whileHover={{ y: -4, boxShadow: '0 8px 16px rgba(0,0,0,0.12)' }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => onViewDetail(meal)}
-              className="day-card"
-              style={{ width: '150px' }}
-            >
-              {meal.imageUrl ? (
-                <SafeMediaImage
-                  src={meal.imageUrl}
-                  alt={meal.name || ''}
-                  className="day-card-photo"
-                  fallbackEmoji="🍳"
-                />
-              ) : (
-                <div className="day-card-photo-fallback">🍳</div>
-              )}
-              <div className="day-card-body">
-                <div className="day-card-name">{meal.name}</div>
-                <div style={{
-                  fontSize: '10px',
-                  fontWeight: '600',
-                  color: tier === 'ready' ? 'var(--success, #16a34a)' : 'var(--warning, #d97706)',
-                  marginTop: '3px',
-                }}>
-                  {tier === 'ready' ? '🟢' : '🟡'} {matched}/{total} items
-                </div>
-                {missing.length > 0 && (
-                  <div style={{
-                    fontSize: '10px',
-                    color: 'var(--text-muted, var(--text-light))',
-                    marginTop: '2px',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                  }}>
-                    Need: {missing.join(', ')}
-                  </div>
-                )}
-              </div>
-            </motion.button>
+              meal={meal}
+              layout="carousel"
+              statusBadge={tier === 'ready' ? 'Ready to cook' : '1-2 items needed'}
+              matchedCount={matched}
+              totalCount={total}
+              missingIngredients={missing}
+              onClick={onViewDetail}
+            />
           ))}
         </div>
         <div className="landing-next-days-fade" aria-hidden="true" />

@@ -249,15 +249,16 @@ describe('transcribePagesOnline — /api/vision proxy + 429 / rate-limit handlin
     await expect(transcribePagesOnline(['data:image/jpeg;base64,x'])).rejects.toThrow();
   });
 
-  it('does not fall back when no client key is configured — surfaces the proxy failure directly', async () => {
+  it('surfaces the last-tier proxy failure when all tiers 500 (no client key)', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url) => {
       if (isProxy(url)) return resErr(500, 'proxy exploded');
       throw new Error(`unexpected fetch to ${url}`);
     }));
 
+    // Both tiers get 500; code falls through Gemini → Mistral, last failure surfaces
     await expect(transcribePagesOnline(['data:image/jpeg;base64,x'])).rejects.toMatchObject({
       status: 500,
-      engine: 'gemini',
+      engine: 'mistral',
       detail: expect.stringContaining('proxy exploded'),
     });
   });
