@@ -469,18 +469,42 @@
 }
 
 .install-banner .install-dismiss {
-  width: 24px;
-  height: 24px;
+  min-width: var(--touch-min-size, 44px);
+  min-height: var(--touch-min-size, 44px);
+  padding: 10px;
   border: none;
   background: none;
   color: var(--text-muted, var(--text-light));
-  font-size: 14px;
+  font-size: 16px;
   cursor: pointer;
   flex-shrink: 0;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
+  margin: -8px -8px -8px 0;
+}
+
+/* WCAG AAA Contrast Rule for Orange Import Nudge Banner */
+.install-banner.nudge-orange {
+  background: linear-gradient(135deg, #ff6b35, #f97316);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  color: #1c1917;
+  box-shadow: 0 4px 14px rgba(255, 107, 53, 0.25);
+}
+
+.install-banner.nudge-orange .install-title {
+  color: #000000;
+  font-weight: 700;
+}
+
+.install-banner.nudge-orange .install-subtitle {
+  color: #1c1917;
+  font-weight: 600;
+}
+
+.install-banner.nudge-orange .install-dismiss {
+  color: #1c1917;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────

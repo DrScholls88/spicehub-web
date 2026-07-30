@@ -44,6 +44,10 @@ import { markImportTimestamp } from './components/landing/ImportNudgeBanner.jsx'
 import ConsentGate, { getStoredConsent } from './components/ConsentGate';
 import AgeGate, { isAgeVerified } from './components/AgeGate';
 import LegalFooter from './components/LegalFooter';
+import useProfile from './hooks/useProfile';
+import useHomeGroup from './hooks/useHomeGroup';
+import HomeGroupSection from './components/HomeGroupSection';
+import { isHomeGroupEnabled } from './lib/supabaseClient';
 import './App.css';
 
 // Code-split screens that aren't needed on first paint. Each is a modal/
@@ -200,6 +204,74 @@ export default function App() {
   // Increment this to force ImportModal to fully remount (fresh state) on each open
   const [importModalKey, setImportModalKey] = useState(0);
   const [groceryItems, setGroceryItems] = useState([]);
+
+  // ── Home Group: profile + sync hooks ────────────────────────────────────────
+  const { profile, loading: profileLoading, updateDietaryPref: profileUpdateDietaryPref } = useProfile();
+  const homeGroup = useHomeGroup({
+    showToast,
+    onWeekPlanUpdate: (plan) => setWeekPlan(plan),
+    onGroceryUpdate: (items) => setGroceryItems(items),
+  });
+
+  // Handle Supabase auth callback (OAuth redirect / magic link)
+  useEffect(() => {
+    if (!isHomeGroupEnabled()) return;
+    if (!window.location.pathname.includes('/auth/callback')) return;
+    const timer = setTimeout(() => {
+      window.history.replaceState({}, '', '/');
+      window.location.reload();
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // ── Grocery sync callback — shared by add handlers + GroceryList ───────────
+  // action: 'add' | 'check' | 'delete'
+  // affectedItems: array of grocery item objects
+  const syncGroceryAction = useCallback(async (action, affectedItems) => {
+    if (homeGroup?.state !== 'in_group' || !profile?.homeGroupId) return;
+    const { toCloudGrocery } = await import('./lib/groceryMapper');
+    for (const item of affectedItems) {
+      if (action === 'add') {
+        const cloud = toCloudGrocery(item, profile.homeGroupId, profile.supabaseUid);
+        if (cloud._generatedCloudId) {
+          // Persist cloudId on the item so future check/delete can reference it.
+          // This mutates the state object directly — acceptable because cloudId
+          // is a sync identifier that doesn't affect rendering, and the next
+          // saveGroceryList debounce (300ms) will persist it to Dexie.
+          item.cloudId = cloud._generatedCloudId;
+        }
+        const { _generatedCloudId, ...payload } = cloud;
+        homeGroup.enqueueSync({
+          table: 'shared_grocery_items',
+          action: 'upsert',
+          payload,
+          homeGroupId: profile.homeGroupId,
+        });
+      } else if (action === 'check') {
+        if (!item.cloudId) continue;
+        homeGroup.enqueueSync({
+          table: 'shared_grocery_items',
+          action: 'upsert',
+          payload: {
+            id: item.cloudId,
+            home_group_id: profile.homeGroupId,
+            checked: item.checked,
+            checked_by: profile.supabaseUid,
+          },
+          homeGroupId: profile.homeGroupId,
+        });
+      } else if (action === 'delete') {
+        if (!item.cloudId) continue;
+        homeGroup.enqueueSync({
+          table: 'shared_grocery_items',
+          action: 'delete',
+          payload: { id: item.cloudId },
+          homeGroupId: profile.homeGroupId,
+        });
+      }
+    }
+  }, [homeGroup, profile]);
+
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
@@ -406,6 +478,7 @@ export default function App() {
     if (!postImportActions?.recipe) return;
     const recipe = postImportActions.recipe;
     const storeMemory = window._storeMemory || {};
+    let addedItems = [];
     setGroceryItems(prev => {
       const existingKeys = new Set(prev.map(i => i.name.toLowerCase().trim()));
       const newItems = (recipe.ingredients || [])
@@ -416,12 +489,14 @@ export default function App() {
           store: storeMemory[ing.toLowerCase().trim()] || '',
           tag: 'imported',
         }));
+      addedItems = newItems;
       return [...prev, ...newItems];
     });
+    if (addedItems.length) syncGroceryAction('add', addedItems);
     showToast(`Ingredients added to grocery list 🛒`);
     setPostImportActions(null);
     setTab('grocery');
-  }, [postImportActions, showToast]);
+  }, [postImportActions, showToast, syncGroceryAction]);
 
   // Quick import helper. Used by MealLibrary's Discover Recipes flow
   // (DiscoverRecipes.jsx) to hand off a selected recipe blog URL straight into
@@ -895,7 +970,29 @@ useEffect(() => {
     if (options.buildGrocery && currentPlanApplied) {
       buildGroceryListRef.current?.(undefined, { plan: currentPlanApplied, merge: true });
     }
-  }, [weekPlan, weekHistory, showToast]);
+
+    // Sync current-week slots to home group
+    if (homeGroup?.state === 'in_group' && profile?.homeGroupId && currentPlanApplied) {
+      const { toSlotData } = await import('./lib/slotMapper');
+      for (let i = 0; i < currentPlanApplied.length; i++) {
+        const meal = currentPlanApplied[i];
+        if (!meal) continue;
+        const slotData = toSlotData(meal, profile.displayName);
+        homeGroup.enqueueSync({
+          table: 'shared_week_plan',
+          action: 'upsert',
+          payload: {
+            home_group_id: profile.homeGroupId,
+            day_index: i,
+            slot: 'dinner',
+            slot_data: slotData,
+            updated_by: profile.supabaseUid,
+          },
+          homeGroupId: profile.homeGroupId,
+        });
+      }
+    }
+  }, [weekPlan, weekHistory, showToast, homeGroup, profile]);
 
   const restoreWeek = useCallback((weekMeals) => {
     if (!weekMeals || weekMeals.length !== 7) return;
@@ -906,7 +1003,7 @@ useEffect(() => {
   // A-1: reroll a single day — rotation-only and score-aware (variety/recency/
   // time-fit), with jitter so repeated rerolls vary. Falls back to all meals
   // only when The Rotation is empty so the control never dead-ends.
-  const respinDay = useCallback((dayIndex) => {
+  const respinDay = useCallback(async (dayIndex) => {
     const current = weekPlan[dayIndex];
     if (current && current._special) return;
     const pool = rotationMeals.length > 0 ? rotationMeals : meals;
@@ -918,7 +1015,23 @@ useEffect(() => {
     });
     if (!pick) { showToast('Add more meals to The Rotation to swap in 🔄'); return; }
     setWeekPlan(prev => prev.map((m, i) => i === dayIndex ? pick : m));
-  }, [meals, weekPlan, rotationMeals, dietaryPref, showToast]);
+    // Sync to home group
+    if (homeGroup?.state === 'in_group' && profile?.homeGroupId) {
+      const { toSlotData } = await import('./lib/slotMapper');
+      homeGroup.enqueueSync({
+        table: 'shared_week_plan',
+        action: 'upsert',
+        payload: {
+          home_group_id: profile.homeGroupId,
+          day_index: dayIndex,
+          slot: 'dinner',
+          slot_data: toSlotData(pick, profile.displayName),
+          updated_by: profile.supabaseUid,
+        },
+        homeGroupId: profile.homeGroupId,
+      });
+    }
+  }, [meals, weekPlan, rotationMeals, dietaryPref, showToast, homeGroup, profile]);
 
   // ── Landing Page "empty day" bottom sheet actions (2026-07-14) ────────────
   // Lets a user resolve an empty day without leaving Home. Spin only reroutes
@@ -981,12 +1094,35 @@ useEffect(() => {
   const updateDietaryPref = useCallback((pref) => {
     const next = { dietary: pref?.dietary || '', mode: pref?.mode || 'require' };
     setDietaryPref(next);
+    // Save to both localStorage (sync fallback) and profile (source of truth)
     try { localStorage.setItem(DIETARY_PREF_KEY, JSON.stringify(next)); } catch { /* ignore */ }
-  }, []);
+    if (profileUpdateDietaryPref) profileUpdateDietaryPref(next).catch(() => {});
+  }, [profileUpdateDietaryPref]);
 
-  const setDayMeal = useCallback((dayIndex, meal) => {
+  const setDayMeal = useCallback(async (dayIndex, meal) => {
     setWeekPlan(prev => prev.map((m, i) => i === dayIndex ? meal : m));
-  }, []);
+    // Sync slot to home group
+    if (homeGroup?.state === 'in_group' && profile?.homeGroupId) {
+      const { toSlotData } = await import('./lib/slotMapper');
+      const slotData = toSlotData(meal, profile.displayName);
+      homeGroup.enqueueSync({
+        table: 'shared_week_plan',
+        action: meal ? 'upsert' : 'delete',
+        payload: meal ? {
+          home_group_id: profile.homeGroupId,
+          day_index: dayIndex,
+          slot: 'dinner',
+          slot_data: slotData,
+          updated_by: profile.supabaseUid,
+        } : {
+          home_group_id: profile.homeGroupId,
+          day_index: dayIndex,
+          slot: 'dinner',
+        },
+        homeGroupId: profile.homeGroupId,
+      });
+    }
+  }, [homeGroup, profile]);
 
   const toggleLockDay = useCallback((dayIndex) => {
     setWeekPlan(prev => prev.map((m, i) => {
@@ -1253,6 +1389,7 @@ useEffect(() => {
   const handleAddToGrocery = useCallback((questItems) => {
     if (!questItems || questItems.length === 0) return;
     const storeMemory = window._storeMemory || {};
+    let addedItems = [];
     setGroceryItems(prev => {
       const byKey = new Map(prev.map((i, idx) => [i.name.toLowerCase().trim(), idx]));
       const next = [...prev];
@@ -1265,7 +1402,6 @@ useEffect(() => {
           if (existing.covered || existing.checked) {
             next[existingIdx] = { ...existing, covered: false, checked: false };
           }
-          // else: already an active, uncovered row for this ingredient — leave it.
           continue;
         }
         additions.push({
@@ -1278,13 +1414,15 @@ useEffect(() => {
           questName: qi.questName,
         });
       }
+      addedItems = additions;
       if (additions.length === 0 && next.every((item, i) => item === prev[i])) return prev;
       return [...next, ...additions];
     });
+    if (addedItems.length) syncGroceryAction('add', addedItems);
     const count = questItems.length;
     showToast(`📜 ${count} ingredient${count !== 1 ? 's' : ''} added to grocery quest!`, 'success');
     if (navigator.vibrate) navigator.vibrate([30, 20, 30]);
-  }, [showToast]);
+  }, [showToast, syncGroceryAction]);
 
   // ── Batch import: open a 'ready' row directly into ImportSheet review ─────
   const handleBatchReview = useCallback((item) => {
@@ -1323,6 +1461,7 @@ useEffect(() => {
     if (target === 'grocery') {
       if (!real.length) return;
       const storeMemory = window._storeMemory || {};
+      let addedItems = [];
       setGroceryItems(prev => {
         const existingKeys = new Set(prev.map(i => i.name.toLowerCase().trim()));
         const newItems = real.flatMap(r => (r.ingredients || []))
@@ -1333,8 +1472,10 @@ useEffect(() => {
             store: storeMemory[ing.toLowerCase().trim()] || '',
             tag: 'imported',
           }));
+        addedItems = newItems;
         return [...prev, ...newItems];
       });
+      if (addedItems.length) syncGroceryAction('add', addedItems);
       const name = real.length === 1 ? (real[0].name || 'Recipe') : `${real.length} recipes`;
       showToast(`Ingredients from "${name}" added to Grocery`);
       setTab('grocery');
@@ -1418,7 +1559,7 @@ useEffect(() => {
     }
 
     showToast(`Added ${name} to ${anyDrink && !anyMeal ? 'The Bar 🍸' : 'your library'}`);
-  }, [showImportFor, loadMeals, loadDrinks, showToast, setGroceryItems, setWeekPlan, setTab, setPostImportActions]);
+  }, [showImportFor, loadMeals, loadDrinks, showToast, setGroceryItems, setWeekPlan, setTab, setPostImportActions, syncGroceryAction]);
 
   // ── Batch import: mark a batchQueue row 'saved' after ImportSheet save ────
   const handleBatchReviewSave = useCallback(async (imported, destination) => {
@@ -1669,6 +1810,7 @@ useEffect(() => {
             }}
             onAddCustomDayTag={handleAddCustomDayTag}
             onDeleteCustomDayTag={handleDeleteCustomDayTag}
+            profileDisplayName={profile?.displayName}
           />
         )}
         {tab === 'library' && (
@@ -1719,6 +1861,7 @@ useEffect(() => {
             onRebuild={buildGroceryList}
             onToast={showToast}
             onExport={(items) => openExportSheet('grocery', items)}
+            onSyncGrocery={syncGroceryAction}
           />
         )}
       </main>
@@ -1937,6 +2080,18 @@ useEffect(() => {
                 <h3>Theme</h3>
                 <ThemeSettings />
               </div>
+              {/* Home Group — behind feature flag */}
+              <HomeGroupSection
+                homeGroup={homeGroup}
+                profile={profile}
+                isOnline={isOnline}
+                onCreateGroup={homeGroup.createGroup}
+                onJoinGroup={homeGroup.joinGroup}
+                onLeaveGroup={homeGroup.leaveGroup}
+                onSignIn={homeGroup.signIn}
+                onSignOut={homeGroup.signOut}
+                onRegenerateCode={homeGroup.regenerateInviteCode}
+              />
                 {/* PWA Install — shown in Settings on every tab (consistent header) */}
                 <div className="st-section st-install-section">
                   <h3>App</h3>

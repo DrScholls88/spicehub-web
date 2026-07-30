@@ -339,6 +339,7 @@ export default function WeekView({
   onSpinConstraintsSkipped = null,
   onAddCustomDayTag,
   onDeleteCustomDayTag,
+  profileDisplayName,
 }) {
   const today = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
   const currentWeekMonday = useMemo(() => getMonday(today), [today]);
@@ -1491,6 +1492,9 @@ function TimelineWeek({
                   </div>
                   <div className="wv-tl-meta">
                     {isSpecial ? 'Special day' : `${meal.ingredients?.length || 0} ingredients${meal.category ? ` · ${meal.category}` : ''}`}
+                    {meal._sharedBy && meal._sharedBy !== profileDisplayName && (
+                      <span style={{ marginLeft: 4, opacity: 0.7 }}> · {meal._sharedBy}</span>
+                    )}
                   </div>
                 </>
               ) : (

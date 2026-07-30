@@ -131,7 +131,7 @@ function DeptSection({ dept, group, hideChecked, onToggle }) {
   );
 }
 
-export default function StoreMode({ items, setItems, onExit, onToast }) {
+export default function StoreMode({ items, setItems, onExit, onToast, onSyncGrocery }) {
   const [hideChecked, setHideChecked] = useState(false);
   const [deptOrder, setDeptOrder] = useState(() => loadDeptOrder());
   const wakeRef = useRef(null);
@@ -222,10 +222,17 @@ export default function StoreMode({ items, setItems, onExit, onToast }) {
   const toggleLine = useCallback((line) => {
     const next = !line.checked;
     if (next) hapticLight();
-    setItems(prev => prev.map((it, i) =>
-      line.indices.includes(i) ? { ...it, checked: next } : it
-    ));
-  }, [setItems]);
+    setItems(prev => {
+      const updated = prev.map((it, i) =>
+        line.indices.includes(i) ? { ...it, checked: next } : it
+      );
+      if (onSyncGrocery) {
+        const affected = line.indices.map(i => updated[i]).filter(Boolean);
+        onSyncGrocery('check', affected);
+      }
+      return updated;
+    });
+  }, [setItems, onSyncGrocery]);
 
   // Celebrate when everything is checked off.
   const prevDone = useRef(doneCount);

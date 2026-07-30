@@ -248,6 +248,55 @@ db.version(21).stores({
   });
 });
 
+// v22: User Profiles & Home Group — local profile, sync queue, sync metadata.
+// Creates a default profile, stamps profileId on personal tables, migrates
+// dietary pref from localStorage. See spec:
+// docs/superpowers/specs/2026-07-28-user-profiles-home-group-design.md
+db.version(22).stores({
+  profiles: 'id, supabaseUid, updatedAt',
+  meals: '++id, name, status, sourceHash, jobId, ingredients_text, *tags, profileId',
+  drinks: '++id, name, profileId',
+  barInventory: 'ingredient, profileId',
+  cookingLog: '++id, mealId, cookedAt, profileId',
+  sharedSyncQueue: '++id, table, status, createdAt, clientMutationId',
+  sharedMeta: 'homeGroupId',
+}).upgrade(async tx => {
+  // 1. Create default profile
+  const profileId = crypto.randomUUID();
+  const now = new Date().toISOString();
+
+  // Migrate dietary pref from localStorage
+  let dietaryPref = null;
+  try {
+    const raw = localStorage.getItem('spicehub_dietary_pref');
+    if (raw) {
+      dietaryPref = JSON.parse(raw);
+    }
+  } catch { /* ignore */ }
+
+  await tx.table('profiles').add({
+    id: profileId,
+    displayName: 'Me',
+    supabaseUid: undefined,
+    homeGroupId: undefined,
+    dietaryPref: dietaryPref || { dietary: '', mode: 'require' },
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  // 2. Stamp profileId on personal tables
+  const stampProfile = (record) => {
+    if (!record.profileId) record.profileId = profileId;
+  };
+  await tx.table('meals').toCollection().modify(stampProfile);
+  await tx.table('drinks').toCollection().modify(stampProfile);
+  await tx.table('barInventory').toCollection().modify(stampProfile);
+  await tx.table('cookingLog').toCollection().modify(stampProfile);
+
+  // 3. Delete old localStorage key after successful migration
+  try { localStorage.removeItem('spicehub_dietary_pref'); } catch { /* ignore */ }
+});
+
 export default db;
 
 // ── Custom Day Tags helpers (v20) ───────────────────────────────────────────
@@ -623,6 +672,12 @@ export async function saveGroceryList(items) {
           name: item.name,
           checked: item.checked || false,
           store: item.store || '',
+          ...(item.cloudId && { cloudId: item.cloudId }),
+          ...(item.covered != null && { covered: item.covered }),
+          ...(item.tag && { tag: item.tag }),
+          ...(item.quantity && { quantity: item.quantity }),
+          ...(item.unit && { unit: item.unit }),
+          ...(item.category && { category: item.category }),
         })));
       }
     });

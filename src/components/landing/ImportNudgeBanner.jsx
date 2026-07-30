@@ -55,12 +55,14 @@ export default function ImportNudgeBanner({ batchQueueCount = 0, onNavigate }) {
 
   return (
     <motion.div
-      className="install-banner"
+      className="install-banner nudge-orange"
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, height: 0, marginBottom: 0, padding: 0, overflow: 'hidden' }}
       transition={{ duration: 0.35, ease: [0.32, 0.72, 0, 1] }}
       onClick={nudge.action}
+      role="region"
+      aria-label="Recipe import banner"
     >
       <span className="install-icon">{nudge.icon}</span>
       <div className="install-text">
@@ -74,7 +76,7 @@ export default function ImportNudgeBanner({ batchQueueCount = 0, onNavigate }) {
           setDismissed(true);
           try { localStorage.setItem(NUDGE_DISMISS_KEY, String(Date.now())); } catch {}
         }}
-        aria-label="Dismiss"
+        aria-label="Dismiss banner"
       >
         ✕
       </button>

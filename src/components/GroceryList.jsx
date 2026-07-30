@@ -130,7 +130,7 @@ function sendToKeep(title, content, onToast) {
   });
 }
 
-export default function GroceryList({ items, setItems, weekPlan, onRebuild, onToast, onExport }) {
+export default function GroceryList({ items, setItems, weekPlan, onRebuild, onToast, onExport, onSyncGrocery }) {
   const [batchMode, setBatchMode] = useState(false);
   const [selectedItems, setSelectedItems] = useState(new Set());
   const [batchStoreOverlayOpen, setBatchStoreOverlayOpen] = useState(false);
@@ -230,23 +230,45 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
   const toggleCheck = useCallback((indices) => {
     setItems(prev => {
       const anyUnchecked = indices.some(idx => !prev[idx].checked);
-      return prev.map((item, i) => indices.includes(i) ? { ...item, checked: anyUnchecked } : item);
+      const next = prev.map((item, i) => indices.includes(i) ? { ...item, checked: anyUnchecked } : item);
+      // Sync checked state to home group
+      if (onSyncGrocery) {
+        const affected = indices.map(i => next[i]).filter(Boolean);
+        onSyncGrocery('check', affected);
+      }
+      return next;
     });
-  }, [setItems]);
+  }, [setItems, onSyncGrocery]);
 
   const removeItem = useCallback((indices) => {
-    setItems(prev => prev.filter((_, i) => !indices.includes(i)));
-  }, [setItems]);
+    // Sync deletions before removing from state (need item data for cloudId)
+    if (onSyncGrocery) {
+      setItems(prev => {
+        const removed = indices.map(i => prev[i]).filter(Boolean);
+        if (removed.length) onSyncGrocery('delete', removed);
+        return prev.filter((_, i) => !indices.includes(i));
+      });
+    } else {
+      setItems(prev => prev.filter((_, i) => !indices.includes(i)));
+    }
+  }, [setItems, onSyncGrocery]);
 
   // ── Real Pantry↔Grocery sync (Phase 2b) ──────────────────────────────────
   // Promoting an item is "I bought it" — it really stocks db.barInventory
   // (qtyLevel: FULL), not just a display-only toggle on the grocery row.
   const promoteToInventory = useCallback((indices, names) => {
     names.forEach(n => addToBarInventory(n, { qtyLevel: 'FULL' }));
-    setItems(prev => prev.map((item, i) =>
-      indices.includes(i) ? { ...item, covered: true, checked: true } : item
-    ));
-  }, [setItems]);
+    setItems(prev => {
+      const next = prev.map((item, i) =>
+        indices.includes(i) ? { ...item, covered: true, checked: true } : item
+      );
+      if (onSyncGrocery) {
+        const affected = indices.map(i => next[i]).filter(Boolean);
+        onSyncGrocery('check', affected);
+      }
+      return next;
+    });
+  }, [setItems, onSyncGrocery]);
 
   // Demoting only flips the grocery-side flag back ("actually I still need
   // this") — it deliberately does NOT touch db.barInventory. A staple's
@@ -254,10 +276,17 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
   // via the Pantry/My Bar screens themselves (Run Dry etc.), not a Grocery
   // list toggle, so real stock data stays the single source of truth.
   const demoteFromInventory = useCallback((indices, names) => {
-    setItems(prev => prev.map((item, i) =>
-      indices.includes(i) ? { ...item, covered: false, checked: false } : item
-    ));
-  }, [setItems]);
+    setItems(prev => {
+      const next = prev.map((item, i) =>
+        indices.includes(i) ? { ...item, covered: false, checked: false } : item
+      );
+      if (onSyncGrocery) {
+        const affected = indices.map(i => next[i]).filter(Boolean);
+        onSyncGrocery('check', affected);
+      }
+      return next;
+    });
+  }, [setItems, onSyncGrocery]);
 
   const setStore = useCallback((indices, names, storeId) => {
     names.forEach(n => rememberStore(n, storeId));
@@ -452,6 +481,7 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
             setItems={setItems}
             onExit={() => setStoreMode(false)}
             onToast={onToast}
+            onSyncGrocery={onSyncGrocery}
           />
         )}
       </AnimatePresence>

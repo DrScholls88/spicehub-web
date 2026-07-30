@@ -28,6 +28,7 @@ import { findPantryMatches } from '../lib/pantryMatch.js';
 import CookTonightCarousel from './landing/CookTonightCarousel.jsx';
 import OnboardingCoach from './landing/OnboardingCoach.jsx';
 import ImportNudgeBanner from './landing/ImportNudgeBanner.jsx';
+import GamifiedHero from './landing/GamifiedHero.jsx';
 
 const STYLES = {
   container: {
@@ -343,99 +344,15 @@ export default function LandingPage({
       <StickyHeader visible={stickyVisible} onSpin={onGenerate} />
 
       {/* Hero — flattened to reclaim the fold (slim context bar + primary CTA) */}
-      <motion.div
-        ref={heroRef}
-        style={{ marginBottom: '20px' }}
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.45, ease: 'easeOut' }}
-      >
-        {/* Slim single-line context bar */}
-        <div className="landing-context-bar">
-          <span className="landing-greeting">{greeting}</span>
-          <span className="landing-divider">•</span>
-          <span className="landing-date">{formattedDate}</span>
-          {streak > 0 && (
-            <span
-              className="landing-streak"
-              title={topMeal ? `Top meal: ${typeof topMeal === 'string' ? topMeal : topMeal?.name}` : undefined}
-            >
-              {displayStreak} day streak 🔥
-            </span>
-          )}
-        </div>
-
-        {/* Telemetry Ticker — rotating status line, tap to deep-link (replaces
-            the old static "Your meals, gamified." tagline). Weather excluded
-            on purpose — every line here is local data, no network call. */}
-        <div
-          className="landing-ticker"
-          onClick={handleStatusTap}
-          onKeyDown={(activeStatus.onTap || tickerItems.length > 1) ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleStatusTap(); } } : undefined}
-          role={(activeStatus.onTap || tickerItems.length > 1) ? 'button' : undefined}
-          tabIndex={(activeStatus.onTap || tickerItems.length > 1) ? 0 : undefined}
-        >
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={activeStatus.key}
-              className="landing-ticker-text"
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={{ duration: 0.3 }}
-            >
-              {activeStatus.text}
-            </motion.div>
-          </AnimatePresence>
-          {tickerItems.length > 1 && (
-            <div className="landing-ticker-dots">
-              {tickerItems.map((_, i) => (
-                <span key={i} className={`landing-ticker-dot${i === statusIndex % tickerItems.length ? ' active' : ''}`} />
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Spin Action Center pre-spin constraint toggles removed from the
-            landing page (feedback 2026-07-15: clunky, low-value UI). The
-            underlying filter plumbing (WeekView + weekPlanner's
-            filterMealsByConstraints, App.jsx's spinConstraints state) is left
-            intact — "Vegetarian Only" still auto-derives from the household
-            dietaryPref setting elsewhere, so nothing regresses; "Under 30
-            Mins"/"Use Fridge Stock" just have no UI entry point right now. */}
-
-        {/* Primary CTA — Spin the Week (full width). Gemini UX audit
-            (2026-07-06): with 0 saved meals, "Spin the Week" is a dead end —
-            the button label itself should say what to do next. Clicking
-            always works (App.jsx generateWeek routes to the Library with a
-            toast when there aren't enough meals yet), this is just honest
-            labeling of what will happen. */}
-        <motion.button
-          ref={ctaRef}
-          className={`btn-primary spin-tactile landing-spin-full${ctaConfig.pulse ? ' spin-pulse' : ''}`}
-          onClick={() => {
-            haptic(15);
-            setDiceRattling(true);
-            setTimeout(() => setDiceRattling(false), 600);
-            ctaConfig.action();
-          }}
-          initial="rest"
-          whileHover="hover"
-          whileTap={{ scale: 0.97 }}
-          animate="rest"
-        >
-          {ctaConfig.label}{' '}
-          {ctaConfig.icon === '🎲' ? (
-            <motion.span
-              variants={diceVariants}
-              className={diceRattling ? 'dice-rattle-on-tap' : ''}
-              style={{ display: 'inline-block', transformOrigin: 'center' }}
-            >🎲</motion.span>
-          ) : (
-            <span>{ctaConfig.icon}</span>
-          )}
-        </motion.button>
-      </motion.div>
+      {/* Gamified Hero Card with Shake-to-Spin & Tactile CTA */}
+      <div ref={heroRef} style={{ marginBottom: '20px' }}>
+        <GamifiedHero
+          onSpin={onGenerate}
+          mealsCount={meals.length}
+          pantryAgingCount={fridgeInventory.length}
+          todayMeal={todayMeal}
+        />
+      </div>
 
       {/* Install banner — shown when PWA install is available */}
       <AnimatePresence>
