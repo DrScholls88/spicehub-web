@@ -204,6 +204,12 @@ export default function App() {
   // Increment this to force ImportModal to fully remount (fresh state) on each open
   const [importModalKey, setImportModalKey] = useState(0);
   const [groceryItems, setGroceryItems] = useState([]);
+  const [toast, setToast] = useState(null);
+
+  const showToast = useCallback((message, type = 'success', duration = 2500) => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), duration);
+  }, []);
 
   // ── Home Group: profile + sync hooks ────────────────────────────────────────
   const { profile, loading: profileLoading, updateDietaryPref: profileUpdateDietaryPref } = useProfile();
@@ -273,7 +279,6 @@ export default function App() {
   }, [homeGroup, profile]);
 
   const [loading, setLoading] = useState(true);
-  const [toast, setToast] = useState(null);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [updateReady, setUpdateReady] = useState(false); // new build installed while app on-screen
@@ -426,11 +431,6 @@ export default function App() {
   useBackHandler(showZipImport, () => setShowZipImport(false), 'zip-import');
   useBackHandler(!!exportSheet, () => setExportSheet(null), 'export');
   useBackHandler(showAgeGate, () => setShowAgeGate(false), 'age-gate');
-
-  const showToast = useCallback((message, type = 'success', duration = 2500) => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), duration);
-  }, []);
 
   // Double-back-to-exit at root + history sentinel (Track 0)
   useRootBackGuard(showToast);
