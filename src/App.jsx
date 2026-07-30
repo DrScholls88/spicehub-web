@@ -46,8 +46,11 @@ import AgeGate, { isAgeVerified } from './components/AgeGate';
 import LegalFooter from './components/LegalFooter';
 import useProfile from './hooks/useProfile';
 import useHomeGroup from './hooks/useHomeGroup';
+import useFriendsRealtime from './hooks/useFriendsRealtime';
 import HomeGroupSection from './components/HomeGroupSection';
-import { isHomeGroupEnabled } from './lib/supabaseClient';
+import FriendsSection from './components/FriendsSection';
+import { isHomeGroupEnabled, isFriendsEnabled } from './lib/supabaseClient';
+import { getPendingShareCount } from './lib/recipeShare';
 import './App.css';
 
 // Code-split screens that aren't needed on first paint. Each is a modal/
@@ -219,6 +222,9 @@ export default function App() {
     onGroceryUpdate: (items) => setGroceryItems(items),
   });
 
+  // Friends Realtime — subscribes to friendships + recipe_shares channels
+  useFriendsRealtime({ showToast });
+
   // Handle Supabase auth callback (OAuth redirect / magic link)
   useEffect(() => {
     if (!isHomeGroupEnabled()) return;
@@ -312,6 +318,7 @@ export default function App() {
   const [pipVideo, setPipVideo] = useState(null); // { source, meal } — floating PiP player
   const [showStats, setShowStats] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [pendingShareCount, setPendingShareCount] = useState(0);
   const [showBarShelf, setShowBarShelf] = useState(false);
   const [showBarFridge, setShowBarFridge] = useState(false);
   // ── Room trip: animated "walk through the doorway" between My Bar & Saloon ──
@@ -434,6 +441,19 @@ export default function App() {
 
   // Double-back-to-exit at root + history sentinel (Track 0)
   useRootBackGuard(showToast);
+
+  // ── Pending share count (badge on Meals tab) ──────────────────────────────
+  useEffect(() => {
+    if (!isFriendsEnabled()) return;
+    const refresh = () => getPendingShareCount().then(c => setPendingShareCount(c)).catch(() => {});
+    refresh();
+    window.addEventListener('spicehub:shares-updated', refresh);
+    window.addEventListener('spicehub:friends-bootstrap', refresh);
+    return () => {
+      window.removeEventListener('spicehub:shares-updated', refresh);
+      window.removeEventListener('spicehub:friends-bootstrap', refresh);
+    };
+  }, []);
 
   // ── I-2 Post-share quick action auto-dismiss (8s) ─────────────────────────
   useEffect(() => {
@@ -1876,9 +1896,17 @@ useEffect(() => {
           <span style={{ fontSize: 18 }}>📅</span>
           <span>Plan</span>
         </button>
-        <button className={tab === 'library' ? 'active' : ''} onClick={() => setTab('library')} aria-current={tab === 'library' ? 'page' : undefined}>
+        <button className={tab === 'library' ? 'active' : ''} onClick={() => setTab('library')} aria-current={tab === 'library' ? 'page' : undefined} style={{ position: 'relative' }}>
           <span style={{ fontSize: 18 }}>🍳</span>
           <span>Meals</span>
+          {pendingShareCount > 0 && (
+            <span style={{
+              position: 'absolute', top: 2, right: '50%', transform: 'translateX(14px)',
+              minWidth: 16, height: 16, borderRadius: 8, padding: '0 4px',
+              background: 'var(--primary)', color: '#fff',
+              fontSize: 10, fontWeight: 700, lineHeight: '16px', textAlign: 'center',
+            }}>{pendingShareCount > 9 ? '9+' : pendingShareCount}</span>
+          )}
         </button>
         <button className={tab === 'bar' ? 'active bar-tab' : 'bar-tab'} onClick={() => navigateToTab('bar')} aria-current={tab === 'bar' ? 'page' : undefined}>
           <span style={{ fontSize: 18 }}>🍹</span>
@@ -2092,6 +2120,8 @@ useEffect(() => {
                 onSignOut={homeGroup.signOut}
                 onRegenerateCode={homeGroup.regenerateInviteCode}
               />
+              {/* Friends — behind feature flag, requires Home Group */}
+              <FriendsSection isOnline={isOnline} showToast={showToast} />
                 {/* PWA Install — shown in Settings on every tab (consistent header) */}
                 <div className="st-section st-install-section">
                   <h3>App</h3>

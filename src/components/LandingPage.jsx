@@ -28,7 +28,7 @@ import { findPantryMatches } from '../lib/pantryMatch.js';
 import CookTonightCarousel from './landing/CookTonightCarousel.jsx';
 import OnboardingCoach from './landing/OnboardingCoach.jsx';
 import ImportNudgeBanner from './landing/ImportNudgeBanner.jsx';
-import GamifiedHero from './landing/GamifiedHero.jsx';
+import AppIntroHero from './landing/AppIntroHero.jsx';
 
 const STYLES = {
   container: {
@@ -187,11 +187,19 @@ export default function LandingPage({
   const tiles = useMemo(() => [
     {
       id: 'planWeek',
-      emoji: '🎲',
+      emoji: '📅',
       title: 'Plan out your week of meals',
-      subtitle: "So you stop texting ‘idk, you pick’ at 5pm.",
+      subtitle: 'Drag & drop meals onto each day',
       accent: TILE_COLORS.planWeek,
       onClick: () => onNavigate('week'),
+    },
+    {
+      id: 'spinWeek',
+      emoji: '🎲',
+      title: 'Spin the Week',
+      subtitle: "So you stop texting ‘idk, you pick’ at 5pm.",
+      accent: TILE_COLORS.spinWeek,
+      onClick: () => onGenerate(),
     },
     {
       id: 'myMeals',
@@ -241,7 +249,7 @@ export default function LandingPage({
       accent: TILE_COLORS.stats,
       onClick: () => onOpenStats(),
     },
-  ], [rotationCount, meals.length, drinks.length, totalCooked, groceryTelemetry, fridgeTelemetry, onNavigate, onOpenFridge, onOpenPantry, onOpenStats]);
+  ], [rotationCount, meals.length, drinks.length, totalCooked, groceryTelemetry, fridgeTelemetry, onNavigate, onGenerate, onOpenFridge, onOpenPantry, onOpenStats]);
 
   const tilesById = useMemo(() => {
     const map = {};
@@ -325,16 +333,6 @@ export default function LandingPage({
     }
   }, [activeStatus, tickerItems]);
 
-  const ctaConfig = useMemo(() => {
-    if (meals.length === 0) {
-      return { label: 'Import Your First Recipe', icon: '📥', action: () => onNavigate('library'), pulse: true };
-    }
-    if (rotationCount < 4) {
-      return { label: 'Build Your Rotation', icon: '📓', action: () => onNavigate('library'), pulse: false };
-    }
-    return { label: 'Spin the Week', icon: '🎲', action: onGenerate, pulse: !hasAnyMeal };
-  }, [meals.length, rotationCount, onNavigate, onGenerate, hasAnyMeal]);
-
   // Today's meal for hero card
   const todayMeal = next5Days[0]?.meal;
 
@@ -343,15 +341,11 @@ export default function LandingPage({
       {/* Sticky mini-header — appears on scroll past hero */}
       <StickyHeader visible={stickyVisible} onSpin={onGenerate} />
 
-      {/* Hero — flattened to reclaim the fold (slim context bar + primary CTA) */}
-      {/* Gamified Hero Card with Shake-to-Spin & Tactile CTA */}
+      {/* Hero — app introduction + feature highlights. Spin now lives down in
+          the widget grid as its own "Spin the Week" tile (2026-07-30) — this
+          fold's job is telling a user what SpiceHub does, not pushing Spin. */}
       <div ref={heroRef} style={{ marginBottom: '20px' }}>
-        <GamifiedHero
-          onSpin={onGenerate}
-          mealsCount={meals.length}
-          pantryAgingCount={fridgeInventory.length}
-          todayMeal={todayMeal}
-        />
+        <AppIntroHero />
       </div>
 
       {/* Install banner — shown when PWA install is available */}
