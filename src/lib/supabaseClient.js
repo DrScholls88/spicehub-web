@@ -31,7 +31,7 @@ export function isHomeGroupEnabled() {
  * Guards all friend search, friend graph, and direct share code paths.
  */
 export function isFriendsEnabled() {
-  return isHomeGroupEnabled() && import.meta.env.VITE_FRIENDS_ENABLED === 'true';
+  return isHomeGroupEnabled();
 }
 
 /**
