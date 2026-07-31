@@ -51,7 +51,8 @@ import HomeGroupSection from './components/HomeGroupSection';
 import FriendsSheet from './components/FriendsSheet';
 import { isHomeGroupEnabled, isFriendsEnabled } from './lib/supabaseClient';
 import { getPendingShareCount } from './lib/recipeShare';
-import { getPendingInboundCount } from './lib/friends';
+import { getPendingInboundCount, getLocalFriends } from './lib/friends';
+import SharePickerSheet from './components/SharePickerSheet';
 import './App.css';
 
 // Code-split screens that aren't needed on first paint. Each is a modal/
@@ -321,7 +322,9 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [pendingShareCount, setPendingShareCount] = useState(0);
   const [pendingRequestCount, setPendingRequestCount] = useState(0);
+  const [friendCount, setFriendCount] = useState(0);
   const [showFriendsSheet, setShowFriendsSheet] = useState(false);
+  const [detailShareMeal, setDetailShareMeal] = useState(null); // meal for SharePickerSheet from MealDetail
   const [showBarShelf, setShowBarShelf] = useState(false);
   const [showBarFridge, setShowBarFridge] = useState(false);
   // ── Room trip: animated "walk through the doorway" between My Bar & Saloon ──
@@ -451,14 +454,17 @@ export default function App() {
     if (!isFriendsEnabled()) return;
     const refreshShares = () => getPendingShareCount().then(c => setPendingShareCount(c)).catch(() => {});
     const refreshRequests = () => getPendingInboundCount().then(c => setPendingRequestCount(c)).catch(() => {});
-    const refreshAll = () => { refreshShares(); refreshRequests(); };
+    const refreshFriendCount = () => getLocalFriends().then(f => setFriendCount(f.length)).catch(() => {});
+    const refreshAll = () => { refreshShares(); refreshRequests(); refreshFriendCount(); };
     refreshAll();
     window.addEventListener('spicehub:shares-updated', refreshShares);
     window.addEventListener('spicehub:friends-updated', refreshRequests);
+    window.addEventListener('spicehub:friends-updated', refreshFriendCount);
     window.addEventListener('spicehub:friends-bootstrap', refreshAll);
     return () => {
       window.removeEventListener('spicehub:shares-updated', refreshShares);
       window.removeEventListener('spicehub:friends-updated', refreshRequests);
+      window.removeEventListener('spicehub:friends-updated', refreshFriendCount);
       window.removeEventListener('spicehub:friends-bootstrap', refreshAll);
     };
   }, []);
@@ -1805,6 +1811,7 @@ useEffect(() => {
             onOpenDiscover={() => setShowDiscover(true)}
             onOpenFriends={isFriendsEnabled() ? () => setShowFriendsSheet(true) : null}
             friendsBadgeCount={pendingRequestCount + pendingShareCount}
+            friendCount={friendCount}
             canInstall={!!deferredPrompt}
             onInstallApp={handleInstallApp}
             onRespinDate={handleRespinForDate}
@@ -1957,6 +1964,7 @@ useEffect(() => {
             onStartMix={isDrink(detailItem) ? startMixMode : null}
             onMoveToBar={isDrink(detailItem) ? null : handleMoveMealToBar}
             onPlayVideo={openPipForMeal}
+            onSendToFriend={isFriendsEnabled() ? () => setDetailShareMeal(detailItem) : null}
             onEdit={() => {
               const item = detailItem;
               setDetailItem(null);
@@ -2122,6 +2130,16 @@ useEffect(() => {
         onClose={() => setShowFriendsSheet(false)}
         isOnline={isOnline}
         showToast={showToast}
+      />
+
+      {/* Share to friend picker — opened from MealDetail header action */}
+      <SharePickerSheet
+        open={!!detailShareMeal}
+        onClose={() => setDetailShareMeal(null)}
+        meal={detailShareMeal}
+        itemType={isDrink(detailShareMeal) ? 'drink' : 'meal'}
+        showToast={showToast}
+        isOnline={isOnline}
       />
 
       {showSettings && (

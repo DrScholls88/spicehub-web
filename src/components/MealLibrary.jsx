@@ -796,6 +796,19 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
         </motion.span>
         <span className="ml-tile-meta">
           {meal.starterKit && <span className="ml-tile-starter">Starter</span>}
+          {meal._sharedFrom && (
+            <span
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 3,
+                marginRight: 6, padding: '1px 6px', borderRadius: 999,
+                fontSize: 10, fontWeight: 700,
+                color: 'var(--primary)',
+                background: 'rgba(var(--primary-rgb, 255,107,53), 0.1)',
+              }}
+            >
+              From @{meal._sharedFrom}
+            </span>
+          )}
           {(() => {
             const match = pantryMatchIndex.get(meal.id || meal.name);
             if (!match) return null;
@@ -1353,6 +1366,18 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
               <motion.h3 className="ml-qp-title" layoutId={`ml-card-title-${quickPreview.id}`}>
                 {quickPreview.name || 'Untitled Recipe'}
               </motion.h3>
+              {quickPreview._sharedFrom && (
+                <div style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 4,
+                  padding: '3px 10px', borderRadius: 999,
+                  fontSize: 12, fontWeight: 600, marginBottom: 6,
+                  color: 'var(--primary)',
+                  background: 'rgba(var(--primary-rgb, 255,107,53), 0.1)',
+                  border: '1px solid rgba(var(--primary-rgb, 255,107,53), 0.2)',
+                }}>
+                  From @{quickPreview._sharedFrom}
+                </div>
+              )}
               {/* ── Type picker (single-select) ── */}
               <div className="ml-qp-type-row">
                 {TYPE_OPTIONS.map(t => (

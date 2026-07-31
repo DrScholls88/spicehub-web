@@ -13,6 +13,8 @@ import {
   getLocalPendingShares,
   saveShareToLibrary,
   dismissShare,
+  reactToShare,
+  SHARE_REACTIONS,
 } from '../lib/recipeShare';
 import { getAvatar } from '../data/pixelAvatars';
 
@@ -132,6 +134,35 @@ export default function SharedWithYouSection({ onToast, onReload }) {
                   "{share.note}"
                 </p>
               )}
+
+              {/* Emoji reaction row */}
+              <div style={{
+                display: 'flex', gap: 4, alignItems: 'center',
+                flexWrap: 'wrap',
+              }}>
+                {SHARE_REACTIONS.map(emoji => {
+                  const isActive = share.reaction === emoji;
+                  return (
+                    <button
+                      key={emoji}
+                      onClick={() => reactToShare(share.id, isActive ? null : emoji).then(refresh)}
+                      disabled={isLoading}
+                      style={{
+                        padding: '3px 6px', fontSize: 16, lineHeight: 1,
+                        border: `1.5px solid ${isActive ? 'var(--primary)' : 'var(--border)'}`,
+                        borderRadius: 8,
+                        background: isActive ? 'rgba(var(--primary-rgb, 255,107,53), 0.1)' : 'transparent',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        transform: isActive ? 'scale(1.15)' : 'scale(1)',
+                      }}
+                      aria-label={`React with ${emoji}`}
+                    >
+                      {emoji}
+                    </button>
+                  );
+                })}
+              </div>
 
               {/* Actions */}
               <div style={{ display: 'flex', gap: 8 }}>

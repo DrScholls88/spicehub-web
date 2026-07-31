@@ -8,7 +8,7 @@
  *
  * See spec: docs/superpowers/specs/2026-07-30-friends-direct-share-design.md §4
  */
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { isFriendsEnabled } from '../lib/supabaseClient';
 import { getCloudProfile, searchUsers } from '../lib/cloudProfile';
@@ -20,6 +20,13 @@ import {
 } from '../lib/friends';
 import { getAvatar } from '../data/pixelAvatars';
 import SetUsernameSheet from './SetUsernameSheet';
+import db from '../db';
+
+const SORT_MODES = [
+  { key: 'az', label: 'A–Z' },
+  { key: 'favorites', label: 'Favorites' },
+  { key: 'recent', label: 'Recent' },
+];
 
 const SEARCH_DEBOUNCE_MS = 400;
 
@@ -48,6 +55,12 @@ export default function FriendsSection({ isOnline, showToast }) {
   // Sections
   const [showSent, setShowSent] = useState(false);
   const [showBlocked, setShowBlocked] = useState(false);
+
+  // Overflow menu for friend rows
+  const [overflowOpen, setOverflowOpen] = useState(null); // otherUserId or null
+
+  // Sort mode
+  const [sortMode, setSortMode] = useState('az');
 
   if (!isFriendsEnabled()) return null;
 
@@ -78,6 +91,14 @@ export default function FriendsSection({ isOnline, showToast }) {
     window.addEventListener('spicehub:friends-updated', handler);
     return () => window.removeEventListener('spicehub:friends-updated', handler);
   }, []);
+
+  // Close overflow menu on outside tap
+  useEffect(() => {
+    if (!overflowOpen) return;
+    const close = () => setOverflowOpen(null);
+    const timer = setTimeout(() => document.addEventListener('click', close), 0);
+    return () => { clearTimeout(timer); document.removeEventListener('click', close); };
+  }, [overflowOpen]);
 
   const refreshLocal = async () => {
     const [f, pi, po, b] = await Promise.all([
@@ -167,7 +188,9 @@ export default function FriendsSection({ isOnline, showToast }) {
     setActionLoading(null);
   };
 
-  const handleUnfriend = async (friendshipId) => {
+  const handleUnfriend = async (friendshipId, displayName) => {
+    if (!window.confirm(`Remove ${displayName || 'this friend'}? You can re-add them later.`)) return;
+    setOverflowOpen(null);
     setActionLoading(friendshipId);
     const result = await unfriend(friendshipId);
     if (result.success) {
@@ -179,7 +202,9 @@ export default function FriendsSection({ isOnline, showToast }) {
     setActionLoading(null);
   };
 
-  const handleBlock = async (userId) => {
+  const handleBlock = async (userId, displayName) => {
+    if (!window.confirm(`Block ${displayName || 'this user'}? They won't be able to find or share with you.`)) return;
+    setOverflowOpen(null);
     setActionLoading(userId);
     const result = await blockUser(userId);
     if (result.success) {
@@ -202,6 +227,39 @@ export default function FriendsSection({ isOnline, showToast }) {
     }
     setActionLoading(null);
   };
+
+  // ── Favorite toggle (Dexie-only) ───────────────────────────────────────────
+  const toggleFavorite = async (friendId) => {
+    try {
+      const row = await db.friends.get(friendId);
+      if (!row) return;
+      await db.friends.update(friendId, { favorite: !row.favorite });
+      await refreshLocal();
+    } catch { /* best-effort */ }
+  };
+
+  // ── Sorted friends ────────────────────────────────────────────────────────
+  const sortedFriends = useMemo(() => {
+    const list = [...friends];
+    if (sortMode === 'favorites') {
+      list.sort((a, b) => {
+        if (a.favorite && !b.favorite) return -1;
+        if (!a.favorite && b.favorite) return 1;
+        return (a.displayName || a.username || '').localeCompare(b.displayName || b.username || '');
+      });
+    } else if (sortMode === 'recent') {
+      list.sort((a, b) => {
+        const da = a.updatedAt || '';
+        const db2 = b.updatedAt || '';
+        return db2.localeCompare(da); // newest first
+      });
+    } else {
+      list.sort((a, b) =>
+        (a.displayName || a.username || '').localeCompare(b.displayName || b.username || ''),
+      );
+    }
+    return list;
+  }, [friends, sortMode]);
 
   const handleUsernameSet = async (username) => {
     setCloudProfile(prev => prev ? { ...prev, username } : prev);
@@ -429,11 +487,32 @@ export default function FriendsSection({ isOnline, showToast }) {
       {/* ── Friends list ── */}
       {friends.length > 0 ? (
         <div style={{ marginBottom: 12 }}>
-          <h4 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', margin: '0 0 6px' }}>
-            Friends ({friends.length})
-          </h4>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '0 0 6px' }}>
+            <h4 style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)', margin: 0 }}>
+              Friends ({friends.length})
+            </h4>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {SORT_MODES.map(m => (
+                <button
+                  key={m.key}
+                  onClick={() => setSortMode(m.key)}
+                  style={{
+                    padding: '3px 8px', fontSize: 11, fontWeight: 600,
+                    borderRadius: 6,
+                    border: `1px solid ${sortMode === m.key ? 'var(--primary)' : 'var(--border)'}`,
+                    background: sortMode === m.key ? 'rgba(var(--primary-rgb, 255,107,53), 0.1)' : 'transparent',
+                    color: sortMode === m.key ? 'var(--primary)' : 'var(--text-muted)',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s cubic-bezier(0.25,1,0.5,1)',
+                  }}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <AnimatePresence>
-            {friends.map(f => {
+            {sortedFriends.map(f => {
               const avatar = getAvatar(f.avatarId);
               return (
                 <motion.div
@@ -457,25 +536,121 @@ export default function FriendsSection({ isOnline, showToast }) {
                     </div>
                     {f.username && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>@{f.username}</div>}
                   </div>
-                  <button
-                    onClick={() => handleUnfriend(f.id)}
-                    disabled={actionLoading === f.id}
+                  {/* Favorite star */}
+                  <motion.button
+                    onClick={() => toggleFavorite(f.id)}
+                    whileTap={{ scale: 1.3 }}
                     style={{
-                      padding: '5px 10px', fontSize: 12, fontWeight: 600,
-                      border: '1px solid var(--border)', borderRadius: 8,
-                      background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer',
-                      opacity: actionLoading === f.id ? 0.6 : 1,
+                      background: 'none', border: 'none', padding: '2px 4px',
+                      cursor: 'pointer', fontSize: 16, lineHeight: 1,
+                      color: f.favorite ? '#FFD700' : 'var(--border)',
+                      transition: 'color 0.2s',
                     }}
-                  >Remove</button>
+                    aria-label={f.favorite ? 'Unstar friend' : 'Star friend'}
+                    title={f.favorite ? 'Favorited' : 'Add to favorites'}
+                  >
+                    {f.favorite ? '★' : '☆'}
+                  </motion.button>
+                  <div style={{ position: 'relative' }}>
+                    <button
+                      onClick={() => setOverflowOpen(prev => prev === f.otherUserId ? null : f.otherUserId)}
+                      disabled={actionLoading === f.id || actionLoading === f.otherUserId}
+                      style={{
+                        padding: '4px 8px', fontSize: 16, lineHeight: 1,
+                        border: '1px solid var(--border)', borderRadius: 8,
+                        background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer',
+                      }}
+                      aria-label="More options"
+                    >⋯</button>
+                    {overflowOpen === f.otherUserId && (
+                      <div style={{
+                        position: 'absolute', right: 0, top: '100%', marginTop: 4,
+                        background: 'var(--card)', border: '1.5px solid var(--border)',
+                        borderRadius: 10, boxShadow: '0 4px 16px rgba(0,0,0,0.18)',
+                        zIndex: 20, minWidth: 140, overflow: 'hidden',
+                      }}>
+                        <button
+                          onClick={() => handleUnfriend(f.id, f.displayName || f.username)}
+                          style={{
+                            display: 'block', width: '100%', padding: '10px 14px',
+                            fontSize: 13, fontWeight: 600, textAlign: 'left',
+                            border: 'none', background: 'transparent',
+                            color: 'var(--text)', cursor: 'pointer',
+                          }}
+                        >Remove Friend</button>
+                        <button
+                          onClick={() => handleBlock(f.otherUserId, f.displayName || f.username)}
+                          style={{
+                            display: 'block', width: '100%', padding: '10px 14px',
+                            fontSize: 13, fontWeight: 600, textAlign: 'left',
+                            border: 'none', borderTop: '1px solid var(--border)',
+                            background: 'transparent',
+                            color: '#e53935', cursor: 'pointer',
+                          }}
+                        >Block</button>
+                      </div>
+                    )}
+                  </div>
                 </motion.div>
               );
             })}
           </AnimatePresence>
         </div>
       ) : (
-        <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '0 0 12px' }}>
-          No friends yet — search by username above to add friends.
-        </p>
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: [0.25, 1, 0.5, 1] }}
+          style={{
+            display: 'flex', flexDirection: 'column', alignItems: 'center',
+            padding: '24px 16px 20px', margin: '0 0 12px',
+            background: 'var(--card)', border: '1px solid var(--border)',
+            borderRadius: 16,
+          }}
+        >
+          {/* Pixel chef — subtle idle bob */}
+          <motion.div
+            animate={{ y: [0, -4, 0] }}
+            transition={{ repeat: Infinity, duration: 2.4, ease: 'easeInOut' }}
+            style={{ fontSize: 40, lineHeight: 1, marginBottom: 10 }}
+            aria-hidden="true"
+          >
+            👨‍🍳
+          </motion.div>
+          <p style={{
+            color: 'var(--text)', fontSize: 14, fontWeight: 600,
+            margin: '0 0 4px', textAlign: 'center',
+          }}>
+            No friends yet
+          </p>
+          <p style={{
+            color: 'var(--text-muted)', fontSize: 13,
+            margin: '0 0 12px', textAlign: 'center', maxWidth: 240,
+          }}>
+            Share your username so friends can find you, or search above to add someone.
+          </p>
+          {cloudProfile?.username && (
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={() => {
+                navigator.clipboard?.writeText(cloudProfile.username).then(() => {
+                  showToast?.('Username copied!', 'success', 1500);
+                }).catch(() => {});
+              }}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '8px 16px', borderRadius: 10,
+                fontSize: 13, fontWeight: 600,
+                border: '1.5px solid var(--primary)',
+                background: 'rgba(var(--primary-rgb, 255,107,53), 0.08)',
+                color: 'var(--primary)', cursor: 'pointer',
+                transition: 'background 0.2s',
+              }}
+            >
+              📋 Copy @{cloudProfile.username}
+            </motion.button>
+          )}
+        </motion.div>
       )}
 
       {/* ── Sent requests (collapsed by default) ── */}
