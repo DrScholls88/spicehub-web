@@ -94,7 +94,32 @@ export async function sendRecipeShare(toUserId, meal, itemType = 'meal', note = 
 export async function sendRecipeShareToMany(friendUserIds, meal, itemType = 'meal', note = '') {
   let sent = 0;
   let failed = 0;
+  let queued = 0;
   const errors = [];
+
+  // If offline, queue everything for later
+  if (!navigator.onLine) {
+    const recipeData = buildSharePayload(meal, itemType);
+    for (const userId of friendUserIds) {
+      try {
+        await db.sharedSyncQueue.add({
+          table: 'recipe_shares',
+          action: 'send_share',
+          payload: { toUserId: userId, itemType, recipeData, note: (note || '').slice(0, 280) },
+          homeGroupId: null,
+          clientMutationId: crypto.randomUUID(),
+          status: 'pending',
+          attempts: 0,
+          createdAt: new Date().toISOString(),
+        });
+        queued++;
+      } catch (err) {
+        failed++;
+        errors.push({ userId, error: err.message });
+      }
+    }
+    return { sent: 0, failed, queued, errors };
+  }
 
   for (const userId of friendUserIds) {
     const result = await sendRecipeShare(userId, meal, itemType, note);
@@ -106,7 +131,7 @@ export async function sendRecipeShareToMany(friendUserIds, meal, itemType = 'mea
     }
   }
 
-  return { sent, failed, errors };
+  return { sent, failed, queued: 0, errors };
 }
 
 // ── Receive / inbox ────────────────────────────────────────────────────────
@@ -144,6 +169,7 @@ export async function syncPendingSharesToLocal() {
     createdAt: s.created_at,
     recipeData: s.recipe_data,
     note: s.note || '',
+    reaction: s.reaction || null,
     fromUsername: s.recipe_data?.from_username || '',
     fromDisplayName: s.recipe_data?.from_display_name || '',
   }));
@@ -191,6 +217,7 @@ export async function saveShareToLibrary(shareId) {
     profileId: profile.id,
     importedAt: new Date().toISOString(),
     _sharedFrom: fromUsername,
+    _sharedAt: share.createdAt || new Date().toISOString(),
   };
   // Remove cloud-only fields
   delete localRecord.source_url;
@@ -293,6 +320,7 @@ export async function handleIncomingShareRealtime(payload, myUserId) {
     createdAt: row.created_at,
     recipeData: row.recipe_data,
     note: row.note || '',
+    reaction: row.reaction || null,
     fromUsername: row.recipe_data?.from_username || '',
     fromDisplayName: row.recipe_data?.from_display_name || '',
   };
@@ -305,6 +333,138 @@ export async function handleIncomingShareRealtime(payload, myUserId) {
     fromDisplayName: row.recipe_data?.from_display_name || '',
     shareId: row.id,
   };
+}
+
+// ── Emoji reactions ───────────────────────────────────────────────────────
+
+/** Allowed reaction emojis */
+export const SHARE_REACTIONS = ['❤️', '🔥', '😋', '👨‍🍳', '🤤', '👍'];
+
+/**
+ * React to a received share (or remove reaction with null).
+ * @param {string} shareId
+ * @param {string|null} reaction — emoji or null to clear
+ */
+export async function reactToShare(shareId, reaction) {
+  // Optimistic local update
+  const existing = await db.recipeShares.get(shareId);
+  if (existing) {
+    await db.recipeShares.update(shareId, { reaction: reaction || null });
+  }
+
+  try {
+    const supabase = getSupabase();
+    const { error } = await supabase.rpc('react_to_share', {
+      p_share_id: shareId,
+      p_reaction: reaction || null,
+    });
+    if (error) throw error;
+  } catch (err) {
+    console.warn('[RecipeShare] reactToShare failed, queuing:', err.message);
+    await db.sharedSyncQueue.add({
+      table: 'recipe_shares',
+      action: 'react',
+      payload: { id: shareId, reaction: reaction || null },
+      homeGroupId: null,
+      clientMutationId: crypto.randomUUID(),
+      status: 'pending',
+      attempts: 0,
+      createdAt: new Date().toISOString(),
+    });
+  }
+}
+
+// ── Offline draft share queue drain ────────────────────────────────────────
+
+/**
+ * Drain queued outbound share sends (queued while offline).
+ * Called when the app comes back online. Also drains status updates.
+ * @returns {{ drained: number, failed: number }}
+ */
+export async function drainShareQueue() {
+  const pending = await db.sharedSyncQueue
+    .where('status')
+    .equals('pending')
+    .toArray();
+
+  const shareSends = pending.filter(q => q.table === 'recipe_shares' && q.action === 'send_share');
+  const statusUpdates = pending.filter(q => q.table === 'recipe_shares' && q.action === 'update_status');
+  const reactions = pending.filter(q => q.table === 'recipe_shares' && q.action === 'react');
+
+  let drained = 0;
+  let failed = 0;
+
+  for (const q of shareSends) {
+    try {
+      const { toUserId, itemType, recipeData, note } = q.payload;
+      const supabase = getSupabase();
+      const { error } = await supabase.rpc('send_recipe_share', {
+        p_to_user_id: toUserId,
+        p_item_type: itemType,
+        p_recipe_data: recipeData,
+        p_note: note || '',
+      });
+      if (error) throw error;
+      await db.sharedSyncQueue.delete(q.id);
+      drained++;
+    } catch (err) {
+      const attempts = (q.attempts || 0) + 1;
+      if (attempts >= 3) {
+        // Give up after 3 retries
+        await db.sharedSyncQueue.update(q.id, { status: 'failed', attempts });
+        failed++;
+      } else {
+        await db.sharedSyncQueue.update(q.id, { attempts });
+        failed++;
+      }
+    }
+  }
+
+  for (const q of statusUpdates) {
+    try {
+      const { id, status } = q.payload;
+      const supabase = getSupabase();
+      const { error } = await supabase
+        .from('recipe_shares')
+        .update({ status })
+        .eq('id', id);
+      if (error) throw error;
+      await db.sharedSyncQueue.delete(q.id);
+      drained++;
+    } catch {
+      const attempts = (q.attempts || 0) + 1;
+      if (attempts >= 3) {
+        await db.sharedSyncQueue.update(q.id, { status: 'failed', attempts });
+      } else {
+        await db.sharedSyncQueue.update(q.id, { attempts });
+      }
+      failed++;
+    }
+  }
+
+  for (const q of reactions) {
+    try {
+      const { id, reaction } = q.payload;
+      const supabase = getSupabase();
+      const { error } = await supabase.rpc('react_to_share', {
+        p_share_id: id,
+        p_reaction: reaction || null,
+      });
+      if (error) throw error;
+      await db.sharedSyncQueue.delete(q.id);
+      drained++;
+    } catch {
+      const attempts = (q.attempts || 0) + 1;
+      if (attempts >= 3) {
+        await db.sharedSyncQueue.update(q.id, { status: 'failed', attempts });
+      } else {
+        await db.sharedSyncQueue.update(q.id, { attempts });
+      }
+      failed++;
+    }
+  }
+
+  return { drained, failed };
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────

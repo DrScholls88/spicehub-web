@@ -8,7 +8,7 @@
  *   3. authenticated + in group (homeGroupId set, Realtime active)
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { isHomeGroupEnabled, initSupabase, getSupabase, getSession,
+import { isHomeGroupEnabled, isFriendsEnabled, initSupabase, getSupabase, getSession,
          signInWithGoogle, signInWithMagicLink, signOut as supabaseSignOut,
          getCurrentUserId } from '../lib/supabaseClient';
 import { getProfile, linkLocalProfile, clearHomeGroup as clearProfileGroup } from '../lib/profile';
@@ -18,6 +18,8 @@ import { createGroup, joinGroup, leaveGroup, getGroupInfo,
 import { fullFetch, drainQueue, subscribeRealtime, unsubscribeRealtime,
          reconnect, createInboundHandler, enqueueSync } from '../lib/sharedSync';
 import { onOnlineStatusChange } from './useOnlineStatus';
+import { syncFriendsToLocal } from '../lib/friends';
+import { syncPendingSharesToLocal, drainShareQueue } from '../lib/recipeShare';
 
 /**
  * @param {object} options
@@ -55,6 +57,19 @@ export default function useHomeGroup({ showToast, onWeekPlanUpdate, onGroceryUpd
 
         // Link profile (idempotent)
         await linkLocalProfile(session.user.id);
+
+        // Bootstrap friends + shares sync so badges show immediately
+        if (isFriendsEnabled()) {
+          try {
+            await Promise.all([
+              syncFriendsToLocal(),
+              syncPendingSharesToLocal(),
+            ]);
+            window.dispatchEvent(new CustomEvent('spicehub:friends-bootstrap'));
+          } catch (err) {
+            console.warn('[useHomeGroup] friends bootstrap sync failed:', err.message);
+          }
+        }
 
         if (profile?.homeGroupId) {
           // State 3: in group — cold-start sequence
@@ -106,6 +121,21 @@ export default function useHomeGroup({ showToast, onWeekPlanUpdate, onGroceryUpd
       cleanup();
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
     };
+  }, [state]);
+
+  // ── Drain offline share queue when back online ────────────────────────────
+  useEffect(() => {
+    if (state === 'loading' || state === 'local') return;
+
+    const cleanup = onOnlineStatusChange(({ isOnline }) => {
+      if (!isOnline) return;
+      drainShareQueue().then(({ drained }) => {
+        if (drained > 0) {
+          showToast?.(`Sent ${drained} queued share${drained > 1 ? 's' : ''}!`, 'success', 2000);
+        }
+      }).catch(() => {});
+    });
+    return cleanup;
   }, [state]);
 
   // ── Realtime handlers ─────────────────────────────────────────────────────

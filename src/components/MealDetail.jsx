@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useMemo } from 'react';
 import { motion, useDragControls } from 'framer-motion';
-import { X, Share2, Copy, Check, Heart, Star, RefreshCw, Flame, UtensilsCrossed, ChefHat, Martini, FileDown, Play, Images, Pencil } from 'lucide-react';
+import { X, Share2, Copy, Check, Heart, Star, RefreshCw, Flame, UtensilsCrossed, ChefHat, Martini, FileDown, Play, Images, Pencil, UserPlus } from 'lucide-react';
 import PhotoGallery from './PhotoGallery';
 import { NUTRITION_LABELS } from '../recipeSchema';
 import { formatNutritionValue, formatIngredientLine } from '../utils/displayFormatter';
@@ -22,7 +22,7 @@ function CopyLinkButton({ url }) {
   );
 }
 
-export default function MealDetail({ meal, onClose, onShare, onExport, onToggleFavorite, onRate, onStartCook, onStartMix, onToggleRotation, isDrink = false, onMoveToBar, onPlayVideo, onEdit }) {
+export default function MealDetail({ meal, onClose, onShare, onExport, onToggleFavorite, onRate, onStartCook, onStartMix, onToggleRotation, isDrink = false, onMoveToBar, onPlayVideo, onEdit, onSendToFriend }) {
   // ── Drag-down-to-dismiss ──
   const sheetRef = useRef(null);
   const dragControls = useDragControls();
@@ -153,10 +153,32 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
           <div className="modal-header-actions">
             {onEdit && <button className="btn-icon" onClick={onEdit} title="Edit recipe" aria-label="Edit recipe"><Pencil size={18} strokeWidth={1.75} /></button>}
             <button className="btn-icon" onClick={onShare} title="Share" aria-label="Share recipe"><Share2 size={18} strokeWidth={1.75} /></button>
+            {onSendToFriend && <button className="btn-icon" onClick={onSendToFriend} title="Send to Friend" aria-label="Send to friend"><UserPlus size={18} strokeWidth={1.75} /></button>}
             {onExport && <button className="btn-icon" onClick={onExport} title="Export options" aria-label="Export recipe"><FileDown size={18} strokeWidth={1.75} /></button>}
             <button className="btn-icon" onClick={onClose} aria-label="Close"><X size={18} strokeWidth={1.75} /></button>
           </div>
         </div>
+
+        {/* ── Cookbook stamp for shared recipes ── */}
+        {meal._sharedFrom && (
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '6px 14px', margin: '0 12px 6px',
+            borderRadius: 10,
+            background: 'rgba(var(--primary-rgb, 255,107,53), 0.08)',
+            border: '1px solid rgba(var(--primary-rgb, 255,107,53), 0.18)',
+          }}>
+            <span style={{ fontSize: 14 }} aria-hidden="true">📖</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--primary)' }}>
+              From @{meal._sharedFrom}
+            </span>
+            {meal._sharedAt && (
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>
+                {new Date(meal._sharedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+              </span>
+            )}
+          </div>
+        )}
 
         {/* ── Recipe image with PiP, gallery swipe, and re-import controls ── */}
         <div className="detail-image-wrap">
