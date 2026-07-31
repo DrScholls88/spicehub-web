@@ -3,6 +3,13 @@ import { motion } from 'framer-motion';
 import { ChevronRight } from 'lucide-react';
 import SafeMediaImage from './SafeMediaImage.jsx';
 
+// ── RecipeCard ────────────────────────────────────────────────────────────────
+// All colors use REAL tokens from App.css (:root + [data-theme="dark"]).
+// Previous version referenced five phantom tokens (--surface-elevated,
+// --surface-overlay, --border-subtle, --surface-base, --elevation-shadow) that
+// were never defined — their nested var() fallbacks silently resolved to :root
+// light values even in dark/auto mode, making text invisible.
+
 export default function RecipeCard({
   meal,
   layout = 'hero', // 'hero' | 'carousel' | 'grid'
@@ -30,10 +37,10 @@ export default function RecipeCard({
         transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
         style={{
           width: '100%',
-          border: '1px solid var(--border-subtle, var(--border))',
-          borderRadius: '16px',
-          background: 'var(--surface-elevated, var(--card))',
-          boxShadow: 'var(--elevation-shadow, 0 4px 12px rgba(0,0,0,0.05))',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius)',
+          background: 'var(--card)',
+          boxShadow: 'var(--shadow)',
           padding: '0',
           overflow: 'hidden',
           textAlign: 'left',
@@ -60,10 +67,11 @@ export default function RecipeCard({
                   background: 'rgba(0,0,0,0.75)',
                   color: '#fff',
                   padding: '4px 10px',
-                  borderRadius: '20px',
+                  borderRadius: 'var(--radius-pill)',
                   fontSize: '11px',
-                  fontWeight: '600',
+                  fontWeight: '700',
                   backdropFilter: 'blur(6px)',
+                  letterSpacing: '0.3px',
                 }}
               >
                 {statusBadge}
@@ -78,7 +86,7 @@ export default function RecipeCard({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              background: 'var(--surface-base, var(--surface))',
+              background: 'var(--surface)',
               fontSize: '44px',
             }}
           >
@@ -116,7 +124,7 @@ export default function RecipeCard({
               <div
                 style={{
                   fontSize: '12px',
-                  color: 'var(--text-muted, var(--text-light))',
+                  color: 'var(--text-muted)',
                   marginTop: '4px',
                 }}
               >
@@ -129,7 +137,7 @@ export default function RecipeCard({
               width: '36px',
               height: '36px',
               borderRadius: '50%',
-              background: 'var(--surface-overlay, var(--border))',
+              background: 'var(--surface-2)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -154,10 +162,10 @@ export default function RecipeCard({
       style={{
         width: '155px',
         flexShrink: 0,
-        borderRadius: '14px',
-        border: '1px solid var(--border-subtle, var(--border))',
-        background: 'var(--surface-elevated, var(--card))',
-        boxShadow: 'var(--elevation-shadow, 0 2px 8px rgba(0,0,0,0.06))',
+        borderRadius: 'var(--radius-sm)',
+        border: '1px solid var(--border)',
+        background: 'var(--card)',
+        boxShadow: 'var(--shadow)',
         overflow: 'hidden',
         padding: 0,
         textAlign: 'left',
@@ -201,7 +209,7 @@ export default function RecipeCard({
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            background: 'var(--surface-base, var(--surface))',
+            background: 'var(--surface)',
             fontSize: '32px',
           }}
         >
@@ -228,7 +236,7 @@ export default function RecipeCard({
             style={{
               fontSize: '11px',
               fontWeight: '600',
-              color: matchedCount === totalCount ? 'var(--success, #16a34a)' : 'var(--warning, #d97706)',
+              color: matchedCount === totalCount ? 'var(--success)' : 'var(--warning)',
               marginTop: '6px',
             }}
           >
@@ -239,7 +247,7 @@ export default function RecipeCard({
           <div
             style={{
               fontSize: '10px',
-              color: 'var(--text-muted, var(--text-light))',
+              color: 'var(--text-muted)',
               marginTop: '4px',
               whiteSpace: 'nowrap',
               overflow: 'hidden',
