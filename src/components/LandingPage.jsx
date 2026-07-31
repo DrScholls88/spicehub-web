@@ -59,6 +59,8 @@ export default function LandingPage({
   onOpenPantry = () => {},
   onOpenStats = () => {},
   onOpenDiscover = () => {},
+  onOpenFriends = null,
+  friendsBadgeCount = 0,
   onInstallApp = null,
   canInstall = false,
   onRespinDate = null,
@@ -241,6 +243,15 @@ export default function LandingPage({
       accent: TILE_COLORS.fridge,
       onClick: () => onOpenFridge(),
     },
+    // Friends tile — only shown when the feature is on
+    ...(onOpenFriends ? [{
+      id: 'friends',
+      emoji: '👤',
+      title: 'Friends',
+      subtitle: friendsBadgeCount > 0 ? `${friendsBadgeCount} new` : 'Find friends & share recipes',
+      accent: TILE_COLORS.friends,
+      onClick: () => onOpenFriends(),
+    }] : []),
     {
       id: 'stats',
       emoji: '📊',
@@ -249,7 +260,7 @@ export default function LandingPage({
       accent: TILE_COLORS.stats,
       onClick: () => onOpenStats(),
     },
-  ], [rotationCount, meals.length, drinks.length, totalCooked, groceryTelemetry, fridgeTelemetry, onNavigate, onGenerate, onOpenFridge, onOpenPantry, onOpenStats]);
+  ], [rotationCount, meals.length, drinks.length, totalCooked, groceryTelemetry, fridgeTelemetry, friendsBadgeCount, onNavigate, onGenerate, onOpenFridge, onOpenPantry, onOpenStats, onOpenFriends]);
 
   const tilesById = useMemo(() => {
     const map = {};
