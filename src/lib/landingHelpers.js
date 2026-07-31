@@ -64,6 +64,7 @@ export const TILE_COLORS = {
   grocery: '#1565c0',
   pantry: '#8a6d3b',
   fridge: '#00838f',
+  friends: '#1976d2',
   stats: '#e65100',
 };
 

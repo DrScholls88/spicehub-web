@@ -48,9 +48,10 @@ import useProfile from './hooks/useProfile';
 import useHomeGroup from './hooks/useHomeGroup';
 import useFriendsRealtime from './hooks/useFriendsRealtime';
 import HomeGroupSection from './components/HomeGroupSection';
-import FriendsSection from './components/FriendsSection';
+import FriendsSheet from './components/FriendsSheet';
 import { isHomeGroupEnabled, isFriendsEnabled } from './lib/supabaseClient';
 import { getPendingShareCount } from './lib/recipeShare';
+import { getPendingInboundCount } from './lib/friends';
 import './App.css';
 
 // Code-split screens that aren't needed on first paint. Each is a modal/
@@ -319,6 +320,8 @@ export default function App() {
   const [showStats, setShowStats] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [pendingShareCount, setPendingShareCount] = useState(0);
+  const [pendingRequestCount, setPendingRequestCount] = useState(0);
+  const [showFriendsSheet, setShowFriendsSheet] = useState(false);
   const [showBarShelf, setShowBarShelf] = useState(false);
   const [showBarFridge, setShowBarFridge] = useState(false);
   // ── Room trip: animated "walk through the doorway" between My Bar & Saloon ──
@@ -433,6 +436,7 @@ export default function App() {
   useBackHandler(showStats, () => setShowStats(false), 'stats');
   useBackHandler(showStorageManager, () => setShowStorageManager(false), 'storage');
   useBackHandler(showSettings, () => setShowSettings(false), 'settings');
+  useBackHandler(showFriendsSheet, () => setShowFriendsSheet(false), 'friends-sheet');
   useBackHandler(showBatchQueue, () => setShowBatchQueue(false), 'batch-queue');
   useBackHandler(!!batchReviewItem, () => setBatchReviewItem(null), 'batch-review');
   useBackHandler(showZipImport, () => setShowZipImport(false), 'zip-import');
@@ -442,16 +446,20 @@ export default function App() {
   // Double-back-to-exit at root + history sentinel (Track 0)
   useRootBackGuard(showToast);
 
-  // ── Pending share count (badge on Meals tab) ──────────────────────────────
+  // ── Pending share + friend-request counts (badges) ────────────────────────
   useEffect(() => {
     if (!isFriendsEnabled()) return;
-    const refresh = () => getPendingShareCount().then(c => setPendingShareCount(c)).catch(() => {});
-    refresh();
-    window.addEventListener('spicehub:shares-updated', refresh);
-    window.addEventListener('spicehub:friends-bootstrap', refresh);
+    const refreshShares = () => getPendingShareCount().then(c => setPendingShareCount(c)).catch(() => {});
+    const refreshRequests = () => getPendingInboundCount().then(c => setPendingRequestCount(c)).catch(() => {});
+    const refreshAll = () => { refreshShares(); refreshRequests(); };
+    refreshAll();
+    window.addEventListener('spicehub:shares-updated', refreshShares);
+    window.addEventListener('spicehub:friends-updated', refreshRequests);
+    window.addEventListener('spicehub:friends-bootstrap', refreshAll);
     return () => {
-      window.removeEventListener('spicehub:shares-updated', refresh);
-      window.removeEventListener('spicehub:friends-bootstrap', refresh);
+      window.removeEventListener('spicehub:shares-updated', refreshShares);
+      window.removeEventListener('spicehub:friends-updated', refreshRequests);
+      window.removeEventListener('spicehub:friends-bootstrap', refreshAll);
     };
   }, []);
 
@@ -1711,6 +1719,19 @@ useEffect(() => {
             moved into the Settings sheet. */}
         <div className="header-actions">
           <button className="hdr-btn" onClick={() => setShowFridge(true)} title="The Pantry — what can I cook?" aria-label="Open the pantry">🧺</button>
+          {isFriendsEnabled() && (
+            <button className="hdr-btn" onClick={() => setShowFriendsSheet(true)} title="Friends" aria-label="Friends" style={{ position: 'relative' }}>
+              👤
+              {(pendingRequestCount + pendingShareCount) > 0 && (
+                <span style={{
+                  position: 'absolute', top: 0, right: 0,
+                  minWidth: 14, height: 14, borderRadius: 7, padding: '0 3px',
+                  background: 'var(--primary)', color: '#fff',
+                  fontSize: 9, fontWeight: 700, lineHeight: '14px', textAlign: 'center',
+                }}>{(pendingRequestCount + pendingShareCount) > 9 ? '9+' : pendingRequestCount + pendingShareCount}</span>
+              )}
+            </button>
+          )}
           <button className="hdr-btn" onClick={() => setShowSettings(true)} title="Settings" aria-label="Settings">⚙️</button>
         </div>
       </header>
@@ -1782,6 +1803,8 @@ useEffect(() => {
             onOpenPantry={() => { setPantryStartOnMatches(false); setShowFridge(true); }}
             onOpenStats={() => setShowStats(true)}
             onOpenDiscover={() => setShowDiscover(true)}
+            onOpenFriends={isFriendsEnabled() ? () => setShowFriendsSheet(true) : null}
+            friendsBadgeCount={pendingRequestCount + pendingShareCount}
             canInstall={!!deferredPrompt}
             onInstallApp={handleInstallApp}
             onRespinDate={handleRespinForDate}
@@ -2094,6 +2117,13 @@ useEffect(() => {
         </div>
       )}
 
+      <FriendsSheet
+        open={showFriendsSheet}
+        onClose={() => setShowFriendsSheet(false)}
+        isOnline={isOnline}
+        showToast={showToast}
+      />
+
       {showSettings && (
         <div className="st-overlay" data-sheet-overlay onClick={() => setShowSettings(false)}>
           <div className="st-sheet" ref={settingsSwipe.sheetRef} onClick={e => e.stopPropagation()}
@@ -2120,8 +2150,19 @@ useEffect(() => {
                 onSignOut={homeGroup.signOut}
                 onRegenerateCode={homeGroup.regenerateInviteCode}
               />
-              {/* Friends — behind feature flag, requires Home Group */}
-              <FriendsSection isOnline={isOnline} showToast={showToast} />
+              {/* Friends — link to standalone sheet */}
+              {isFriendsEnabled() && (
+                <div className="st-section">
+                  <h3>Friends</h3>
+                  <button
+                    className="st-install-btn"
+                    onClick={() => { setShowSettings(false); setShowFriendsSheet(true); }}
+                  >
+                    <span className="st-install-icon">👤</span>
+                    <span>Manage Friends{(pendingRequestCount + pendingShareCount) > 0 ? ` (${pendingRequestCount + pendingShareCount} new)` : ''}</span>
+                  </button>
+                </div>
+              )}
                 {/* PWA Install — shown in Settings on every tab (consistent header) */}
                 <div className="st-section st-install-section">
                   <h3>App</h3>
