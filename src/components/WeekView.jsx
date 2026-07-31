@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { X, Lock, Star, BookOpen, UtensilsCrossed, ChevronDown, ChevronRight, MoreVertical, Plus, RefreshCw, CheckSquare, ShoppingCart, CalendarDays, List } from 'lucide-react';
+import { X, Lock, LockKeyhole, LockKeyholeOpen, Star, BookOpen, UtensilsCrossed, ChevronDown, ChevronRight, MoreVertical, Plus, RefreshCw, CheckSquare, ShoppingCart, CalendarDays, List } from 'lucide-react';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import MealSpinner from './MealSpinner';
 import useBackHandler from '../hooks/useBackHandler';
@@ -196,8 +196,11 @@ const ANIMATIONS_CSS = `
   .wv-tl-card:active { transform: scale(0.97); }
   .wv-tl-card.tl-today {
     border-color: var(--primary);
-    box-shadow: 0 0 0 1px var(--primary), 0 2px 12px rgba(230,81,0,0.12);
+    box-shadow: 0 0 0 1.5px var(--primary), 0 4px 20px rgba(230,81,0,0.18);
+    transform: scale(1.02);
+    z-index: 2;
   }
+  .wv-tl-card.tl-today:active { transform: scale(0.99); }
   .wv-tl-card.tl-empty {
     border-style: dashed;
     border-color: var(--border);
@@ -252,6 +255,18 @@ const ANIMATIONS_CSS = `
     transition: transform 100ms ease;
   }
   .wv-tl-spin-chip:active { transform: scale(0.93); }
+  .wv-tl-lock-btn {
+    flex-shrink: 0; width: 32px; height: 32px; border-radius: 8px;
+    background: transparent; border: none;
+    color: var(--text-muted); font-size: 14px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: transform 100ms ease, color 150ms ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wv-tl-lock-btn:active { transform: scale(0.85); }
+  .wv-tl-lock-btn.locked {
+    color: var(--primary);
+  }
   .wv-tl-section-header {
     display: flex; align-items: center; justify-content: space-between;
     padding: 10px 16px 4px;
@@ -303,9 +318,9 @@ const ANIMATIONS_CSS = `
   }
   @media (prefers-reduced-motion: reduce) {
     .wv-tl-card, .wv-tl-spin-chip, .wv-tl-next-collapsed,
-    .wv-tl-toggle-btn, .wv-tl-action { transition: none !important; }
+    .wv-tl-toggle-btn, .wv-tl-action, .wv-tl-lock-btn { transition: none !important; }
     .wv-tl-card:active, .wv-tl-spin-chip:active,
-    .wv-tl-next-collapsed:active { transform: none !important; }
+    .wv-tl-next-collapsed:active, .wv-tl-lock-btn:active { transform: none !important; }
   }
 `;
 
@@ -924,6 +939,7 @@ export default function WeekView({
             }}
             onRespin={onRespin}
             onSpinForDate={handleSpinForDate}
+            onToggleLock={onToggleLock}
             grocerySelectMode={grocerySelectMode}
             groceryDays={groceryDays}
             onGroceryToggle={handleGroceryToggle}
@@ -976,6 +992,7 @@ export default function WeekView({
                   }}
                   onRespin={onRespin}
                   onSpinForDate={handleSpinForDate}
+                  onToggleLock={onToggleLock}
                   grocerySelectMode={grocerySelectMode}
                   groceryDays={groceryDays}
                   onGroceryToggle={handleGroceryToggle}
@@ -1419,7 +1436,8 @@ const TL_STAGGER_DELAY = 40;
 function TimelineWeek({
   weekDates, today, getMealForDate, currentWeekMonday,
   selectMode, selectedDates, onCellClick, onToggleSelect,
-  onRespin, onSpinForDate, grocerySelectMode, groceryDays, onGroceryToggle,
+  onRespin, onSpinForDate, onToggleLock,
+  grocerySelectMode, groceryDays, onGroceryToggle,
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '0 12px' }}>
@@ -1444,6 +1462,10 @@ function TimelineWeek({
         if (isGroceryActive) classes.push('tl-grocery-active');
         if (isGroceryExcluded) classes.push('tl-grocery-excluded');
 
+        // Stable key for tumbler: when meal changes on spin, AnimatePresence
+        // triggers exit→enter with a blur-slide spring.
+        const mealKey = meal ? (meal.id || meal.name || 'meal') : 'empty';
+
         return (
           <motion.div
             key={key}
@@ -1461,48 +1483,87 @@ function TimelineWeek({
 
             <div className="wv-tl-grocery-badge" aria-hidden="true">✓</div>
 
-            {meal && !isSpecial ? (
-              meal.imageUrl ? (
-                <img
-                  src={meal.imageUrl} alt=""
-                  className="wv-tl-thumb"
-                  onError={e => { e.target.style.display = 'none'; }}
-                />
-              ) : (
-                <div className="wv-tl-thumb-ph">
-                  {meal.name?.charAt(0)?.toUpperCase() || '🍽️'}
-                </div>
-              )
-            ) : isSpecial ? (
-              <div className="wv-tl-thumb-ph" style={{ fontSize: 26 }}>
-                {meal.icon}
-              </div>
-            ) : (
-              <div className="wv-tl-empty-ph">
-                <Plus size={18} color="var(--text-muted)" strokeWidth={2} />
-              </div>
-            )}
+            {/* ── Tumbler: thumbnail animates on recipe swap ── */}
+            <AnimatePresence mode="popLayout" initial={false}>
+              <motion.div
+                key={mealKey + '-thumb'}
+                initial={{ y: -24, opacity: 0, filter: 'blur(4px)' }}
+                animate={{ y: 0, opacity: 1, filter: 'blur(0px)' }}
+                exit={{ y: 24, opacity: 0, filter: 'blur(4px)' }}
+                transition={{ type: 'spring', stiffness: 340, damping: 28 }}
+                style={{ flexShrink: 0 }}
+              >
+                {meal && !isSpecial ? (
+                  meal.imageUrl ? (
+                    <img
+                      src={meal.imageUrl} alt=""
+                      className="wv-tl-thumb"
+                      onError={e => { e.target.style.display = 'none'; }}
+                    />
+                  ) : (
+                    <div className="wv-tl-thumb-ph">
+                      {meal.name?.charAt(0)?.toUpperCase() || '🍽️'}
+                    </div>
+                  )
+                ) : isSpecial ? (
+                  <div className="wv-tl-thumb-ph" style={{ fontSize: 26 }}>
+                    {meal.icon}
+                  </div>
+                ) : (
+                  <div className="wv-tl-empty-ph">
+                    <Plus size={18} color="var(--text-muted)" strokeWidth={2} />
+                  </div>
+                )}
+              </motion.div>
+            </AnimatePresence>
 
-            <div className="wv-tl-info">
-              {meal ? (
-                <>
-                  <div className="wv-tl-name">
-                    {isSpecial ? meal.name : meal.name}
-                    {isLocked && <span style={{ marginLeft: 6, fontSize: 11 }}>🔒</span>}
-                  </div>
-                  <div className="wv-tl-meta">
-                    {isSpecial ? 'Special day' : `${meal.ingredients?.length || 0} ingredients${meal.category ? ` · ${meal.category}` : ''}`}
-                    {meal._sharedBy && meal._sharedBy !== profileDisplayName && (
-                      <span style={{ marginLeft: 4, opacity: 0.7 }}> · {meal._sharedBy}</span>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <div className="wv-tl-meta" style={{ fontSize: 12.5 }}>
-                  {isPast ? 'No meal planned' : 'Tap to add or spin'}
-                </div>
-              )}
+            <div className="wv-tl-info" style={{ overflow: 'hidden' }}>
+              <AnimatePresence mode="popLayout" initial={false}>
+                <motion.div
+                  key={mealKey + '-info'}
+                  initial={{ y: -14, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  exit={{ y: 14, opacity: 0 }}
+                  transition={{ type: 'spring', stiffness: 340, damping: 28 }}
+                >
+                  {meal ? (
+                    <>
+                      <div className="wv-tl-name">
+                        {meal.name}
+                      </div>
+                      <div className="wv-tl-meta">
+                        {isSpecial ? 'Special day' : `${meal.ingredients?.length || 0} ingredients${meal.category ? ` · ${meal.category}` : ''}`}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="wv-tl-meta" style={{ fontSize: 12.5 }}>
+                      {isPast ? 'No meal planned' : 'Tap to add or spin'}
+                    </div>
+                  )}
+                </motion.div>
+              </AnimatePresence>
             </div>
+
+            {/* ── Per-card lock toggle ── */}
+            {!selectMode && !isPast && !grocerySelectMode && isCurrent && meal && !isSpecial && (
+              <motion.button
+                className={`wv-tl-lock-btn${isLocked ? ' locked' : ''}`}
+                onClick={(e) => { e.stopPropagation(); onToggleLock?.(dow); }}
+                whileTap={{ scale: 0.8 }}
+                animate={{
+                  scale: isLocked ? [1, 1.15, 1] : 1,
+                  color: isLocked ? 'var(--primary)' : 'var(--text-muted)',
+                }}
+                transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
+                aria-label={isLocked ? 'Unlock day' : 'Lock day'}
+                title={isLocked ? "Locked — won’t change on Spin" : 'Lock to keep this meal'}
+              >
+                {isLocked
+                  ? <LockKeyhole size={16} strokeWidth={2.5} />
+                  : <LockKeyholeOpen size={16} strokeWidth={2} />
+                }
+              </motion.button>
+            )}
 
             {!selectMode && !isPast && !grocerySelectMode && (
               meal ? (

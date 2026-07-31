@@ -1,5 +1,10 @@
 @import './styles/tokens.css';
 
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
 /* SpiceHub - Base Reset */
 *, *::before, *::after { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; height: 100%; }
