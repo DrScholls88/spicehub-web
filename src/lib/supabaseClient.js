@@ -19,7 +19,6 @@ let _client = null;
  */
 export function isHomeGroupEnabled() {
   return (
-    import.meta.env.VITE_HOME_GROUP_ENABLED === 'true' &&
     !!import.meta.env.VITE_SUPABASE_URL &&
     !!import.meta.env.VITE_SUPABASE_ANON_KEY
   );
