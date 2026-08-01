@@ -495,7 +495,7 @@ export default function LandingPage({
                 )}
                 {isPrimary ? (
                   <>
-                    <div className="tile-emoji-wrap">{tile.emoji}</div>
+                    <div className={`tile-emoji-wrap idle-${tile.id}`}>{tile.emoji}</div>
                     <div className="tile-text-wrap">
                       <div className="landing-tile-title">{tile.title}</div>
                       <div className="landing-tile-subtitle">{tile.subtitle}</div>
@@ -503,7 +503,7 @@ export default function LandingPage({
                   </>
                 ) : (
                   <>
-                    <div className="landing-tile-emoji">{tile.emoji}</div>
+                    <div className={`landing-tile-emoji idle-${tile.id}`}>{tile.emoji}</div>
                     <div className="landing-tile-title">{tile.title}</div>
                     <div className="landing-tile-subtitle">{tile.subtitle}</div>
                   </>
