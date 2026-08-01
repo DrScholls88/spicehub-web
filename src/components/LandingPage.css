@@ -1414,3 +1414,90 @@
 .onboarding-next:active {
   transform: scale(0.96);
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   Widget Tile Idle Animations — per-tile emoji personality
+   GPU-only (transform), long durations + tiny amplitudes = ambient, not frantic.
+   Staggered animation-delay so tiles never pulse in lockstep.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* 📅 Plan Week — gentle calendar-page tilt */
+@keyframes idleTilt {
+  0%, 100% { transform: rotate(0deg); }
+  50%      { transform: rotate(-3deg); }
+}
+
+/* 🎲 Spin Week — lazy dice tumble */
+@keyframes idleWobble {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  25%      { transform: rotate(-8deg) scale(1.04); }
+  75%      { transform: rotate(6deg) scale(0.97); }
+}
+
+/* 📓 My Meals — book breathing */
+@keyframes idleBreathe {
+  0%, 100% { transform: scale(1) rotate(0deg); }
+  50%      { transform: scale(1.08) rotate(2deg); }
+}
+
+/* 🍸 Bar Shelf — cocktail swirl */
+@keyframes idleSwirl {
+  0%, 100% { transform: rotate(0deg); }
+  30%      { transform: rotate(10deg); }
+  70%      { transform: rotate(-6deg); }
+}
+
+/* 🛒 Grocery — cart nudge */
+@keyframes idleRoll {
+  0%, 100% { transform: translateX(0); }
+  50%      { transform: translateX(3px); }
+}
+
+/* 🥫 Pantry — shelf rock */
+@keyframes idleRock {
+  0%, 100% { transform: rotate(0deg); }
+  25%      { transform: rotate(3deg); }
+  75%      { transform: rotate(-3deg); }
+}
+
+/* 🧊 Fridge — ice float */
+@keyframes idleFloat {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-3px); }
+}
+
+/* 👤 Friends — gentle nod */
+@keyframes idleNod {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50%      { transform: translateY(-2px) scale(1.05); }
+}
+
+/* 📊 Stats — bar-chart grow */
+@keyframes idlePulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.08) translateY(-1px); }
+}
+
+.idle-planWeek  { animation: idleTilt    5.5s cubic-bezier(0.45, 0, 0.55, 1) infinite; animation-delay: 0s; }
+.idle-spinWeek  { animation: idleWobble  4.5s cubic-bezier(0.45, 0, 0.55, 1) infinite; animation-delay: 0.6s; }
+.idle-myMeals   { animation: idleBreathe 6s   cubic-bezier(0.45, 0, 0.55, 1) infinite; animation-delay: 1.2s; }
+.idle-bar       { animation: idleSwirl   5s   cubic-bezier(0.45, 0, 0.55, 1) infinite; animation-delay: 0.3s; }
+.idle-grocery   { animation: idleRoll    4s   cubic-bezier(0.45, 0, 0.55, 1) infinite; animation-delay: 0.9s; }
+.idle-pantry    { animation: idleRock    5.5s cubic-bezier(0.45, 0, 0.55, 1) infinite; animation-delay: 1.5s; }
+.idle-fridge    { animation: idleFloat   6.5s cubic-bezier(0.45, 0, 0.55, 1) infinite; animation-delay: 0.4s; }
+.idle-friends   { animation: idleNod     5s   cubic-bezier(0.45, 0, 0.55, 1) infinite; animation-delay: 1.0s; }
+.idle-stats     { animation: idlePulse   5s   cubic-bezier(0.45, 0, 0.55, 1) infinite; animation-delay: 0.7s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .idle-planWeek,
+  .idle-spinWeek,
+  .idle-myMeals,
+  .idle-bar,
+  .idle-grocery,
+  .idle-pantry,
+  .idle-fridge,
+  .idle-friends,
+  .idle-stats {
+    animation: none;
+  }
+}
