@@ -34,7 +34,7 @@ import { acquirePinterestPack } from './import/acquire/pinterest.js';
 import { selectHeroImage, persistCarousel } from './import/images.js';
 import { packHasCompleteCandidate, createContextPack, packFromCaption } from './import/contextPack.js';
 import { structurePack, serverStructurePack } from './import/structure/gemini.js';
-import { tryBlogLinkExtraction } from './lib/blogLinkFollower.js';
+import { tryBlogLinkExtraction, assessCaptionQuality } from './lib/blogLinkFollower.js';
 
 // ── Null-byte sanitizer ─────────────────────────────────────────────────────
 // LLMs occasionally emit null bytes or control characters in JSON output.
@@ -5039,40 +5039,70 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
     }
   } // end phases 0.5–1+2
 
-  // ── Phase 0.5B: Blog Link Follower — weak caption with recipe blog URL ──────
-  // If the caption is weak but contains a link to a recipe blog, follow it and
-  // extract structured recipe data (JSON-LD / heuristic selectors). This can
-  // return a complete recipe, skipping Gemini entirely.
-  if (capturedCaption && isCaptionWeak(capturedCaption)) {
+  // ── Phase 0.5B: Blog Link Follower (Hypercharged) ──────────────────────────
+  // Dual-source architecture: IG = discovery + video/PiP, Blog = recipe of record.
+  // Triggers on WEAK or INCOMPLETE captions. Discovers links (caption, comments,
+  // profile bio), unwraps short links, expands link-in-bio hubs, then extracts
+  // structured recipe data from blog pages via JSON-LD → microdata → WPRM → heuristic.
+  // When partial (ingredients but no directions), injects article text for Phase 3 Gemini.
+  let blogPartial = null;
+  const captionQuality = capturedCaption ? assessCaptionQuality(capturedCaption) : { class: 'weak', reason: 'empty' };
+  if (capturedCaption && (captionQuality.class === 'weak' || captionQuality.class === 'incomplete')) {
     try {
-      progress(3, 'running', 'Caption thin — checking for recipe blog links…');
-      const blogRecipe = await tryBlogLinkExtraction(capturedCaption, capturedImageUrl);
-      if (blogRecipe && blogRecipe.ingredients?.length >= 2) {
+      progress(3, 'running', captionQuality.class === 'incomplete'
+        ? 'Caption points to blog — following recipe link…'
+        : 'Caption thin — checking for recipe blog links…');
+      const blogRecipe = await tryBlogLinkExtraction(capturedCaption, capturedImageUrl, {
+        instagramUrl: url,
+        comments: [],
+        carouselImages: capturedImages,
+      });
+
+      if (blogRecipe && !blogRecipe._isPartial && blogRecipe.ingredients?.length >= 2) {
+        // ── Full blog extraction — return dual-source result ──
         progress(3, 'done', `Extracted "${blogRecipe.name}" from linked blog`);
         const { url: resolvedImageUrl, status: imageStatus } =
           await resolveDisplayableImage(blogRecipe.image || capturedImageUrl || '', persistCapturedImage);
         let carouselImages = [];
         try { carouselImages = await persistCarousel(capturedImages || [], persistCapturedImage); } catch { /* optional */ }
+        // PiP preservation: videoUrl always = IG URL when input was a reel/video
+        const isReel = /\/(reel|tv)\//i.test(url);
         const finalRecipe = {
           name: blogRecipe.name || generateTitleFromIngredients(blogRecipe.ingredients, type),
           ingredients: blogRecipe.ingredients.join('\n'),
           directions: blogRecipe.directions.join('\n'),
           imageUrl: resolvedImageUrl,
           link: blogRecipe.link || url,
+          videoUrl: isReel ? url : '',
           prepTime: blogRecipe.prepTime || '',
           cookTime: blogRecipe.cookTime || '',
           totalTime: blogRecipe.totalTime || '',
           servings: blogRecipe.servings || '',
           description: blogRecipe.description || '',
+          category: blogRecipe.category || '',
+          cuisine: blogRecipe.cuisine || '',
           _imageStatus: imageStatus,
           _carouselImages: carouselImages,
+          _igCarouselImages: blogRecipe._igCarouselImages || [],
           _extractionSource: 'blog_link_follower',
+          _sources: blogRecipe._sources || { primary: 'blog', blogUrl: blogRecipe.link, instagramUrl: url, videoUrl: isReel ? url : '' },
+          _discoveredDomain: blogRecipe._discoveredDomain || '',
           extractedVia: 'blog-link',
           sourceUrl: url,
           importedAt: new Date().toISOString(),
         };
         try { await setCachedImport(url, finalRecipe); } catch { /* non-fatal */ }
         return finalRecipe;
+
+      } else if (blogRecipe?._isPartial && blogRecipe._articleText) {
+        // ── Partial blog — hand off article text to Phase 3 Gemini ──
+        progress(3, 'done', 'Blog has partial recipe — handing to AI for completion…');
+        blogPartial = blogRecipe;
+        // Inject article text so Gemini can fill in missing directions
+        if (!capturedRawPageText || blogRecipe._articleText.length > capturedRawPageText.length) {
+          capturedRawPageText = blogRecipe._articleText;
+        }
+        // Fall through to Phase 3
       }
     } catch (e) {
       console.log('[BlogLinkFollower] Phase 0.5B error:', e?.message);
@@ -5232,6 +5262,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
         // screen can offer a cover picker and nothing 403s later.
         let carouselImages = [];
         try { carouselImages = await persistCarousel(capturedImages, persistCapturedImage); } catch { /* optional */ }
+        const isReel = /\/(reel|tv)\//i.test(url);
         const finalRecipe = {
           ...recipe,
           name: recipe.name && recipe.name.trim() && !/^(recipe|imported|untitled)$/i.test(recipe.name.trim())
@@ -5245,6 +5276,30 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
           sourceUrl: url,
           importedAt: new Date().toISOString(),
         };
+        // ── Blog partial merge: overlay structured metadata from blog ────────
+        // When Phase 0.5B found a partial blog recipe (ingredients, times,
+        // servings but no directions), Gemini filled in the gaps. Merge blog
+        // metadata onto the Gemini result so times/servings/category are exact.
+        if (blogPartial) {
+          if (blogPartial.prepTime && !finalRecipe.prepTime) finalRecipe.prepTime = blogPartial.prepTime;
+          if (blogPartial.cookTime && !finalRecipe.cookTime) finalRecipe.cookTime = blogPartial.cookTime;
+          if (blogPartial.totalTime && !finalRecipe.totalTime) finalRecipe.totalTime = blogPartial.totalTime;
+          if (blogPartial.servings && !finalRecipe.servings) finalRecipe.servings = blogPartial.servings;
+          if (blogPartial.category && !finalRecipe.category) finalRecipe.category = blogPartial.category;
+          if (blogPartial.cuisine && !finalRecipe.cuisine) finalRecipe.cuisine = blogPartial.cuisine;
+          if (blogPartial.description && !finalRecipe.description) finalRecipe.description = blogPartial.description;
+          finalRecipe._extractionSource = 'blog_link_follower+ai';
+          finalRecipe.extractedVia = 'blog-link+ai';
+          finalRecipe.link = blogPartial.link || finalRecipe.link;
+          finalRecipe.videoUrl = isReel ? url : '';
+          finalRecipe._sources = {
+            primary: 'blog+ai',
+            blogUrl: blogPartial.link || '',
+            instagramUrl: url,
+            videoUrl: isReel ? url : '',
+          };
+          finalRecipe._discoveredDomain = blogPartial._discoveredDomain || '';
+        }
         try { await setCachedImport(url, finalRecipe); } catch { /* cache write failure is non-fatal */ }
         return finalRecipe;
       }
