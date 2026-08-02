@@ -1861,6 +1861,7 @@ useEffect(() => {
             onAddCustomDayTag={handleAddCustomDayTag}
             onDeleteCustomDayTag={handleDeleteCustomDayTag}
             profileDisplayName={profile?.displayName}
+            onToast={showToast}
           />
         )}
         {tab === 'library' && (

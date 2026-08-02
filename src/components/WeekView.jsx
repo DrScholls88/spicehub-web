@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { X, Lock, LockKeyhole, LockKeyholeOpen, Star, BookOpen, UtensilsCrossed, ChevronDown, ChevronRight, MoreVertical, Plus, RefreshCw, CheckSquare, ShoppingCart, CalendarDays, List } from 'lucide-react';
+import { X, Lock, LockKeyhole, LockKeyholeOpen, Star, BookOpen, UtensilsCrossed, ChevronDown, ChevronRight, MoreVertical, Plus, RefreshCw, CheckSquare, ShoppingCart, CalendarDays, List, GripVertical, Search } from 'lucide-react';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import MealSpinner from './MealSpinner';
 import useBackHandler from '../hooks/useBackHandler';
@@ -316,6 +316,43 @@ const ANIMATIONS_CSS = `
     z-index: 1;
     transition: left 0.3s cubic-bezier(0.32,0.72,0,1), width 0.3s cubic-bezier(0.32,0.72,0,1);
   }
+  /* ── Drag-to-copy ── */
+  .wv-tl-grip {
+    flex-shrink: 0; width: 22px; display: flex;
+    align-items: center; justify-content: center;
+    color: var(--text-muted); opacity: 0.35;
+    cursor: grab; touch-action: none;
+    -webkit-tap-highlight-color: transparent;
+    transition: opacity 0.2s cubic-bezier(0.32,0.72,0,1),
+                color 0.2s cubic-bezier(0.32,0.72,0,1);
+    margin-left: -4px;
+  }
+  .wv-tl-grip:active { cursor: grabbing; opacity: 0.7; }
+  .wv-tl-card:hover .wv-tl-grip,
+  .wv-tl-card:focus-within .wv-tl-grip { opacity: 0.6; }
+  .wv-tl-card.tl-drop-target {
+    border-color: var(--primary) !important;
+    background: rgba(230,81,0,0.08) !important;
+    box-shadow: 0 0 0 2px rgba(230,81,0,0.2), 0 4px 16px rgba(230,81,0,0.12);
+    transform: scale(1.02);
+  }
+  @keyframes wv-dropPulse {
+    0%, 100% { box-shadow: 0 0 0 2px rgba(230,81,0,0.2), 0 4px 16px rgba(230,81,0,0.12); }
+    50%      { box-shadow: 0 0 0 3px rgba(230,81,0,0.35), 0 4px 20px rgba(230,81,0,0.18); }
+  }
+  .wv-tl-card.tl-drop-target {
+    animation: wv-dropPulse 1.2s ease-in-out infinite;
+  }
+  /* ── Search button ── */
+  .wv-tl-search-btn {
+    color: var(--text-muted);
+    opacity: 0.5;
+    transition: opacity 0.15s cubic-bezier(0.32,0.72,0,1),
+                color 0.15s cubic-bezier(0.32,0.72,0,1);
+  }
+  .wv-tl-card:hover .wv-tl-search-btn,
+  .wv-tl-search-btn:focus { opacity: 0.8; }
+  .wv-tl-search-btn:active { opacity: 1; color: var(--primary); }
   @media (prefers-reduced-motion: reduce) {
     .wv-tl-card, .wv-tl-spin-chip, .wv-tl-next-collapsed,
     .wv-tl-toggle-btn, .wv-tl-action, .wv-tl-lock-btn { transition: none !important; }
@@ -355,6 +392,7 @@ export default function WeekView({
   onAddCustomDayTag,
   onDeleteCustomDayTag,
   profileDisplayName,
+  onToast,
 }) {
   const today = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
   const currentWeekMonday = useMemo(() => getMonday(today), [today]);
@@ -395,11 +433,23 @@ export default function WeekView({
   const [groceryDays, setGroceryDays] = useState(new Set());
   const [justCompletedSpin, setJustCompletedSpin] = useState(false);
 
+  // ── Drag-to-copy state ──────────────────────────────────────────────────────
+  const [dragSource, setDragSource] = useState(null);          // { date, meal, dayName }
+  const [dragOverTarget, setDragOverTarget] = useState(null);  // dateKey string
+  const dragCleanupRef = useRef(null);
+
+  // ── Search modal state ──────────────────────────────────────────────────────
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchTargetDate, setSearchTargetDate] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchCuisine, setSearchCuisine] = useState('');
+
   // Hardware back / edge-swipe / Escape — innermost Plan UI first (Track 1)
   useBackHandler(!!pickerDay, () => setPickerDay(null), 'week-picker');
   useBackHandler(showDetailPanel, () => setShowDetailPanel(false), 'week-detail');
   useBackHandler(selectMode, () => { setSelectMode(false); setSelectedDates(new Set()); }, 'week-select');
   useBackHandler(grocerySelectMode, () => { setGrocerySelectMode(false); setGroceryDays(new Set()); }, 'week-grocery-select');
+  useBackHandler(searchOpen, () => { setSearchOpen(false); setSearchQuery(''); setSearchCuisine(''); }, 'week-search');
   const [showCustomDayTagInput, setShowCustomDayTagInput] = useState(false);
   const [showFoodShortcuts, setShowFoodShortcuts] = useState(false);
   const [newDayTagName, setNewDayTagName] = useState('');
@@ -563,6 +613,104 @@ export default function WeekView({
     setPickerDay(dow);
   }, []);
   const closePicker = useCallback(() => setPickerDay(null), []);
+
+  // ── Drag-to-copy handlers ──────────────────────────────────────────────────
+  const handleDragStart = useCallback((date, meal) => {
+    if (!meal || meal._special) return;
+    const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    setDragSource({ date, meal, dayName: dayNames[date.getDay()] });
+    navigator.vibrate?.([15]);
+  }, []);
+
+  const handleDragOver = useCallback((targetDateKey) => {
+    if (!dragSource) return;
+    const srcKey = dateKey(dragSource.date);
+    if (targetDateKey !== srcKey) {
+      setDragOverTarget(targetDateKey);
+    }
+  }, [dragSource]);
+
+  const handleDragEnd = useCallback(() => {
+    setDragSource(null);
+    setDragOverTarget(null);
+  }, []);
+
+  const handleDrop = useCallback((targetDate) => {
+    if (!dragSource) return;
+    const srcKey = dateKey(dragSource.date);
+    const tgtKey = dateKey(targetDate);
+    if (srcKey === tgtKey) { handleDragEnd(); return; }
+
+    const targetDow = targetDate.getDay() === 0 ? 6 : targetDate.getDay() - 1;
+    const targetWeekMon = getMonday(targetDate);
+    const isTargetCurrentWeek = targetWeekMon.getTime() === currentWeekMonday.getTime();
+
+    // Copy the meal (strip _locked so the copy is unlocked)
+    const mealCopy = { ...dragSource.meal };
+    delete mealCopy._locked;
+
+    if (isTargetCurrentWeek) {
+      onSetDay(targetDow, mealCopy);
+    } else {
+      onSpinnerComplete([{ date: targetDate, meal: mealCopy }]);
+    }
+
+    const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const srcLabel = dragSource.dayName;
+    const tgtLabel = dayNames[targetDate.getDay()];
+    onToast?.(`Copied from ${srcLabel} → ${tgtLabel}`);
+    navigator.vibrate?.([30, 20, 30]);
+    handleDragEnd();
+  }, [dragSource, currentWeekMonday, onSetDay, onSpinnerComplete, onToast, handleDragEnd]);
+
+  // ── Search modal handlers ──────────────────────────────────────────────────
+  const openSearchForDate = useCallback((date) => {
+    setSearchTargetDate(date);
+    setSearchQuery('');
+    setSearchCuisine('');
+    setSearchOpen(true);
+  }, []);
+
+  const handleSearchSelect = useCallback((meal) => {
+    if (!searchTargetDate) return;
+    const targetDow = searchTargetDate.getDay() === 0 ? 6 : searchTargetDate.getDay() - 1;
+    const targetWeekMon = getMonday(searchTargetDate);
+    const isTargetCurrentWeek = targetWeekMon.getTime() === currentWeekMonday.getTime();
+
+    if (isTargetCurrentWeek) {
+      onSetDay(targetDow, meal);
+    } else {
+      onSpinnerComplete([{ date: searchTargetDate, meal }]);
+    }
+
+    const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    onToast?.(`${dayNames[searchTargetDate.getDay()]} → ${meal.name}`);
+    setSearchOpen(false);
+    setSearchQuery('');
+    setSearchCuisine('');
+  }, [searchTargetDate, currentWeekMonday, onSetDay, onSpinnerComplete, onToast]);
+
+  const availableCuisines = useMemo(() => {
+    const cats = new Set();
+    meals.forEach(m => { if (m.category) cats.add(m.category); });
+    return [...cats].sort();
+  }, [meals]);
+
+  const filteredSearchMeals = useMemo(() => {
+    let result = meals;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      result = result.filter(m =>
+        m.name?.toLowerCase().includes(q) ||
+        m.category?.toLowerCase().includes(q) ||
+        m.labels?.some(l => l.toLowerCase().includes(q))
+      );
+    }
+    if (searchCuisine) {
+      result = result.filter(m => m.category === searchCuisine);
+    }
+    return result;
+  }, [meals, searchQuery, searchCuisine]);
 
   // Determine if activeDate falls in the current week — if not, assignments
   // must route through onSpinnerComplete (saves to weekHistory) rather than
@@ -943,6 +1091,13 @@ export default function WeekView({
             grocerySelectMode={grocerySelectMode}
             groceryDays={groceryDays}
             onGroceryToggle={handleGroceryToggle}
+            dragSource={dragSource}
+            dragOverTarget={dragOverTarget}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragEnd={handleDragEnd}
+            onDrop={handleDrop}
+            onOpenSearch={openSearchForDate}
           />
 
           <div
@@ -996,6 +1151,13 @@ export default function WeekView({
                   grocerySelectMode={grocerySelectMode}
                   groceryDays={groceryDays}
                   onGroceryToggle={handleGroceryToggle}
+                  dragSource={dragSource}
+                  dragOverTarget={dragOverTarget}
+                  onDragStart={handleDragStart}
+                  onDragOver={handleDragOver}
+                  onDragEnd={handleDragEnd}
+                  onDrop={handleDrop}
+                  onOpenSearch={openSearchForDate}
                 />
               </motion.div>
             )}
@@ -1383,6 +1545,56 @@ export default function WeekView({
         </div>
       )}
 
+      {/* ── Drag indicator overlay ── */}
+      <AnimatePresence>
+        {dragSource && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            transition={{ duration: 0.2, ease: [0.32, 0.72, 0, 1] }}
+            style={{
+              position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)',
+              zIndex: 600, pointerEvents: 'none',
+              background: 'var(--card)',
+              borderRadius: 12, padding: '8px 14px',
+              boxShadow: '0 4px 20px rgba(0,0,0,0.15), 0 0 0 1.5px var(--primary)',
+              display: 'flex', alignItems: 'center', gap: 8,
+              maxWidth: 280,
+            }}
+          >
+            <GripVertical size={14} color="var(--primary)" strokeWidth={2.5} />
+            <span style={{
+              fontSize: 13, fontWeight: 700, color: 'var(--text)',
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+            }}>
+              {dragSource.meal.name}
+            </span>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>
+              from {dragSource.dayName}
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Search Modal ── */}
+      <AnimatePresence>
+        {searchOpen && (
+          <SearchModal
+            meals={filteredSearchMeals}
+            allMeals={meals}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            searchCuisine={searchCuisine}
+            onCuisineChange={setSearchCuisine}
+            availableCuisines={availableCuisines}
+            targetDate={searchTargetDate}
+            onSelect={handleSearchSelect}
+            onClose={() => { setSearchOpen(false); setSearchQuery(''); setSearchCuisine(''); }}
+          />
+        )}
+      </AnimatePresence>
+
       {renderPicker()}
     </div>
   );
@@ -1438,6 +1650,8 @@ function TimelineWeek({
   selectMode, selectedDates, onCellClick, onToggleSelect,
   onRespin, onSpinForDate, onToggleLock,
   grocerySelectMode, groceryDays, onGroceryToggle,
+  dragSource, dragOverTarget, onDragStart, onDragOver, onDragEnd, onDrop,
+  onOpenSearch,
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '0 12px' }}>
@@ -1453,6 +1667,7 @@ function TimelineWeek({
 
         const isGroceryActive = grocerySelectMode && groceryDays.has(key);
         const isGroceryExcluded = grocerySelectMode && meal && !meal._special && !groceryDays.has(key);
+        const isDragTarget = dragOverTarget === key && dragSource && dateKey(dragSource.date) !== key;
 
         const classes = ['wv-tl-card'];
         if (isToday) classes.push('tl-today');
@@ -1461,6 +1676,7 @@ function TimelineWeek({
         if (isSelected) classes.push('tl-selected');
         if (isGroceryActive) classes.push('tl-grocery-active');
         if (isGroceryExcluded) classes.push('tl-grocery-excluded');
+        if (isDragTarget) classes.push('tl-drop-target');
 
         // Stable key for tumbler: when meal changes on spin, AnimatePresence
         // triggers exit→enter with a blur-slide spring.
@@ -1475,7 +1691,34 @@ function TimelineWeek({
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: isPast && !isToday ? 0.55 : 1, y: 0 }}
             transition={{ duration: 0.3, delay: idx * TL_STAGGER_DELAY / 1000, ease: [0.23, 1, 0.32, 1] }}
+            onDragOver={(e) => { e.preventDefault(); onDragOver?.(key); }}
+            onDrop={(e) => { e.preventDefault(); onDrop?.(date); }}
           >
+            {/* ── Drag grip — visible on meal cards (works from locked too) ── */}
+            {meal && !isSpecial && !selectMode && !grocerySelectMode && !isPast && (
+              <div
+                className="wv-tl-grip"
+                draggable
+                onDragStart={(e) => {
+                  e.stopPropagation();
+                  e.dataTransfer.effectAllowed = 'copy';
+                  // Set a transparent drag image
+                  const ghost = document.createElement('div');
+                  ghost.style.cssText = 'position:absolute;top:-9999px;';
+                  document.body.appendChild(ghost);
+                  e.dataTransfer.setDragImage(ghost, 0, 0);
+                  setTimeout(() => document.body.removeChild(ghost), 0);
+                  onDragStart?.(date, meal);
+                }}
+                onDragEnd={() => onDragEnd?.()}
+                onTouchStart={(e) => { e.stopPropagation(); }}
+                aria-label="Drag to copy meal"
+                title="Drag to copy to another day"
+              >
+                <GripVertical size={16} strokeWidth={2.5} />
+              </div>
+            )}
+
             <div className="wv-tl-dow">
               <div className="wv-tl-dow-label">{dayName}</div>
               <div className="wv-tl-dow-num">{date.getDate()}</div>
@@ -1529,6 +1772,7 @@ function TimelineWeek({
                   {meal ? (
                     <>
                       <div className="wv-tl-name">
+                        {isLocked && <Lock size={11} strokeWidth={2.5} style={{ verticalAlign: 'middle', marginRight: 3, opacity: 0.5 }} />}
                         {meal.name}
                       </div>
                       <div className="wv-tl-meta">
@@ -1556,13 +1800,25 @@ function TimelineWeek({
                 }}
                 transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
                 aria-label={isLocked ? 'Unlock day' : 'Lock day'}
-                title={isLocked ? "Locked — won’t change on Spin" : 'Lock to keep this meal'}
+                title={isLocked ? "Locked — won't change on Spin" : 'Lock to keep this meal'}
               >
                 {isLocked
                   ? <LockKeyhole size={16} strokeWidth={2.5} />
                   : <LockKeyholeOpen size={16} strokeWidth={2} />
                 }
               </motion.button>
+            )}
+
+            {/* ── Search icon — quick access to find any meal ── */}
+            {!selectMode && !isPast && !grocerySelectMode && !dragSource && (
+              <button
+                className="wv-tl-action wv-tl-search-btn"
+                onClick={(e) => { e.stopPropagation(); onOpenSearch?.(date); }}
+                aria-label="Search meals"
+                title="Search & assign a meal"
+              >
+                <Search size={15} strokeWidth={2.5} />
+              </button>
             )}
 
             {!selectMode && !isPast && !grocerySelectMode && (
@@ -1897,6 +2153,198 @@ function DetailPanel({ show, activeDate, today, getMealForDate, isCurrentWeek, o
       </>
       )}
     </AnimatePresence>
+  );
+}
+
+// ── Search Modal ─────────────────────────────────────────────────────────────
+function SearchModal({ meals, allMeals, searchQuery, onSearchChange, searchCuisine, onCuisineChange, availableCuisines, targetDate, onSelect, onClose }) {
+  const inputRef = useRef(null);
+  const dayLabel = targetDate
+    ? DAY_FULL[targetDate.getDay() === 0 ? 6 : targetDate.getDay() - 1]
+    : '';
+  const dateLabel = targetDate
+    ? targetDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : '';
+
+  useEffect(() => {
+    // Focus input after mount animation
+    const t = setTimeout(() => inputRef.current?.focus(), 200);
+    return () => clearTimeout(t);
+  }, []);
+
+  return (
+    <>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.15 }}
+        onClick={onClose}
+        style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+          zIndex: 500, WebkitTapHighlightColor: 'transparent',
+        }}
+      />
+      <motion.div
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
+        style={{
+          position: 'fixed', bottom: 0, left: 0, right: 0,
+          maxWidth: 600, margin: '0 auto',
+          background: 'var(--card)',
+          borderRadius: '20px 20px 0 0',
+          boxShadow: '0 -8px 40px rgba(0,0,0,0.18)',
+          zIndex: 510,
+          maxHeight: '88vh',
+          display: 'flex', flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+      >
+        {/* Handle */}
+        <div style={{
+          width: 36, height: 4, borderRadius: 2, background: 'var(--border)',
+          margin: '10px auto 0', flexShrink: 0,
+        }} />
+
+        {/* Header */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '12px 16px 8px', flexShrink: 0,
+        }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: 'var(--text)' }}>
+              Choose for {dayLabel}
+            </h3>
+            <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>
+              {dateLabel} · {allMeals.length} meals in library
+            </p>
+          </div>
+          <button onClick={onClose} style={{
+            width: 32, height: 32, borderRadius: '50%', border: 'none',
+            background: 'var(--surface)', color: 'var(--text-light)',
+            fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center',
+            justifyContent: 'center', flexShrink: 0,
+          }}>✕</button>
+        </div>
+
+        {/* Search input */}
+        <div style={{ padding: '0 16px 8px', flexShrink: 0 }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            background: 'var(--surface)',
+            border: '1.5px solid var(--border)',
+            borderRadius: 12, padding: '0 12px',
+            transition: 'border-color 0.2s cubic-bezier(0.32,0.72,0,1)',
+          }}>
+            <Search size={16} color="var(--text-muted)" strokeWidth={2} style={{ flexShrink: 0 }} />
+            <input
+              ref={inputRef}
+              type="text"
+              placeholder="Search by name, cuisine, or tag…"
+              value={searchQuery}
+              onChange={(e) => onSearchChange(e.target.value)}
+              style={{
+                flex: 1, border: 'none', outline: 'none',
+                background: 'transparent', color: 'var(--text)',
+                fontSize: 14, fontWeight: 500,
+                padding: '11px 0', minWidth: 0,
+              }}
+            />
+            {searchQuery && (
+              <button onClick={() => onSearchChange('')} style={{
+                border: 'none', background: 'var(--border)', color: 'var(--text-muted)',
+                borderRadius: '50%', width: 20, height: 20, fontSize: 11,
+                cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0,
+              }}>✕</button>
+            )}
+          </div>
+        </div>
+
+        {/* Cuisine filter pills */}
+        {availableCuisines.length > 0 && (
+          <div style={{
+            display: 'flex', gap: 6, padding: '0 16px 10px',
+            overflowX: 'auto', flexShrink: 0,
+            WebkitOverflowScrolling: 'touch',
+            msOverflowStyle: 'none', scrollbarWidth: 'none',
+          }}>
+            <button
+              onClick={() => onCuisineChange('')}
+              style={{
+                padding: '5px 12px', borderRadius: 20, flexShrink: 0,
+                border: !searchCuisine ? '1.5px solid var(--primary)' : '1.5px solid var(--border)',
+                background: !searchCuisine ? 'rgba(230,81,0,0.1)' : 'transparent',
+                color: !searchCuisine ? 'var(--primary)' : 'var(--text-muted)',
+                fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                transition: 'all 0.15s cubic-bezier(0.32,0.72,0,1)',
+              }}
+            >All</button>
+            {availableCuisines.map(c => (
+              <button
+                key={c}
+                onClick={() => onCuisineChange(searchCuisine === c ? '' : c)}
+                style={{
+                  padding: '5px 12px', borderRadius: 20, flexShrink: 0,
+                  border: searchCuisine === c ? '1.5px solid var(--primary)' : '1.5px solid var(--border)',
+                  background: searchCuisine === c ? 'rgba(230,81,0,0.1)' : 'transparent',
+                  color: searchCuisine === c ? 'var(--primary)' : 'var(--text-muted)',
+                  fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  transition: 'all 0.15s cubic-bezier(0.32,0.72,0,1)',
+                }}
+              >{c}</button>
+            ))}
+          </div>
+        )}
+
+        {/* Results count */}
+        <div style={{
+          padding: '0 16px 6px', fontSize: 11, fontWeight: 600,
+          color: 'var(--text-muted)', flexShrink: 0,
+        }}>
+          {meals.length === allMeals.length
+            ? `${meals.length} meal${meals.length !== 1 ? 's' : ''}`
+            : `${meals.length} of ${allMeals.length} meals`
+          }
+        </div>
+
+        {/* Results list */}
+        <div style={{
+          flex: 1, overflowY: 'auto',
+          WebkitOverflowScrolling: 'touch',
+        }}>
+          {meals.length === 0 ? (
+            <div style={{
+              padding: '32px 16px', textAlign: 'center',
+              color: 'var(--text-muted)', fontSize: 14,
+            }}>
+              No meals match your search
+            </div>
+          ) : (
+            meals.map(meal => (
+              <div
+                key={meal.id}
+                className="pk-item"
+                onClick={() => onSelect(meal)}
+              >
+                <MealImage src={meal.imageUrl} alt="" className="pk-img" fallbackClass="pk-img-ph" />
+                <div className="pk-info">
+                  <span className="pk-name">{meal.name}</span>
+                  <span className="pk-meta">
+                    {meal.ingredients?.length || 0} ingredients
+                    {meal.category ? ` · ${meal.category}` : ''}
+                    {meal.inRotation && ' · 🔄'}
+                  </span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </motion.div>
+    </>
   );
 }
 
