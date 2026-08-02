@@ -34,6 +34,7 @@ import { acquirePinterestPack } from './import/acquire/pinterest.js';
 import { selectHeroImage, persistCarousel } from './import/images.js';
 import { packHasCompleteCandidate, createContextPack, packFromCaption } from './import/contextPack.js';
 import { structurePack, serverStructurePack } from './import/structure/gemini.js';
+import { tryBlogLinkExtraction } from './lib/blogLinkFollower.js';
 
 // ── Null-byte sanitizer ─────────────────────────────────────────────────────
 // LLMs occasionally emit null bytes or control characters in JSON output.
@@ -5037,6 +5038,46 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
       progress(2, 'skipped', 'Strong caption captured');
     }
   } // end phases 0.5–1+2
+
+  // ── Phase 0.5B: Blog Link Follower — weak caption with recipe blog URL ──────
+  // If the caption is weak but contains a link to a recipe blog, follow it and
+  // extract structured recipe data (JSON-LD / heuristic selectors). This can
+  // return a complete recipe, skipping Gemini entirely.
+  if (capturedCaption && isCaptionWeak(capturedCaption)) {
+    try {
+      progress(3, 'running', 'Caption thin — checking for recipe blog links…');
+      const blogRecipe = await tryBlogLinkExtraction(capturedCaption, capturedImageUrl);
+      if (blogRecipe && blogRecipe.ingredients?.length >= 2) {
+        progress(3, 'done', `Extracted "${blogRecipe.name}" from linked blog`);
+        const { url: resolvedImageUrl, status: imageStatus } =
+          await resolveDisplayableImage(blogRecipe.image || capturedImageUrl || '', persistCapturedImage);
+        let carouselImages = [];
+        try { carouselImages = await persistCarousel(capturedImages || [], persistCapturedImage); } catch { /* optional */ }
+        const finalRecipe = {
+          name: blogRecipe.name || generateTitleFromIngredients(blogRecipe.ingredients, type),
+          ingredients: blogRecipe.ingredients.join('\n'),
+          directions: blogRecipe.directions.join('\n'),
+          imageUrl: resolvedImageUrl,
+          link: blogRecipe.link || url,
+          prepTime: blogRecipe.prepTime || '',
+          cookTime: blogRecipe.cookTime || '',
+          totalTime: blogRecipe.totalTime || '',
+          servings: blogRecipe.servings || '',
+          description: blogRecipe.description || '',
+          _imageStatus: imageStatus,
+          _carouselImages: carouselImages,
+          _extractionSource: 'blog_link_follower',
+          extractedVia: 'blog-link',
+          sourceUrl: url,
+          importedAt: new Date().toISOString(),
+        };
+        try { await setCachedImport(url, finalRecipe); } catch { /* non-fatal */ }
+        return finalRecipe;
+      }
+    } catch (e) {
+      console.log('[BlogLinkFollower] Phase 0.5B error:', e?.message);
+    }
+  }
 
   // ── Phase 3: Gemini AI structuring — ALWAYS runs on any captured text ────────
   // Last-resort: if we have zero text from all phases, try a raw proxy fetch of the URL
