@@ -11,6 +11,7 @@
  */
 
 import { fetchHtmlViaProxy } from '../api.js';
+import { recordLearnedDomain, getLearnedDomains } from '../db.js';
 
 // ─── CONFIG ──────────────────────────────────────────────
 
@@ -149,7 +150,7 @@ export function assessCaptionQuality(caption) {
  * @param {string}   [opts.profileBioUrl] Bio URL from Apify profile data
  * @returns {{ links: DiscoveredLink[], hasLinkInBio: boolean }}
  */
-export function discoverLinks(caption, { comments = [], profileBioUrl = '' } = {}) {
+export function discoverLinks(caption, { comments = [], profileBioUrl = '', learnedDomains = null } = {}) {
   const results = [];
   let hasLinkInBio = false;
 
@@ -160,7 +161,7 @@ export function discoverLinks(caption, { comments = [], profileBioUrl = '' } = {
     if (info.skip) continue;
     if (info.isBioHub) { hasLinkInBio = true; results.push({ url, priority: 10, source: 'bio_hub' }); continue; }
     if (info.isShortLink) { results.push({ url, priority: 5, source: 'short' }); continue; }
-    results.push({ url, priority: scoreUrl(url), source: 'direct' });
+    results.push({ url, priority: scoreUrl(url, learnedDomains), source: 'direct' });
   }
 
   // Scan first 3 comments for pinned recipe links
@@ -171,7 +172,7 @@ export function discoverLinks(caption, { comments = [], profileBioUrl = '' } = {
       const info = classifyUrl(url);
       if (info.skip || info.isBioHub) continue;
       if (info.isShortLink) { results.push({ url, priority: 6, source: 'short' }); continue; }
-      results.push({ url, priority: scoreUrl(url) + 1, source: 'comment' });
+      results.push({ url, priority: scoreUrl(url, learnedDomains) + 1, source: 'comment' });
     }
   }
 
@@ -182,7 +183,7 @@ export function discoverLinks(caption, { comments = [], profileBioUrl = '' } = {
       hasLinkInBio = true;
       results.push({ url: profileBioUrl, priority: 10, source: 'bio_hub' });
     } else if (!info.skip) {
-      results.push({ url: profileBioUrl, priority: scoreUrl(profileBioUrl) + 2, source: 'direct' });
+      results.push({ url: profileBioUrl, priority: scoreUrl(profileBioUrl, learnedDomains) + 2, source: 'direct' });
     }
   }
 
@@ -232,12 +233,16 @@ function classifyUrl(url) {
  *   1 = known recipe domain, any path
  *   2 = unknown domain + recipe-ish path
  *   3 = unknown domain, unknown path
+ *
+ * @param {string} url
+ * @param {Set<string>} [learnedDomains] Domains learned from past successful extractions
  */
-function scoreUrl(url) {
+function scoreUrl(url, learnedDomains) {
   try {
     const parsed = new URL(url);
     const host = parsed.hostname.replace(/^www\./, '');
-    const isKnown = RECIPE_DOMAINS.has(host) || [...RECIPE_DOMAINS].some(d => host.endsWith('.' + d));
+    const matchDomain = (set) => set.has(host) || [...set].some(d => host.endsWith('.' + d));
+    const isKnown = matchDomain(RECIPE_DOMAINS) || (learnedDomains?.size && matchDomain(learnedDomains));
     const hasRecipePath = RECIPE_PATH_RE.test(parsed.pathname);
     if (isKnown && hasRecipePath) return 0;
     if (isKnown) return 1;
@@ -358,21 +363,27 @@ export async function extractRecipeFromBlog(url, prefetchedHtml = null) {
     const jsonLdRecipe = extractJsonLd(html);
     if (jsonLdRecipe) {
       console.log('[BlogLinkFollower] Found JSON-LD recipe');
-      return normalizeRecipe(jsonLdRecipe, url, discoveredDomain);
+      const r = normalizeRecipe(jsonLdRecipe, url, discoveredDomain);
+      r._extractionMethod = 'jsonld';
+      return r;
     }
 
     // Strategy 2: Microdata
     const microdataRecipe = extractMicrodata(html);
     if (microdataRecipe) {
       console.log('[BlogLinkFollower] Found microdata recipe');
-      return normalizeRecipe(microdataRecipe, url, discoveredDomain);
+      const r = normalizeRecipe(microdataRecipe, url, discoveredDomain);
+      r._extractionMethod = 'microdata';
+      return r;
     }
 
     // Strategy 3: WPRM REST API (if recipe ID detected)
     const wprmRecipe = await tryWprmApi(html, url);
     if (wprmRecipe) {
       console.log('[BlogLinkFollower] Found WPRM API recipe');
-      return normalizeRecipe(wprmRecipe, url, discoveredDomain);
+      const r = normalizeRecipe(wprmRecipe, url, discoveredDomain);
+      r._extractionMethod = 'wprm';
+      return r;
     }
 
     // Strategy 4: Heuristic selectors
@@ -384,6 +395,9 @@ export async function extractRecipeFromBlog(url, prefetchedHtml = null) {
       if (!result.directions.length) {
         result._isPartial = true;
         result._articleText = extractArticleText(html);
+        result._extractionMethod = 'heuristic_partial';
+      } else {
+        result._extractionMethod = 'heuristic';
       }
       return result;
     }
@@ -402,6 +416,7 @@ export async function extractRecipeFromBlog(url, prefetchedHtml = null) {
         _isPartial: true,
         _articleText: articleText,
         _discoveredDomain: discoveredDomain,
+        _extractionMethod: 'article_text',
       };
     }
 
@@ -792,8 +807,12 @@ export async function tryBlogLinkExtraction(caption, imageUrl, {
 
   console.log(`[BlogLinkFollower] Caption is ${quality.class} (${quality.reason}), scanning for links...`);
 
+  // Load learned domains for priority boosting (non-blocking; empty set on error)
+  let learnedDomains = null;
+  try { learnedDomains = await getLearnedDomains(); } catch { /* ignore */ }
+
   // Step 2: Discover and rank links
-  const { links, hasLinkInBio } = discoverLinks(caption, { comments, profileBioUrl });
+  const { links, hasLinkInBio } = discoverLinks(caption, { comments, profileBioUrl, learnedDomains });
 
   if (links.length === 0 && !hasLinkInBio) {
     console.log('[BlogLinkFollower] No usable links found');
@@ -831,7 +850,7 @@ export async function tryBlogLinkExtraction(caption, imageUrl, {
             if (recipe) {
               strategyWon = recipe._isPartial ? 'short>bio>partial' : (recipe._source === 'blog_link_follower' ? 'short>bio>structured' : 'short>bio');
               winnerUrl = bioLink;
-              logResult(quality, links.length, strategyWon, winnerUrl, t0);
+              logResult(quality, links.length, strategyWon, winnerUrl, t0, recipe._extractionMethod);
               return enrichResult(recipe, imageUrl, instagramUrl, isVideo, carouselImages);
             }
           }
@@ -841,7 +860,7 @@ export async function tryBlogLinkExtraction(caption, imageUrl, {
         if (recipe) {
           strategyWon = 'short>direct';
           winnerUrl = unwrapped.resolvedUrl;
-          logResult(quality, links.length, strategyWon, winnerUrl, t0);
+          logResult(quality, links.length, strategyWon, winnerUrl, t0, recipe._extractionMethod);
           return enrichResult(recipe, imageUrl, instagramUrl, isVideo, carouselImages);
         }
       }
@@ -861,7 +880,7 @@ export async function tryBlogLinkExtraction(caption, imageUrl, {
         if (recipe) {
           strategyWon = 'bio_hub';
           winnerUrl = bioLink;
-          logResult(quality, links.length, strategyWon, winnerUrl, t0);
+          logResult(quality, links.length, strategyWon, winnerUrl, t0, recipe._extractionMethod);
           return enrichResult(recipe, imageUrl, instagramUrl, isVideo, carouselImages);
         }
       }
@@ -874,7 +893,7 @@ export async function tryBlogLinkExtraction(caption, imageUrl, {
     if (recipe) {
       strategyWon = 'direct';
       winnerUrl = url;
-      logResult(quality, links.length, strategyWon, winnerUrl, t0);
+      logResult(quality, links.length, strategyWon, winnerUrl, t0, recipe._extractionMethod);
       return enrichResult(recipe, imageUrl, instagramUrl, isVideo, carouselImages);
     }
   }
@@ -883,10 +902,10 @@ export async function tryBlogLinkExtraction(caption, imageUrl, {
   return null;
 }
 
-/** Structured telemetry log for debugging / future domain growth */
-function logResult(quality, linksFound, strategyWon, winnerUrl, t0) {
+/** Structured telemetry log — P3-13 enhanced failure taxonomy */
+function logResult(quality, linksFound, strategyWon, winnerUrl, t0, extractionMethod) {
   const ms = Date.now() - t0;
-  console.log(`[BlogLinkFollower] Result: class=${quality.class} reason=${quality.reason} links=${linksFound} strategy=${strategyWon} url=${winnerUrl || '-'} ms=${ms}`);
+  console.log(`[BlogLinkFollower] Result: class=${quality.class} reason=${quality.reason} links=${linksFound} strategy=${strategyWon} method=${extractionMethod || 'none'} url=${winnerUrl || '-'} ms=${ms}`);
 }
 
 
@@ -917,6 +936,11 @@ function enrichResult(recipe, igImageUrl, instagramUrl, isVideo, carouselImages)
   // Carry IG carousel for gallery
   if (carouselImages?.length) {
     recipe._igCarouselImages = carouselImages;
+  }
+
+  // P3-12: Record this domain for future priority boosting (fire-and-forget)
+  if (recipe._discoveredDomain) {
+    recordLearnedDomain(recipe._discoveredDomain).catch(() => {});
   }
 
   console.log(`[BlogLinkFollower] Extracted "${recipe.name}" from ${recipe.link}`);
