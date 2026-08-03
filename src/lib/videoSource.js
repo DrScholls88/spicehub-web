@@ -99,12 +99,46 @@ export function detectVideoSource(url) {
 
 /**
  * getMealVideoSource(meal) — convenience wrapper that checks the fields a meal
- * actually stores its source link in (meal.link is primary; sourceUrl is the
- * schema field). Returns the same shape as detectVideoSource or null.
+ * actually stores its source link in. Prefers dedicated video URLs over generic
+ * links so that blog-followed imports (where meal.link = blog canonical) still
+ * surface the original Instagram Reel for PiP.
+ *
+ * Priority:
+ *   1. meal.videoUrl                     — explicit video URL (set by blog link follower)
+ *   2. meal._sources?.videoUrl           — dual-source metadata
+ *   3. meal.sourceUrl if reel/tv path    — original IG import URL
+ *   4. meal.link if IG/YouTube           — legacy: only if it's still a playable URL
+ *   5. meal.url                          — fallback
  */
 export function getMealVideoSource(meal) {
   if (!meal) return null;
-  return detectVideoSource(meal.link || meal.sourceUrl || meal.url || '');
+
+  // Prefer explicit videoUrl (set by blog link follower for PiP preservation)
+  if (meal.videoUrl) {
+    const vs = detectVideoSource(meal.videoUrl);
+    if (vs) return vs;
+  }
+
+  // Dual-source metadata
+  if (meal._sources?.videoUrl) {
+    const vs = detectVideoSource(meal._sources.videoUrl);
+    if (vs) return vs;
+  }
+
+  // sourceUrl if it's an IG reel/tv (original import URL)
+  if (meal.sourceUrl && /\/(reel|tv)\//i.test(meal.sourceUrl)) {
+    const vs = detectVideoSource(meal.sourceUrl);
+    if (vs) return vs;
+  }
+
+  // Legacy: meal.link — but only if it points to a playable platform,
+  // not a recipe blog (blog link follower sets link = blog canonical)
+  if (meal.link) {
+    const vs = detectVideoSource(meal.link);
+    if (vs) return vs;
+  }
+
+  return detectVideoSource(meal.sourceUrl || meal.url || '');
 }
 
 /** hasPlayableVideo(meal) — cheap boolean for conditional UI affordances. */
