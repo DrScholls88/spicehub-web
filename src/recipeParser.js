@@ -4885,6 +4885,10 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   let capturedRawPageText = '';
   // Step 4: carousel image candidates captured across phases (persisted later)
   let capturedImages = [];
+  // Blog link follower discovery surface (Phase 0.5B hypercharge)
+  let capturedComments = [];
+  let capturedOwnerUsername = '';
+  let capturedIsVideo = false;
 
   const persistCapturedImage = async (imageUrl = capturedImageUrl) => {
     if (!imageUrl || imageUrl.startsWith('data:')) return imageUrl || '';
@@ -4935,6 +4939,10 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
         }
         if (igPack.title && !capturedTitle) capturedTitle = igPack.title;
         if (igPack.author && !capturedAuthor) capturedAuthor = igPack.author;
+        // Blog link follower discovery surface
+        if (igPack.latestComments?.length) capturedComments = igPack.latestComments;
+        if (igPack.ownerUsername) capturedOwnerUsername = igPack.ownerUsername;
+        if (igPack.isVideo) capturedIsVideo = true;
         progress(1, 'done', capturedSource + ': caption (' + capturedCaption.length + ' chars)');
       } else {
         progress(1, 'done', 'Quick extraction failed — trying embed…');
@@ -5054,7 +5062,10 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
         : 'Caption thin — checking for recipe blog links…');
       const blogRecipe = await tryBlogLinkExtraction(capturedCaption, capturedImageUrl, {
         instagramUrl: url,
-        comments: [],
+        comments: capturedComments,
+        // profileBioUrl: needs Apify fullData to get the external bio link —
+        // basicData only gives ownerUsername (which is an IG URL, not a bio hub).
+        // Plumbing is ready; wire when Apify detail level is upgraded.
         carouselImages: capturedImages,
       });
 
@@ -5066,7 +5077,8 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
         let carouselImages = [];
         try { carouselImages = await persistCarousel(capturedImages || [], persistCapturedImage); } catch { /* optional */ }
         // PiP preservation: videoUrl always = IG URL when input was a reel/video
-        const isReel = /\/(reel|tv)\//i.test(url);
+        // capturedIsVideo covers /p/ posts that are videos (Apify flag)
+        const isReel = /\/(reel|tv)\//i.test(url) || capturedIsVideo;
         const finalRecipe = {
           name: blogRecipe.name || generateTitleFromIngredients(blogRecipe.ingredients, type),
           ingredients: blogRecipe.ingredients.join('\n'),
@@ -5262,7 +5274,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
         // screen can offer a cover picker and nothing 403s later.
         let carouselImages = [];
         try { carouselImages = await persistCarousel(capturedImages, persistCapturedImage); } catch { /* optional */ }
-        const isReel = /\/(reel|tv)\//i.test(url);
+        const isReel = /\/(reel|tv)\//i.test(url) || capturedIsVideo;
         const finalRecipe = {
           ...recipe,
           name: recipe.name && recipe.name.trim() && !/^(recipe|imported|untitled)$/i.test(recipe.name.trim())
@@ -5281,6 +5293,16 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
         // servings but no directions), Gemini filled in the gaps. Merge blog
         // metadata onto the Gemini result so times/servings/category are exact.
         if (blogPartial) {
+          // Prefer blog ingredients when blog had structured data (JSON-LD/microdata)
+          // and Gemini derived different ones from article text
+          if (blogPartial.ingredients?.length >= 2) {
+            finalRecipe.ingredients = blogPartial.ingredients.join('\n');
+          }
+          // Prefer blog name when it's a real JSON-LD title (not generic)
+          if (blogPartial.name && blogPartial.name.length > 3 &&
+              !/^(recipe|untitled|home|blog)/i.test(blogPartial.name)) {
+            finalRecipe.name = blogPartial.name;
+          }
           if (blogPartial.prepTime && !finalRecipe.prepTime) finalRecipe.prepTime = blogPartial.prepTime;
           if (blogPartial.cookTime && !finalRecipe.cookTime) finalRecipe.cookTime = blogPartial.cookTime;
           if (blogPartial.totalTime && !finalRecipe.totalTime) finalRecipe.totalTime = blogPartial.totalTime;

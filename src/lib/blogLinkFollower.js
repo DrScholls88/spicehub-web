@@ -778,6 +778,10 @@ export async function tryBlogLinkExtraction(caption, imageUrl, {
   profileBioUrl = '',
   carouselImages = [],
 } = {}) {
+  const t0 = Date.now();
+  const BUDGET_MS = 14000; // 14s wall-time cap so Gemini Phase 3 still runs
+  const budgetExpired = () => Date.now() - t0 > BUDGET_MS;
+
   // Step 1: Classify caption
   const quality = assessCaptionQuality(caption);
 
@@ -796,67 +800,93 @@ export async function tryBlogLinkExtraction(caption, imageUrl, {
     return null;
   }
 
-  console.log(`[BlogLinkFollower] Found ${links.length} link(s)`);
+  console.log(`[BlogLinkFollower] Found ${links.length} link(s), comments=${comments.length}, bioHub=${hasLinkInBio}`);
 
   // Determine if this is a reel/video (for videoUrl preservation)
   const isVideo = instagramUrl && /\/(reel|tv)\//i.test(instagramUrl);
 
-  // Step 3: Process links in priority order (max 4 attempts total)
+  // Step 3: Process links in priority order (max 4 attempts total, 14s budget)
   let attempts = 0;
   const MAX_ATTEMPTS = 4;
+  let strategyWon = 'none';
+  let winnerUrl = '';
 
   for (const { url, source } of links) {
-    if (attempts >= MAX_ATTEMPTS) break;
+    if (attempts >= MAX_ATTEMPTS || budgetExpired()) break;
 
     // Handle short links: unwrap first, then try the destination
     if (source === 'short') {
       attempts++;
       console.log(`[BlogLinkFollower] Unwrapping short link: ${url}`);
       const unwrapped = await unwrapShortLink(url);
-      if (unwrapped) {
+      if (unwrapped && !budgetExpired()) {
         const destInfo = classifyUrl(unwrapped.resolvedUrl);
         if (destInfo.skip) continue;
         if (destInfo.isBioHub) {
-          // Short link pointed to a bio hub — expand it
           const bioLinks = await expandLinkInBio(unwrapped.resolvedUrl);
           for (const bioLink of bioLinks.slice(0, 2)) {
-            if (attempts >= MAX_ATTEMPTS) break;
+            if (attempts >= MAX_ATTEMPTS || budgetExpired()) break;
             attempts++;
             const recipe = await extractRecipeFromBlog(bioLink);
-            if (recipe) return enrichResult(recipe, imageUrl, instagramUrl, isVideo, carouselImages);
+            if (recipe) {
+              strategyWon = recipe._isPartial ? 'short>bio>partial' : (recipe._source === 'blog_link_follower' ? 'short>bio>structured' : 'short>bio');
+              winnerUrl = bioLink;
+              logResult(quality, links.length, strategyWon, winnerUrl, t0);
+              return enrichResult(recipe, imageUrl, instagramUrl, isVideo, carouselImages);
+            }
           }
           continue;
         }
-        // Try extracting from the already-fetched HTML (avoid double-fetch)
         const recipe = await extractRecipeFromBlog(unwrapped.resolvedUrl, unwrapped.html);
-        if (recipe) return enrichResult(recipe, imageUrl, instagramUrl, isVideo, carouselImages);
+        if (recipe) {
+          strategyWon = 'short>direct';
+          winnerUrl = unwrapped.resolvedUrl;
+          logResult(quality, links.length, strategyWon, winnerUrl, t0);
+          return enrichResult(recipe, imageUrl, instagramUrl, isVideo, carouselImages);
+        }
       }
       continue;
     }
 
-    // Handle link-in-bio hubs: expand, then try outbound recipe links
+    // Handle link-in-bio hubs
     if (source === 'bio_hub') {
       attempts++;
       console.log(`[BlogLinkFollower] Expanding link-in-bio: ${url}`);
       const bioLinks = await expandLinkInBio(url);
       console.log(`[BlogLinkFollower] Found ${bioLinks.length} recipe link(s) in bio hub`);
       for (const bioLink of bioLinks.slice(0, 2)) {
-        if (attempts >= MAX_ATTEMPTS) break;
+        if (attempts >= MAX_ATTEMPTS || budgetExpired()) break;
         attempts++;
         const recipe = await extractRecipeFromBlog(bioLink);
-        if (recipe) return enrichResult(recipe, imageUrl, instagramUrl, isVideo, carouselImages);
+        if (recipe) {
+          strategyWon = 'bio_hub';
+          winnerUrl = bioLink;
+          logResult(quality, links.length, strategyWon, winnerUrl, t0);
+          return enrichResult(recipe, imageUrl, instagramUrl, isVideo, carouselImages);
+        }
       }
       continue;
     }
 
-    // Direct links: extract recipe
+    // Direct links
     attempts++;
     const recipe = await extractRecipeFromBlog(url);
-    if (recipe) return enrichResult(recipe, imageUrl, instagramUrl, isVideo, carouselImages);
+    if (recipe) {
+      strategyWon = 'direct';
+      winnerUrl = url;
+      logResult(quality, links.length, strategyWon, winnerUrl, t0);
+      return enrichResult(recipe, imageUrl, instagramUrl, isVideo, carouselImages);
+    }
   }
 
-  console.log('[BlogLinkFollower] No recipe found at any linked URL');
+  logResult(quality, links.length, 'none', '', t0);
   return null;
+}
+
+/** Structured telemetry log for debugging / future domain growth */
+function logResult(quality, linksFound, strategyWon, winnerUrl, t0) {
+  const ms = Date.now() - t0;
+  console.log(`[BlogLinkFollower] Result: class=${quality.class} reason=${quality.reason} links=${linksFound} strategy=${strategyWon} url=${winnerUrl || '-'} ms=${ms}`);
 }
 
 

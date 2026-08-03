@@ -54,7 +54,12 @@ function buildRace(url, f) {
       if (!d?.caption || d.caption.length <= MIN_CAPTION) throw new Error('apify-weak');
       const images = [d.displayUrl, ...(Array.isArray(d.images) ? d.images : [])].filter(Boolean);
       const creator = d.ownerFullName || d.ownerUsername || '';
-      return { src: 'apify', caption: d.caption, images, title: creator, author: creator };
+      return {
+        src: 'apify', caption: d.caption, images, title: creator, author: creator,
+        latestComments: Array.isArray(d.latestComments) ? d.latestComments : [],
+        ownerUsername: d.ownerUsername || '',
+        isVideo: !!d.isVideo || !!d.videoUrl,
+      };
     })(),
     (async () => {
       const oe = await f.oembed(url);
@@ -122,5 +127,9 @@ export async function acquireInstagramPack(url, { fetchers = {}, signal } = {}) 
   addProvenance(pack, 'caption', winner.src, pack.confidence);
   if (pack.images.length) addProvenance(pack, 'images', winner.src);
   if (winner.title) addProvenance(pack, 'title', winner.src);
+  // Blog link follower discovery surface: comments + profile bio URL
+  pack.latestComments = winner.latestComments || [];
+  pack.ownerUsername = winner.ownerUsername || '';
+  pack.isVideo = !!winner.isVideo;
   return pack;
 }

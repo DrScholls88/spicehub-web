@@ -299,6 +299,11 @@ export default async function handler(req) {
           : []),
       ].filter((u, i, a) => u && a.indexOf(u) === i).slice(0, 6);
       // Return a normalized subset — keep payload small
+      // latestComments + ownerUsername feed the blog link follower's
+      // comment/bio discovery surface (Phase 0.5B hypercharge).
+      const latestComments = Array.isArray(post.latestComments)
+        ? post.latestComments.slice(0, 5).map((c) => c?.text || c?.body || (typeof c === 'string' ? c : '')).filter(Boolean)
+        : [];
       const result = {
         ok: true,
         caption: post.caption || '',
@@ -311,6 +316,8 @@ export default async function handler(req) {
         hashtags: post.hashtags || [],
         timestamp: post.timestamp || '',
         type: post.type || 'Unknown',
+        latestComments,
+        isVideo: post.type === 'Video' || !!post.videoUrl,
       };
       return new Response(JSON.stringify(result), {
         status: 200,

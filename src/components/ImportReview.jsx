@@ -576,9 +576,17 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
 
   // ── Extraction source + image-status chip (Instagram import diagnostics) ──
   // Plain-language source labels — no scraper/brand jargon (Apify, oEmbed, IG JSON…).
-  const SOURCE_LABELS = { apify: 'Instagram', oembed: 'Instagram', 'ig-json': 'Instagram', embed: 'Instagram', browser: 'Web page', video: 'Video', photo: 'Photo' };
+  const SOURCE_LABELS = {
+    apify: 'Instagram', oembed: 'Instagram', 'ig-json': 'Instagram', embed: 'Instagram',
+    browser: 'Web page', video: 'Video', photo: 'Photo',
+    blog_link_follower: 'Blog + Instagram', 'blog_link_follower+ai': 'Blog + AI',
+  };
   const VISION_LABELS = { gemini: 'read in the cloud', mistral: 'read in the cloud', tesseract: 'read on your device' };
   let sourceLabel = recipe._extractionSource ? (SOURCE_LABELS[recipe._extractionSource] || null) : null;
+  // Blog link follower: show the blog host for attribution
+  if (sourceLabel && recipe._extractionSource?.startsWith('blog_link_follower') && recipe._discoveredDomain) {
+    sourceLabel = `${sourceLabel} · ${recipe._discoveredDomain}`;
+  }
   if (recipe._extractionSource === 'photo' && VISION_LABELS[recipe._visionEngine]) {
     sourceLabel = `${sourceLabel} · ${VISION_LABELS[recipe._visionEngine]}`;
   }
