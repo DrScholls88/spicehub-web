@@ -372,34 +372,120 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
           </div>
         )}
 
-        {meal.link && (() => {
-          let domain = '';
-          try { domain = new URL(meal.link).hostname.replace(/^www\./, ''); } catch {}
+        {/* ── Source links: dual (blog + reel) when blog link follower provided both ── */}
+        {(meal.link || meal._sources?.blogUrl) && (() => {
+          const blogUrl = meal._sources?.blogUrl || null;
+          const igUrl = meal._sources?.instagramUrl || meal._sources?.videoUrl || null;
+          const primaryUrl = blogUrl || meal.link;
+          const hasDualSource = !!(blogUrl && igUrl && igUrl !== primaryUrl);
+
+          let primaryDomain = '';
+          try { primaryDomain = new URL(primaryUrl).hostname.replace(/^www\./, ''); } catch {}
+
+          // For re-import, always use the IG URL if available (import pipeline entry point)
+          const reimportUrl = igUrl || meal.sourceUrl || meal.link;
+          // Secondary reel link: show IG/YT URLs for dual-source recipes
+          const reelUrl = hasDualSource ? igUrl : null;
+          const isReel = reelUrl && /\/(reel|tv)\//i.test(reelUrl);
+
+          // P2-10: confidence badge for blog extraction quality
+          const exSrc = meal._extractionSource || '';
+          const blogConfidence = exSrc === 'blog_link_follower' ? 'high'
+            : exSrc === 'blog_link_follower+ai' ? 'medium' : null;
+
           return (
             <div className="detail-section detail-source-section">
-              <h3>🔗 Source</h3>
-              <div className="detail-source-row">
-                {domain && <span className="detail-source-domain">{domain}</span>}
-                <a href={meal.link} target="_blank" rel="noopener noreferrer" className="detail-source-link">
-                  View Original
-                </a>
-                <CopyLinkButton url={meal.link} />
-                <button
-                  className="detail-source-reimport"
-                  onClick={() => {
-                    if (window.__spicehubTriggerImport) {
-                      window.__spicehubTriggerImport(meal.link);
-                      onClose();
-                    } else {
-                      navigator.clipboard.writeText(meal.link).catch(() => {});
-                      alert('Link copied — open Import to re-import this recipe.');
-                    }
-                  }}
-                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
-                >
-                  <RefreshCw size={16} strokeWidth={1.75} /> Re-import
-                </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <h3 style={{ margin: 0 }}>🔗 Source</h3>
+                {blogConfidence && (
+                  <span className={`detail-source-badge detail-source-badge-${blogConfidence}`}>
+                    {blogConfidence === 'high' ? 'Structured Recipe' : 'Blog + AI Merge'}
+                  </span>
+                )}
               </div>
+              {/* Primary link */}
+              <div className="detail-source-row">
+                {primaryDomain && <span className="detail-source-domain">{primaryDomain}</span>}
+                <a href={primaryUrl} target="_blank" rel="noopener noreferrer" className="detail-source-link">
+                  {hasDualSource ? `Full recipe on ${primaryDomain}` : 'View Original'}
+                </a>
+                <CopyLinkButton url={primaryUrl} />
+                {/* P2-11: dual-source → "Re-extract" from blog; single → normal "Re-import" */}
+                {hasDualSource ? (
+                  <button
+                    className="detail-source-reimport"
+                    onClick={() => {
+                      if (window.__spicehubTriggerImport) {
+                        window.__spicehubTriggerImport(primaryUrl);
+                        onClose();
+                      } else {
+                        navigator.clipboard.writeText(primaryUrl).catch(() => {});
+                        alert('Link copied — open Import to re-extract from this blog.');
+                      }
+                    }}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                    title="Re-extract recipe directly from the blog"
+                  >
+                    <RefreshCw size={16} strokeWidth={1.75} /> Re-extract
+                  </button>
+                ) : (
+                  <button
+                    className="detail-source-reimport"
+                    onClick={() => {
+                      if (window.__spicehubTriggerImport) {
+                        window.__spicehubTriggerImport(reimportUrl);
+                        onClose();
+                      } else {
+                        navigator.clipboard.writeText(reimportUrl).catch(() => {});
+                        alert('Link copied — open Import to re-import this recipe.');
+                      }
+                    }}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                  >
+                    <RefreshCw size={16} strokeWidth={1.75} /> Re-import
+                  </button>
+                )}
+              </div>
+              {/* Secondary: Original Reel / Post (dual-source only) */}
+              {reelUrl && (() => {
+                let reelDomain = '';
+                try { reelDomain = new URL(reelUrl).hostname.replace(/^www\./, ''); } catch {}
+                return (
+                  <div className="detail-source-row" style={{ marginTop: 6 }}>
+                    {reelDomain && <span className="detail-source-domain">{reelDomain}</span>}
+                    <a href={reelUrl} target="_blank" rel="noopener noreferrer" className="detail-source-link">
+                      {isReel ? 'Original Reel' : 'Original Post'}
+                    </a>
+                    <CopyLinkButton url={reelUrl} />
+                    {/* P2-11: re-import from Instagram (full pipeline with caption) */}
+                    <button
+                      className="detail-source-reimport"
+                      onClick={() => {
+                        if (window.__spicehubTriggerImport) {
+                          window.__spicehubTriggerImport(reelUrl);
+                          onClose();
+                        } else {
+                          navigator.clipboard.writeText(reelUrl).catch(() => {});
+                          alert('Link copied — open Import to re-import from Instagram.');
+                        }
+                      }}
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                    >
+                      <RefreshCw size={16} strokeWidth={1.75} /> Re-import
+                    </button>
+                    {videoSource && onPlayVideo && (
+                      <button
+                        className="detail-source-reimport detail-source-pip-btn"
+                        onClick={() => onPlayVideo(meal)}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                        title="Play in floating player"
+                      >
+                        <Play size={14} fill="currentColor" color="currentColor" /> PiP
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           );
         })()}

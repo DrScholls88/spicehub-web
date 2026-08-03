@@ -1812,6 +1812,27 @@
   color: var(--sh-accent, #e65100);
   border-color: var(--sh-accent, #e65100);
 }
+.detail-source-pip-btn {
+  color: var(--sh-accent, #e65100) !important;
+  font-weight: 700;
+}
+.detail-source-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: var(--sh-pill, 100px);
+  white-space: nowrap;
+}
+.detail-source-badge-high {
+  background: rgba(46, 125, 50, 0.12);
+  color: #2e7d32;
+}
+.detail-source-badge-medium {
+  background: rgba(230, 81, 0, 0.10);
+  color: var(--sh-accent, #e65100);
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Photo Scan Session — multi-page scanner strip (2026-07 photo import)

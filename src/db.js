@@ -306,6 +306,13 @@ db.version(23).stores({
   recipeShares: 'id, fromUserId, toUserId, itemType, status, createdAt',
 });
 
+// v24: Learned recipe domains — grows RECIPE_DOMAINS allowlist from successful blog extractions.
+// When a blog yields a structured recipe, its domain is recorded here so future link-priority
+// scoring treats it as "known" (priority 0-1 instead of 2-3). Additive only.
+db.version(24).stores({
+  learnedDomains: 'domain',
+});
+
 export default db;
 
 // ── Custom Day Tags helpers (v20) ───────────────────────────────────────────
@@ -470,6 +477,36 @@ export async function bulkSetMealTags(mealIds, tagName, add = true) {
     });
   } catch (e) {
     console.warn('[SpiceHub DB] bulkSetMealTags failed:', e);
+  }
+}
+
+// ── Learned recipe domain helpers (v24 — blog link follower growth) ───────────
+// After a successful structured extraction from a blog, record the domain so
+// future imports prioritize links from that domain in link discovery scoring.
+export async function recordLearnedDomain(domain) {
+  if (!domain || typeof domain !== 'string') return;
+  const d = domain.toLowerCase().replace(/^www\./, '').trim();
+  if (!d || d.includes('/')) return;
+  try {
+    const existing = await db.learnedDomains.get(d);
+    await db.learnedDomains.put({
+      domain: d,
+      successCount: (existing?.successCount || 0) + 1,
+      firstSeen: existing?.firstSeen || Date.now(),
+      lastSuccess: Date.now(),
+    });
+  } catch (e) {
+    console.warn('[SpiceHub DB] recordLearnedDomain failed:', e);
+  }
+}
+
+export async function getLearnedDomains() {
+  try {
+    const rows = await db.learnedDomains.toArray();
+    return new Set(rows.map(r => r.domain));
+  } catch (e) {
+    console.warn('[SpiceHub DB] getLearnedDomains failed:', e);
+    return new Set();
   }
 }
 
