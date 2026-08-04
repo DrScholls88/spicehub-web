@@ -5,6 +5,7 @@ import { motion, AnimatePresence, useMotionValue, useTransform } from 'framer-mo
 import { saveStoreMemory as dbSaveStoreMemory, getStoreMemory as dbGetStoreMemory, addToBarInventory } from '../db';
 import { GROCERY_CATEGORIES, categorizeIngredient, fuzzyResolveIngredient,
          canonicalizeUnit, UNIT_CANON, normalizeFraction } from '../recipeSchema';
+import { convertUnit } from '../utils/ingredientNormalizer';
 import StoreMode from './StoreMode';
 
 const DEPT_EMOJI = {
@@ -188,6 +189,7 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
           _totalAmount: parsed ? parsed.amount : null,
           _ingredientBase: parsed ? parsed.ingredient : null,
           _fuzzyCanonical: fuzzyCanonical,
+          _canonicalBase: canonicalBase,
         });
       } else {
         const existing = map.get(key);
@@ -200,6 +202,43 @@ export default function GroceryList({ items, setItems, weekPlan, onRebuild, onTo
         }
       }
     });
+
+    // ── Ingredient Dedup Bridge: cross-unit consolidation ────────────────────
+    // The grouping above keys by exact unit, so "2 tbsp olive oil" and "1/4
+    // cup olive oil" land in separate qty::tbsp::olive-oil / qty::cup::olive-oil
+    // buckets even though they're the same shopping item. Fold any buckets
+    // that share an ingredient identity (_canonicalBase, already fuzzy-resolved
+    // above) and whose units are unit-convertible (both volume, or both weight)
+    // into a single summed line. Count-style units (clove, can, jar, piece...)
+    // aren't in the conversion table, so convertUnit correctly returns null for
+    // them and those lines are left untouched — no false merges.
+    const byIngredient = new Map();
+    for (const [key, g] of map) {
+      if (!g._parsed || g._totalAmount == null) continue; // raw/unparsed entries can't be safely merged across units
+      if (!byIngredient.has(g._canonicalBase)) byIngredient.set(g._canonicalBase, []);
+      byIngredient.get(g._canonicalBase).push(key);
+    }
+    for (const [, keys] of byIngredient) {
+      if (keys.length < 2) continue;
+      for (let i = 1; i < keys.length; i++) {
+        const target = map.get(keys[i]);
+        if (!target) continue;
+        for (let j = 0; j < i; j++) {
+          const base = map.get(keys[j]);
+          if (!base) continue;
+          const converted = convertUnit(target._totalAmount, target._parsed.unit, base._parsed.unit);
+          if (converted == null) continue;
+          base._totalAmount += converted;
+          base.indices.push(...target.indices);
+          base.names.push(...target.names);
+          base.quantity += target.quantity;
+          base.allChecked = base.allChecked && target.allChecked;
+          map.delete(keys[i]);
+          break;
+        }
+      }
+    }
+
     return Array.from(map.values()).map(g => {
       let name = g.name;
       let showBadge = g.quantity > 1;

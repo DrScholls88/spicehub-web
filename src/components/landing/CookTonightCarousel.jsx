@@ -79,7 +79,7 @@ export default function CookTonightCarousel({ matches, onViewDetail }) {
             <div className="landing-next-days-wrap">
               <div
                 className="landing-next-days-scroll sh-carousel"
-                style={{ display: 'flex', gap: '12px', paddingBottom: '8px' }}
+                style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', paddingBottom: '8px' }}
               >
                 {combined.map(({ meal, matched, total, missing, tier }) => (
                   <RecipeCard

@@ -117,7 +117,7 @@ function mealDietaryTags(meal) {
 }
 
 // Pull the most representative total time in minutes from whatever fields exist.
-function mealTotalMinutes(meal) {
+export function mealTotalMinutes(meal) {
   if (!meal) return null;
   const total = parseTotalMinutes(meal.totalTime);
   if (total != null) return total;
@@ -378,6 +378,7 @@ export function filterMealsByConstraints(mealsList = [], constraints = {}, fridg
 
 export default {
   parseTotalMinutes,
+  mealTotalMinutes,
   buildRecencyMap,
   scoreMeal,
   pickForSlot,

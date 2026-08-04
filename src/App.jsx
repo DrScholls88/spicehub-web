@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import db, { importSeedMeals, removeStarterKitMeals, logCook, logMix, saveWeekPlan, loadWeekPlan, saveGroceryList, loadGroceryList, getStoreMemory, getCookingLog, getWeekHistory, saveWeekToHistory, toggleRotation, addBatchQueueItems, getBatchQueueItems, updateBatchQueueItem, getLearnedAliases, moveMealToBar, moveDrinkToMeals, getCustomDayTags, addCustomDayTag, deleteCustomDayTag } from './db';
+import db, { importSeedMeals, removeStarterKitMeals, logCook, logMix, saveGroceryList, loadGroceryList, getStoreMemory, getCookingLog, toggleRotation, addBatchQueueItems, getBatchQueueItems, updateBatchQueueItem, getLearnedAliases, moveMealToBar, moveDrinkToMeals, getCustomDayTags, addCustomDayTag, deleteCustomDayTag } from './db';
 import { buildStarterKitMeals, STARTER_KIT_SEED_FLAG } from './data/starterKitMeals';
 import { checkStorageQuota, checkAndRecommendCleanup, requestPersistentStorage, isPersistentStorageGranted } from './storageManager';
 import { initializeBackgroundSync } from './backgroundSync';
@@ -34,10 +34,11 @@ import useBackHandler from './hooks/useBackHandler';
 import useRootBackGuard from './hooks/useRootBackGuard';
 import useSwipeDismiss from './hooks/useSwipeDismiss';
 import useKeyboardInset from './hooks/useKeyboardInset';
-import { planWeek, pickForSlot, buildRecencyMap } from './lib/weekPlanner';
 import { getInventory, isStaple } from './lib/pantryDomain';
 import { normalizeIngredient } from './utils/ingredientNormalizer.js';
-import { loadLandingLayout, saveLandingLayout, loadSpinConstraints, saveSpinConstraints } from './lib/landingLayout';
+import { loadLandingLayout, saveLandingLayout } from './lib/landingLayout';
+import { useRotationEngine } from './hooks/useRotationEngine';
+import { SPECIAL_DAYS } from './lib/specialDays';
 import { renderRecipeExport, exportViaShare } from './utils/exportRenderer.js';
 import { compressRecipeImage } from './imageCompressor.js';
 import { markImportTimestamp } from './components/landing/ImportNudgeBanner.jsx';
@@ -70,17 +71,6 @@ const MealStats = lazy(() => import('./components/MealStats'));
 const StorageManager = lazy(() => import('./components/StorageManager'));
 const ExportSheet = lazy(() => import('./components/ExportSheet'));
 
-// A-1: household dietary preference for Smart Auto-Plan (device-local).
-const DIETARY_PREF_KEY = 'spicehub_dietary_pref';
-function loadDietaryPref() {
-  try {
-    const raw = localStorage.getItem(DIETARY_PREF_KEY);
-    if (!raw) return { dietary: '', mode: 'require' };
-    const p = JSON.parse(raw);
-    return { dietary: p.dietary || '', mode: p.mode || 'require' };
-  } catch { return { dietary: '', mode: 'require' }; }
-}
-
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 // ── Date utilities (shared with week history logic) ───────────────────────────
@@ -99,30 +89,12 @@ function localDateKey(date) {
   return `${y}-${m}-${d}`;
 }
 
-// Special "non-meal" day options — built-in quick-assign tags for planner days
-const SPECIAL_DAYS = [
-  { id: '__eat_out__',        name: 'Eat Out',          icon: '🍽️' },
-  { id: '__leftovers__',      name: 'Leftovers',        icon: '📦' },
-  { id: '__dealers_choice__', name: "Dealer's Choice",   icon: '🎲' },
-  { id: '__pizza__',          name: 'Pizza',             icon: '🍕' },
-  { id: '__grill__',          name: 'Grill Night',       icon: '🔥' },
-  { id: '__tacos__',          name: 'Tacos',             icon: '🌮' },
-  { id: '__nachos__',         name: 'Nachos',            icon: '🧀' },
-  { id: '__pasta__',          name: 'Pasta Night',       icon: '🍝' },
-  { id: '__soup__',           name: 'Soup Night',        icon: '🍲' },
-  { id: '__sandwiches__',     name: 'Sandwiches',        icon: '🥪' },
-  { id: '__salad__',          name: 'Salad Night',       icon: '🥗' },
-  { id: '__breakfast__',      name: 'Breakfast for Dinner', icon: '🥞' },
-  { id: '__skip__',           name: 'No Plan',           icon: '⏭️' },
-];
-
 export default function App() {
   const { isOnline } = useOnlineStatus();
   useKeyboardInset();
   const [tab, setTab] = useState('home');
   const [meals, setMeals] = useState([]);
   const [drinks, setDrinks] = useState([]);
-  const [weekPlan, setWeekPlan] = useState(Array(7).fill(null));
   // Custom day tags — user-created quick-assign options for the planner
   const [customDayTags, setCustomDayTags] = useState([]);
   const loadCustomDayTags = useCallback(async () => {
@@ -153,25 +125,6 @@ export default function App() {
     return [...SPECIAL_DAYS, ...custom];
   }, [customDayTags]);
 
-  // A-1: household dietary preference + cached recency map for Smart Auto-Plan
-  const [dietaryPref, setDietaryPref] = useState(loadDietaryPref);
-  const recencyMapRef = useRef(new Map());
-  // Spin Action Center (2026-07-14): pre-spin constraints, device-local.
-  // vegetarianOnly is NOT read from this persisted blob — it's always derived
-  // fresh from dietaryPref below so there's exactly one vegetarian setting in
-  // the app, not two that can drift out of sync.
-  const [spinConstraints, setSpinConstraints] = useState(loadSpinConstraints);
-  const effectiveSpinConstraints = useMemo(() => ({
-    ...spinConstraints,
-    vegetarianOnly: dietaryPref?.dietary === 'vegetarian' && dietaryPref?.mode !== 'exclude',
-  }), [spinConstraints, dietaryPref]);
-  const updateSpinConstraints = useCallback((patch) => {
-    setSpinConstraints(prev => {
-      const next = { ...prev, ...patch };
-      saveSpinConstraints(next);
-      return next;
-    });
-  }, []);
   // Kitchen inventory for the Fridge widget telemetry (full records, so we
   // have addedAt for freshness) + "Use Fridge Stock" spin constraint (just
   // needs the plain name list). Loaded once on mount and refreshed whenever
@@ -218,6 +171,25 @@ export default function App() {
 
   // ── Home Group: profile + sync hooks ────────────────────────────────────────
   const { profile, loading: profileLoading, updateDietaryPref: profileUpdateDietaryPref } = useProfile();
+
+  // Week rotation state (plan, history, locks, diet/spin filtering) — Dexie-
+  // persisted, optimistic-write, offline-first. See useRotationEngine.js.
+  // respinDay/setDayMeal are destructured under different local names because
+  // App.jsx wraps them below to additionally sync to the home group; every
+  // other action here (toggleLockDay, lockAllPlanned, ...) has no home-group
+  // side effect and is used directly from the hook.
+  const rotation = useRotationEngine({ meals, showToast, profileUpdateDietaryPref });
+  const {
+    weekPlan, setWeekPlan,
+    weekHistory, setWeekHistory,
+    dietaryPref, updateDietaryPref,
+    spinConstraints: effectiveSpinConstraints, updateSpinConstraints,
+    rotationMeals, recentlyUsedIds,
+    respinDay: rotationRespinDay, setDayMeal: rotationSetDayMeal,
+    toggleLockDay, lockAllPlanned, unlockAllPlanned, setDaySpecial,
+    smartPlanWeek, restoreWeek, applySpinResults,
+  } = rotation;
+
   const homeGroup = useHomeGroup({
     showToast,
     onWeekPlanUpdate: (plan) => setWeekPlan(plan),
@@ -354,7 +326,6 @@ export default function App() {
   const [batchQueueCount, setBatchQueueCount] = useState(0);
   const [batchReadyCount, setBatchReadyCount] = useState(0);
   const [batchReviewItem, setBatchReviewItem] = useState(null); // { item } opened in ImportSheet
-  const [weekHistory, setWeekHistory] = useState([]); // past week plans
   const [isSyncing, setIsSyncing] = useState(false);
 
   // ── Legal: clickwrap consent gate + Bar/Saloon age gate ─────────────────
@@ -563,10 +534,9 @@ export default function App() {
   useEffect(() => {
     loadMeals();
     loadDrinks();
-    // Restore persisted week plan and grocery list
-    loadWeekPlan().then(plan => { if (plan) setWeekPlan(plan); });
+    // Week plan + history restore now lives in useRotationEngine's own mount
+    // effect. Grocery list is the remaining local-storage restore here.
     loadGroceryList().then(items => { if (items) setGroceryItems(items); });
-    getWeekHistory().then(history => setWeekHistory(history));
     refreshFridgeInventory();
 
     // Check storage quota on startup
@@ -655,47 +625,8 @@ export default function App() {
     };
   }, [showToast]);
 
-  // Persist week plan whenever it changes (debounced)
-  useEffect(() => {
-    if (!weekPlan.some(Boolean)) return; // Don't save empty plans
-    const t = setTimeout(() => {
-      saveWeekPlan(weekPlan);
-      // Also save to history for the current week
-      const now = new Date();
-      const day = now.getDay();
-      const diff = day === 0 ? -6 : 1 - day;
-      const monday = new Date(now);
-      monday.setDate(monday.getDate() + diff);
-      monday.setHours(0, 0, 0, 0);
-      saveWeekToHistory(monday.toISOString(), weekPlan)
-        .then(() => getWeekHistory().then(h => setWeekHistory(h)));
-    }, 300);
-    return () => clearTimeout(t);
-  }, [weekPlan]);
-
-  // Compute rotation meals
-  const rotationMeals = useMemo(() => meals.filter(m => m.inRotation), [meals]);
-
-  // A-1 Smart auto-plan: IDs of meals used in the last 2 weeks so MealSpinner
-  // can de-prioritize them without excluding them entirely (graceful fallback).
-  const recentlyUsedIds = useMemo(() => {
-    const ids = new Set();
-    weekHistory.slice(-2).forEach(hw => {
-      (hw.meals || []).forEach(m => { if (m && m.id) ids.add(m.id); });
-    });
-    weekPlan.forEach(m => { if (m && m.id) ids.add(m.id); });
-    return ids;
-  }, [weekHistory, weekPlan]);
-
-  // A-1: warm the recency map once so single-day rerolls are recency-aware even
-  // before the first "Plan my Week" tap. Refreshed again inside smartPlanWeek.
-  useEffect(() => {
-    let cancelled = false;
-    getCookingLog()
-      .then(log => { if (!cancelled) recencyMapRef.current = buildRecencyMap(log); })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
+  // Week-plan persistence, rotationMeals, recentlyUsedIds, and the recency-map
+  // warm-up all now live in useRotationEngine (see hook call above).
 
   // Persist grocery list whenever it changes
   useEffect(() => {
@@ -957,46 +888,10 @@ useEffect(() => {
   const handleSpinnerCompleteForDates = useCallback(async (pairs, options = {}) => {
     // pairs = [{date: Date, meal: mealObj}] — one entry per spinner slot
     // options.buildGrocery: after apply, open Shop with list from the new plan
-    const todayMonday = getMondayOfWeek(new Date());
-    const weekMap = new Map();
-
-    pairs.forEach(({ date, meal }) => {
-      const weekMon = getMondayOfWeek(date);
-      const key = localDateKey(weekMon);
-      const dow = date.getDay() === 0 ? 6 : date.getDay() - 1; // Mon-first DOW index
-
-      if (!weekMap.has(key)) {
-        const isCurrent = weekMon.getTime() === todayMonday.getTime();
-        // Seed plan from current state or from history
-        let plan;
-        if (isCurrent) {
-          plan = [...weekPlan];
-        } else {
-          const histEntry = weekHistory.find(hw => {
-            const hwMon = new Date(hw.weekStart); hwMon.setHours(0, 0, 0, 0);
-            return localDateKey(hwMon) === key;
-          });
-          plan = histEntry ? [...histEntry.meals] : Array(7).fill(null);
-        }
-        weekMap.set(key, { mon: weekMon, isCurrent, plan });
-      }
-
-      weekMap.get(key).plan[dow] = meal;
-    });
-
-    // Persist each week
-    let currentPlanApplied = null;
-    for (const [, { mon, isCurrent, plan }] of weekMap) {
-      if (isCurrent) {
-        currentPlanApplied = plan;
-        setWeekPlan(plan);
-      } else {
-        await saveWeekToHistory(mon.toISOString(), plan);
-      }
-    }
-
-    // Refresh history so calendar reflects changes
-    getWeekHistory().then(h => setWeekHistory(h));
+    // Week-map building, persistence, and history refresh now live in
+    // useRotationEngine's applySpinResults — this handler just orchestrates
+    // the surrounding UI/grocery/home-group side effects.
+    const currentPlanApplied = await applySpinResults(pairs);
     setShowSpinner(false);
     showToast(`${pairs.length} meal${pairs.length !== 1 ? 's' : ''} planned! 🎉`);
 
@@ -1026,30 +921,18 @@ useEffect(() => {
         });
       }
     }
-  }, [weekPlan, weekHistory, showToast, homeGroup, profile]);
+  }, [applySpinResults, showToast, homeGroup, profile]);
 
-  const restoreWeek = useCallback((weekMeals) => {
-    if (!weekMeals || weekMeals.length !== 7) return;
-    setWeekPlan(weekMeals);
-    showToast('Week restored!');
-  }, [showToast]);
-
-  // A-1: reroll a single day — rotation-only and score-aware (variety/recency/
-  // time-fit), with jitter so repeated rerolls vary. Falls back to all meals
-  // only when The Rotation is empty so the control never dead-ends.
+  // respinDay / setDayMeal: thin wrappers around the hook's pure versions —
+  // the hook picks/persists, this layer adds the optional home-group
+  // real-time sync on top (a separate, multi-device concern the hook itself
+  // deliberately doesn't know about; see useRotationEngine.js header).
+  // restoreWeek, smartPlanWeek, updateDietaryPref, toggleLockDay,
+  // lockAllPlanned, unlockAllPlanned, setDaySpecial have no home-group side
+  // effect and are used directly from the `rotation` destructure above.
   const respinDay = useCallback(async (dayIndex) => {
-    const current = weekPlan[dayIndex];
-    if (current && current._special) return;
-    const pool = rotationMeals.length > 0 ? rotationMeals : meals;
-    const pick = pickForSlot(pool, {
-      slotIndex: dayIndex,
-      currentPlan: weekPlan,
-      recencyMap: recencyMapRef.current,
-      prefs: dietaryPref,
-    });
-    if (!pick) { showToast('Add more meals to The Rotation to swap in 🔄'); return; }
-    setWeekPlan(prev => prev.map((m, i) => i === dayIndex ? pick : m));
-    // Sync to home group
+    const pick = rotationRespinDay(dayIndex);
+    if (!pick) return; // hook already toasted why (empty rotation, special day, etc.)
     if (homeGroup?.state === 'in_group' && profile?.homeGroupId) {
       const { toSlotData } = await import('./lib/slotMapper');
       homeGroup.enqueueSync({
@@ -1065,7 +948,7 @@ useEffect(() => {
         homeGroupId: profile.homeGroupId,
       });
     }
-  }, [meals, weekPlan, rotationMeals, dietaryPref, showToast, homeGroup, profile]);
+  }, [rotationRespinDay, homeGroup, profile]);
 
   // ── Landing Page "empty day" bottom sheet actions (2026-07-14) ────────────
   // Lets a user resolve an empty day without leaving Home. Spin only reroutes
@@ -1098,43 +981,8 @@ useEffect(() => {
     setEditMeal({});
   }, []);
 
-  // A-1: Smart Auto-Plan — fill every empty, unlocked slot from The Rotation
-  // using the local scoring engine. Locked/filled days are preserved.
-  const smartPlanWeek = useCallback(async () => {
-    if (rotationMeals.length === 0) {
-      showToast('Add meals to The Rotation first, then plan your week 🔄');
-      return;
-    }
-    let recencyMap = recencyMapRef.current;
-    try {
-      const log = await getCookingLog();
-      recencyMap = buildRecencyMap(log);
-      recencyMapRef.current = recencyMap;
-    } catch { /* use cached/empty recency — still works offline */ }
-    const planned = planWeek(rotationMeals, {
-      currentPlan: weekPlan,
-      recencyMap,
-      prefs: dietaryPref,
-    });
-    const filled = planned.filter(Boolean).length;
-    setWeekPlan(planned);
-    if (filled < 7) {
-      showToast(`Planned ${filled} day${filled === 1 ? '' : 's'} — add more to The Rotation to fill the week ✨`);
-    } else {
-      showToast('Week planned ✨');
-    }
-  }, [rotationMeals, weekPlan, dietaryPref, showToast]);
-
-  const updateDietaryPref = useCallback((pref) => {
-    const next = { dietary: pref?.dietary || '', mode: pref?.mode || 'require' };
-    setDietaryPref(next);
-    // Save to both localStorage (sync fallback) and profile (source of truth)
-    try { localStorage.setItem(DIETARY_PREF_KEY, JSON.stringify(next)); } catch { /* ignore */ }
-    if (profileUpdateDietaryPref) profileUpdateDietaryPref(next).catch(() => {});
-  }, [profileUpdateDietaryPref]);
-
   const setDayMeal = useCallback(async (dayIndex, meal) => {
-    setWeekPlan(prev => prev.map((m, i) => i === dayIndex ? meal : m));
+    rotationSetDayMeal(dayIndex, meal);
     // Sync slot to home group
     if (homeGroup?.state === 'in_group' && profile?.homeGroupId) {
       const { toSlotData } = await import('./lib/slotMapper');
@@ -1156,41 +1004,7 @@ useEffect(() => {
         homeGroupId: profile.homeGroupId,
       });
     }
-  }, [homeGroup, profile]);
-
-  const toggleLockDay = useCallback((dayIndex) => {
-    setWeekPlan(prev => prev.map((m, i) => {
-      if (i === dayIndex && m && !m._special) {
-        return { ...m, _locked: !m._locked };
-      }
-      return m;
-    }));
-  }, []);
-
-  /** Protect all planned (non-special) days from re-spin — one tap instead of 14. */
-  const lockAllPlanned = useCallback(() => {
-    setWeekPlan(prev => {
-      const next = prev.map(m => (m && !m._special ? { ...m, _locked: true } : m));
-      const n = next.filter(m => m && m._locked).length;
-      if (n > 0) showToast(`Protected ${n} meal${n === 1 ? '' : 's'} from re-spin`, 'success');
-      else showToast('No meals to protect — spin a week first', 'info');
-      return next;
-    });
-  }, [showToast]);
-
-  const unlockAllPlanned = useCallback(() => {
-    setWeekPlan(prev => prev.map(m => (m && !m._special ? { ...m, _locked: false } : m)));
-    showToast('All days unlocked', 'info');
-  }, [showToast]);
-
-  const setDaySpecial = useCallback((dayIndex, specialId) => {
-    const special = SPECIAL_DAYS.find(s => s.id === specialId);
-    if (special) {
-      setWeekPlan(prev => prev.map((m, i) => i === dayIndex ? { ...special, _special: true } : m));
-    } else {
-      setWeekPlan(prev => prev.map((m, i) => i === dayIndex ? null : m));
-    }
-  }, []);
+  }, [rotationSetDayMeal, homeGroup, profile]);
 
   // ── Meal CRUD ─────────────────────────────────────────────────────────────────
   const saveMeal = useCallback(async (mealData) => {
@@ -1347,6 +1161,11 @@ useEffect(() => {
       : planSource;
     plansToUse.forEach(meal => {
       if (!meal || meal._special) return;
+      // Batch Cook & Leftover Chaining: a day marked _leftoverOf is eating the
+      // same cooked batch as another day already in this pass — its
+      // ingredients were already shopped for on the source day, so skip them
+      // here rather than double-counting (see WeekView's handleToggleBatchCook).
+      if (meal._leftoverOf) return;
 
       // Spec A: prefer the structured ingredient array (source of truth).
       const structured = (Array.isArray(meal.ingredientsStructured) && meal.ingredientsStructured.length)
