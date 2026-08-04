@@ -162,6 +162,7 @@ export default function RecipeCard({
       style={{
         width: '155px',
         flexShrink: 0,
+        alignSelf: 'flex-start',
         borderRadius: 'var(--radius-sm)',
         border: '1px solid var(--border)',
         background: 'var(--card)',
@@ -205,7 +206,7 @@ export default function RecipeCard({
         <div
           style={{
             width: '100%',
-            height: '90px',
+            height: '110px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -217,12 +218,17 @@ export default function RecipeCard({
         </div>
       )}
       <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', flex: 1 }}>
+        {/* Fixed 2-line reservation so every card in a row lands at the same
+            height regardless of title length — a taller card next to a
+            shorter one leaves a gap that swallows vertical scroll gestures
+            (the row's touch-action:pan-x still governs that gap). */}
         <div
           style={{
             fontSize: '13px',
             fontWeight: '700',
             color: 'var(--text)',
             lineHeight: '1.25',
+            minHeight: 'calc(1.25em * 2)',
             display: '-webkit-box',
             WebkitLineClamp: 2,
             WebkitBoxOrient: 'vertical',
@@ -243,20 +249,22 @@ export default function RecipeCard({
             {matchedCount === totalCount ? '🟢' : '🟡'} {matchedCount}/{totalCount} on hand
           </div>
         )}
-        {missingIngredients.length > 0 && (
-          <div
-            style={{
-              fontSize: '10px',
-              color: 'var(--text-muted)',
-              marginTop: '4px',
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            Need: {missingIngredients.join(', ')}
-          </div>
-        )}
+        {/* Always reserve this row's height, even with nothing to show, so a
+            "ready to cook" card (no missing items) matches the height of an
+            "almost" card next to it instead of leaving a blank pocket. */}
+        <div
+          style={{
+            fontSize: '10px',
+            color: 'var(--text-muted)',
+            marginTop: '4px',
+            minHeight: '13px',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {missingIngredients.length > 0 ? `Need: ${missingIngredients.join(', ')}` : ' '}
+        </div>
       </div>
     </motion.button>
   );

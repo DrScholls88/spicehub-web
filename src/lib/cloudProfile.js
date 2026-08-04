@@ -44,6 +44,13 @@ export async function checkUsernameAvailable(desired) {
 
   if (error) {
     console.warn('[CloudProfile] checkUsernameAvailable error:', error.message);
+    // Auth / network errors should propagate so callers can show a real error
+    // instead of silently masking as "username taken"
+    if (error.message?.includes('Invalid API key') ||
+        error.message?.includes('JWT') ||
+        error.code === '401' || error.code === 'PGRST301') {
+      throw new Error('Not signed in — please sign in first.');
+    }
     return false;
   }
   return data === true;

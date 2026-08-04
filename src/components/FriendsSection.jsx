@@ -10,7 +10,7 @@
  */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { isFriendsEnabled } from '../lib/supabaseClient';
+import { isFriendsEnabled, getSession, signInWithGoogle, signInWithMagicLink } from '../lib/supabaseClient';
 import { getCloudProfile, searchUsers } from '../lib/cloudProfile';
 import {
   sendFriendRequest, acceptFriendRequest, declineFriendRequest,
@@ -40,7 +40,10 @@ export default function FriendsSection({ isOnline, showToast }) {
   const [pendingIn, setPendingIn] = useState([]);
   const [pendingOut, setPendingOut] = useState([]);
   const [blocked, setBlocked] = useState([]);
+  const [session, setSession] = useState(undefined); // undefined=loading, null=no session, object=signed in
   const [showUsernameSheet, setShowUsernameSheet] = useState(false);
+  const [authStep, setAuthStep] = useState(false); // false=buttons, true=email input
+  const [authEmail, setAuthEmail] = useState('');
 
   // Search
   const [searchQuery, setSearchQuery] = useState('');
@@ -69,6 +72,13 @@ export default function FriendsSection({ isOnline, showToast }) {
     let cancelled = false;
     (async () => {
       try {
+        const sess = await getSession();
+        if (cancelled) return;
+        setSession(sess);
+
+        // No session → stop here, don't call RPCs as anon
+        if (!sess) { setLoading(false); return; }
+
         const profile = await getCloudProfile();
         if (!cancelled) setCloudProfile(profile);
 
@@ -287,6 +297,73 @@ export default function FriendsSection({ isOnline, showToast }) {
       <div className="st-section">
         <h3>Friends</h3>
         <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>Loading…</p>
+      </div>
+    );
+  }
+
+  // No session — prompt to sign in first
+  if (!session) {
+    return (
+      <div className="st-section">
+        <h3>Friends</h3>
+        <p style={{ color: 'var(--text-muted)', fontSize: 14, margin: '0 0 10px' }}>
+          Sign in to connect with friends and share recipes directly.
+        </p>
+
+        {!authStep ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <button
+              className="st-install-btn"
+              onClick={() => signInWithGoogle()}
+              disabled={!isOnline}
+            >
+              <span className="st-install-icon">🔑</span>
+              <span>Continue with Google</span>
+            </button>
+            <button
+              className="st-install-btn"
+              onClick={() => setAuthStep(true)}
+              disabled={!isOnline}
+            >
+              <span className="st-install-icon">✉️</span>
+              <span>Use email link</span>
+            </button>
+          </div>
+        ) : (
+          <div style={{
+            background: 'var(--bg-secondary, var(--card))', borderRadius: 12,
+            padding: 16, display: 'flex', flexDirection: 'column', gap: 8,
+          }}>
+            <input
+              type="email"
+              value={authEmail}
+              onChange={e => setAuthEmail(e.target.value)}
+              placeholder="your@email.com"
+              style={{
+                width: '100%', padding: 10, fontSize: 16,
+                borderRadius: 8, border: '1px solid var(--border)',
+                background: 'var(--bg, var(--card))', color: 'var(--text)',
+                boxSizing: 'border-box',
+              }}
+            />
+            <button
+              className="st-install-btn"
+              onClick={() => signInWithMagicLink(authEmail)}
+              disabled={!authEmail.includes('@')}
+            >Send sign-in link</button>
+            <button
+              className="st-install-btn"
+              onClick={() => setAuthStep(false)}
+              style={{ opacity: 0.6 }}
+            >Back</button>
+          </div>
+        )}
+
+        {!isOnline && (
+          <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: '4px 0 0' }}>
+            Connect to the internet to sign in
+          </p>
+        )}
       </div>
     );
   }

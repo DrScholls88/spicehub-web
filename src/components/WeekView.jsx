@@ -3,7 +3,7 @@ import { X, Lock, LockKeyhole, LockKeyholeOpen, Star, BookOpen, UtensilsCrossed,
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import MealSpinner from './MealSpinner';
 import useBackHandler from '../hooks/useBackHandler';
-import { filterMealsByConstraints } from '../lib/weekPlanner';
+import { filterMealsByConstraints, fridgeMatchRatio, mealTotalMinutes } from '../lib/weekPlanner';
 
 // ── MealImage helper ──────────────────────────────────────────────────────────
 function MealImage({ src, alt, className, style, fallbackEmoji = '🍽️', fallbackClass }) {
@@ -59,6 +59,13 @@ function dateFromKey(key) {
   return date;
 }
 
+// Parse a nutrition string like "250 kcal" / "18 g" down to its leading number.
+function parseNutritionNumber(str) {
+  if (str == null) return null;
+  const m = String(str).match(/(\d+(?:\.\d+)?)/);
+  return m ? parseFloat(m[1]) : null;
+}
+
 function isSameDay(a, b) {
   return a.getFullYear() === b.getFullYear() &&
     a.getMonth() === b.getMonth() &&
@@ -83,6 +90,42 @@ function getCalendarCells(year, month) {
 
 // ── Keyframe injection ────────────────────────────────────────────────────────
 const ANIMATIONS_CSS = `
+  /* ── Plan-page-scoped dark palette ──
+     The global dark theme (App.css) uses a brown-tinted canvas (--bg:#1f1a16)
+     with a green --primary (#66bb6a) reused for borders/glows everywhere —
+     on this page that read as "muddy brown + neon green". Rather than
+     changing those app-wide tokens (every other screen — Bar, Meal Library,
+     Landing — is tuned around them), redefine the same variable names locally
+     on .wv-plan-root. CSS custom properties cascade, so every existing
+     var(--card)/var(--border)/var(--primary)/etc. rule below picks up the
+     new values automatically within this page only, with zero risk to the
+     rest of the app. */
+  .wv-plan-root {
+    --primary-soft: rgba(230,81,0,0.1); /* light-theme default; overridden below for dark */
+  }
+  /* Scoped (not global .pk-name) so Meal Library's own picker sheets are
+     untouched — this page's imported titles are the ones arriving in
+     inconsistent case. */
+  .wv-plan-root .pk-name { text-transform: capitalize; }
+  [data-theme="dark"] .wv-plan-root,
+  [data-theme="auto"][data-system-dark="true"] .wv-plan-root {
+    --bg: #0e0f12;
+    --card: #18181b;
+    --card-bg: #18181b;
+    --surface: #212126;
+    --surface-2: #27272a;
+    --border: rgba(63, 63, 70, 0.8);
+    --text: #f4f4f5;
+    --text-light: #d4d4d8;
+    --text-muted: #8b8b94;
+    --primary: #10b981;
+    --primary-light: #34d399;
+    --primary-dark: #059669;
+    --success: #10b981;
+    --primary-soft: rgba(16,185,129,0.14);
+    --shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.6);
+  }
   @keyframes wv-slideUp {
     from { transform: translateY(100%); opacity: 0; }
     to   { transform: translateY(0);   opacity: 1; }
@@ -194,24 +237,32 @@ const ANIMATIONS_CSS = `
     background: var(--card);
   }
   .wv-tl-card:active { transform: scale(0.97); }
-  .wv-tl-card.tl-today {
-    border-color: var(--primary);
-    box-shadow: 0 0 0 1.5px var(--primary), 0 4px 20px rgba(230,81,0,0.18);
-    transform: scale(1.02);
+  /* ── "Active" card treatment — a thin left accent bar + soft tint reads as
+     confident and calm; the old thick glowing ring (box-shadow + scale)
+     shouted for attention on every single "today" card. ── */
+  .wv-tl-card.tl-today,
+  .wv-tl-card.tl-selected {
+    position: relative;
+    border-color: transparent;
+    background: var(--primary-soft);
     z-index: 2;
   }
-  .wv-tl-card.tl-today:active { transform: scale(0.99); }
+  .wv-tl-card.tl-today::before,
+  .wv-tl-card.tl-selected::before {
+    content: '';
+    position: absolute; left: 0; top: 6px; bottom: 6px; width: 3px;
+    background: var(--primary);
+    border-radius: 0 3px 3px 0;
+  }
+  .wv-tl-card.tl-selected {
+    animation: wv-selectPop 0.28s var(--ease-bounce, cubic-bezier(0.34,1.56,0.64,1)) forwards;
+  }
   .wv-tl-card.tl-empty {
     border-style: dashed;
     border-color: var(--border);
     background: transparent;
   }
   .wv-tl-card.tl-empty:active { transform: scale(0.98); }
-  .wv-tl-card.tl-selected {
-    border-color: var(--primary);
-    background: rgba(230,81,0,0.06);
-    animation: wv-selectPop 0.28s var(--ease-bounce, cubic-bezier(0.34,1.56,0.64,1)) forwards;
-  }
   .wv-tl-card.tl-past { opacity: 0.55; }
   .wv-tl-dow { text-align: center; min-width: 38px; flex-shrink: 0; }
   .wv-tl-dow-label {
@@ -239,30 +290,44 @@ const ANIMATIONS_CSS = `
   .wv-tl-name {
     font-size: 14px; font-weight: 700; color: var(--text);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    /* Imported captions arrive as "MUSHROOM PARM ON GARLIC" or all-lowercase
+       just as often as proper case — normalize display without touching the
+       stored recipe name. */
+    text-transform: capitalize;
   }
   .wv-tl-meta { font-size: 11px; color: var(--text-light); margin-top: 1px; }
+  /* ── Unified action group — Lock / Search / Kebab used to be three loosely
+     spaced siblings of inconsistent size; now a single right-aligned row of
+     real 36×36px touch targets. ── */
+  .wv-tl-actions-group {
+    flex-shrink: 0; display: flex; align-items: center; gap: 2px;
+  }
   .wv-tl-action {
-    flex-shrink: 0; padding: 6px; border-radius: 8px;
+    flex-shrink: 0; width: 36px; height: 36px; border-radius: 10px;
     background: transparent; border: none; color: var(--text-muted);
     cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: background 150ms cubic-bezier(0.32,0.72,0,1), color 150ms cubic-bezier(0.32,0.72,0,1);
+    -webkit-tap-highlight-color: transparent;
   }
+  .wv-tl-action:hover { color: var(--text); background: var(--surface); }
   .wv-tl-action:active { background: var(--surface); }
   .wv-tl-spin-chip {
     flex-shrink: 0; padding: 5px 10px; border-radius: 8px;
-    background: rgba(230,81,0,0.1); border: none;
+    background: var(--primary-soft); border: none;
     color: var(--primary); font-size: 11px; font-weight: 700;
     cursor: pointer; display: flex; align-items: center; gap: 4px;
     transition: transform 100ms ease;
   }
   .wv-tl-spin-chip:active { transform: scale(0.93); }
   .wv-tl-lock-btn {
-    flex-shrink: 0; width: 32px; height: 32px; border-radius: 8px;
+    flex-shrink: 0; width: 36px; height: 36px; border-radius: 10px;
     background: transparent; border: none;
     color: var(--text-muted); font-size: 14px;
     cursor: pointer; display: flex; align-items: center; justify-content: center;
-    transition: transform 100ms ease, color 150ms ease;
+    transition: transform 100ms ease, color 150ms ease, background 150ms cubic-bezier(0.32,0.72,0,1);
     -webkit-tap-highlight-color: transparent;
   }
+  .wv-tl-lock-btn:hover { background: var(--surface); }
   .wv-tl-lock-btn:active { transform: scale(0.85); }
   .wv-tl-lock-btn.locked {
     color: var(--primary);
@@ -277,6 +342,56 @@ const ANIMATIONS_CSS = `
   .wv-tl-section-badge {
     font-size: 11px; font-weight: 700; color: var(--primary);
   }
+  /* ── Contextual sub-header — Spin Unlocked / Lock toggle / Diet filter,
+     one compact row under the week it acts on, instead of a bottom stack. ── */
+  .wv-week-toolbar {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 16px 10px;
+  }
+  .wv-week-toolbar-btn {
+    flex-shrink: 0; display: flex; align-items: center; gap: 5px;
+    padding: 7px 11px; border-radius: 20px; border: none;
+    background: var(--surface); color: var(--text-light);
+    font-size: 12px; font-weight: 700;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+    transition: transform 100ms ease, background 150ms cubic-bezier(0.32,0.72,0,1);
+  }
+  .wv-week-toolbar-btn:active { transform: scale(0.95); }
+  .wv-week-toolbar-btn.primary {
+    background: var(--primary-soft); color: var(--primary);
+  }
+  .wv-diet-pill {
+    flex: 1; min-width: 0; margin-left: auto;
+    padding: 7px 10px; border-radius: 20px;
+    border: 1.5px solid var(--border); background: var(--card);
+    color: var(--text); font: inherit; font-weight: 700; font-size: 12px;
+    max-width: 132px;
+  }
+  /* ── Next-week empty hero — one CTA + day chips instead of 7 stacked
+     placeholder rows when there's nothing planned yet. ── */
+  .wv-next-hero { padding: 4px 12px 10px; }
+  .wv-next-hero-cta {
+    width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 16px; border-radius: 14px; border: 1.5px dashed var(--primary);
+    background: var(--primary-soft); color: var(--primary);
+    font-size: 14px; font-weight: 800; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: transform 100ms ease;
+  }
+  .wv-next-hero-cta:active { transform: scale(0.98); }
+  .wv-next-hero-chips { display: flex; gap: 6px; margin-top: 10px; }
+  .wv-next-hero-chip {
+    flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 8px 2px; border-radius: 10px; border: 1px solid var(--border); background: var(--card);
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+    transition: background 150ms cubic-bezier(0.32,0.72,0,1);
+  }
+  .wv-next-hero-chip:active { background: var(--surface); }
+  .wv-next-hero-chip-day {
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.4px; color: var(--text-muted);
+  }
+  .wv-next-hero-chip-num { font-size: 13px; font-weight: 800; color: var(--text); }
   .wv-tl-next-collapsed {
     margin: 6px 12px 8px; padding: 12px 14px;
     background: var(--surface); border-radius: 12px;
@@ -316,33 +431,105 @@ const ANIMATIONS_CSS = `
     z-index: 1;
     transition: left 0.3s cubic-bezier(0.32,0.72,0,1), width 0.3s cubic-bezier(0.32,0.72,0,1);
   }
-  /* ── Drag-to-copy ── */
+  /* ── Pick-up / carry-to-place ──
+     Tap-based, not native HTML5 drag — draggable+dragstart/drop never fires on
+     iOS Safari touch and is flaky on Android, which is why the old "drag a
+     meal" gesture felt broken. This grip is a real <button>: tap to pick up,
+     tap again (or the sticky bar's Cancel) to put back down. */
   .wv-tl-grip {
-    flex-shrink: 0; width: 22px; display: flex;
+    flex-shrink: 0; width: 26px; height: 26px; display: flex;
     align-items: center; justify-content: center;
     color: var(--text-muted); opacity: 0.35;
-    cursor: grab; touch-action: none;
+    background: none; border: none; border-radius: 7px; padding: 0;
+    cursor: pointer; touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
     transition: opacity 0.2s cubic-bezier(0.32,0.72,0,1),
-                color 0.2s cubic-bezier(0.32,0.72,0,1);
+                color 0.2s cubic-bezier(0.32,0.72,0,1),
+                background 0.2s cubic-bezier(0.32,0.72,0,1);
     margin-left: -4px;
   }
-  .wv-tl-grip:active { cursor: grabbing; opacity: 0.7; }
+  .wv-tl-grip:active { opacity: 0.7; }
   .wv-tl-card:hover .wv-tl-grip,
   .wv-tl-card:focus-within .wv-tl-grip { opacity: 0.6; }
+  .wv-tl-grip.active {
+    opacity: 1; color: white; background: var(--primary);
+  }
   .wv-tl-card.tl-drop-target {
     border-color: var(--primary) !important;
-    background: rgba(230,81,0,0.08) !important;
-    box-shadow: 0 0 0 2px rgba(230,81,0,0.2), 0 4px 16px rgba(230,81,0,0.12);
+    background: var(--primary-soft) !important;
+    box-shadow: 0 0 0 2px var(--primary), var(--shadow-lg);
     transform: scale(1.02);
+    cursor: pointer;
   }
   @keyframes wv-dropPulse {
-    0%, 100% { box-shadow: 0 0 0 2px rgba(230,81,0,0.2), 0 4px 16px rgba(230,81,0,0.12); }
-    50%      { box-shadow: 0 0 0 3px rgba(230,81,0,0.35), 0 4px 20px rgba(230,81,0,0.18); }
+    0%, 100% { box-shadow: 0 0 0 2px var(--primary), var(--shadow-lg); }
+    50%      { box-shadow: 0 0 0 3px var(--primary), var(--shadow-lg); }
   }
   .wv-tl-card.tl-drop-target {
     animation: wv-dropPulse 1.2s ease-in-out infinite;
   }
+  .wv-tl-card.tl-carry-source {
+    border-style: dashed;
+    border-color: var(--text-muted);
+    background: var(--surface) !important;
+    opacity: 0.65;
+    cursor: pointer;
+  }
+  .wv-tl-card.tl-carry-dim {
+    filter: saturate(0.7);
+    cursor: default;
+  }
+  .wv-carry-source-badge {
+    flex-shrink: 0; padding: 5px 10px; border-radius: 8px;
+    background: var(--surface); border: 1px dashed var(--border);
+    color: var(--text-muted); font-size: 11px; font-weight: 700;
+  }
+  .wv-carry-place-btn {
+    flex-shrink: 0; padding: 7px 12px; border-radius: 8px;
+    background: var(--primary); border: none;
+    color: white; font-size: 12px; font-weight: 800;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+    transition: transform 0.1s ease;
+  }
+  .wv-carry-place-btn:active { transform: scale(0.93); }
+  .wv-carry-bar {
+    position: sticky; top: 0; z-index: 30;
+    display: flex; align-items: center; gap: 10px;
+    margin: 0 12px 10px; padding: 10px 12px;
+    background: var(--primary); color: white;
+    border-radius: 12px;
+    box-shadow: var(--shadow-lg);
+  }
+  .wv-carry-grip {
+    flex-shrink: 0; width: 26px; height: 26px; border-radius: 7px;
+    background: rgba(255,255,255,0.18);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .wv-carry-name {
+    font-size: 13px; font-weight: 800;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    text-transform: capitalize;
+  }
+  .wv-carry-hint { font-size: 11px; opacity: 0.85; margin-top: 1px; }
+  .wv-carry-cancel {
+    flex-shrink: 0; padding: 7px 12px; border-radius: 8px;
+    background: rgba(255,255,255,0.18); border: none;
+    color: white; font-size: 12px; font-weight: 700; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wv-carry-cancel:active { background: rgba(255,255,255,0.3); }
+  /* ── Previous weeks ── */
+  .wv-prev-weeks { margin-bottom: 4px; }
+  .wv-prev-toggle { margin: 6px 12px 8px; }
+  .wv-prev-month-link {
+    display: block; width: calc(100% - 24px);
+    margin: 4px 12px 12px; padding: 10px;
+    background: none; border: 1px dashed var(--border); border-radius: 10px;
+    color: var(--text-muted); font-size: 12px; font-weight: 600;
+    cursor: pointer; text-align: center;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .wv-prev-month-link:active { background: var(--surface); }
   /* ── Search button ── */
   .wv-tl-search-btn {
     color: var(--text-muted);
@@ -433,10 +620,15 @@ export default function WeekView({
   const [groceryDays, setGroceryDays] = useState(new Set());
   const [justCompletedSpin, setJustCompletedSpin] = useState(false);
 
-  // ── Drag-to-copy state ──────────────────────────────────────────────────────
-  const [dragSource, setDragSource] = useState(null);          // { date, meal, dayName }
-  const [dragOverTarget, setDragOverTarget] = useState(null);  // dateKey string
-  const dragCleanupRef = useRef(null);
+  // ── Carry-to-place state (tap to pick up, tap to place) ─────────────────────
+  // Native HTML5 drag-and-drop (draggable attr + dragstart/dragover/drop) does
+  // not fire on touch in iOS Safari and is inconsistent on Android Chrome —
+  // that was the real cause of "unclear" drag feedback on this touch-first
+  // PWA. Replaced with an explicit pick-up → sticky status bar → tap-to-place
+  // flow that behaves identically for touch and mouse and never relies on a
+  // gesture the browser might silently swallow.
+  const [carry, setCarry] = useState(null); // { meal, date, dayName, key }
+  const [prevWeeksExpanded, setPrevWeeksExpanded] = useState(false);
 
   // ── Search modal state ──────────────────────────────────────────────────────
   const [searchOpen, setSearchOpen] = useState(false);
@@ -444,12 +636,17 @@ export default function WeekView({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchCuisine, setSearchCuisine] = useState('');
 
+  // ── Pantry-Aware Quick Swap drawer state ────────────────────────────────────
+  const [pantryMatchTargetDate, setPantryMatchTargetDate] = useState(null);
+
   // Hardware back / edge-swipe / Escape — innermost Plan UI first (Track 1)
+  useBackHandler(!!carry, () => setCarry(null), 'week-carry');
   useBackHandler(!!pickerDay, () => setPickerDay(null), 'week-picker');
   useBackHandler(showDetailPanel, () => setShowDetailPanel(false), 'week-detail');
   useBackHandler(selectMode, () => { setSelectMode(false); setSelectedDates(new Set()); }, 'week-select');
   useBackHandler(grocerySelectMode, () => { setGrocerySelectMode(false); setGroceryDays(new Set()); }, 'week-grocery-select');
   useBackHandler(searchOpen, () => { setSearchOpen(false); setSearchQuery(''); setSearchCuisine(''); }, 'week-search');
+  useBackHandler(!!pantryMatchTargetDate, () => setPantryMatchTargetDate(null), 'week-pantry-match');
   const [showCustomDayTagInput, setShowCustomDayTagInput] = useState(false);
   const [showFoodShortcuts, setShowFoodShortcuts] = useState(false);
   const [newDayTagName, setNewDayTagName] = useState('');
@@ -614,39 +811,35 @@ export default function WeekView({
   }, []);
   const closePicker = useCallback(() => setPickerDay(null), []);
 
-  // ── Drag-to-copy handlers ──────────────────────────────────────────────────
-  const handleDragStart = useCallback((date, meal) => {
+  // ── Carry-to-place handlers ──────────────────────────────────────────────────
+  // Tap a meal's grip to pick it up (or tap the same grip again / the source
+  // card to put it back down). While carrying, eligible days in "This week"
+  // and "Next week" light up as valid drop targets — tap one to place a copy.
+  const handlePickUp = useCallback((date, meal) => {
     if (!meal || meal._special) return;
+    const key = dateKey(date);
     const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    setDragSource({ date, meal, dayName: dayNames[date.getDay()] });
+    setCarry(prev => {
+      if (prev && prev.key === key) return null; // tapping the same grip cancels
+      return { meal, date, dayName: dayNames[date.getDay()], key };
+    });
     navigator.vibrate?.([15]);
+    setNextWeekExpanded(true); // surface both valid target weeks immediately
   }, []);
 
-  const handleDragOver = useCallback((targetDateKey) => {
-    if (!dragSource) return;
-    const srcKey = dateKey(dragSource.date);
-    if (targetDateKey !== srcKey) {
-      setDragOverTarget(targetDateKey);
-    }
-  }, [dragSource]);
+  const handleCancelCarry = useCallback(() => setCarry(null), []);
 
-  const handleDragEnd = useCallback(() => {
-    setDragSource(null);
-    setDragOverTarget(null);
-  }, []);
-
-  const handleDrop = useCallback((targetDate) => {
-    if (!dragSource) return;
-    const srcKey = dateKey(dragSource.date);
+  const handlePlaceCarry = useCallback((targetDate) => {
+    if (!carry) return;
     const tgtKey = dateKey(targetDate);
-    if (srcKey === tgtKey) { handleDragEnd(); return; }
+    if (tgtKey === carry.key) { setCarry(null); return; }
 
     const targetDow = targetDate.getDay() === 0 ? 6 : targetDate.getDay() - 1;
     const targetWeekMon = getMonday(targetDate);
     const isTargetCurrentWeek = targetWeekMon.getTime() === currentWeekMonday.getTime();
 
     // Copy the meal (strip _locked so the copy is unlocked)
-    const mealCopy = { ...dragSource.meal };
+    const mealCopy = { ...carry.meal };
     delete mealCopy._locked;
 
     if (isTargetCurrentWeek) {
@@ -656,12 +849,84 @@ export default function WeekView({
     }
 
     const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    const srcLabel = dragSource.dayName;
+    const srcLabel = carry.dayName;
     const tgtLabel = dayNames[targetDate.getDay()];
     onToast?.(`Copied from ${srcLabel} → ${tgtLabel}`);
     navigator.vibrate?.([30, 20, 30]);
-    handleDragEnd();
-  }, [dragSource, currentWeekMonday, onSetDay, onSpinnerComplete, onToast, handleDragEnd]);
+    setCarry(null);
+  }, [carry, currentWeekMonday, onSetDay, onSpinnerComplete, onToast]);
+
+  // ── Drag-and-drop day swap ───────────────────────────────────────────────────
+  // Complements carry (tap-to-pick-up/tap-to-place, which COPIES a meal — used
+  // for longer-distance moves across scroll distance/weeks, e.g. pulling a meal
+  // up from Previous Weeks). This is a direct physical drag of the grip handle
+  // onto another visible day card, and it SWAPS — both days trade meals in one
+  // gesture. Only wired for This/Next week (both usually on-screen together);
+  // Previous Weeks stays carry-only since you can't drag onto a card that's
+  // scrolled out of view. Routes through the same onSpinnerComplete/
+  // applySpinResults path as carry's cross-week copy, which already resolves
+  // "which week does this date belong to" for both sides of the swap in one
+  // batched, offline-first Dexie write.
+  const handleDragSwap = useCallback((sourceDate, sourceMeal, targetDateKey) => {
+    if (!sourceMeal || sourceMeal._special) return;
+    const srcKey = dateKey(sourceDate);
+    if (!targetDateKey || targetDateKey === srcKey) return;
+    const targetDate = dateFromKey(targetDateKey);
+    if (targetDate < today) return; // can't swap a meal into the past
+
+    const { meal: targetMeal } = getMealForDate(targetDate);
+    const srcCopy = { ...sourceMeal }; delete srcCopy._locked;
+    const tgtCopy = targetMeal ? { ...targetMeal } : null;
+    if (tgtCopy) delete tgtCopy._locked;
+
+    onSpinnerComplete([
+      { date: sourceDate, meal: tgtCopy },
+      { date: targetDate, meal: srcCopy },
+    ]);
+
+    const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    onToast?.(`Swapped ${dayNames[sourceDate.getDay()]} ↔ ${dayNames[targetDate.getDay()]}`);
+    navigator.vibrate?.([25, 15, 25, 15, 40]);
+  }, [today, getMealForDate, onSpinnerComplete, onToast]);
+
+  // ── Batch Cook & Leftover Chaining ───────────────────────────────────────────
+  // "Cook 2x" tags the current day (_leftoverChainNext) and clones the meal
+  // into tomorrow marked as an echo (_leftoverOf: <recipe id>). buildGroceryList
+  // (App.jsx) skips any meal with _leftoverOf set, so the leftover day never
+  // double-counts ingredients that were already shopped for on the cook day —
+  // that's the "discount duplicate grocery items" half of this feature.
+  // Scoped to the current week only (dow 0-5 → dow+1 stays in-bounds of
+  // weekPlan); chaining across a week boundary would need to write into next
+  // week's history via applySpinResults, deliberately left for a follow-up.
+  const handleToggleBatchCook = useCallback((dow) => {
+    const meal = weekPlan[dow];
+    if (!meal || meal._special || dow >= 6) return;
+    const dayNames = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+
+    if (meal._leftoverChainNext) {
+      // Un-chain: clear the source flag, and clear tomorrow's slot only if
+      // it's still the untouched echo (don't clobber a meal the user picked
+      // for tomorrow since).
+      const sourceCopy = { ...meal };
+      delete sourceCopy._leftoverChainNext;
+      onSetDay(dow, sourceCopy);
+      const next = weekPlan[dow + 1];
+      if (next && next._leftoverOf === (meal.id || meal.name)) {
+        onSetDay(dow + 1, null);
+      }
+      onToast?.('Leftover plan cancelled');
+      return;
+    }
+
+    const sourceCopy = { ...meal, _leftoverChainNext: true };
+    const leftoverCopy = { ...meal, _leftoverOf: meal.id || meal.name };
+    delete leftoverCopy._locked;
+    delete leftoverCopy._leftoverChainNext;
+    onSetDay(dow, sourceCopy);
+    onSetDay(dow + 1, leftoverCopy);
+    onToast?.(`Leftovers queued for ${dayNames[dow + 1]} 🍱`);
+    navigator.vibrate?.([20, 15, 20]);
+  }, [weekPlan, onSetDay, onToast]);
 
   // ── Search modal handlers ──────────────────────────────────────────────────
   const openSearchForDate = useCallback((date) => {
@@ -689,6 +954,43 @@ export default function WeekView({
     setSearchQuery('');
     setSearchCuisine('');
   }, [searchTargetDate, currentWeekMonday, onSetDay, onSpinnerComplete, onToast]);
+
+  // ── Pantry-Aware Quick Swap ──────────────────────────────────────────────────
+  // "Spin" still does an instant, blind random pick (unchanged — fast path
+  // preserved). This is the deliberate, considered alternative: rank The
+  // Rotation (falling back to the full library when it's empty, same fallback
+  // respinDay uses) by how much of each recipe is already sitting in the
+  // pantry/fridge, via the same fridgeMatchRatio scorer that already powers
+  // the "Use Fridge Stock" spin constraint — one matching algorithm, two entry
+  // points, instead of a second competing implementation.
+  const openPantryMatchForDate = useCallback((date) => {
+    setPantryMatchTargetDate(date);
+  }, []);
+
+  const pantryMatchRanked = useMemo(() => {
+    const pool = rotationMeals && rotationMeals.length > 0 ? rotationMeals : meals;
+    return pool
+      .map(meal => ({ meal, score: fridgeMatchRatio(meal, fridgeInventoryNames) }))
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 20);
+  }, [rotationMeals, meals, fridgeInventoryNames]);
+
+  const handlePantryMatchSelect = useCallback((meal) => {
+    if (!pantryMatchTargetDate) return;
+    const targetDow = pantryMatchTargetDate.getDay() === 0 ? 6 : pantryMatchTargetDate.getDay() - 1;
+    const targetWeekMon = getMonday(pantryMatchTargetDate);
+    const isTargetCurrentWeek = targetWeekMon.getTime() === currentWeekMonday.getTime();
+
+    if (isTargetCurrentWeek) {
+      onSetDay(targetDow, meal);
+    } else {
+      onSpinnerComplete([{ date: pantryMatchTargetDate, meal }]);
+    }
+
+    const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    onToast?.(`${dayNames[pantryMatchTargetDate.getDay()]} → ${meal.name}`);
+    setPantryMatchTargetDate(null);
+  }, [pantryMatchTargetDate, currentWeekMonday, onSetDay, onSpinnerComplete, onToast]);
 
   const availableCuisines = useMemo(() => {
     const cats = new Set();
@@ -727,6 +1029,17 @@ export default function WeekView({
     setSpinnerTargetDates(dates);
     setSpinnerSelectedIndices(indices);
     navigator.vibrate?.([40, 25, 40]);
+    onGenerate();
+  }, [onGenerate]);
+
+  // Fills all 7 days of next week in one go — the spinner already supports
+  // targeting an arbitrary set of dates (used for multi-select), so this just
+  // points it at the whole next-week range instead of a hand-picked subset.
+  const handleAutoPlanNextWeek = useCallback((dates) => {
+    const indices = dates.map(d => d.getDay() === 0 ? 6 : d.getDay() - 1);
+    setSpinnerTargetDates(dates);
+    setSpinnerSelectedIndices(indices);
+    navigator.vibrate?.([50, 30, 50]);
     onGenerate();
   }, [onGenerate]);
 
@@ -923,6 +1236,7 @@ export default function WeekView({
   const isCurrentMonth = viewYear === today.getFullYear() && viewMonth === today.getMonth();
   const plannedCount   = weekPlan.filter(Boolean).length;
   const hasWeek        = plannedCount > 0;
+  const allWeekLocked  = hasWeek && weekPlan.filter(Boolean).every(m => m._locked);
 
   const thisWeekDates = useMemo(() =>
     [0,1,2,3,4,5,6].map(i => addDays(currentWeekMonday, i)), [currentWeekMonday]);
@@ -979,7 +1293,7 @@ export default function WeekView({
   const groceryDayCount = groceryDays.size;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg)', userSelect: 'none' }}>
+    <div className="wv-plan-root" style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg)', userSelect: 'none' }}>
 
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
@@ -1057,7 +1371,40 @@ export default function WeekView({
       )}
 
       {viewMode === 'timeline' && (
-        <div style={{ flex: 1, overflowY: 'auto', paddingTop: 4, paddingBottom: 8 }}>
+        <div style={{ flex: 1, overflowY: 'auto', paddingTop: 4, paddingBottom: 8, position: 'relative' }}>
+
+          {/* ── Carry status bar — sticky so it stays visible while you scroll to find a spot ── */}
+          <AnimatePresence>
+            {carry && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
+                className="wv-carry-bar"
+              >
+                <div className="wv-carry-grip"><GripVertical size={15} strokeWidth={2.5} /></div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="wv-carry-name">{carry.meal.name}</div>
+                  <div className="wv-carry-hint">Picked up from {carry.dayName} · tap a highlighted day to place it</div>
+                </div>
+                <button className="wv-carry-cancel" onClick={handleCancelCarry}>Cancel</button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <PreviousWeeksSection
+            currentWeekMonday={currentWeekMonday}
+            weekHistory={weekHistory}
+            today={today}
+            getMealForDate={getMealForDate}
+            expanded={prevWeeksExpanded}
+            onToggleExpanded={() => setPrevWeeksExpanded(x => !x)}
+            carry={carry}
+            onPickUp={handlePickUp}
+            onOpenMonthView={() => setViewMode('month')}
+          />
+
           <div className="wv-tl-section-header">
             <span className="wv-tl-section-title">
               This week{' '}
@@ -1069,6 +1416,57 @@ export default function WeekView({
               {plannedCount}/7 planned
             </span>
           </div>
+
+          {/* ── Contextual sub-header — week-level actions live right under the
+              week they act on, instead of scattered in a bottom control stack. ── */}
+          {!selectMode && !grocerySelectMode && !carry && (
+            <div className="wv-week-toolbar">
+              <button
+                type="button"
+                className="wv-week-toolbar-btn primary"
+                onClick={() => { setJustCompletedSpin(false); navigator.vibrate?.([50, 30, 50]); onGenerate(); }}
+              >
+                <RefreshCw size={13} strokeWidth={2.5} /> Spin Unlocked
+              </button>
+
+              {(onLockAll || onUnlockAll) && hasWeek && (
+                <button
+                  type="button"
+                  className="wv-week-toolbar-btn"
+                  onClick={() => {
+                    setJustCompletedSpin(false);
+                    if (allWeekLocked) onUnlockAll?.(); else onLockAll?.();
+                  }}
+                >
+                  {allWeekLocked
+                    ? <><LockKeyholeOpen size={13} strokeWidth={2.5} /> Unlock All</>
+                    : <><LockKeyhole size={13} strokeWidth={2.5} /> Lock All</>
+                  }
+                </button>
+              )}
+
+              {onChangeDietaryPref && (
+                <select
+                  className="wv-diet-pill"
+                  value={dietaryPref?.dietary || ''}
+                  onChange={(e) => onChangeDietaryPref({ dietary: e.target.value, mode: 'require' })}
+                  aria-label="Diet filter"
+                >
+                  <option value="">Any diet</option>
+                  <option value="vegetarian">Vegetarian</option>
+                  <option value="vegan">Vegan</option>
+                  <option value="gluten-free">Gluten-free</option>
+                  <option value="dairy-free">Dairy-free</option>
+                  <option value="keto">Keto</option>
+                  <option value="paleo">Paleo</option>
+                </select>
+              )}
+            </div>
+          )}
+
+          {!selectMode && !grocerySelectMode && !carry && (
+            <WeekSummaryStrip weekPlan={weekPlan} dietaryPref={dietaryPref} />
+          )}
 
           <TimelineWeek
             weekDates={thisWeekDates}
@@ -1091,13 +1489,12 @@ export default function WeekView({
             grocerySelectMode={grocerySelectMode}
             groceryDays={groceryDays}
             onGroceryToggle={handleGroceryToggle}
-            dragSource={dragSource}
-            dragOverTarget={dragOverTarget}
-            onDragStart={handleDragStart}
-            onDragOver={handleDragOver}
-            onDragEnd={handleDragEnd}
-            onDrop={handleDrop}
+            carry={carry}
+            onPickUp={handlePickUp}
+            onPlace={handlePlaceCarry}
+            allowDropTarget
             onOpenSearch={openSearchForDate}
+            onSwapDrag={handleDragSwap}
           />
 
           <div
@@ -1130,35 +1527,46 @@ export default function WeekView({
                 transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
                 style={{ overflow: 'hidden' }}
               >
-                <TimelineWeek
-                  weekDates={nextWeekDates}
-                  today={today}
-                  getMealForDate={getMealForDate}
-                  currentWeekMonday={currentWeekMonday}
-                  selectMode={selectMode}
-                  selectedDates={selectedDates}
-                  onCellClick={handleCellClick}
-                  onToggleSelect={(key) => {
-                    setSelectedDates(prev => {
-                      const n = new Set(prev);
-                      if (n.has(key)) n.delete(key); else n.add(key);
-                      return n;
-                    });
-                  }}
-                  onRespin={onRespin}
-                  onSpinForDate={handleSpinForDate}
-                  onToggleLock={onToggleLock}
-                  grocerySelectMode={grocerySelectMode}
-                  groceryDays={groceryDays}
-                  onGroceryToggle={handleGroceryToggle}
-                  dragSource={dragSource}
-                  dragOverTarget={dragOverTarget}
-                  onDragStart={handleDragStart}
-                  onDragOver={handleDragOver}
-                  onDragEnd={handleDragEnd}
-                  onDrop={handleDrop}
-                  onOpenSearch={openSearchForDate}
-                />
+                {/* An empty next week doesn't need 7 stacked "tap to add or spin"
+                    placeholders — one CTA plus a day-chip row says the same thing
+                    in a fifth of the space. Carrying a meal is the exception: the
+                    real rows are needed as actual drop targets. */}
+                {nextWeekPlannedCount === 0 && !carry && !selectMode && !grocerySelectMode ? (
+                  <NextWeekEmptyHero
+                    weekDates={nextWeekDates}
+                    onAutoPlan={() => handleAutoPlanNextWeek(nextWeekDates)}
+                    onDayTap={(date) => { setActiveDate(date); setShowDetailPanel(true); }}
+                  />
+                ) : (
+                  <TimelineWeek
+                    weekDates={nextWeekDates}
+                    today={today}
+                    getMealForDate={getMealForDate}
+                    currentWeekMonday={currentWeekMonday}
+                    selectMode={selectMode}
+                    selectedDates={selectedDates}
+                    onCellClick={handleCellClick}
+                    onToggleSelect={(key) => {
+                      setSelectedDates(prev => {
+                        const n = new Set(prev);
+                        if (n.has(key)) n.delete(key); else n.add(key);
+                        return n;
+                      });
+                    }}
+                    onRespin={onRespin}
+                    onSpinForDate={handleSpinForDate}
+                    onToggleLock={onToggleLock}
+                    grocerySelectMode={grocerySelectMode}
+                    groceryDays={groceryDays}
+                    onGroceryToggle={handleGroceryToggle}
+                    carry={carry}
+                    onPickUp={handlePickUp}
+                    onPlace={handlePlaceCarry}
+                    allowDropTarget
+                    onOpenSearch={openSearchForDate}
+                    onSwapDrag={handleDragSwap}
+                  />
+                )}
               </motion.div>
             )}
           </AnimatePresence>
@@ -1333,6 +1741,8 @@ export default function WeekView({
         onViewDetail={(meal) => { setShowDetailPanel(false); onViewDetail(meal); }}
         onRespin={(dow) => { onRespin(dow); setShowDetailPanel(false); }}
         onSpinForDate={(date) => { handleSpinForDate(date); setShowDetailPanel(false); }}
+        onOpenPantryMatch={() => { openPantryMatchForDate(activeDate); setShowDetailPanel(false); }}
+        onToggleBatchCook={handleToggleBatchCook}
         onOpenPicker={() => { openPicker(activeDate); setShowDetailPanel(false); }}
         onClearDay={(dow) => {
           if (isActiveDateCurrentWeek) {
@@ -1433,62 +1843,13 @@ export default function WeekView({
             </div>
           ) : (
             <>
-              {onChangeDietaryPref && (
-                <label style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  padding: '6px 10px', borderRadius: 10,
-                  background: 'var(--surface)', border: '1px solid var(--border)',
-                  fontSize: 12.5, fontWeight: 600, color: 'var(--text-light)',
-                }}>
-                  <span style={{ whiteSpace: 'nowrap', color: 'var(--text-muted)' }}>Plan for</span>
-                  <select
-                    value={dietaryPref?.dietary || ''}
-                    onChange={(e) => onChangeDietaryPref({ dietary: e.target.value, mode: 'require' })}
-                    style={{
-                      flex: 1, minWidth: 0, padding: '5px 8px', borderRadius: 8,
-                      border: '1.5px solid var(--border)', background: 'var(--bg)',
-                      color: 'var(--text)', font: 'inherit', fontWeight: 700, fontSize: 13,
-                    }}
-                  >
-                    <option value="">Any diet</option>
-                    <option value="vegetarian">Vegetarian</option>
-                    <option value="vegan">Vegan</option>
-                    <option value="gluten-free">Gluten-free</option>
-                    <option value="dairy-free">Dairy-free</option>
-                    <option value="keto">Keto</option>
-                    <option value="paleo">Paleo</option>
-                  </select>
-                </label>
-              )}
               <button
                 onClick={() => { setJustCompletedSpin(false); navigator.vibrate?.([40, 25, 40]); onSmartPlan?.(); }}
                 style={PRIMARY_BTN}
               >
                 Plan my Week{rotationCount > 0 ? ` (${rotationCount})` : ''}
               </button>
-              {(onLockAll || onUnlockAll) && (
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button
-                    onClick={() => { onLockAll?.(); setJustCompletedSpin(false); }}
-                    style={{ ...SECONDARY_BTN, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '10px 8px', fontSize: 12 }}
-                  >
-                    🔒 Lock All
-                  </button>
-                  <button
-                    onClick={() => { onUnlockAll?.(); setJustCompletedSpin(false); }}
-                    style={{ ...SECONDARY_BTN, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '10px 8px', fontSize: 12 }}
-                  >
-                    🔓 Unlock All
-                  </button>
-                </div>
-              )}
               <div style={{ display: 'flex', gap: 8 }}>
-                <button
-                  onClick={() => { setJustCompletedSpin(false); navigator.vibrate?.([50, 30, 50]); onGenerate(); }}
-                  style={{ ...SECONDARY_BTN, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
-                >
-                  <RefreshCw size={14} strokeWidth={2.5} /> Spin
-                </button>
                 <button
                   onClick={() => { setJustCompletedSpin(false); setSelectMode(true); }}
                   style={{ ...SECONDARY_BTN, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
@@ -1526,57 +1887,6 @@ export default function WeekView({
         </div>
       )}
 
-      {(cookingStats.streak > 0 || cookingStats.totalCooked > 0) && !showSpinner && (
-        <div style={{
-          display: 'flex', gap: 20, justifyContent: 'center', alignItems: 'center',
-          padding: '8px 16px 12px',
-          background: 'var(--surface)',
-          borderTop: '1px solid var(--border)',
-        }}>
-          {cookingStats.streak > 0 && (
-            <StatPill icon="🔥" value={cookingStats.streak} label="streak" color="var(--primary)" />
-          )}
-          {cookingStats.totalCooked > 0 && (
-            <StatPill icon="🍳" value={cookingStats.totalCooked} label="cooked" color="var(--text)" />
-          )}
-          {cookingStats.topMeal && (
-            <StatPill icon="⭐" value={cookingStats.topMeal.name?.substring(0, 10) + '…'} label="top pick" color="var(--text)" />
-          )}
-        </div>
-      )}
-
-      {/* ── Drag indicator overlay ── */}
-      <AnimatePresence>
-        {dragSource && (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-            transition={{ duration: 0.2, ease: [0.32, 0.72, 0, 1] }}
-            style={{
-              position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)',
-              zIndex: 600, pointerEvents: 'none',
-              background: 'var(--card)',
-              borderRadius: 12, padding: '8px 14px',
-              boxShadow: '0 4px 20px rgba(0,0,0,0.15), 0 0 0 1.5px var(--primary)',
-              display: 'flex', alignItems: 'center', gap: 8,
-              maxWidth: 280,
-            }}
-          >
-            <GripVertical size={14} color="var(--primary)" strokeWidth={2.5} />
-            <span style={{
-              fontSize: 13, fontWeight: 700, color: 'var(--text)',
-              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-            }}>
-              {dragSource.meal.name}
-            </span>
-            <span style={{ fontSize: 11, color: 'var(--text-muted)', flexShrink: 0 }}>
-              from {dragSource.dayName}
-            </span>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {/* ── Search Modal ── */}
       <AnimatePresence>
         {searchOpen && (
@@ -1595,7 +1905,107 @@ export default function WeekView({
         )}
       </AnimatePresence>
 
+      {/* ── Pantry-Aware Quick Swap drawer ── */}
+      <AnimatePresence>
+        {!!pantryMatchTargetDate && (
+          <PantryMatchDrawer
+            ranked={pantryMatchRanked}
+            targetDate={pantryMatchTargetDate}
+            hasFridgeData={fridgeInventoryNames.length > 0}
+            onSelect={handlePantryMatchSelect}
+            onSurpriseMe={() => {
+              const dow = pantryMatchTargetDate.getDay() === 0 ? 6 : pantryMatchTargetDate.getDay() - 1;
+              const isTargetCurrentWeek = getMonday(pantryMatchTargetDate).getTime() === currentWeekMonday.getTime();
+              setPantryMatchTargetDate(null);
+              if (isTargetCurrentWeek) onRespin(dow);
+              else handleSpinForDate(pantryMatchTargetDate);
+            }}
+            onClose={() => setPantryMatchTargetDate(null)}
+          />
+        )}
+      </AnimatePresence>
+
       {renderPicker()}
+    </div>
+  );
+}
+
+// ── Weekly Macro & Prep Summary Strip ────────────────────────────────────────
+// Compact read-only chip row under "This week" — quick "what am I in for this
+// week" glance without opening each day. Sparse-data safe: recipes are only
+// required to have prep/cook/total time and nutrition when the source stated
+// them (see recipeSchema's extraction rules — nothing is ever fabricated), so
+// every chip here is independently omitted when its underlying data is absent
+// rather than showing a misleading "0 min" or "0 kcal". Ties into Batch Cook
+// (Feature C) by surfacing leftover nights as their own chip.
+function WeekSummaryStrip({ weekPlan, dietaryPref }) {
+  const stats = useMemo(() => {
+    const planned = (weekPlan || []).filter(m => m && !m._special);
+    if (planned.length === 0) return null;
+
+    const cookNights = planned.filter(m => !m._leftoverOf);
+    const leftoverNights = planned.length - cookNights.length;
+
+    const minutesList = cookNights.map(m => mealTotalMinutes(m)).filter(v => v != null);
+    const avgMinutes = minutesList.length > 0
+      ? Math.round(minutesList.reduce((a, b) => a + b, 0) / minutesList.length)
+      : null;
+
+    const calorieList = cookNights
+      .map(m => parseNutritionNumber(m.nutrition?.calories))
+      .filter(v => v != null);
+    const avgCalories = calorieList.length > 0
+      ? Math.round(calorieList.reduce((a, b) => a + b, 0) / calorieList.length)
+      : null;
+
+    let dietMatch = null;
+    if (dietaryPref?.dietary) {
+      const matches = cookNights.filter(m =>
+        (Array.isArray(m.dietaryTags) ? m.dietaryTags : []).map(t => String(t).toLowerCase()).includes(dietaryPref.dietary)
+      ).length;
+      dietMatch = { matches, total: cookNights.length, label: dietaryPref.dietary };
+    }
+
+    if (avgMinutes == null && avgCalories == null && leftoverNights === 0 && !dietMatch) return null;
+    return { avgMinutes, avgCalories, leftoverNights, dietMatch, minutesCoverage: minutesList.length, calorieCoverage: calorieList.length };
+  }, [weekPlan, dietaryPref]);
+
+  if (!stats) return null;
+
+  const chipStyle = {
+    display: 'inline-flex', alignItems: 'center', gap: 5,
+    padding: '5px 10px', borderRadius: 20,
+    background: 'var(--surface)', border: '1px solid var(--border)',
+    fontSize: 12, fontWeight: 700, color: 'var(--text-light)',
+    whiteSpace: 'nowrap', flexShrink: 0,
+  };
+
+  return (
+    <div style={{
+      display: 'flex', gap: 6, padding: '0 12px 8px',
+      overflowX: 'auto', WebkitOverflowScrolling: 'touch',
+      msOverflowStyle: 'none', scrollbarWidth: 'none',
+    }}>
+      {stats.avgMinutes != null && (
+        <span style={chipStyle} title={`Based on ${stats.minutesCoverage} recipe${stats.minutesCoverage !== 1 ? 's' : ''} with time data`}>
+          ⏱ ~{stats.avgMinutes} min/night
+        </span>
+      )}
+      {stats.avgCalories != null && (
+        <span style={chipStyle} title={`Based on ${stats.calorieCoverage} recipe${stats.calorieCoverage !== 1 ? 's' : ''} with nutrition data`}>
+          🔥 ~{stats.avgCalories} kcal/meal
+        </span>
+      )}
+      {stats.leftoverNights > 0 && (
+        <span style={chipStyle}>
+          🍱 {stats.leftoverNights} leftover night{stats.leftoverNights !== 1 ? 's' : ''}
+        </span>
+      )}
+      {stats.dietMatch && (
+        <span style={chipStyle}>
+          🥗 {stats.dietMatch.matches}/{stats.dietMatch.total} {stats.dietMatch.label}
+        </span>
+      )}
     </div>
   );
 }
@@ -1643,6 +2053,36 @@ function ViewToggle({ viewMode, onChangeMode }) {
   );
 }
 
+// ── Next Week, empty state ── one CTA to auto-fill the whole week, plus a
+// compact day-chip row for anyone who'd rather assign a single day by hand.
+function NextWeekEmptyHero({ weekDates, onAutoPlan, onDayTap }) {
+  return (
+    <div className="wv-next-hero">
+      <motion.button
+        type="button"
+        className="wv-next-hero-cta"
+        onClick={onAutoPlan}
+        whileTap={{ scale: 0.98 }}
+      >
+        ✨ Auto-Plan Next Week
+      </motion.button>
+      <div className="wv-next-hero-chips">
+        {weekDates.map(date => (
+          <button
+            type="button"
+            key={dateKey(date)}
+            className="wv-next-hero-chip"
+            onClick={() => onDayTap(date)}
+          >
+            <span className="wv-next-hero-chip-day">{PREV_WEEK_DAY_NAMES[date.getDay()]}</span>
+            <span className="wv-next-hero-chip-num">{date.getDate()}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const TL_STAGGER_DELAY = 40;
 
 function TimelineWeek({
@@ -1650,8 +2090,8 @@ function TimelineWeek({
   selectMode, selectedDates, onCellClick, onToggleSelect,
   onRespin, onSpinForDate, onToggleLock,
   grocerySelectMode, groceryDays, onGroceryToggle,
-  dragSource, dragOverTarget, onDragStart, onDragOver, onDragEnd, onDrop,
-  onOpenSearch,
+  carry, onPickUp, onPlace, allowDropTarget = false,
+  onOpenSearch, onSwapDrag,
 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '0 12px' }}>
@@ -1667,7 +2107,9 @@ function TimelineWeek({
 
         const isGroceryActive = grocerySelectMode && groceryDays.has(key);
         const isGroceryExcluded = grocerySelectMode && meal && !meal._special && !groceryDays.has(key);
-        const isDragTarget = dragOverTarget === key && dragSource && dateKey(dragSource.date) !== key;
+        const isCarrySource = !!carry && carry.key === key;
+        const isEligibleTarget = !!carry && allowDropTarget && !isCarrySource && !isPast;
+        const isCarryDim = !!carry && !isCarrySource && !isEligibleTarget;
 
         const classes = ['wv-tl-card'];
         if (isToday) classes.push('tl-today');
@@ -1676,47 +2118,60 @@ function TimelineWeek({
         if (isSelected) classes.push('tl-selected');
         if (isGroceryActive) classes.push('tl-grocery-active');
         if (isGroceryExcluded) classes.push('tl-grocery-excluded');
-        if (isDragTarget) classes.push('tl-drop-target');
+        if (isCarrySource) classes.push('tl-carry-source');
+        if (isEligibleTarget) classes.push('tl-drop-target');
+        if (isCarryDim) classes.push('tl-carry-dim');
 
         // Stable key for tumbler: when meal changes on spin, AnimatePresence
         // triggers exit→enter with a blur-slide spring.
         const mealKey = meal ? (meal.id || meal.name || 'meal') : 'empty';
+
+        const handleCardClick = () => {
+          if (carry) {
+            if (isCarrySource) { onPickUp?.(date, meal); return; } // tap the lifted card to put it back
+            if (isEligibleTarget) { onPlace?.(date); return; }
+            return; // inert everywhere else while carrying — no accidental drops
+          }
+          if (grocerySelectMode && meal && !meal._special) { onGroceryToggle(key); return; }
+          onCellClick(date);
+        };
 
         return (
           <motion.div
             key={key}
             data-datekey={key}
             className={classes.join(' ')}
-            onClick={() => grocerySelectMode && meal && !meal._special ? onGroceryToggle(key) : onCellClick(date)}
+            onClick={handleCardClick}
             initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: isPast && !isToday ? 0.55 : 1, y: 0 }}
+            animate={{ opacity: isCarryDim ? 0.4 : (isPast && !isToday ? 0.55 : 1), y: 0 }}
             transition={{ duration: 0.3, delay: idx * TL_STAGGER_DELAY / 1000, ease: [0.23, 1, 0.32, 1] }}
-            onDragOver={(e) => { e.preventDefault(); onDragOver?.(key); }}
-            onDrop={(e) => { e.preventDefault(); onDrop?.(date); }}
           >
-            {/* ── Drag grip — visible on meal cards (works from locked too) ── */}
-            {meal && !isSpecial && !selectMode && !grocerySelectMode && !isPast && (
-              <div
-                className="wv-tl-grip"
-                draggable
-                onDragStart={(e) => {
-                  e.stopPropagation();
-                  e.dataTransfer.effectAllowed = 'copy';
-                  // Set a transparent drag image
-                  const ghost = document.createElement('div');
-                  ghost.style.cssText = 'position:absolute;top:-9999px;';
-                  document.body.appendChild(ghost);
-                  e.dataTransfer.setDragImage(ghost, 0, 0);
-                  setTimeout(() => document.body.removeChild(ghost), 0);
-                  onDragStart?.(date, meal);
+            {/* ── Pick-up grip — tap to carry this meal, tap again to put it back.
+                Works identically for touch and mouse (no native HTML5 DnD, which
+                iOS Safari ignores on touch). Available on past meals too, since
+                Previous Weeks is a browsing source, not just current/next week. ── */}
+            {meal && !isSpecial && !selectMode && !grocerySelectMode && (
+              <motion.button
+                type="button"
+                className={`wv-tl-grip${isCarrySource ? ' active' : ''}`}
+                onClick={(e) => { e.stopPropagation(); onPickUp?.(date, meal); }}
+                aria-pressed={isCarrySource}
+                aria-label={isCarrySource ? 'Put this meal back' : 'Pick up to copy to another day, or drag to swap with it'}
+                title={isCarrySource ? 'Put back' : 'Tap to pick up, or drag onto another day to swap'}
+                style={{ touchAction: (!carry && onSwapDrag) ? 'none' : undefined, position: 'relative' }}
+                drag={!carry && !!onSwapDrag}
+                dragSnapToOrigin
+                dragElastic={0.5}
+                dragMomentum={false}
+                whileDrag={{ scale: 1.4, zIndex: 50, boxShadow: '0 6px 18px rgba(0,0,0,0.35)' }}
+                onDragEnd={(e, info) => {
+                  const dropEl = document.elementFromPoint(info.point.x, info.point.y);
+                  const cell = dropEl?.closest('[data-datekey]');
+                  if (cell?.dataset?.datekey) onSwapDrag?.(date, meal, cell.dataset.datekey);
                 }}
-                onDragEnd={() => onDragEnd?.()}
-                onTouchStart={(e) => { e.stopPropagation(); }}
-                aria-label="Drag to copy meal"
-                title="Drag to copy to another day"
               >
                 <GripVertical size={16} strokeWidth={2.5} />
-              </div>
+              </motion.button>
             )}
 
             <div className="wv-tl-dow">
@@ -1776,7 +2231,11 @@ function TimelineWeek({
                         {meal.name}
                       </div>
                       <div className="wv-tl-meta">
-                        {isSpecial ? 'Special day' : `${meal.ingredients?.length || 0} ingredients${meal.category ? ` · ${meal.category}` : ''}`}
+                        {isSpecial
+                          ? 'Special day'
+                          : meal._leftoverOf
+                            ? '🍱 Leftovers — no shopping needed'
+                            : `${meal.ingredients?.length || 0} ingredients${meal.category ? ` · ${meal.category}` : ''}${meal._leftoverChainNext ? ' · 🍱 batch cooked' : ''}`}
                       </div>
                     </>
                   ) : (
@@ -1788,65 +2247,79 @@ function TimelineWeek({
               </AnimatePresence>
             </div>
 
-            {/* ── Per-card lock toggle ── */}
-            {!selectMode && !isPast && !grocerySelectMode && isCurrent && meal && !isSpecial && (
-              <motion.button
-                className={`wv-tl-lock-btn${isLocked ? ' locked' : ''}`}
-                onClick={(e) => { e.stopPropagation(); onToggleLock?.(dow); }}
-                whileTap={{ scale: 0.8 }}
-                animate={{
-                  scale: isLocked ? [1, 1.15, 1] : 1,
-                  color: isLocked ? 'var(--primary)' : 'var(--text-muted)',
-                }}
-                transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
-                aria-label={isLocked ? 'Unlock day' : 'Lock day'}
-                title={isLocked ? "Locked — won't change on Spin" : 'Lock to keep this meal'}
-              >
-                {isLocked
-                  ? <LockKeyhole size={16} strokeWidth={2.5} />
-                  : <LockKeyholeOpen size={16} strokeWidth={2} />
-                }
-              </motion.button>
+            {/* ── Carry-mode action slot: replaces lock/search/menu while a meal is in hand ── */}
+            {carry && isCarrySource && (
+              <span className="wv-carry-source-badge">Picked up</span>
             )}
-
-            {/* ── Search icon — quick access to find any meal ── */}
-            {!selectMode && !isPast && !grocerySelectMode && !dragSource && (
+            {carry && isEligibleTarget && (
               <button
-                className="wv-tl-action wv-tl-search-btn"
-                onClick={(e) => { e.stopPropagation(); onOpenSearch?.(date); }}
-                aria-label="Search meals"
-                title="Search & assign a meal"
+                type="button"
+                className="wv-carry-place-btn"
+                onClick={(e) => { e.stopPropagation(); onPlace?.(date); }}
               >
-                <Search size={15} strokeWidth={2.5} />
+                Place here
               </button>
             )}
 
-            {!selectMode && !isPast && !grocerySelectMode && (
-              meal ? (
-                <button
-                  className="wv-tl-action"
-                  onClick={(e) => { e.stopPropagation(); onCellClick(date); }}
-                  aria-label="Day options"
-                >
-                  <MoreVertical size={18} strokeWidth={2} />
-                </button>
-              ) : (
-                <button
-                  className="wv-tl-spin-chip"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (isCurrent) {
-                      onRespin(dow);
-                    } else if (date >= today) {
-                      onSpinForDate?.(date);
-                    } else {
-                      onCellClick(date);
+            {/* ── Unified action group: Lock / Search / Kebab share one right-aligned
+                row of real 36×36px touch targets instead of loose siblings. ── */}
+            {!carry && !selectMode && !isPast && !grocerySelectMode && (
+              <div className="wv-tl-actions-group">
+                {isCurrent && meal && !isSpecial && (
+                  <motion.button
+                    className={`wv-tl-lock-btn${isLocked ? ' locked' : ''}`}
+                    onClick={(e) => { e.stopPropagation(); onToggleLock?.(dow); }}
+                    whileTap={{ scale: 0.8 }}
+                    animate={{
+                      scale: isLocked ? [1, 1.15, 1] : 1,
+                      color: isLocked ? 'var(--primary)' : 'var(--text-muted)',
+                    }}
+                    transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
+                    aria-label={isLocked ? 'Unlock day' : 'Lock day'}
+                    title={isLocked ? "Locked — won't change on Spin" : 'Lock to keep this meal'}
+                  >
+                    {isLocked
+                      ? <LockKeyhole size={16} strokeWidth={2.5} />
+                      : <LockKeyholeOpen size={16} strokeWidth={2} />
                     }
-                  }}
+                  </motion.button>
+                )}
+
+                <button
+                  className="wv-tl-action wv-tl-search-btn"
+                  onClick={(e) => { e.stopPropagation(); onOpenSearch?.(date); }}
+                  aria-label="Search meals"
+                  title="Search & assign a meal"
                 >
-                  <RefreshCw size={12} strokeWidth={2.5} /> Spin
+                  <Search size={15} strokeWidth={2.5} />
                 </button>
-              )
+
+                {meal ? (
+                  <button
+                    className="wv-tl-action"
+                    onClick={(e) => { e.stopPropagation(); onCellClick(date); }}
+                    aria-label="Day options"
+                  >
+                    <MoreVertical size={18} strokeWidth={2} />
+                  </button>
+                ) : (
+                  <button
+                    className="wv-tl-spin-chip"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (isCurrent) {
+                        onRespin(dow);
+                      } else if (date >= today) {
+                        onSpinForDate?.(date);
+                      } else {
+                        onCellClick(date);
+                      }
+                    }}
+                  >
+                    <RefreshCw size={12} strokeWidth={2.5} /> Spin
+                  </button>
+                )}
+              </div>
             )}
 
             {selectMode && !isPast && (
@@ -1867,8 +2340,111 @@ function TimelineWeek({
   );
 }
 
+// ── Previous Weeks — quick reference + pick-up source for the last 6 weeks ──
+// Sits above "This week" so scrolling *up* through the Plan page is literally
+// scrolling back through history — cap at 6 weeks; anything older belongs in
+// Month view, which already covers unlimited history.
+const PREV_WEEKS_BACK = 6;
+const PREV_WEEK_DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+
+function PreviousWeeksSection({
+  currentWeekMonday, weekHistory, today, getMealForDate,
+  expanded, onToggleExpanded, carry, onPickUp, onOpenMonthView,
+}) {
+  const weeks = useMemo(() => {
+    const list = [];
+    for (let i = PREV_WEEKS_BACK; i >= 1; i--) {
+      const monday = addDays(currentWeekMonday, -7 * i);
+      const dates = [0,1,2,3,4,5,6].map(d => addDays(monday, d));
+      const plannedCount = dates.reduce((n, d) => n + (getMealForDate(d).meal ? 1 : 0), 0);
+      if (plannedCount === 0) continue; // nothing recorded — skip, don't clutter
+      list.push({ monday, dates, plannedCount });
+    }
+    return list;
+  }, [currentWeekMonday, weekHistory, getMealForDate]);
+
+  if (weeks.length === 0) return null;
+
+  const noop = () => {};
+
+  return (
+    <div className="wv-prev-weeks">
+      <div
+        className="wv-tl-next-collapsed wv-prev-toggle"
+        onClick={onToggleExpanded}
+      >
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-light)' }}>
+            Previous weeks
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
+            {weeks.length} week{weeks.length !== 1 ? 's' : ''} to glance back at · tap a meal's grip to reuse it
+          </div>
+        </div>
+        <motion.div
+          animate={{ rotate: expanded ? 180 : 0 }}
+          transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+        >
+          <ChevronDown size={18} color="var(--text-muted)" strokeWidth={2} />
+        </motion.div>
+      </div>
+
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
+            style={{ overflow: 'hidden' }}
+          >
+            {weeks.map(({ monday, dates, plannedCount }) => (
+              <div key={monday.getTime()} style={{ marginBottom: 10 }}>
+                <div className="wv-tl-section-header" style={{ padding: '8px 16px 4px' }}>
+                  <span className="wv-tl-section-title" style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 700 }}>
+                    {dates[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {dates[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </span>
+                  <span className="wv-tl-section-badge" style={{ color: 'var(--text-muted)' }}>
+                    {plannedCount}/7 planned
+                  </span>
+                </div>
+                <TimelineWeek
+                  weekDates={dates}
+                  today={today}
+                  getMealForDate={getMealForDate}
+                  currentWeekMonday={currentWeekMonday}
+                  selectMode={false}
+                  selectedDates={EMPTY_SET}
+                  onCellClick={noop}
+                  onToggleSelect={noop}
+                  onRespin={noop}
+                  onSpinForDate={noop}
+                  onToggleLock={noop}
+                  grocerySelectMode={false}
+                  groceryDays={EMPTY_SET}
+                  onGroceryToggle={noop}
+                  carry={carry}
+                  onPickUp={onPickUp}
+                  onPlace={noop}
+                  allowDropTarget={false}
+                  onOpenSearch={noop}
+                />
+              </div>
+            ))}
+            <button type="button" className="wv-prev-month-link" onClick={onOpenMonthView}>
+              Looking further back? Browse Month view →
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+const EMPTY_SET = new Set();
+
 function DetailPanel({ show, activeDate, today, getMealForDate, isCurrentWeek, onClose, onToggleLock,
-  onViewDetail, onRespin, onSpinForDate, onOpenPicker, onClearDay }) {
+  onViewDetail, onRespin, onSpinForDate, onOpenPantryMatch, onToggleBatchCook, onOpenPicker, onClearDay }) {
   const dragControls = useDragControls();
 
   const handleSheetDragEnd = useCallback((_e, info) => {
@@ -1995,6 +2571,14 @@ function DetailPanel({ show, activeDate, today, getMealForDate, isCurrentWeek, o
                   >
                     <RefreshCw size={15} strokeWidth={2.5} /> Spin a Meal
                   </button>
+                  {onOpenPantryMatch && (
+                    <button
+                      onClick={onOpenPantryMatch}
+                      style={{ ...OUTLINE_BTN, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                    >
+                      🎯 Pantry Picks — use what you have
+                    </button>
+                  )}
                   <button
                     onClick={onOpenPicker}
                     style={{ ...OUTLINE_BTN, width: '100%' }}
@@ -2041,7 +2625,7 @@ function DetailPanel({ show, activeDate, today, getMealForDate, isCurrentWeek, o
                       borderRadius: 'var(--sh-radius-sm)',
                       padding: '8px 12px',
                     }}>
-                      <h4 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: '#fff', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <h4 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: '#fff', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textTransform: 'capitalize' }}>
                         {meal.name}
                       </h4>
                       {meal._locked && (
@@ -2057,7 +2641,7 @@ function DetailPanel({ show, activeDate, today, getMealForDate, isCurrentWeek, o
                 <div style={{ padding: '12px 14px' }}>
                   {!meal.imageUrl && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <h4 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <h4 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--text)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textTransform: 'capitalize' }}>
                         {meal.name}
                       </h4>
                       {meal._locked && (
@@ -2109,6 +2693,24 @@ function DetailPanel({ show, activeDate, today, getMealForDate, isCurrentWeek, o
                       <button onClick={onOpenPicker} style={OUTLINE_BTN}>
                         ✏️ Change
                       </button>
+                      {onOpenPantryMatch && (
+                        <button onClick={onOpenPantryMatch} style={{ ...OUTLINE_BTN, gridColumn: '1 / -1' }}>
+                          🎯 Swap for a Pantry Pick
+                        </button>
+                      )}
+                      {onToggleBatchCook && dow < 6 && (
+                        <button
+                          onClick={() => onToggleBatchCook(dow)}
+                          style={{
+                            ...OUTLINE_BTN, gridColumn: '1 / -1',
+                            background: meal._leftoverChainNext ? 'rgba(230,81,0,0.1)' : undefined,
+                            color: meal._leftoverChainNext ? 'var(--primary)' : undefined,
+                            borderColor: meal._leftoverChainNext ? 'var(--primary)' : undefined,
+                          }}
+                        >
+                          {meal._leftoverChainNext ? '🍱 Leftovers Queued — tap to undo' : '🍱 Cook 2x — Make Tomorrow Leftovers'}
+                        </button>
+                      )}
                       <button onClick={() => onClearDay(dow)}
                         style={{ ...OUTLINE_BTN, gridColumn: '1 / -1', color: 'var(--danger)', borderColor: 'var(--danger)' }}>
                         ✕ Remove Meal
@@ -2131,6 +2733,11 @@ function DetailPanel({ show, activeDate, today, getMealForDate, isCurrentWeek, o
                       <button onClick={onOpenPicker} style={OUTLINE_BTN}>
                         ✏️ Change
                       </button>
+                      {onOpenPantryMatch && (
+                        <button onClick={onOpenPantryMatch} style={{ ...OUTLINE_BTN, gridColumn: '1 / -1' }}>
+                          🎯 Swap for a Pantry Pick
+                        </button>
+                      )}
                       <button onClick={() => onClearDay(dow)}
                         style={{ ...OUTLINE_BTN, gridColumn: '1 / -1', color: 'var(--danger)', borderColor: 'var(--danger)' }}>
                         ✕ Remove Meal
@@ -2348,15 +2955,128 @@ function SearchModal({ meals, allMeals, searchQuery, onSearchChange, searchCuisi
   );
 }
 
-function StatPill({ icon, value, label, color }) {
+// ── Pantry-Aware Quick Swap drawer ───────────────────────────────────────────
+// Opened from "Pantry Picks" in the day sheet (DetailPanel) — surfaces The
+// Rotation ranked by how much of each recipe is already covered by what's in
+// the fridge/pantry (same fridgeMatchRatio scorer the "Use Fridge Stock" spin
+// constraint already uses), so the top of the list is "cook this without a
+// grocery run" instead of a blind random pick. "Surprise Me" at the top keeps
+// the old one-tap random-spin behavior available for anyone who just wants that.
+function PantryMatchDrawer({ ranked, targetDate, hasFridgeData, onSelect, onSurpriseMe, onClose }) {
+  const dayLabel = targetDate
+    ? DAY_FULL[targetDate.getDay() === 0 ? 6 : targetDate.getDay() - 1]
+    : '';
+  const dateLabel = targetDate
+    ? targetDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : '';
+
   return (
-    <div style={{ textAlign: 'center', minWidth: 48 }}>
-      <div style={{ fontSize: 20, marginBottom: 2 }}>{icon}</div>
-      <div style={{ fontSize: 15, fontWeight: 800, color }}>{value}</div>
-      <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>
-        {label}
-      </div>
-    </div>
+    <>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.15 }}
+        onClick={onClose}
+        style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)',
+          zIndex: 500, WebkitTapHighlightColor: 'transparent',
+        }}
+      />
+      <motion.div
+        initial={{ y: '100%' }}
+        animate={{ y: 0 }}
+        exit={{ y: '100%' }}
+        transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
+        style={{
+          position: 'fixed', bottom: 0, left: 0, right: 0,
+          maxWidth: 600, margin: '0 auto',
+          background: 'var(--card)',
+          borderRadius: '20px 20px 0 0',
+          boxShadow: '0 -8px 40px rgba(0,0,0,0.18)',
+          zIndex: 510,
+          maxHeight: '88vh',
+          display: 'flex', flexDirection: 'column',
+          overflow: 'hidden',
+        }}
+      >
+        <div style={{
+          width: 36, height: 4, borderRadius: 2, background: 'var(--border)',
+          margin: '10px auto 0', flexShrink: 0,
+        }} />
+
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '12px 16px 8px', flexShrink: 0,
+        }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: 'var(--text)' }}>
+              🎯 Pantry Picks for {dayLabel}
+            </h3>
+            <p style={{ margin: '2px 0 0', fontSize: 12, color: 'var(--text-muted)' }}>
+              {dateLabel} · {hasFridgeData ? 'Ranked by what\'s already in your pantry' : 'Add pantry items for better matches'}
+            </p>
+          </div>
+          <button onClick={onClose} style={{
+            width: 32, height: 32, borderRadius: '50%', border: 'none',
+            background: 'var(--surface)', color: 'var(--text-light)',
+            fontSize: 16, cursor: 'pointer', display: 'flex', alignItems: 'center',
+            justifyContent: 'center', flexShrink: 0,
+          }}>✕</button>
+        </div>
+
+        <div style={{ padding: '0 16px 10px', flexShrink: 0 }}>
+          <button
+            onClick={onSurpriseMe}
+            style={{ ...OUTLINE_BTN, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+          >
+            <RefreshCw size={14} strokeWidth={2.5} /> Surprise Me (random spin)
+          </button>
+        </div>
+
+        <div style={{
+          flex: 1, overflowY: 'auto',
+          WebkitOverflowScrolling: 'touch',
+        }}>
+          {ranked.length === 0 ? (
+            <div style={{
+              padding: '32px 16px', textAlign: 'center',
+              color: 'var(--text-muted)', fontSize: 14,
+            }}>
+              Add meals to The Rotation to see pantry picks
+            </div>
+          ) : (
+            ranked.map(({ meal, score }) => (
+              <div
+                key={meal.id}
+                className="pk-item"
+                onClick={() => onSelect(meal)}
+              >
+                <MealImage src={meal.imageUrl} alt="" className="pk-img" fallbackClass="pk-img-ph" />
+                <div className="pk-info">
+                  <span className="pk-name">{meal.name}</span>
+                  <span className="pk-meta">
+                    {meal.ingredients?.length || 0} ingredients
+                    {meal.category ? ` · ${meal.category}` : ''}
+                  </span>
+                </div>
+                {score > 0 && (
+                  <span style={{
+                    flexShrink: 0, fontSize: 11, fontWeight: 700,
+                    padding: '3px 8px', borderRadius: 20,
+                    background: score >= 0.7 ? 'rgba(16,185,129,0.14)' : 'var(--surface)',
+                    color: score >= 0.7 ? 'var(--success, #10b981)' : 'var(--text-muted)',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {Math.round(score * 100)}% in pantry
+                  </span>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      </motion.div>
+    </>
   );
 }
 
