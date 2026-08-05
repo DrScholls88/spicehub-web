@@ -1,6 +1,6 @@
 import Dexie from 'dexie';
 import { buildStructuredFields } from './recipeParser';
-import { upgradeRecipeIngredients } from './recipeSchema';
+import { upgradeRecipeIngredients, cleanImportedTitle, normalizeMealCategory } from './recipeSchema';
 import { categorizeBottle } from './lib/barMatch';
 
 const db = new Dexie('SpiceHubDB');
@@ -311,6 +311,24 @@ db.version(23).stores({
 // scoring treats it as "known" (priority 0-1 instead of 2-3). Additive only.
 db.version(24).stores({
   learnedDomains: 'domain',
+});
+
+// v25: One-time category-TYPE normalization migration (Meal Library audit,
+// 2026-08-04) — collapses spelling/synonym variants ("Dinner" -> "Dinners")
+// on every existing meal so the library's collapsible sections stop
+// splintering. Uses the same normalizeMealCategory() that saveMealDeduped
+// now applies going forward, so old and new data converge on one vocabulary.
+// No index/schema change — meals is re-declared unchanged only so the
+// upgrade callback has a table to migrate, same pattern as v10/v14.
+db.version(25).stores({
+  meals: '++id, name, status, sourceHash, jobId, ingredients_text, *tags, profileId',
+}).upgrade(tx => {
+  return tx.table('meals').toCollection().modify(meal => {
+    if (meal.category) {
+      const normalized = normalizeMealCategory(meal.category);
+      if (normalized !== meal.category) meal.category = normalized;
+    }
+  });
 });
 
 export default db;
@@ -901,7 +919,7 @@ export async function queuePhotoUpgrade(recipeData, scanPageDataUrls, itemType =
   return { queueId: id };
 }
 
-function mergeRecipeData(existing, incoming) {
+export function mergeRecipeData(existing, incoming) {
   return {
     ...existing,
     // Prefer the version with more ingredients
@@ -915,6 +933,94 @@ function mergeRecipeData(existing, incoming) {
     link: existing.link || incoming.link,
     updatedAt: new Date().toISOString(),
   };
+}
+
+// ── Save-time duplicate detection ("Ingredient Dedup Bridge" sibling: this is
+// the *recipe*-level dedup, not the ingredient-level one in GroceryList) ──────
+// `sourceHash` has been an indexed column on `meals` since v9 ("Unified Import
+// Engine — Ghost Recipe status + sourceHash + jobId") but nothing ever actually
+// computed/stored a value into it — every live import (App.jsx's handleImport,
+// the 'week'/'library' destinations) called db.meals.put() directly with no
+// duplicate check at all, which is the real cause of e.g. three separate saved
+// copies of the same imported recipe. This normalizes the source URL (strip
+// tracking params/fragment/trailing slash) into that dormant column and uses
+// it — plus a normalized-title fallback for recipes with no link — as the
+// match key. Both fields are already real Dexie indexes, so the lookups here
+// are fast, no schema migration required.
+function normalizeSourceForHash(url = '') {
+  if (!url) return '';
+  try {
+    const u = new URL(url);
+    u.hash = '';
+    // Strip common tracking params so the same post shared via different
+    // referral links still hashes identically.
+    ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'igshid', 'igsh', 'fbclid'].forEach(p => u.searchParams.delete(p));
+    let out = `${u.hostname.replace(/^www\./, '')}${u.pathname}`.toLowerCase();
+    out = out.replace(/\/+$/, '');
+    return out;
+  } catch {
+    return String(url).trim().toLowerCase();
+  }
+}
+
+/**
+ * saveMealDeduped — Single choke point for saving a freshly-imported recipe
+ * (or drink) that actually checks for an existing match before creating a
+ * new row. Rows that already carry an `id` (ghost/optimistic-path rows, or
+ * an explicit edit) skip dedup entirely and just upsert — they're already a
+ * tracked record, not a duplicate risk.
+ * @param {object} recipeData
+ * @param {{ table?: 'meals'|'drinks' }} [opts]
+ * @returns {Promise<{ id: number, merged: boolean }>}
+ */
+export async function saveMealDeduped(recipeData, { table = 'meals' } = {}) {
+  const targetTable = table === 'drinks' ? db.drinks : db.meals;
+
+  if (recipeData.id) {
+    await targetTable.put(recipeData);
+    return { id: recipeData.id, merged: false };
+  }
+
+  const cleanedName = cleanImportedTitle(recipeData.name || '') || recipeData.name;
+  const sourceUrl = recipeData.link || recipeData.sourceUrl || '';
+  const sourceHash = normalizeSourceForHash(sourceUrl);
+  // Category-TYPE normalization (Dinner -> Dinners etc.) only applies to
+  // meals — drinks use a different categorization concept entirely.
+  const normalizedCategory = table !== 'drinks' && recipeData.category
+    ? normalizeMealCategory(recipeData.category)
+    : recipeData.category;
+  const candidate = {
+    ...recipeData,
+    name: cleanedName,
+    category: normalizedCategory,
+    sourceHash: sourceHash || recipeData.sourceHash,
+  };
+
+  let existing = null;
+  if (sourceHash) {
+    existing = await targetTable.where('sourceHash').equals(sourceHash).first();
+  }
+  if (!existing && cleanedName) {
+    existing = await targetTable.where('name').equalsIgnoreCase(cleanedName).first();
+  }
+
+  if (existing) {
+    const merged = {
+      ...mergeRecipeData(existing, candidate),
+      _importCount: (existing._importCount || 1) + 1,
+      _lastImportedAt: new Date().toISOString(),
+    };
+    await targetTable.update(existing.id, merged);
+    return { id: existing.id, merged: true };
+  }
+
+  const stamped = {
+    ...candidate,
+    createdAt: candidate.createdAt || new Date().toISOString(),
+    _importCount: 1,
+  };
+  const newId = await targetTable.add(stamped);
+  return { id: newId, merged: false };
 }
 
 export async function processImportQueue() {

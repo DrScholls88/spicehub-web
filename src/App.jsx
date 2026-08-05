@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { AnimatePresence } from 'framer-motion';
-import db, { importSeedMeals, removeStarterKitMeals, logCook, logMix, saveGroceryList, loadGroceryList, getStoreMemory, getCookingLog, toggleRotation, addBatchQueueItems, getBatchQueueItems, updateBatchQueueItem, getLearnedAliases, moveMealToBar, moveDrinkToMeals, getCustomDayTags, addCustomDayTag, deleteCustomDayTag } from './db';
+import db, { importSeedMeals, removeStarterKitMeals, logCook, logMix, saveGroceryList, loadGroceryList, getStoreMemory, getCookingLog, toggleRotation, addBatchQueueItems, getBatchQueueItems, updateBatchQueueItem, getLearnedAliases, moveMealToBar, moveDrinkToMeals, getCustomDayTags, addCustomDayTag, deleteCustomDayTag, saveMealDeduped } from './db';
 import { buildStarterKitMeals, STARTER_KIT_SEED_FLAG } from './data/starterKitMeals';
 import { checkStorageQuota, checkAndRecommendCleanup, requestPersistentStorage, isPersistentStorageGranted } from './storageManager';
 import { initializeBackgroundSync } from './backgroundSync';
@@ -1341,7 +1341,7 @@ useEffect(() => {
       try {
         for (const r of imported) {
           if (r.id && !r.name && !r.ingredients) continue;
-          await db.meals.put(r);
+          await saveMealDeduped(r, { table: 'meals' });
         }
         await loadMeals();
         // Place first real recipe into the first empty slot
@@ -1383,8 +1383,8 @@ useEffect(() => {
         if (r.id && !r.name && !r.ingredients) continue;
         const isDrinkItem = target === 'drinks' || target === 'bar' ||
           (target !== 'meals' && (r.itemType === 'drink' || r._type === 'drink' || r.type === 'drink'));
-        if (isDrinkItem) { await db.drinks.put(r); anyDrink = true; }
-        else { await db.meals.put(r); anyMeal = true; }
+        if (isDrinkItem) { await saveMealDeduped(r, { table: 'drinks' }); anyDrink = true; }
+        else { await saveMealDeduped(r, { table: 'meals' }); anyMeal = true; }
       }
     } catch (err) {
       console.error('[handleImport] DB write failed:', err);
@@ -1582,7 +1582,7 @@ useEffect(() => {
                 className="btn-small"
                 onClick={() => (window.__spicehubApplyUpdate ? window.__spicehubApplyUpdate() : window.location.reload())}
               >Refresh</button>
-              <button className="btn-icon small" onClick={() => setUpdateReady(false)} aria-label="Dismiss update prompt">✕</button>
+              <button className="btn-icon small" onClick={() => { setUpdateReady(false); window.dispatchEvent(new CustomEvent('spicehub:update-dismissed')); }} aria-label="Dismiss update prompt">✕</button>
             </div>
           </div>
         </div>
@@ -1791,6 +1791,7 @@ useEffect(() => {
               if (isDrink(item)) setEditDrink(item); else setEditMeal(item);
             }}
             isDrink={isDrink(detailItem)}
+            fridgeInventory={fridgeInventory}
           />
         )}
       </AnimatePresence>
@@ -2054,7 +2055,11 @@ useEffect(() => {
                       // updatefound flow (main.jsx) then surfaces the Refresh
                       // prompt. Only claim "latest" when there's genuinely no new
                       // worker — no more fixed-timer false success.
-                      if (reg.installing || reg.waiting) {
+                      if (reg.waiting) {
+                        // Waiting worker already ready — surface the banner directly
+                        setUpdateReady(true);
+                        showToast('New version ready — tap Refresh above', 'success', 3000);
+                      } else if (reg.installing) {
                         showToast('New version found — installing…', 'success', 3000);
                       } else {
                         showToast(`You're on the latest version (build #${__SPICEHUB_BUILD__})`, 'success', 3000);

@@ -97,9 +97,38 @@ if ('serviceWorker' in navigator) {
       // "just reopen the app" is now enough to pick up an update. ──────────
       const checkForUpdate = () => { registration.update().catch(() => {}); };
       document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') checkForUpdate();
+        if (document.visibilityState === 'visible') {
+          checkForUpdate();
+          // Re-surface prompt if user dismissed but waiting worker still exists
+          if (registration.waiting && navigator.serviceWorker.controller) {
+            announceUpdateReady();
+          }
+        }
       });
       window.addEventListener('focus', checkForUpdate);
+
+      // iOS bfcache / Home Screen resume — visibilitychange sometimes
+      // doesn't fire on iOS standalone, but pageshow always does.
+      window.addEventListener('pageshow', () => {
+        checkForUpdate();
+        if (registration.waiting && navigator.serviceWorker.controller) {
+          announceUpdateReady();
+        }
+      });
+
+      // Periodic check while in foreground (every 60 min) — catches deploys
+      // that happen while the user keeps the app open for extended sessions.
+      setInterval(() => {
+        if (document.visibilityState === 'visible') checkForUpdate();
+      }, 60 * 60 * 1000);
+
+      // ── Handle a waiting worker that already exists at startup ──────────
+      // If a previous visit installed a new SW but it wasn't applied
+      // (e.g. user closed the app before tapping Refresh, or the
+      // updatefound event was missed), announce immediately.
+      if (registration.waiting && navigator.serviceWorker.controller) {
+        announceUpdateReady();
+      }
 
       // ── Detect a freshly-installed build ────────────────────────────────
       // sw.js calls skipWaiting()+clientsClaim(), so a new worker jumps
@@ -149,6 +178,11 @@ if ('serviceWorker' in navigator) {
       window.dispatchEvent(new CustomEvent('spicehub:update-ready'));
     }
   }
+  // When the user dismisses the banner, allow re-prompt on next
+  // visibilitychange/pageshow if a waiting worker still exists.
+  window.addEventListener('spicehub:update-dismissed', () => {
+    updateAnnounced = false;
+  });
 
   // Safety net for control changes we didn't originate (e.g. another tab
   // installed a new SW, or a first install claiming this page): only auto-

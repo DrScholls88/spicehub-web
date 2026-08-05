@@ -14,6 +14,7 @@ import { buildPantryMatchIndex } from '../lib/pantryMatch.js';
 import SharePickerSheet from './SharePickerSheet';
 import SharedWithYouSection from './SharedWithYouSection';
 import { isFriendsEnabled } from '../lib/supabaseClient';
+import { MEAL_TYPE_CATEGORIES, DIETARY_TAGS, CUISINE } from '../recipeSchema';
 
 // I-5: a recipe is "improvable" when it was imported with a low-confidence /
 // needs-review flag AND we kept its source caption (so we can re-run extraction
@@ -76,7 +77,9 @@ function CardImage({ src, alt, className, phClass }) {
 
 // ── Meal "Type" — the structural role of a meal (single-select, one per meal).
 // Shown as section grouping headers in the gallery, not as filter chips.
-const TYPE_OPTIONS = ['Dinners', 'Breakfasts', 'Lunches', 'Desserts', 'Sides', 'Tailgate', 'Snacks'];
+// Sourced from recipeSchema.js so save-time normalization (normalizeMealCategory
+// in db.js's saveMealDeduped) and this display grouping never drift apart.
+const TYPE_OPTIONS = MEAL_TYPE_CATEGORIES;
 // Legacy alias for external consumers (AddEditMeal, etc.)
 const CATEGORY_OPTIONS = TYPE_OPTIONS;
 
@@ -172,6 +175,12 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [userTags, setUserTags] = useState([]);
   const [activeTags, setActiveTags] = useState([]); // active tag names for filtering
+  // L4: Filters(n) sheet — Time/Diet/Cuisine, additive to search + view tabs +
+  // user tags above (those already exist and aren't being replaced).
+  const [showFilterSheet, setShowFilterSheet] = useState(false);
+  const [filterTime, setFilterTime] = useState(null); // null | 'under30' | '30to60' | 'over60'
+  const [filterDiet, setFilterDiet] = useState([]); // subset of DIETARY_TAGS
+  const [filterCuisine, setFilterCuisine] = useState([]); // subset of CUISINE (lowercased)
   const [collapsedSections, setCollapsedSections] = useState({}); // { category: true }
   const [showTagManager, setShowTagManager] = useState(false);
   const [showTagPicker, setShowTagPicker] = useState(null); // meal id for single-meal tag picker
@@ -254,8 +263,50 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
     // Tag filter: if any tags are active, meal must have ALL of them
     const matchTags = activeTags.length === 0
       || activeTags.every(t => (m.tags || []).includes(t));
-    return matchSearch && matchCat && matchTags;
+    // L4 Filters(n) sheet: Time / Diet / Cuisine — additive (AND) with everything above
+    const matchTime = !filterTime || (() => {
+      const mins = getTotalMinutes(m);
+      if (mins == null) return false;
+      if (filterTime === 'under30') return mins <= 30;
+      if (filterTime === '30to60') return mins > 30 && mins <= 60;
+      if (filterTime === 'over60') return mins > 60;
+      return true;
+    })();
+    const matchDiet = filterDiet.length === 0
+      || filterDiet.every(d => (m.dietaryTags || []).map(x => (x || '').toLowerCase()).includes(d));
+    const matchCuisine = filterCuisine.length === 0
+      || filterCuisine.includes((m.cuisine || '').toLowerCase());
+    return matchSearch && matchCat && matchTags && matchTime && matchDiet && matchCuisine;
   });
+
+  const activeFilterCount = (filterTime ? 1 : 0) + filterDiet.length + filterCuisine.length;
+
+  // Cuisines actually present among current meals — avoids offering an empty
+  // picker full of options nobody has any recipes for.
+  const availableCuisines = useMemo(() => {
+    const set = new Set();
+    for (const m of meals) {
+      const c = (m.cuisine || '').trim();
+      if (c) set.add(c);
+    }
+    return CUISINE.filter(c => set.has(c));
+  }, [meals]);
+
+  const toggleFilterDiet = useCallback((tag) => {
+    hapticLight();
+    setFilterDiet(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]);
+  }, []);
+  const toggleFilterCuisine = useCallback((c) => {
+    hapticLight();
+    const key = c.toLowerCase();
+    setFilterCuisine(prev => prev.includes(key) ? prev.filter(t => t !== key) : [...prev, key]);
+  }, []);
+  const clearAllFilters = useCallback(() => {
+    hapticLight();
+    setFilterTime(null);
+    setFilterDiet([]);
+    setFilterCuisine([]);
+  }, []);
 
   const rotationCount = meals.filter(m => m.inRotation).length;
 
@@ -609,8 +660,8 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
 
   // ── Group sorted meals by category for collapsible sections ──────────────
   const groupedByCategory = (() => {
-    // Only group when viewing All, no search, no tag filter
-    if (category !== 'All' || search || activeTags.length > 0) return null;
+    // Only group when viewing All, no search, no tag filter, no Filters(n) active
+    if (category !== 'All' || search || activeTags.length > 0 || activeFilterCount > 0) return null;
     const groups = {};
     for (const meal of sorted) {
       const cat = meal.category || 'Dinners';
@@ -742,6 +793,14 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
         {meal.category && meal.category !== 'Dinners' && (
           <span className="ml-tile-cat">{meal.category}</span>
         )}
+        {/* Save-time dedup (saveMealDeduped) stacks repeat imports of the same
+            recipe into one row instead of separate cards — this badge is the
+            only remaining visible trace of the merge. */}
+        {meal._importCount > 1 && (
+          <span className="ml-tile-import-count" title={`Imported ${meal._importCount} times — merged into one recipe`}>
+            ×{meal._importCount}
+          </span>
+        )}
         {/* I-5: low-confidence import → one-tap re-extraction */}
         {!selectMode && isImprovable(meal) && (
           <button
@@ -771,13 +830,13 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
           if (!vsrc) return null;
           return (
             <button
-              className={`ml-tile-play ml-tile-play-${vsrc.platform}`}
+              className="ml-tile-play"
               aria-label={`Play ${vsrc.label} video in floating player`}
               title={`Play video (${vsrc.label})`}
               onClick={e => { e.stopPropagation(); hapticLight(); onPlayVideo(meal); }}
               onTouchEnd={e => e.stopPropagation()}
             >
-              <Play size={14} fill="#fff" color="#fff" aria-hidden="true" />
+              <Play size={10} fill="#fff" color="#fff" aria-hidden="true" /> Video
             </button>
           );
         })()}
@@ -920,6 +979,20 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
           onChange={e => setSearch(e.target.value)}
           style={{ flex: 1 }}
         />
+        <button
+          className="ml-filter-btn"
+          onClick={() => { hapticLight(); setShowFilterSheet(true); }}
+          aria-label="Filters"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 4,
+            padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border, #2a2a2a)',
+            background: activeFilterCount > 0 ? 'var(--primary, #FF6B35)' : 'var(--surface-raised, #1a1a1a)',
+            color: activeFilterCount > 0 ? '#fff' : 'var(--text-muted, #888)',
+            fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
+          }}
+        >
+          Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+        </button>
         <div className="ml-grid-toggle" style={{
           display: 'flex', gap: 2, padding: 2, borderRadius: 8,
           background: 'var(--surface-raised, #1a1a1a)',
@@ -1115,10 +1188,15 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
             transition={{ duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
           >
             <div className="ml-empty-icon"><ChefHat size={32} strokeWidth={1.75} /></div>
-            {search || category !== 'All' || activeTags.length > 0 ? (
+            {search || category !== 'All' || activeTags.length > 0 || activeFilterCount > 0 ? (
               <>
                 <p className="ml-empty-text">No meals match your search.</p>
-                <p className="ml-empty-hint">Try a different keyword, category, or tag.</p>
+                <p className="ml-empty-hint">Try a different keyword, category, tag, or filter.</p>
+                {activeFilterCount > 0 && (
+                  <button className="ml-empty-cta" type="button" onClick={clearAllFilters}>
+                    Clear filters
+                  </button>
+                )}
               </>
             ) : (
               <>
@@ -1126,7 +1204,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                 <p className="ml-empty-hint">Load the starter pack for ready-to-spin meals, or import a recipe from a link.</p>
               </>
             )}
-            {!search && category === 'All' && activeTags.length === 0 && (
+            {!search && category === 'All' && activeTags.length === 0 && activeFilterCount === 0 && (
               <div className="ml-empty-actions">
                 {onLoadStarterPack && (
                   <button className="ml-empty-cta" type="button" onClick={onLoadStarterPack}>
@@ -1599,6 +1677,101 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                   <span>{cat}</span>
                 </button>
               ))}
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+      </AnimatePresence>
+
+      {/* ── L4: Filters(n) sheet — Time / Diet / Cuisine, additive to search + view tabs + user tags ── */}
+      <AnimatePresence>
+      {showFilterSheet && (
+        <motion.div
+          key="filter-sheet"
+          className="ml-overlay"
+          onClick={() => setShowFilterSheet(false)}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          <motion.div
+            className="ml-sheet"
+            onClick={e => e.stopPropagation()}
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', stiffness: 320, damping: 34 }}
+          >
+            <div className="ml-sheet-handle" />
+            <div className="ml-sheet-header">
+              <h3>Filters</h3>
+              <button className="ml-sheet-close" onClick={() => setShowFilterSheet(false)}>✕</button>
+            </div>
+
+            <p className="ml-sheet-subtitle" style={{ marginBottom: 4 }}>Time</p>
+            <div className="ml-filter-chip-row" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
+              {[
+                { id: 'under30', label: 'Under 30 min' },
+                { id: '30to60', label: '30–60 min' },
+                { id: 'over60', label: 'Over 60 min' },
+              ].map(opt => (
+                <button
+                  key={opt.id}
+                  className={`ml-label-chip${filterTime === opt.id ? ' ml-tag-active' : ''}`}
+                  onClick={() => { hapticLight(); setFilterTime(prev => prev === opt.id ? null : opt.id); }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            <p className="ml-sheet-subtitle" style={{ marginBottom: 4 }}>Diet</p>
+            <div className="ml-filter-chip-row" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 18 }}>
+              {DIETARY_TAGS.map(tag => (
+                <button
+                  key={tag}
+                  className={`ml-label-chip${filterDiet.includes(tag) ? ' ml-tag-active' : ''}`}
+                  onClick={() => toggleFilterDiet(tag)}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+
+            {availableCuisines.length > 0 && (
+              <>
+                <p className="ml-sheet-subtitle" style={{ marginBottom: 4 }}>Cuisine</p>
+                <div className="ml-filter-chip-row" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+                  {availableCuisines.map(c => (
+                    <button
+                      key={c}
+                      className={`ml-label-chip${filterCuisine.includes(c.toLowerCase()) ? ' ml-tag-active' : ''}`}
+                      onClick={() => toggleFilterCuisine(c)}
+                    >
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            <div className="ml-sheet-footer" style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+              <button
+                className="ml-label-chip"
+                onClick={clearAllFilters}
+                disabled={activeFilterCount === 0}
+                style={{ flex: 1, justifyContent: 'center', opacity: activeFilterCount === 0 ? 0.5 : 1 }}
+              >
+                Clear all
+              </button>
+              <button
+                className="ml-tag-create-btn"
+                onClick={() => setShowFilterSheet(false)}
+                style={{ flex: 1, width: 'auto', justifyContent: 'center', display: 'flex', alignItems: 'center', gap: 6, padding: '10px 16px' }}
+              >
+                <Check size={15} strokeWidth={2.5} /> Show {filtered.length} meal{filtered.length !== 1 ? 's' : ''}
+              </button>
             </div>
           </motion.div>
         </motion.div>

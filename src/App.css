@@ -1809,6 +1809,52 @@ body::before {
   flex-shrink: 0;
 }
 
+/* ── Meal Detail header overflow (⋮) menu — Edit/Share/Send to Friend/
+   Export/Re-import collapsed out of the header into here, so the header
+   itself stays Heart + ⋮ + Close. ── */
+.detail-overflow-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 520;
+  background: transparent;
+}
+.detail-overflow-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 521;
+  min-width: 190px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.detail-overflow-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: none;
+  background: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  min-height: 40px;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s;
+}
+.detail-overflow-item:hover,
+.detail-overflow-item:active {
+  background: var(--surface);
+}
+
 .modal-footer {
   display: flex;
   gap: 10px;
@@ -1822,6 +1868,20 @@ body::before {
 .detail-image-wrap {
   position: relative;
   margin: 0 -20px 20px;
+}
+
+/* Hero banner: fixed 16:9 aspect ratio when a video source exists, so the
+   play control + gradient have a real "hero" frame instead of floating over
+   whatever height the source photo happened to be. Photo-only recipes keep
+   the plain cover-fit image (no forced aspect ratio, no gradient). */
+.detail-image-wrap-video {
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+}
+.detail-image-wrap-video .detail-image {
+  width: 100%;
+  height: 100%;
+  max-height: none;
 }
 
 .detail-image {
@@ -1845,39 +1905,21 @@ body::before {
   color: var(--text-muted);
 }
 
-/* Re-import photo button — floats over the bottom-right of the image */
-.detail-reimport-photo-btn {
+/* Hero gradient + integrated play control — replaces the old small corner
+   play badge. Spans the bottom third of the hero, tap anywhere in it (or
+   the button itself) to open the floating player. */
+.detail-hero-gradient {
   position: absolute;
-  bottom: 8px;
-  right: 8px;
-  background: rgba(0, 0, 0, 0.62);
-  color: #fff;
-  border: none;
-  border-radius: 20px;
-  padding: 5px 12px;
-  font-size: 12px;
-  font-weight: 600;
+  inset: auto 0 0 0;
+  height: 45%;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 0 14px 12px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0));
   cursor: pointer;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
-  transition: background 0.15s, opacity 0.15s;
-  white-space: nowrap;
 }
-.detail-reimport-photo-btn:hover:not(:disabled) {
-  background: rgba(0, 0, 0, 0.80);
-}
-.detail-reimport-photo-btn:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-/* PiP: play-video badge on the recipe detail hero image — bottom-left,
-   mirrors .ml-tile-play (MealLibrary tile) at a slightly larger touch size
-   since the detail image is much bigger than a tile thumbnail. */
 .detail-play-btn {
-  position: absolute;
-  bottom: 8px;
-  left: 8px;
   width: 40px;
   height: 40px;
   border-radius: 50%;
@@ -1888,7 +1930,7 @@ body::before {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  z-index: 3;
+  flex-shrink: 0;
   -webkit-backdrop-filter: blur(3px);
   backdrop-filter: blur(3px);
   -webkit-tap-highlight-color: transparent;
@@ -1897,10 +1939,12 @@ body::before {
   transition: background 0.15s, transform 0.1s;
 }
 .detail-play-btn:active { transform: scale(0.9); }
-.detail-play-btn-youtube { background: rgba(255, 0, 0, 0.78); border-color: rgba(255, 255, 255, 0.95); }
-.detail-play-btn-instagram {
-  background: linear-gradient(135deg, rgba(240, 148, 51, 0.9), rgba(188, 42, 141, 0.9), rgba(150, 47, 191, 0.9));
-  border-color: rgba(255, 255, 255, 0.95);
+.detail-hero-video-label {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  padding-bottom: 9px;
 }
 
 /* Swipe-to-view photo count pill — shown only when the import captured more
@@ -2009,6 +2053,46 @@ body::before {
 .ingredient-list li:last-child,
 .direction-list li:last-child {
   border-bottom: none;
+}
+
+/* Ingredient check-off (D6) — tap a line to strike it through for this
+   session; not persisted to Dexie, purely a while-you-cook aid. */
+.ingredient-list li.ingredient-item {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ingredient-list li.ingredient-item .ingredient-text {
+  transition: opacity 0.15s ease;
+}
+
+.ingredient-list li.ingredient-item.checked {
+  opacity: 0.55;
+}
+
+.ingredient-list li.ingredient-item.checked .ingredient-text {
+  text-decoration: line-through;
+}
+
+.ingredient-list li.ingredient-item.checked::before {
+  background: var(--success, #16a34a);
+  opacity: 1;
+}
+
+/* Pantry cross-reference badge (D6) — same success/warning token convention
+   MealLibrary's tile-level pantry-match badge already uses. */
+.ingredient-missing-chip {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: var(--warning, #d97706);
+  background: rgba(217, 119, 6, 0.12);
 }
 
 .recipe-link {
@@ -5102,7 +5186,7 @@ body::before {
   min-width: 44px;
   min-height: 40px;
   padding: 6px 14px;
-  border: 1.5px solid #ffe0b2;
+  border: 1.5px solid var(--border);
   border-radius: 10px;
   background: var(--surface-2);
   color: var(--text);
@@ -5118,7 +5202,57 @@ body::before {
   background: var(--primary);
   border-color: var(--primary);
   color: #fff;
-  box-shadow: 0 2px 8px rgba(255, 152, 0, 0.35);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+/* ── Sticky bottom action bar (Meal Detail) — Scale + Add to Rotation +
+   Start Cooking/Mixing, kept reachable without scrolling. Token-based (not
+   the old hardcoded cream #fff3e0/#ffe0b2 .servings-scaler box) so it reads
+   correctly in both themes. ── */
+.detail-sticky-bar {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  margin: 20px -20px calc(-32px - env(safe-area-inset-bottom));
+  padding: 12px 20px calc(14px + env(safe-area-inset-bottom));
+  background: var(--card);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 4;
+}
+.detail-sticky-scale {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.detail-sticky-scale-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.detail-sticky-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.detail-sticky-actions .rotation-toggle-btn {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+.detail-sticky-actions .cook-mode-launch-btn {
+  width: auto;
+  flex: 1 1 auto;
+  padding: 10px 16px;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 
 .btn-scaler {
@@ -5783,6 +5917,22 @@ body::before {
   letter-spacing: 0.3px;
 }
 
+/* Save-time dedup "×N" badge — top-center so it never collides with the
+   favorite/rotation/category/play/menu badges anchored to the four corners. */
+.ml-tile-import-count {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.65);
+  color: white;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 20px;
+  letter-spacing: 0.2px;
+}
+
 /* ── Tile info row ── */
 .ml-tile-info {
   padding: 8px 10px 10px;
@@ -5879,42 +6029,35 @@ body::before {
   transform: scale(0.9);
 }
 
-/* ── PiP: play-video badge on cards with a video source (bottom-left) ── */
+/* ── PiP: play-video affordance on cards with a video source (bottom-left) ──
+   Softened from a solid-color circular play button (magenta/red, high-contrast
+   against food photography) to a small translucent "Video" chip — informational
+   tag rather than a video-player-style CTA competing with the thumbnail. ── */
 .ml-tile-play {
   position: absolute;
   bottom: 6px;
   left: 6px;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  border: 1.5px solid rgba(255, 255, 255, 0.9);
-  background: rgba(0, 0, 0, 0.5);
+  height: 22px;
+  padding: 0 8px 0 6px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.45);
   color: #fff;
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
   cursor: pointer;
   z-index: 3;
   -webkit-backdrop-filter: blur(3px);
   backdrop-filter: blur(3px);
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
   transition: background 0.15s, transform 0.1s;
 }
 
-.ml-tile-play-tri {
-  font-size: 12px;
-  line-height: 1;
-  margin-left: 2px; /* optical centering of the ▶ glyph */
-}
-
-.ml-tile-play:active { transform: scale(0.88); }
-.ml-tile-play-youtube { background: rgba(255, 0, 0, 0.78); border-color: rgba(255, 255, 255, 0.95); }
-.ml-tile-play-instagram {
-  background: linear-gradient(135deg, rgba(240, 148, 51, 0.9), rgba(188, 42, 141, 0.9), rgba(150, 47, 191, 0.9));
-  border-color: rgba(255, 255, 255, 0.95);
-}
+.ml-tile-play:active { transform: scale(0.92); background: rgba(0, 0, 0, 0.65); }
 
 /* Failed tile visual state */
 .ml-tile-failed {
