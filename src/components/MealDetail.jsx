@@ -1,10 +1,11 @@
-import { useState, useRef, useCallback, useMemo } from 'react';
-import { motion, useDragControls } from 'framer-motion';
-import { X, Share2, Copy, Check, Heart, Star, RefreshCw, Flame, UtensilsCrossed, ChefHat, Martini, FileDown, Play, Images, Pencil, UserPlus } from 'lucide-react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
+import { motion, AnimatePresence, useDragControls } from 'framer-motion';
+import { X, Share2, Copy, Check, Heart, Star, RefreshCw, Flame, UtensilsCrossed, ChefHat, Martini, FileDown, Play, Images, Pencil, UserPlus, MoreVertical } from 'lucide-react';
 import PhotoGallery from './PhotoGallery';
 import { NUTRITION_LABELS } from '../recipeSchema';
 import { formatNutritionValue, formatIngredientLine } from '../utils/displayFormatter';
 import { getMealVideoSource } from '../lib/videoSource';
+import { buildPantryMatchIndex } from '../lib/pantryMatch.js';
 
 function CopyLinkButton({ url }) {
   const [copied, setCopied] = useState(false);
@@ -22,7 +23,7 @@ function CopyLinkButton({ url }) {
   );
 }
 
-export default function MealDetail({ meal, onClose, onShare, onExport, onToggleFavorite, onRate, onStartCook, onStartMix, onToggleRotation, isDrink = false, onMoveToBar, onPlayVideo, onEdit, onSendToFriend }) {
+export default function MealDetail({ meal, onClose, onShare, onExport, onToggleFavorite, onRate, onStartCook, onStartMix, onToggleRotation, isDrink = false, onMoveToBar, onPlayVideo, onEdit, onSendToFriend, fridgeInventory = [] }) {
   // ── Drag-down-to-dismiss ──
   const sheetRef = useRef(null);
   const dragControls = useDragControls();
@@ -39,6 +40,38 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
     { value: 4.0, label: '4×' },
   ];
   const [scaleFactor, setScaleFactor] = useState(1.0);
+
+  // ── Ingredient check-off (session-local, tap-to-strike-through) ──
+  // Resets whenever a different meal is opened, since this component instance
+  // is reused across meals (App.jsx renders it with a fixed key="meal-detail").
+  const [checkedIngredients, setCheckedIngredients] = useState(() => new Set());
+  useEffect(() => {
+    setCheckedIngredients(new Set());
+  }, [meal.id, meal.name]);
+  const toggleIngredientChecked = useCallback((i) => {
+    setCheckedIngredients(prev => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i); else next.add(i);
+      return next;
+    });
+  }, []);
+
+  // ── Pantry cross-reference — reuses the same buildPantryMatchIndex logic
+  // MealLibrary already uses for its tile badges, scoped to just this meal so
+  // each ingredient line can show whether it's already in the pantry. ──
+  const missingIngredientSet = useMemo(() => {
+    if (isDrink) return new Set();
+    const index = buildPantryMatchIndex(fridgeInventory, [meal]);
+    const match = index.get(meal.id || meal.name);
+    return new Set((match?.missing || []).map(n => n.toLowerCase().trim()));
+  }, [fridgeInventory, meal, isDrink]);
+
+  // ── Header diet: Heart + ⋮ overflow + Close only. Everything else that
+  // used to live in the header (Edit/Share/Send to Friend/Export) moves into
+  // this menu; Re-import's standalone floating-over-the-image copy is gone
+  // too — the overflow item below and the Source section's own button are
+  // the only two Re-import entry points left. ──
+  const [overflowOpen, setOverflowOpen] = useState(false);
 
   // ── PhotoSwipe lightbox ────────────────────────────────────────────────────────
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -151,10 +184,49 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
         <div className="modal-header">
           <h2>{meal.name}</h2>
           <div className="modal-header-actions">
-            {onEdit && <button className="btn-icon" onClick={onEdit} title="Edit recipe" aria-label="Edit recipe"><Pencil size={18} strokeWidth={1.75} /></button>}
-            <button className="btn-icon" onClick={onShare} title="Share" aria-label="Share recipe"><Share2 size={18} strokeWidth={1.75} /></button>
-            {onSendToFriend && <button className="btn-icon" onClick={onSendToFriend} title="Send to Friend" aria-label="Send to friend"><UserPlus size={18} strokeWidth={1.75} /></button>}
-            {onExport && <button className="btn-icon" onClick={onExport} title="Export options" aria-label="Export recipe"><FileDown size={18} strokeWidth={1.75} /></button>}
+            {onToggleFavorite && (
+              <button
+                className={`btn-icon heart-btn-detail ${meal.isFavorite ? 'favorited' : ''}`}
+                onClick={() => onToggleFavorite(meal)}
+                title={meal.isFavorite ? 'Unfavorite' : 'Favorite'}
+                aria-label={meal.isFavorite ? 'Unfavorite' : 'Favorite'}
+              >
+                <Heart size={18} strokeWidth={1.75} fill={meal.isFavorite ? 'currentColor' : 'none'} style={{ color: meal.isFavorite ? '#e53935' : 'inherit' }} />
+              </button>
+            )}
+            {(onEdit || onShare || onSendToFriend || onExport || sourceUrl) && (
+              <div style={{ position: 'relative' }}>
+                <button
+                  className="btn-icon"
+                  onClick={() => setOverflowOpen(v => !v)}
+                  title="More options"
+                  aria-label="More options"
+                  aria-expanded={overflowOpen}
+                >
+                  <MoreVertical size={18} strokeWidth={1.75} />
+                </button>
+                <AnimatePresence>
+                  {overflowOpen && (
+                    <>
+                      <div className="detail-overflow-scrim" onClick={() => setOverflowOpen(false)} />
+                      <motion.div
+                        className="detail-overflow-menu"
+                        initial={{ opacity: 0, scale: 0.95, y: -6 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.95, y: -6 }}
+                        transition={{ duration: 0.14 }}
+                      >
+                        {onEdit && <button className="detail-overflow-item" onClick={() => { setOverflowOpen(false); onEdit(); }}><Pencil size={15} strokeWidth={1.75} /> Edit</button>}
+                        <button className="detail-overflow-item" onClick={() => { setOverflowOpen(false); onShare(); }}><Share2 size={15} strokeWidth={1.75} /> Share</button>
+                        {onSendToFriend && <button className="detail-overflow-item" onClick={() => { setOverflowOpen(false); onSendToFriend(); }}><UserPlus size={15} strokeWidth={1.75} /> Send to Friend</button>}
+                        {onExport && <button className="detail-overflow-item" onClick={() => { setOverflowOpen(false); onExport(); }}><FileDown size={15} strokeWidth={1.75} /> Export</button>}
+                        {sourceUrl && <button className="detail-overflow-item" onClick={() => { setOverflowOpen(false); handleReimport(); }}><RefreshCw size={15} strokeWidth={1.75} /> Re-import</button>}
+                      </motion.div>
+                    </>
+                  )}
+                </AnimatePresence>
+              </div>
+            )}
             <button className="btn-icon" onClick={onClose} aria-label="Close"><X size={18} strokeWidth={1.75} /></button>
           </div>
         </div>
@@ -180,8 +252,11 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
           </div>
         )}
 
-        {/* ── Recipe image with PiP, gallery swipe, and re-import controls ── */}
-        <div className="detail-image-wrap">
+        {/* ── Hero media: 16:9 banner, dark gradient + integrated play button
+            when a video source exists, instead of a small corner badge.
+            Re-import's standalone floating copy is gone — see the ⋮ overflow
+            menu above and the Source section below. ── */}
+        <div className={`detail-image-wrap${videoSource ? ' detail-image-wrap-video' : ''}`}>
           {localImageUrl ? (
             <img
               src={localImageUrl}
@@ -203,16 +278,21 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
             />
           )}
 
-          {/* PiP: play video badge — parity with the MealLibrary tile control */}
+          {/* Hero gradient + integrated play control — same onPlayVideo/
+              FloatingVideoPlayer wiring as before, just presented as part of
+              the hero banner instead of a small corner badge. */}
           {videoSource && (
-            <button
-              className={`detail-play-btn detail-play-btn-${videoSource.platform}`}
-              aria-label={`Play ${videoSource.label} video in floating player`}
-              title={`Play video (${videoSource.label})`}
-              onClick={() => onPlayVideo(meal)}
-            >
-              <Play size={16} fill="#fff" color="#fff" aria-hidden="true" />
-            </button>
+            <div className="detail-hero-gradient" onClick={() => onPlayVideo(meal)}>
+              <button
+                className="detail-play-btn"
+                aria-label={`Play ${videoSource.label} video in floating player`}
+                title={`Play video (${videoSource.label})`}
+                onClick={(e) => { e.stopPropagation(); onPlayVideo(meal); }}
+              >
+                <Play size={18} fill="#fff" color="#fff" aria-hidden="true" />
+              </button>
+              <span className="detail-hero-video-label">{videoSource.label} video</span>
+            </div>
           )}
 
           {/* Swipe-to-view badge — only when the import captured multiple photos
@@ -227,37 +307,11 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
               <Images size={13} strokeWidth={2} aria-hidden="true" /> 1/{galleryImages.length}
             </button>
           )}
-
-          {/* Re-import — runs the whole recipe back through the Import Engine */}
-          {sourceUrl && (
-            <button
-              className="detail-reimport-photo-btn"
-              onClick={handleReimport}
-              title="Re-run this recipe through the Import Engine"
-              aria-label="Re-import"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
-            >
-              <RefreshCw size={16} strokeWidth={1.75} /> Re-Import
-            </button>
-          )}
         </div>
 
-        {/* Favorites, Rating, Category, Cook Count */}
+        {/* Rating, Category, Cook Count — Heart moved to the top header,
+            Add to Rotation moved to the sticky bottom bar (see below). */}
         <div className="detail-header-bar">
-          {onToggleFavorite && (
-            <button
-              className={`heart-btn-detail ${meal.isFavorite ? 'favorited' : ''}`}
-              onClick={() => onToggleFavorite(meal)}
-              title={meal.isFavorite ? 'Unfavorite' : 'Favorite'}
-            >
-              <Heart
-                size={20}
-                strokeWidth={1.75}
-                fill={meal.isFavorite ? 'currentColor' : 'none'}
-                style={{ color: meal.isFavorite ? '#e53935' : 'inherit' }}
-              />
-            </button>
-          )}
           {onRate && (
             <div className="star-rating">
               {[1, 2, 3, 4, 5].map(star => (
@@ -275,15 +329,6 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
                 </button>
               ))}
             </div>
-          )}
-          {onToggleRotation && (
-            <button
-              className={`rotation-toggle-btn ${meal.inRotation ? 'in-rotation' : ''}`}
-              onClick={() => onToggleRotation(meal)}
-              title={meal.inRotation ? 'Remove from The Rotation' : 'Add to The Rotation'}
-            >
-              <RefreshCw size={16} strokeWidth={1.75} /> {meal.inRotation ? 'In Rotation' : 'Add to Rotation'}
-            </button>
           )}
           <div className="detail-meta">
             {meal.category && (
@@ -306,28 +351,26 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
           </div>
         )}
 
-        {/* Recipe Scale Selector */}
-        <div className="servings-scaler">
-          <label>Scale:</label>
-          <div className="scale-selector">
-            {scaleOptions.map(opt => (
-              <button
-                key={opt.value}
-                className={`btn-scale${scaleFactor === opt.value ? ' active' : ''}`}
-                onClick={() => setScaleFactor(opt.value)}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
+        {/* Scale selector moved to the sticky bottom bar (see end of file). */}
 
         <div className="detail-section">
           <h3>{isDrink ? '🍸 Ingredients' : '📝 Ingredients'}</h3>
           <ul className="ingredient-list">
-            {scaledIngredients.map((ing, i) => (
-              <li key={i}>{ing}</li>
-            ))}
+            {scaledIngredients.map((ing, i) => {
+              const structName = meal.ingredientsStructured?.[i]?.name || meal.ingredientsStructured?.[i]?.ingredient || '';
+              const isMissing = structName && missingIngredientSet.has(structName.toLowerCase().trim());
+              const isChecked = checkedIngredients.has(i);
+              return (
+                <li
+                  key={i}
+                  className={`ingredient-item${isChecked ? ' checked' : ''}`}
+                  onClick={() => toggleIngredientChecked(i)}
+                >
+                  <span className="ingredient-text">{ing}</span>
+                  {isMissing && !isChecked && <span className="ingredient-missing-chip">Missing</span>}
+                </li>
+              );
+            })}
           </ul>
         </div>
 
@@ -490,29 +533,7 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
           );
         })()}
 
-        {/* Start Cooking / Start Mixing button */}
-        {onStartCook && meal.directions && meal.directions.length > 0 && (
-          <div className="detail-section" style={{ paddingBottom: 20 }}>
-            <button
-              className="cook-mode-launch-btn"
-              onClick={() => { onClose(); onStartCook(meal, scaleFactor); }}
-              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
-            >
-              <ChefHat size={18} strokeWidth={1.75} /> Start Cooking
-            </button>
-          </div>
-        )}
-        {onStartMix && meal.directions && meal.directions.length > 0 && (
-          <div className="detail-section" style={{ paddingBottom: 20 }}>
-            <button
-              className="cook-mode-launch-btn mix-mode-launch-btn"
-              onClick={() => { onClose(); onStartMix(meal, scaleFactor); }}
-              style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
-            >
-              <Martini size={18} strokeWidth={1.75} /> Start Mixing
-            </button>
-          </div>
-        )}
+        {/* Start Cooking / Start Mixing moved to the sticky bottom bar. */}
 
         {/* Recovery path for a drink recipe mis-imported into the Meal Library —
             a rare correction, not a primary action, so it's a small sub-option
@@ -526,6 +547,55 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
             >
               <Martini size={14} strokeWidth={1.75} /> Move to Bar
             </button>
+          </div>
+        )}
+
+        {/* ── Sticky bottom action bar: scale, Add to Rotation, Start Cooking/
+            Mixing — the highest-priority actions, kept reachable without
+            scrolling back up, instead of competing for space above the fold. ── */}
+        {(scaleOptions.length > 0 || onToggleRotation || (onStartCook && meal.directions?.length > 0) || (onStartMix && meal.directions?.length > 0)) && (
+          <div className="detail-sticky-bar">
+            <div className="detail-sticky-scale">
+              <span className="detail-sticky-scale-label">Scale</span>
+              <div className="scale-selector">
+                {scaleOptions.map(opt => (
+                  <button
+                    key={opt.value}
+                    className={`btn-scale${scaleFactor === opt.value ? ' active' : ''}`}
+                    onClick={() => setScaleFactor(opt.value)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="detail-sticky-actions">
+              {onToggleRotation && (
+                <button
+                  className={`rotation-toggle-btn ${meal.inRotation ? 'in-rotation' : ''}`}
+                  onClick={() => onToggleRotation(meal)}
+                  title={meal.inRotation ? 'Remove from The Rotation' : 'Add to The Rotation'}
+                >
+                  <RefreshCw size={15} strokeWidth={1.75} /> {meal.inRotation ? 'In Rotation' : 'Add to Rotation'}
+                </button>
+              )}
+              {onStartCook && meal.directions && meal.directions.length > 0 && (
+                <button
+                  className="cook-mode-launch-btn"
+                  onClick={() => { onClose(); onStartCook(meal, scaleFactor); }}
+                >
+                  <ChefHat size={17} strokeWidth={1.75} /> Start Cooking
+                </button>
+              )}
+              {onStartMix && meal.directions && meal.directions.length > 0 && (
+                <button
+                  className="cook-mode-launch-btn mix-mode-launch-btn"
+                  onClick={() => { onClose(); onStartMix(meal, scaleFactor); }}
+                >
+                  <Martini size={17} strokeWidth={1.75} /> Start Mixing
+                </button>
+              )}
+            </div>
           </div>
         )}
       </motion.div>

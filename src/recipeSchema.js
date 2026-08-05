@@ -91,6 +91,87 @@ export function canonicalizeUnit(raw = '') {
   return UNIT_LOOKUP[key] || '';
 }
 
+/**
+ * cleanImportedTitle — Strip common social-media clickbait framing from an
+ * imported recipe title, e.g. `"CRISPY MUSHROOM PARM... = The ultimate Lazy
+ * Trader Joe's Meal"` -> `"Crispy Mushroom Parm"`. Deliberately conservative:
+ * only cuts clearly-delimited clickbait fragments (an "= explainer" suffix,
+ * a "..." continuation, a CTA-flavored pipe segment, leading/trailing emoji
+ * runs) — it never attempts to re-case or rewrite the dish name itself, so a
+ * legitimately ALL-CAPS or stylized title is left alone rather than risking
+ * a mangled result. Falls back to the original (trimmed) string if the cuts
+ * would empty it out.
+ * @param {string} raw
+ * @returns {string}
+ */
+export function cleanImportedTitle(raw = '') {
+  if (!raw) return raw;
+  let s = String(raw).trim();
+  if (!s) return s;
+
+  // "...= The ultimate Lazy Trader Joe's Meal" -> cut from the "=" on.
+  s = s.replace(/\s*=\s*.+$/, '').trim();
+
+  // "Crispy Mushroom Parm... swipe for the recipe" -> cut at the "...".
+  s = s.split(/\s*\.{3,}\s*/)[0].trim();
+
+  // "Chicken Piccata | The BEST easy weeknight dinner" -> drop a trailing
+  // pipe segment only when it reads like marketing copy, not a legitimate
+  // "Name | Cuisine style" qualifier.
+  const CTA_WORDS = /\b(lazy|easy|ultimate|best ever|viral|must[- ]try|so good|obsessed|recipe of the (week|month|year))\b/i;
+  const pipeParts = s.split(/\s*\|\s*/);
+  if (pipeParts.length > 1 && CTA_WORDS.test(pipeParts.slice(1).join(' '))) {
+    s = pipeParts[0].trim();
+  }
+
+  // Strip runs of 2+ emoji, common bookending social captions.
+  s = s.replace(/(?:[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{2190}-\u{21FF}]\s*){2,}/gu, ' ');
+
+  // Trim stray quotes/dashes/colons left behind by the cuts above.
+  s = s.replace(/^["'“”‘’\-–—:•\s]+|["'“”‘’\-–—:•\s]+$/g, '');
+  s = s.replace(/\s+/g, ' ').trim();
+
+  return s || String(raw).trim();
+}
+
+/**
+ * Canonical meal-TYPE categories (matches MealLibrary.jsx's TYPE_OPTIONS —
+ * this is the single source of truth both import for). This is deliberately
+ * a *type* vocabulary (when in the day do you eat it), not a cuisine
+ * vocabulary (see CUISINE above) — "Pasta" or "Mexican" are legitimate
+ * cuisine values and are left alone by normalizeMealCategory below, even
+ * though they show up as ad hoc category sections today; collapsing them
+ * into "Dinners" would destroy real information, not fix a bug.
+ */
+export const MEAL_TYPE_CATEGORIES = ['Dinners', 'Breakfasts', 'Lunches', 'Desserts', 'Sides', 'Tailgate', 'Snacks'];
+
+const MEAL_CATEGORY_ALIASES = {
+  dinner: 'Dinners', dinners: 'Dinners', entree: 'Dinners', entrees: 'Dinners',
+  'main course': 'Dinners', 'main courses': 'Dinners', mains: 'Dinners', main: 'Dinners', supper: 'Dinners',
+  breakfast: 'Breakfasts', breakfasts: 'Breakfasts', brunch: 'Breakfasts',
+  lunch: 'Lunches', lunches: 'Lunches',
+  dessert: 'Desserts', desserts: 'Desserts', sweets: 'Desserts', sweet: 'Desserts', baking: 'Desserts',
+  side: 'Sides', sides: 'Sides', 'side dish': 'Sides', 'side dishes': 'Sides',
+  tailgate: 'Tailgate', tailgating: 'Tailgate', appetizer: 'Tailgate', appetizers: 'Tailgate', apps: 'Tailgate', 'game day': 'Tailgate',
+  snack: 'Snacks', snacks: 'Snacks',
+};
+
+/**
+ * normalizeMealCategory — Collapse spelling/synonym variants of a canonical
+ * meal-type ("Dinner" -> "Dinners") without touching values that aren't a
+ * meal-type at all (a cuisine like "Pasta" passes through unchanged — see
+ * MEAL_TYPE_CATEGORIES doc comment for why).
+ * @param {string} raw
+ * @returns {string}
+ */
+export function normalizeMealCategory(raw = '') {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+  if (MEAL_TYPE_CATEGORIES.includes(s)) return s;
+  const key = s.toLowerCase();
+  return MEAL_CATEGORY_ALIASES[key] || s;
+}
+
 // -----------------------------------------------------------------------------
 // 2. FRACTION / QUANTITY NORMALIZATION
 // -----------------------------------------------------------------------------
