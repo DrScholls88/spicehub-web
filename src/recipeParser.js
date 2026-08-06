@@ -8,7 +8,7 @@
  *   3. CAPTION TEXT  Ã¢â€ â€™ 4-pass heuristic parser (used internally on extracted captions)
  */
 import { cleanUrl, isInstagramCdnUrl, fetchHtmlViaProxy as fetchHtmlViaProxyFromApi, downloadImageAsDataUrl, proxyImageUrl } from './api.js';
-import { getCachedImport, setCachedImport } from './db.js';
+import { getCachedImport, setCachedImport, logImportTelemetry, domainForTelemetry } from './db.js';
 import { transcribeFromUrl, transcribeFromFile, getPreferredWhisperModel } from './lib/transcriptionService.js';
 import { isRedditUrl, tryRedditJson } from './scrapers/redditDiscovery.js';
 import { htmlToMarkdown, htmlLooksLikeRecipe } from './scrapers/markdownConverter.js';
@@ -881,20 +881,58 @@ function finalizeAIRecipe(thin, { hintTitle = '', imageUrl = '', sourceUrl = '',
   // Non-breaking: augments items in-place, never removes or reorders them.
   const enrichedStructured = _enrichWithNormalizer(scoredStructured);
 
-  return {
+  const finalLink = sourceUrl || enforced.link || '';
+
+  const result = {
     name: _cleanTitle(enforced.title || hintTitle || 'Imported Recipe', enforced.ingredients),
     ...enforced,
     ingredientsStructured: enrichedStructured,
     ...buildStructuredFields(enforced.ingredients, enforced.directions),
     imageUrl: imageUrl || enforced.imageUrl || '',
-    link: sourceUrl || enforced.link || '',
+    link: finalLink,
     // Source attribution: real metadata (oEmbed/Apify creator handle), never
     // an LLM guess — kept out of RECIPE_SCHEMA on purpose (see detectSourcePlatform).
     author: author || enforced.author || '',
-    sourcePlatform: detectSourcePlatform(sourceUrl || enforced.link || ''),
+    sourcePlatform: detectSourcePlatform(finalLink),
     _aiStructured: true,
     _structuredVia: via || enforced._structuredVia || 'unknown',
   };
+
+  // ── Minimum-accept quality gate (harden-ideas-audit-2026-08-06.md §4/§7) ──
+  // finalizeAIRecipe previously fell back to a display default ("Imported
+  // Recipe") on empty ingredients/directions and returned it exactly like a
+  // real success — a thin/broken import looked identical to a good one until
+  // a human opened it. This is a SOFT gate, not a hard reject: it forces
+  // needsReview + caps confidence so the existing "Improve" badge (I-5,
+  // MealLibrary) surfaces it, rather than changing finalizeAIRecipe's return
+  // contract (it has ~7 call sites; a null-return would need every one
+  // audited and tested, which isn't safe to do blind in one pass).
+  const isVideoSource = /\/(reel|tv)\//i.test(finalLink) || /\/(reel|tv)\//i.test(result.videoUrl || '');
+  const gateReasons = [];
+  if (!result.name || /^imported recipe$/i.test(result.name.trim())) gateReasons.push('generic-name');
+  if (!Array.isArray(result.ingredients) || result.ingredients.length < 2) gateReasons.push('ingredients<2');
+  if (!Array.isArray(result.directions) || result.directions.length < 1) gateReasons.push('directions<1');
+  if (!finalLink) gateReasons.push('no-sourceUrl');
+  if (isVideoSource && !result.videoUrl) gateReasons.push('reel-missing-videoUrl');
+
+  if (gateReasons.length) {
+    result.needsReview = true;
+    result._qualityGateFailed = true;
+    result._qualityGateReasons = gateReasons;
+    if (typeof result.confidence === 'number') result.confidence = Math.min(result.confidence, 0.35);
+    else result.confidence = 0.35;
+  }
+
+  logImportTelemetry({
+    stage: 'finalize',
+    ok: gateReasons.length === 0,
+    reason: gateReasons.length ? gateReasons.join(',') : 'ok',
+    domain: domainForTelemetry(finalLink),
+    extractionSource: result._structuredVia,
+    url: finalLink,
+  });
+
+  return result;
 }
 
 /**
@@ -4888,6 +4926,10 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   // Blog link follower discovery surface (Phase 0.5B hypercharge)
   let capturedComments = [];
   let capturedOwnerUsername = '';
+  // profileBioUrl (harden-ideas-audit-2026-08-06.md §2): best-effort, see the
+  // defensive-extraction comment in api/proxy.js's instagram-apify mode —
+  // stays '' when the actor response doesn't happen to expose it.
+  let capturedProfileBioUrl = '';
   let capturedIsVideo = false;
 
   const persistCapturedImage = async (imageUrl = capturedImageUrl) => {
@@ -4942,6 +4984,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
         // Blog link follower discovery surface
         if (igPack.latestComments?.length) capturedComments = igPack.latestComments;
         if (igPack.ownerUsername) capturedOwnerUsername = igPack.ownerUsername;
+        if (igPack.profileBioUrl) capturedProfileBioUrl = igPack.profileBioUrl;
         if (igPack.isVideo) capturedIsVideo = true;
         progress(1, 'done', capturedSource + ': caption (' + capturedCaption.length + ' chars)');
       } else {
@@ -5063,9 +5106,13 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
       const blogRecipe = await tryBlogLinkExtraction(capturedCaption, capturedImageUrl, {
         instagramUrl: url,
         comments: capturedComments,
-        // profileBioUrl: needs Apify fullData to get the external bio link —
-        // basicData only gives ownerUsername (which is an IG URL, not a bio hub).
-        // Plumbing is ready; wire when Apify detail level is upgraded.
+        // profileBioUrl (harden-ideas-audit-2026-08-06.md §2): best-effort —
+        // populated only when api/proxy.js's instagram-apify mode happened to
+        // find a bio/external-URL field on the post-scraper response (see the
+        // defensive-extraction comment there). Empty string is a normal,
+        // expected outcome today, not a bug — discoverLinks() already treats
+        // an empty profileBioUrl as "no bio link available" and skips it.
+        profileBioUrl: capturedProfileBioUrl,
         carouselImages: capturedImages,
       });
 

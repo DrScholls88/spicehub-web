@@ -173,6 +173,74 @@ export async function setSearchable(isSearchable) {
   }
 }
 
+// ── "What's Cooking?" status ────────────────────────────────────────────────
+
+/** How long a status badge stays visible to friends before it decays. */
+export const STATUS_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
+
+const STATUS_EMOJI = { meal: '🍳', drink: '🍹' };
+
+/**
+ * One-tap "I'm making this tonight!" status. Writes straight to
+ * profiles.current_status via the existing update_own_profile RLS policy +
+ * 004's profiles GRANT — no RPC needed, same as displayName/avatar updates
+ * in updateCloudProfile(). Silently no-ops on failure (ambient/best-effort
+ * feature, not worth interrupting a cook-mode launch over).
+ * @param {string} recipeName
+ * @param {'meal'|'drink'} [itemType='meal']
+ */
+export async function setCurrentStatus(recipeName, itemType = 'meal') {
+  if (!recipeName) return;
+  const supabase = getSupabase();
+  const userId = await getCurrentUserId();
+  if (!userId) return;
+
+  const current_status = {
+    emoji: STATUS_EMOJI[itemType] || STATUS_EMOJI.meal,
+    recipeName,
+    itemType,
+    setAt: new Date().toISOString(),
+  };
+
+  try {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ current_status, updated_at: new Date().toISOString() })
+      .eq('user_id', userId);
+    if (error) throw error;
+  } catch (err) {
+    console.warn('[CloudProfile] setCurrentStatus failed (non-critical):', err.message);
+  }
+}
+
+/** Clear the "What's Cooking?" status (e.g. when cook mode finishes). */
+export async function clearCurrentStatus() {
+  const supabase = getSupabase();
+  const userId = await getCurrentUserId();
+  if (!userId) return;
+
+  try {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ current_status: null, updated_at: new Date().toISOString() })
+      .eq('user_id', userId);
+    if (error) throw error;
+  } catch (err) {
+    console.warn('[CloudProfile] clearCurrentStatus failed (non-critical):', err.message);
+  }
+}
+
+/**
+ * Whether a friend's current_status is still fresh enough to show.
+ * @param {{ setAt?: string } | null | undefined} currentStatus
+ */
+export function isStatusFresh(currentStatus) {
+  if (!currentStatus?.setAt) return false;
+  const setAt = new Date(currentStatus.setAt).getTime();
+  if (Number.isNaN(setAt)) return false;
+  return Date.now() - setAt < STATUS_TTL_MS;
+}
+
 /**
  * Search for users by username prefix.
  * Returns up to 20 results. Requires query >= 3 chars.

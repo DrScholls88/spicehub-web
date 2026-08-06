@@ -204,11 +204,27 @@ export async function cancelFriendRequest(friendshipId) {
 
 // ── Fetch + cache ──────────────────────────────────────────────────────────
 
+let syncFriendsInFlight = null;
+
 /**
  * Fetch all friends (accepted) + pending requests from Supabase
  * and write them to local Dexie cache. Called on sign-in bootstrap.
+ *
+ * Coordinated via a singleton in-flight promise: useHomeGroup and
+ * FriendsSection both call this independently on mount. Without this
+ * guard, both fire their own RPC round trips + a Dexie clear/refill,
+ * and whichever finishes last silently wins. Concurrent callers now
+ * share the same in-flight request.
  */
 export async function syncFriendsToLocal() {
+  if (syncFriendsInFlight) return syncFriendsInFlight;
+  syncFriendsInFlight = doSyncFriendsToLocal().finally(() => {
+    syncFriendsInFlight = null;
+  });
+  return syncFriendsInFlight;
+}
+
+async function doSyncFriendsToLocal() {
   const supabase = getSupabase();
 
   // Accepted friends
@@ -226,12 +242,16 @@ export async function syncFriendsToLocal() {
   }
 
   // Pending outbound (my sent requests)
+  // NOTE: get_friends('pending') returns ALL pending friendships (both inbound
+  // AND outbound). We must exclude IDs already captured by get_pending_requests
+  // to avoid overwriting pending_inbound rows with pending_outbound in bulkPut.
   const { data: pendingOut, error: outErr } = await supabase.rpc('get_friends', {
     for_status: 'pending',
   });
   if (outErr) {
     console.warn('[Friends] syncFriendsToLocal outbound error:', outErr.message);
   }
+  const pendingInIds = new Set((pendingIn || []).map(f => f.friendship_id));
 
   // Blocked (my blocks only — RPC filters requester_id = me)
   const { data: blocked, error: blockErr } = await supabase.rpc('get_friends', {
@@ -256,6 +276,9 @@ export async function syncFriendsToLocal() {
         avatarId: f.avatar_id,
         status: 'accepted',
         updatedAt: f.created_at,
+        // "What's Cooking?" ambient status — { emoji, recipeName, itemType,
+        // setAt } or null. Only meaningful for actual friends (accepted).
+        currentStatus: f.current_status || null,
       });
     }
   }
@@ -276,6 +299,10 @@ export async function syncFriendsToLocal() {
 
   if (pendingOut) {
     for (const f of pendingOut) {
+      // Skip inbound requests already captured above — get_friends('pending')
+      // returns both directions; without this guard, bulkPut overwrites
+      // the pending_inbound row with pending_outbound (same friendship ID).
+      if (pendingInIds.has(f.friendship_id)) continue;
       rows.push({
         id: f.friendship_id,
         otherUserId: f.friend_id,
@@ -387,19 +414,12 @@ export async function handleFriendshipRealtimeEvent(payload, myUserId) {
   let avatarId = existing?.avatarId || null;
 
   if (!username) {
-    try {
-      const supabase = getSupabase();
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('username, display_name, avatar_id')
-        .eq('user_id', otherUserId)
-        .single();
-      if (profile) {
-        username = profile.username;
-        displayName = profile.display_name;
-        avatarId = profile.avatar_id;
-      }
-    } catch { /* best-effort */ }
+    const profile = await fetchProfileWithRetry(otherUserId);
+    if (profile) {
+      username = profile.username;
+      displayName = profile.display_name;
+      avatarId = profile.avatar_id;
+    }
   }
 
   const localStatus = mapServerStatus(row, myUserId);
@@ -411,6 +431,10 @@ export async function handleFriendshipRealtimeEvent(payload, myUserId) {
     avatarId,
     status: localStatus,
     updatedAt: row.updated_at,
+    // This is a friendships-table event, not a profiles-table event, so it
+    // never carries current_status — preserve whatever we already had
+    // rather than clobbering it back to null on every friendship change.
+    currentStatus: existing?.currentStatus || null,
   };
 
   await db.friends.put(friendRow);
@@ -423,6 +447,43 @@ export async function handleFriendshipRealtimeEvent(payload, myUserId) {
   }
 
   return { action: 'updated', friendRow };
+}
+
+/**
+ * Fetch a user's profile for the Dexie friend row, with one retry.
+ * Previously this swallowed all errors silently (`catch { /* best-effort *\/ }`),
+ * so a missing GRANT or a transient network blip left the friend row stuck
+ * showing "User" forever with no trace in the console. Now: retry once after
+ * a short delay (covers transient network/RLS timing issues), then log a
+ * clear warning so a real permissions problem (e.g. migration 004 not
+ * applied) is actually discoverable instead of silently swallowed.
+ * @param {string} otherUserId
+ * @returns {{ username: string, display_name: string, avatar_id: string } | null}
+ */
+async function fetchProfileWithRetry(otherUserId) {
+  const supabase = getSupabase();
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('username, display_name, avatar_id')
+        .eq('user_id', otherUserId)
+        .single();
+      if (error) throw error;
+      return profile || null;
+    } catch (err) {
+      if (attempt === 0) {
+        await new Promise(resolve => setTimeout(resolve, 400));
+        continue;
+      }
+      console.warn(
+        `[Friends] profile lookup failed for ${otherUserId} — friend will show as "User" until next full sync:`,
+        err.message || err,
+      );
+      return null;
+    }
+  }
+  return null;
 }
 
 /**
