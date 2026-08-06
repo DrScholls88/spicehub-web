@@ -243,11 +243,14 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
     const tokens = search.toLowerCase().trim().split(/\s+/).filter(Boolean);
     const positiveTokens = tokens.filter(t => !t.startsWith('-'));
     const negativeTokens = tokens.filter(t => t.startsWith('-')).map(t => t.slice(1));
-    const name = (m.name || '').toLowerCase();
+    const name = String(m.name || '').toLowerCase();
     const ingredients = Array.isArray(m.ingredients)
-      ? m.ingredients.join(' ').toLowerCase()
-      : (m.ingredients || '').toLowerCase();
-    const desc = (m.description || m.notes || '').toLowerCase();
+      ? m.ingredients
+          .map(i => (typeof i === 'object' && i !== null ? String(i.name || i.label || '') : String(i)))
+          .join(' ')
+          .toLowerCase()
+      : String(m.ingredients || '').toLowerCase();
+    const desc = String(m.description || m.notes || '').toLowerCase();
     const searchable = `${name} ${ingredients} ${desc}`;
     const matchSearch = positiveTokens.every(t => searchable.includes(t))
       && negativeTokens.every(t => !searchable.includes(t));
@@ -259,7 +262,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
       const mins = getTotalMinutes(m);
       matchCat = mins != null && mins <= QUICK_WEEKNIGHT_MAX_MIN;
     }
-    else matchCat = (m.category || 'Dinners').toLowerCase() === category.toLowerCase();
+    else matchCat = String(m.category || 'Dinners').toLowerCase() === category.toLowerCase();
     // Tag filter: if any tags are active, meal must have ALL of them
     const matchTags = activeTags.length === 0
       || activeTags.every(t => (m.tags || []).includes(t));
@@ -273,9 +276,13 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
       return true;
     })();
     const matchDiet = filterDiet.length === 0
-      || filterDiet.every(d => (m.dietaryTags || []).map(x => (x || '').toLowerCase()).includes(d));
+      || filterDiet.every(d =>
+          (m.dietaryTags || [])
+            .map(x => String(typeof x === 'object' && x !== null ? x.name || x.label || '' : x || '').toLowerCase())
+            .includes(d)
+        );
     const matchCuisine = filterCuisine.length === 0
-      || filterCuisine.includes((m.cuisine || '').toLowerCase());
+      || filterCuisine.includes(String(m.cuisine || '').toLowerCase());
     return matchSearch && matchCat && matchTags && matchTime && matchDiet && matchCuisine;
   });
 
@@ -298,7 +305,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
   }, []);
   const toggleFilterCuisine = useCallback((c) => {
     hapticLight();
-    const key = c.toLowerCase();
+    const key = String(c || '').toLowerCase();
     setFilterCuisine(prev => prev.includes(key) ? prev.filter(t => t !== key) : [...prev, key]);
   }, []);
   const clearAllFilters = useCallback(() => {
@@ -1743,15 +1750,19 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
               <>
                 <p className="ml-sheet-subtitle" style={{ marginBottom: 4 }}>Cuisine</p>
                 <div className="ml-filter-chip-row" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-                  {availableCuisines.map(c => (
-                    <button
-                      key={c}
-                      className={`ml-label-chip${filterCuisine.includes(c.toLowerCase()) ? ' ml-tag-active' : ''}`}
-                      onClick={() => toggleFilterCuisine(c)}
-                    >
-                      {c}
-                    </button>
-                  ))}
+                  {availableCuisines.map(c => {
+                    const safeCuisine = String(c || '');
+                    const key = safeCuisine.toLowerCase();
+                    return (
+                      <button
+                        key={safeCuisine}
+                        className={`ml-label-chip${filterCuisine.includes(key) ? ' ml-tag-active' : ''}`}
+                        onClick={() => toggleFilterCuisine(safeCuisine)}
+                      >
+                        {safeCuisine}
+                      </button>
+                    );
+                  })}
                 </div>
               </>
             )}
