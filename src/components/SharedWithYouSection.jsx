@@ -11,8 +11,11 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { isFriendsEnabled } from '../lib/supabaseClient';
 import {
   getLocalPendingShares,
+  getLocalBookmarkedShares,
   saveShareToLibrary,
   dismissShare,
+  bookmarkShare,
+  unbookmarkShare,
   reactToShare,
   SHARE_REACTIONS,
 } from '../lib/recipeShare';
@@ -23,15 +26,22 @@ import { getAvatar } from '../data/pixelAvatars';
  */
 export default function SharedWithYouSection({ onToast, onReload }) {
   const [shares, setShares] = useState([]);
+  const [bookmarked, setBookmarked] = useState([]);
+  const [showTrySoon, setShowTrySoon] = useState(false);
   const [actionLoading, setActionLoading] = useState(null); // shareId being acted on
 
   const refresh = useCallback(async () => {
     if (!isFriendsEnabled()) return;
     try {
-      const s = await getLocalPendingShares();
+      const [s, b] = await Promise.all([
+        getLocalPendingShares(),
+        getLocalBookmarkedShares(),
+      ]);
       setShares(s || []);
+      setBookmarked(b || []);
     } catch {
       setShares([]);
+      setBookmarked([]);
     }
   }, []);
 
@@ -67,10 +77,29 @@ export default function SharedWithYouSection({ onToast, onReload }) {
     setActionLoading(null);
   };
 
-  if (!isFriendsEnabled() || shares.length === 0) return null;
+  /** Tier 1 "Want to Try" bookmark — keeps the share around without importing it. */
+  const handleBookmark = async (shareId) => {
+    setActionLoading(shareId);
+    await bookmarkShare(shareId);
+    await refresh();
+    window.dispatchEvent(new CustomEvent('spicehub:shares-updated'));
+    setActionLoading(null);
+  };
+
+  const handleUnbookmark = async (shareId) => {
+    setActionLoading(shareId);
+    await unbookmarkShare(shareId);
+    await refresh();
+    window.dispatchEvent(new CustomEvent('spicehub:shares-updated'));
+    setActionLoading(null);
+  };
+
+  if (!isFriendsEnabled() || (shares.length === 0 && bookmarked.length === 0)) return null;
 
   return (
     <div style={{ padding: '0 12px', marginBottom: 12 }}>
+      {shares.length > 0 && (
+      <>
       <h4 style={{
         fontSize: 14, fontWeight: 700, color: 'var(--text)',
         margin: '0 0 8px', display: 'flex', alignItems: 'center', gap: 6,
@@ -179,6 +208,20 @@ export default function SharedWithYouSection({ onToast, onReload }) {
                   {isLoading ? '…' : 'Save to Library'}
                 </button>
                 <button
+                  onClick={() => handleBookmark(share.id)}
+                  disabled={isLoading}
+                  title="Want to Try — keep for later without saving yet"
+                  aria-label="Bookmark for later"
+                  style={{
+                    padding: '8px 12px', fontSize: 15,
+                    border: '1px solid var(--border)', borderRadius: 8,
+                    background: 'var(--card)', color: 'var(--text-muted)', cursor: 'pointer',
+                    opacity: isLoading ? 0.6 : 1,
+                  }}
+                >
+                  🔖
+                </button>
+                <button
                   onClick={() => handleDismiss(share.id)}
                   disabled={isLoading}
                   style={{
@@ -195,6 +238,94 @@ export default function SharedWithYouSection({ onToast, onReload }) {
           );
         })}
       </AnimatePresence>
+      </>
+      )}
+
+      {/* ── Want to Try (Tier 1 "bookmark" — collapsed by default) ── */}
+      {bookmarked.length > 0 && (
+        <div style={{ marginTop: shares.length > 0 ? 12 : 0 }}>
+          <button
+            onClick={() => setShowTrySoon(v => !v)}
+            style={{
+              background: 'none', border: 'none', padding: 0, marginBottom: 8,
+              color: 'var(--text)', fontSize: 14, fontWeight: 700, cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}
+          >
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{showTrySoon ? '▾' : '▸'}</span>
+            🔖 Try Soon
+            <span style={{
+              fontSize: 11, fontWeight: 700, background: 'var(--text-muted)', color: '#fff',
+              borderRadius: 8, padding: '1px 6px', lineHeight: '16px',
+            }}>{bookmarked.length}</span>
+          </button>
+          <AnimatePresence>
+            {showTrySoon && bookmarked.map(share => {
+              const isLoading = actionLoading === share.id;
+              return (
+                <motion.div
+                  key={share.id}
+                  layout
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '8px 10px', borderRadius: 12,
+                    background: 'var(--card)', border: '1px solid var(--border)',
+                    marginBottom: 8, overflow: 'hidden',
+                  }}
+                >
+                  {share.recipeData?.imageUrl && (
+                    <img
+                      src={share.recipeData.imageUrl}
+                      alt=""
+                      style={{ width: 36, height: 36, borderRadius: 8, objectFit: 'cover', flexShrink: 0 }}
+                    />
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontSize: 14, fontWeight: 600, color: 'var(--text)',
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {share.recipeData?.name || 'Untitled'}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                      from {share.fromDisplayName || share.fromUsername ? `@${share.fromUsername}` : 'a friend'}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleSave(share.id)}
+                    disabled={isLoading}
+                    style={{
+                      padding: '6px 10px', fontSize: 12, fontWeight: 700,
+                      border: '1.5px solid var(--primary)', borderRadius: 8,
+                      background: 'var(--primary)', color: '#fff', cursor: 'pointer',
+                      opacity: isLoading ? 0.6 : 1, flexShrink: 0,
+                    }}
+                  >
+                    {isLoading ? '…' : 'Save'}
+                  </button>
+                  <button
+                    onClick={() => handleUnbookmark(share.id)}
+                    disabled={isLoading}
+                    title="Remove from Try Soon"
+                    aria-label="Remove from Try Soon"
+                    style={{
+                      padding: '6px 8px', fontSize: 12, fontWeight: 600,
+                      border: '1px solid var(--border)', borderRadius: 8,
+                      background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer',
+                      opacity: isLoading ? 0.6 : 1, flexShrink: 0,
+                    }}
+                  >
+                    ✕
+                  </button>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        </div>
+      )}
     </div>
   );
 }

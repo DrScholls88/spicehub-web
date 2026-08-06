@@ -17,6 +17,7 @@ import {
 } from '../../api.js';
 import { createContextPack, addProvenance } from '../contextPack.js';
 import { extractEndpoint } from './website.js';
+import { logImportTelemetry, domainForTelemetry } from '../../db.js';
 
 const MIN_CAPTION = 30;
 
@@ -58,6 +59,9 @@ function buildRace(url, f) {
         src: 'apify', caption: d.caption, images, title: creator, author: creator,
         latestComments: Array.isArray(d.latestComments) ? d.latestComments : [],
         ownerUsername: d.ownerUsername || '',
+        // Best-effort — see the defensive-extraction comment in
+        // api/proxy.js's instagram-apify mode (harden-ideas-audit-2026-08-06.md §2).
+        profileBioUrl: d.profileBioUrl || '',
         isVideo: !!d.isVideo || !!d.videoUrl,
       };
     })(),
@@ -89,6 +93,8 @@ function buildRace(url, f) {
  */
 export async function acquireInstagramPack(url, { fetchers = {}, signal } = {}) {
   const f = { ...defaultFetchers, ...fetchers };
+  const t0 = Date.now();
+  const domain = domainForTelemetry(url);
 
   let winner = null;
   try {
@@ -109,7 +115,15 @@ export async function acquireInstagramPack(url, { fetchers = {}, signal } = {}) 
     } catch { /* server unreachable */ }
   }
 
-  if (!winner) return null;
+  if (!winner) {
+    logImportTelemetry({
+      stage: 'acquire', ok: false, reason: 'all-sources-failed', domain, url, ms: Date.now() - t0,
+    });
+    return null;
+  }
+  logImportTelemetry({
+    stage: 'acquire', ok: true, domain, url, ms: Date.now() - t0, extractionSource: winner.src,
+  });
 
   const pack = createContextPack({
     sourceUrl: url,
@@ -130,6 +144,7 @@ export async function acquireInstagramPack(url, { fetchers = {}, signal } = {}) 
   // Blog link follower discovery surface: comments + profile bio URL
   pack.latestComments = winner.latestComments || [];
   pack.ownerUsername = winner.ownerUsername || '';
+  pack.profileBioUrl = winner.profileBioUrl || '';
   pack.isVideo = !!winner.isVideo;
   return pack;
 }

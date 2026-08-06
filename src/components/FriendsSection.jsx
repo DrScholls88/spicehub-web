@@ -18,8 +18,11 @@ import {
   syncFriendsToLocal, getLocalFriends, getLocalPendingInbound,
   getLocalPendingOutbound, getLocalBlocked,
 } from '../lib/friends';
+import { isStatusFresh } from '../lib/cloudProfile';
 import { getAvatar } from '../data/pixelAvatars';
 import SetUsernameSheet from './SetUsernameSheet';
+import ShareHistorySheet from './ShareHistorySheet';
+import FriendActivityFeed from './FriendActivityFeed';
 import db from '../db';
 
 const SORT_MODES = [
@@ -29,6 +32,15 @@ const SORT_MODES = [
 ];
 
 const SEARCH_DEBOUNCE_MS = 400;
+
+// Client-side politeness cooldown: the search RPC is already server-rate-
+// limited (20 results, 3-char minimum), but nothing stops a user from
+// hammering it by typing/deleting rapidly faster than the 400ms debounce
+// window resets. If more than SEARCH_RAPID_LIMIT calls land within
+// SEARCH_RAPID_WINDOW_MS, pause new calls for SEARCH_COOLDOWN_MS.
+const SEARCH_RAPID_WINDOW_MS = 3000;
+const SEARCH_RAPID_LIMIT = 6;
+const SEARCH_COOLDOWN_MS = 1500;
 
 /**
  * @param {{ isOnline: boolean, showToast: Function }} props
@@ -50,6 +62,11 @@ export default function FriendsSection({ isOnline, showToast }) {
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const searchTimerRef = useRef(null);
+  const searchCallTimesRef = useRef([]);
+  const searchCooldownUntilRef = useRef(0);
+
+  // Manual refresh (bug 11: FriendsSheet has no fallback if Realtime drops)
+  const [refreshing, setRefreshing] = useState(false);
 
   // Loading
   const [loading, setLoading] = useState(true);
@@ -64,6 +81,9 @@ export default function FriendsSection({ isOnline, showToast }) {
 
   // Sort mode
   const [sortMode, setSortMode] = useState('az');
+
+  // Share History sheet (Tier 1: tap a friend to see exchange history)
+  const [historyFriend, setHistoryFriend] = useState(null);
 
   if (!isFriendsEnabled()) return null;
 
@@ -138,6 +158,26 @@ export default function FriendsSection({ isOnline, showToast }) {
 
     setSearching(true);
     searchTimerRef.current = setTimeout(async () => {
+      const now = Date.now();
+
+      // Still cooling down from a recent burst — skip this call quietly
+      // and keep whatever results are already on screen.
+      if (now < searchCooldownUntilRef.current) {
+        setSearching(false);
+        return;
+      }
+
+      // Track calls in the trailing window; trip the cooldown if the user
+      // is hammering the field faster than the debounce reasonably allows.
+      const recentCalls = searchCallTimesRef.current.filter(t => now - t < SEARCH_RAPID_WINDOW_MS);
+      recentCalls.push(now);
+      searchCallTimesRef.current = recentCalls;
+      if (recentCalls.length > SEARCH_RAPID_LIMIT) {
+        searchCooldownUntilRef.current = now + SEARCH_COOLDOWN_MS;
+        setSearching(false);
+        return;
+      }
+
       try {
         const results = await searchUsers(q.trim());
         setSearchResults(results || []);
@@ -148,6 +188,21 @@ export default function FriendsSection({ isOnline, showToast }) {
       }
     }, SEARCH_DEBOUNCE_MS);
   }, []);
+
+  // ── Manual refresh ─────────────────────────────────────────────────────────
+  const handleManualRefresh = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await syncFriendsToLocal();
+      await refreshLocal();
+    } catch (err) {
+      showToast?.("Couldn't refresh — try again.", 'error', 2500);
+      console.warn('[FriendsSection] manual refresh failed:', err.message);
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   // ── Actions ────────────────────────────────────────────────────────────────
   const handleAddFriend = async (userId) => {
@@ -397,7 +452,29 @@ export default function FriendsSection({ isOnline, showToast }) {
 
   return (
     <div className="st-section">
-      <h3>Friends</h3>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h3 style={{ margin: 0 }}>Friends</h3>
+        {/*
+          Manual refresh fallback: this sheet bootstraps once then relies on
+          Realtime for updates. Realtime commonly drops on mobile (tab
+          backgrounded, network handoff) with no visible signal that it's
+          stale, so give people an explicit way to force a resync.
+        */}
+        <button
+          onClick={handleManualRefresh}
+          disabled={!isOnline || refreshing}
+          title="Refresh friends & requests"
+          aria-label="Refresh friends & requests"
+          style={{
+            background: 'none', border: 'none', cursor: 'pointer',
+            fontSize: 16, lineHeight: 1, padding: 6,
+            color: 'var(--text-muted)',
+            opacity: (!isOnline || refreshing) ? 0.5 : 1,
+            display: 'inline-flex', alignItems: 'center',
+            animation: refreshing ? 'spin 0.8s linear infinite' : 'none',
+          }}
+        >⟳</button>
+      </div>
 
       {/* ── Username display ── */}
       <div style={{
@@ -419,6 +496,9 @@ export default function FriendsSection({ isOnline, showToast }) {
           Change
         </button>
       </div>
+
+      {/* ── Recent Activity (Tier 2 pick, 2026-08-05 brainstorm) ── */}
+      <FriendActivityFeed isOnline={isOnline} />
 
       {/* ── Search ── */}
       <div style={{ position: 'relative', marginBottom: 12 }}>
@@ -478,7 +558,19 @@ export default function FriendsSection({ isOnline, showToast }) {
                   ) : rel === 'requested' ? (
                     <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>Requested</span>
                   ) : rel === 'incoming' ? (
-                    <span style={{ fontSize: 12, color: 'var(--primary)', fontWeight: 600 }}>Accept?</span>
+                    <button
+                      onClick={() => {
+                        const inRow = pendingIn.find(f => f.otherUserId === user.user_id);
+                        if (inRow) handleAccept(inRow.id);
+                      }}
+                      disabled={actionLoading === (pendingIn.find(f => f.otherUserId === user.user_id)?.id)}
+                      style={{
+                        padding: '5px 10px', fontSize: 13, fontWeight: 600,
+                        border: '1.5px solid var(--primary)', borderRadius: 8,
+                        background: 'var(--primary)', color: '#fff', cursor: 'pointer',
+                        opacity: actionLoading === (pendingIn.find(f => f.otherUserId === user.user_id)?.id) ? 0.6 : 1,
+                      }}
+                    >Accept</button>
                   ) : rel === 'blocked' ? null : (
                     <button
                       onClick={() => handleAddFriend(user.user_id)}
@@ -607,12 +699,40 @@ export default function FriendsSection({ isOnline, showToast }) {
                   }}
                 >
                   <span style={{ fontSize: 22 }}>{avatar.emoji}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
+                  {/*
+                    Tier 1 "Share History View": tap a friend's name/avatar
+                    to see everything you've exchanged with them. The star
+                    and overflow menu stay as separate controls outside this
+                    button so they don't also trigger history.
+                  */}
+                  <button
+                    onClick={() => setHistoryFriend({
+                      otherUserId: f.otherUserId,
+                      displayName: f.displayName,
+                      username: f.username,
+                      avatarId: f.avatarId,
+                    })}
+                    style={{
+                      flex: 1, minWidth: 0, textAlign: 'left',
+                      background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                    }}
+                    title={`See recipes shared with ${f.displayName || f.username || 'this friend'}`}
+                  >
                     <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {f.displayName || f.username || 'Friend'}
                     </div>
                     {f.username && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>@{f.username}</div>}
-                  </div>
+                    {/* Tier 1 "What's Cooking?" status — only while fresh (<4h) */}
+                    {isStatusFresh(f.currentStatus) && (
+                      <div style={{
+                        fontSize: 12, color: 'var(--primary)', fontWeight: 600,
+                        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        marginTop: 2,
+                      }}>
+                        {f.currentStatus.emoji} Making {f.currentStatus.recipeName}
+                      </div>
+                    )}
+                  </button>
                   {/* Favorite star */}
                   <motion.button
                     onClick={() => toggleFavorite(f.id)}
@@ -842,6 +962,14 @@ export default function FriendsSection({ isOnline, showToast }) {
         onClose={() => setShowUsernameSheet(false)}
         currentUsername={cloudProfile?.username}
         onUsernameSet={handleUsernameSet}
+      />
+
+      {/* ── Share History sheet portal (Tier 1) ── */}
+      <ShareHistorySheet
+        open={!!historyFriend}
+        onClose={() => setHistoryFriend(null)}
+        friend={historyFriend}
+        isOnline={isOnline}
       />
     </div>
   );

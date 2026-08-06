@@ -11,7 +11,7 @@
  */
 
 import { fetchHtmlViaProxy } from '../api.js';
-import { recordLearnedDomain, getLearnedDomains } from '../db.js';
+import { recordLearnedDomain, getLearnedDomains, logImportTelemetry, domainForTelemetry } from '../db.js';
 
 // ─── CONFIG ──────────────────────────────────────────────
 
@@ -850,7 +850,7 @@ export async function tryBlogLinkExtraction(caption, imageUrl, {
             if (recipe) {
               strategyWon = recipe._isPartial ? 'short>bio>partial' : (recipe._source === 'blog_link_follower' ? 'short>bio>structured' : 'short>bio');
               winnerUrl = bioLink;
-              logResult(quality, links.length, strategyWon, winnerUrl, t0, recipe._extractionMethod);
+              logResult(quality, links.length, strategyWon, winnerUrl, t0, recipe._extractionMethod, instagramUrl);
               return enrichResult(recipe, imageUrl, instagramUrl, isVideo, carouselImages);
             }
           }
@@ -898,14 +898,30 @@ export async function tryBlogLinkExtraction(caption, imageUrl, {
     }
   }
 
-  logResult(quality, links.length, 'none', '', t0);
+  logResult(quality, links.length, 'none', '', t0, null, instagramUrl);
   return null;
 }
 
-/** Structured telemetry log — P3-13 enhanced failure taxonomy */
-function logResult(quality, linksFound, strategyWon, winnerUrl, t0, extractionMethod) {
+/**
+ * Structured telemetry log — P3-13 enhanced failure taxonomy, plus (harden-
+ * ideas-audit-2026-08-06.md §1) a persisted 'blog' stage row so this isn't
+ * just a console breadcrumb anymore. `winnerUrl` (the blog page actually
+ * extracted from) is used for the telemetry domain when present, since
+ * that's the more actionable signal; `instagramUrl` is kept as the `url`
+ * field so this row correlates with the same import's 'acquire' stage row.
+ */
+function logResult(quality, linksFound, strategyWon, winnerUrl, t0, extractionMethod, instagramUrl) {
   const ms = Date.now() - t0;
   console.log(`[BlogLinkFollower] Result: class=${quality.class} reason=${quality.reason} links=${linksFound} strategy=${strategyWon} method=${extractionMethod || 'none'} url=${winnerUrl || '-'} ms=${ms}`);
+  logImportTelemetry({
+    stage: 'blog',
+    ok: strategyWon !== 'none',
+    reason: strategyWon === 'none' ? `${quality.class}:${quality.reason}` : strategyWon,
+    domain: domainForTelemetry(winnerUrl || instagramUrl || ''),
+    extractionSource: extractionMethod || '',
+    ms,
+    url: instagramUrl || winnerUrl || '',
+  });
 }
 
 

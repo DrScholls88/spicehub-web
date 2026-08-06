@@ -68,6 +68,7 @@ export default function useHomeGroup({ showToast, onWeekPlanUpdate, onGroceryUpd
             window.dispatchEvent(new CustomEvent('spicehub:friends-bootstrap'));
           } catch (err) {
             console.warn('[useHomeGroup] friends bootstrap sync failed:', err.message);
+            showToast?.("Couldn't load friends & shared recipes — will retry.", 'error', 3000);
           }
         }
 
@@ -224,6 +225,7 @@ export default function useHomeGroup({ showToast, onWeekPlanUpdate, onGroceryUpd
       return result;
     } catch (err) {
       setSyncStatus('error');
+      showToast?.(err.message || "Couldn't create the group — try again.", 'error', 4000);
       throw err;
     }
   }, []);
@@ -238,6 +240,7 @@ export default function useHomeGroup({ showToast, onWeekPlanUpdate, onGroceryUpd
       return result;
     } catch (err) {
       setSyncStatus('error');
+      showToast?.(err.message || "Couldn't join the group — try again.", 'error', 4000);
       throw err;
     }
   }, []);

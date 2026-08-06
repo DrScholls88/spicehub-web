@@ -16,6 +16,7 @@ export default function HomeGroupSection({
   onSignIn,
   onSignOut,
   onRegenerateCode,
+  showToast,
 }) {
   const [showCreate, setShowCreate] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
@@ -129,6 +130,7 @@ export default function HomeGroupSection({
             <InviteCodeDisplay
               code={groupInfo.group.invite_code}
               onRegenerate={onRegenerateCode}
+              showToast={showToast}
             />
           )}
 
@@ -169,15 +171,14 @@ export default function HomeGroupSection({
               </div>
             </div>
           )}
-
-          <button
-            className="st-install-btn"
-            onClick={onSignOut}
-            style={{ opacity: 0.7 }}
-          >
-            <span className="st-install-icon">🔑</span>
-            <span>Sign out</span>
-          </button>
+          {/*
+            "Sign out" is intentionally hidden while in a group: it tears
+            down the Supabase session but keeps the group membership and
+            local data, which reads as a no-op ("why didn't I leave the
+            group?") next to "Leave group" (which does the opposite —
+            drops membership, keeps the session). Sign out remains
+            reachable from the auth_no_group / local states above.
+          */}
         </div>
       )}
 
@@ -213,9 +214,10 @@ export default function HomeGroupSection({
   );
 }
 
-function InviteCodeDisplay({ code, onRegenerate }) {
+function InviteCodeDisplay({ code, onRegenerate, showToast }) {
   const [copied, setCopied] = useState(false);
   const [regenConfirm, setRegenConfirm] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   const copyCode = async () => {
     try {
@@ -223,6 +225,21 @@ function InviteCodeDisplay({ code, onRegenerate }) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch { /* fallback: select text */ }
+  };
+
+  const confirmRegenerate = async () => {
+    setRegenerating(true);
+    try {
+      await onRegenerate();
+      setRegenConfirm(false);
+      showToast?.('Invite code refreshed', 'success', 2000);
+    } catch (err) {
+      // Leave regenConfirm true so the Confirm button stays visible and
+      // the user can retry — but now they actually hear about the failure.
+      showToast?.(err?.message || "Couldn't refresh the invite code — try again.", 'error', 3500);
+    } finally {
+      setRegenerating(false);
+    }
   };
 
   return (
@@ -257,17 +274,16 @@ function InviteCodeDisplay({ code, onRegenerate }) {
         >↻</button>
       ) : (
         <button
-          onClick={async () => {
-            await onRegenerate();
-            setRegenConfirm(false);
-          }}
+          onClick={confirmRegenerate}
+          disabled={regenerating}
           style={{
             padding: '4px 8px', fontSize: '11px',
             borderRadius: '6px', border: '1px solid var(--error, #e53935)',
             background: 'transparent', cursor: 'pointer',
             color: 'var(--error, #e53935)',
+            opacity: regenerating ? 0.6 : 1,
           }}
-        >Confirm</button>
+        >{regenerating ? '…' : 'Confirm'}</button>
       )}
     </div>
   );
@@ -343,7 +359,12 @@ function CreateGroupInline({ onClose, onCreate, onSignIn, needsAuth }) {
       />
       <button
         className="st-install-btn"
-        onClick={async () => { setLoading(true); await onCreate(name); }}
+        onClick={async () => {
+          setLoading(true);
+          try { await onCreate(name); }
+          catch (err) { console.warn('[CreateGroup] error:', err.message); }
+          finally { setLoading(false); }
+        }}
         disabled={loading}
         style={{ marginTop: '8px' }}
       >{loading ? 'Creating…' : 'Create'}</button>
@@ -357,8 +378,10 @@ function JoinGroupInline({ onClose, onJoin, onSignIn, needsAuth }) {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [authStep, setAuthStep] = useState(false);
+  const [email, setEmail] = useState('');
 
-  if (needsAuth) {
+  if (needsAuth && !authStep) {
     return (
       <div style={{
         background: 'var(--bg-secondary)', borderRadius: '12px',
@@ -370,6 +393,34 @@ function JoinGroupInline({ onClose, onJoin, onSignIn, needsAuth }) {
         <button className="st-install-btn" onClick={() => onSignIn('google')}>
           <span>Continue with Google</span>
         </button>
+        <button className="st-install-btn" onClick={() => setAuthStep(true)}
+          style={{ marginTop: '6px' }}>
+          <span>Use email link</span>
+        </button>
+        <button className="st-install-btn" onClick={onClose}
+          style={{ marginTop: '6px', opacity: 0.6 }}>Cancel</button>
+      </div>
+    );
+  }
+
+  if (authStep) {
+    return (
+      <div style={{
+        background: 'var(--bg-secondary)', borderRadius: '12px',
+        padding: '16px', marginTop: '8px',
+      }}>
+        <input
+          type="email" value={email}
+          onChange={e => setEmail(e.target.value)}
+          placeholder="your@email.com"
+          style={{
+            width: '100%', padding: '10px', fontSize: '16px',
+            borderRadius: '8px', border: '1px solid var(--border)',
+            background: 'var(--bg)', color: 'var(--text)', boxSizing: 'border-box',
+          }}
+        />
+        <button className="st-install-btn" onClick={() => onSignIn('magic', email)}
+          style={{ marginTop: '8px' }}>Send sign-in link</button>
         <button className="st-install-btn" onClick={onClose}
           style={{ marginTop: '6px', opacity: 0.6 }}>Cancel</button>
       </div>
@@ -404,8 +455,17 @@ function JoinGroupInline({ onClose, onJoin, onSignIn, needsAuth }) {
         onClick={async () => {
           if (code.length !== 6) { setError('Enter a 6-character code'); return; }
           setLoading(true);
-          try { await onJoin(code); }
-          catch (e) { setError(e.message); setLoading(false); }
+          try {
+            await onJoin(code);
+            // Success normally unmounts this component (parent closes the
+            // inline on success). If the parent ever resolves without
+            // closing, the finally below still clears the spinner instead
+            // of leaving it running forever.
+          } catch (e) {
+            setError(e.message);
+          } finally {
+            setLoading(false);
+          }
         }}
         disabled={loading || code.length !== 6}
         style={{ marginTop: '8px' }}

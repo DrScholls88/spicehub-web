@@ -331,7 +331,69 @@ db.version(25).stores({
   });
 });
 
+// v26: Structured per-import telemetry (harden-ideas-audit-2026-08-06.md §1).
+// The pipeline previously only had console.log breadcrumbs — no queryable
+// record of which stage an import failed at, why, or how long it took.
+// Cheapest useful version: one row per pipeline stage per import, written by
+// the fire-and-forget logImportTelemetry() helper below. Never blocks or
+// throws — a telemetry write failing must never fail an import.
+db.version(26).stores({
+  importTelemetry: '++id, url, stage, ok, domain, ts',
+});
+
 export default db;
+
+// ── Import pipeline telemetry (v26) ─────────────────────────────────────────
+// One row per {stage, import}. `stage` is one of 'acquire' | 'blog' |
+// 'finalize' (see harden-ideas-audit-2026-08-06.md §1's contract table —
+// 'acquire' covers the Apify/oEmbed/ig-json race, 'blog' covers Phase 0.5B,
+// 'finalize' is the single exit point for every LLM path and also captures
+// which structuring engine actually won via extractionSource).
+/**
+ * @param {object} entry
+ * @param {'acquire'|'blog'|'finalize'} entry.stage
+ * @param {boolean} entry.ok
+ * @param {string} [entry.reason]           e.g. 'apify-weak', 'quality-gate-failed'
+ * @param {string} [entry.domain]           hostname the stage was working against
+ * @param {string} [entry.extractionSource] e.g. '_structuredVia' value, or acquire winner src
+ * @param {number} [entry.ms]               stage duration in ms
+ * @param {string} [entry.url]              the import's source URL
+ */
+export async function logImportTelemetry(entry) {
+  try {
+    await db.importTelemetry.add({
+      stage: entry.stage || 'unknown',
+      ok: !!entry.ok,
+      reason: entry.reason || '',
+      domain: entry.domain || '',
+      extractionSource: entry.extractionSource || '',
+      ms: typeof entry.ms === 'number' ? entry.ms : null,
+      url: entry.url || '',
+      ts: new Date().toISOString(),
+    });
+  } catch (err) {
+    // Telemetry must never break an import — log and move on.
+    console.warn('[SpiceHub] logImportTelemetry failed (non-fatal):', err?.message || err);
+  }
+}
+
+/**
+ * Small read helper for a future debug view — most recent N telemetry rows,
+ * newest first. Not wired into any UI yet; exported so it's easy to add one.
+ * @param {number} [limit=200]
+ */
+export async function getImportTelemetry(limit = 200) {
+  try {
+    return await db.importTelemetry.orderBy('ts').reverse().limit(limit).toArray();
+  } catch {
+    return [];
+  }
+}
+
+/** Best-effort hostname extraction for telemetry `domain` fields. */
+export function domainForTelemetry(url = '') {
+  try { return new URL(url).hostname.replace(/^www\./, ''); } catch { return ''; }
+}
 
 // ── Custom Day Tags helpers (v20) ───────────────────────────────────────────
 export async function getCustomDayTags() {
@@ -920,6 +982,18 @@ export async function queuePhotoUpgrade(recipeData, scanPageDataUrls, itemType =
 }
 
 export function mergeRecipeData(existing, incoming) {
+  // PiP invariant (see harden-ideas-audit-2026-08-06.md, found via that audit):
+  // videoUrl/_sources were NOT in this merge's explicit field list, so the
+  // ...existing spread below silently kept existing.videoUrl even when it was
+  // empty and incoming had just resolved a real one — the exact "never drop
+  // PiP URL" rule the audit calls non-negotiable, broken by this function.
+  // Fix: prefer whichever side actually has a non-empty videoUrl, and
+  // reconcile _sources.videoUrl to match so the two never disagree.
+  const mergedVideoUrl = existing.videoUrl || incoming.videoUrl || '';
+  const mergedSources = (existing._sources || incoming._sources)
+    ? { ...incoming._sources, ...existing._sources, videoUrl: mergedVideoUrl }
+    : existing._sources;
+
   return {
     ...existing,
     // Prefer the version with more ingredients
@@ -931,6 +1005,8 @@ export function mergeRecipeData(existing, incoming) {
     // Fill in missing fields from incoming
     imageUrl: existing.imageUrl || incoming.imageUrl,
     link: existing.link || incoming.link,
+    videoUrl: mergedVideoUrl,
+    _sources: mergedSources,
     updatedAt: new Date().toISOString(),
   };
 }

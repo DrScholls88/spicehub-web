@@ -54,6 +54,41 @@ export function buildSharePayload(meal, itemType = 'meal') {
   return JSON.parse(JSON.stringify(data));
 }
 
+// ── Size guard ───────────────────────────────────────────────────────────
+
+// Server enforces pg_column_size(p_recipe_data) > 100000 → 'Recipe data too
+// large' (see supabase/migrations/002_friends_direct_share.sql). We check
+// client-side first with a small safety margin so a recipe with huge
+// directions/notes fails fast with a friendly message instead of round-
+// tripping to the server for an opaque error.
+const MAX_SHARE_PAYLOAD_BYTES = 95000;
+
+/**
+ * Estimate the serialized byte size of a recipe_data payload.
+ * @param {object} recipeData
+ * @returns {number} approximate UTF-8 byte length
+ */
+function estimatePayloadBytes(recipeData) {
+  try {
+    return new Blob([JSON.stringify(recipeData)]).size;
+  } catch {
+    return JSON.stringify(recipeData).length;
+  }
+}
+
+/**
+ * Check a recipe_data payload against the server's size cap before sending.
+ * @param {object} recipeData
+ * @returns {string|null} friendly error message, or null if within budget
+ */
+function checkPayloadSize(recipeData) {
+  const bytes = estimatePayloadBytes(recipeData);
+  if (bytes > MAX_SHARE_PAYLOAD_BYTES) {
+    return 'This recipe is too large to share (its directions or notes are too long). Try trimming it down.';
+  }
+  return null;
+}
+
 // ── Send ───────────────────────────────────────────────────────────────────
 
 /**
@@ -66,6 +101,12 @@ export function buildSharePayload(meal, itemType = 'meal') {
  */
 export async function sendRecipeShare(toUserId, meal, itemType = 'meal', note = '') {
   const recipeData = buildSharePayload(meal, itemType);
+
+  const sizeError = checkPayloadSize(recipeData);
+  if (sizeError) {
+    return { success: false, error: sizeError };
+  }
+
   const supabase = getSupabase();
 
   const { data, error } = await supabase.rpc('send_recipe_share', {
@@ -100,6 +141,19 @@ export async function sendRecipeShareToMany(friendUserIds, meal, itemType = 'mea
   // If offline, queue everything for later
   if (!navigator.onLine) {
     const recipeData = buildSharePayload(meal, itemType);
+
+    const sizeError = checkPayloadSize(recipeData);
+    if (sizeError) {
+      // Don't queue something guaranteed to fail once back online —
+      // fail fast for every recipient with the same friendly message.
+      return {
+        sent: 0,
+        failed: friendUserIds.length,
+        queued: 0,
+        errors: friendUserIds.map(userId => ({ userId, error: sizeError })),
+      };
+    }
+
     for (const userId of friendUserIds) {
       try {
         await db.sharedSyncQueue.add({
@@ -139,6 +193,12 @@ export async function sendRecipeShareToMany(friendUserIds, meal, itemType = 'mea
 /**
  * Fetch pending shares from Supabase and write to Dexie cache.
  * Called on sign-in bootstrap.
+ *
+ * Throws on fetch failure instead of swallowing it and returning [] —
+ * a failed fetch (e.g. missing table GRANT, RLS misconfiguration, or a
+ * network blip) previously looked identical to "no pending shares", so
+ * the inbox silently showed empty even though shares existed server-side.
+ * Callers should catch and surface this to the user.
  */
 export async function syncPendingSharesToLocal() {
   const supabase = getSupabase();
@@ -154,7 +214,7 @@ export async function syncPendingSharesToLocal() {
 
   if (error) {
     console.warn('[RecipeShare] syncPendingSharesToLocal error:', error.message);
-    return [];
+    throw new Error('Could not load shared recipes — will retry next sync.');
   }
 
   // Clear existing pending shares in Dexie and repopulate
@@ -239,12 +299,45 @@ export async function dismissShare(shareId) {
 }
 
 /**
- * Mark a share as saved or dismissed. Updates Supabase (or queues if offline)
- * and removes from local Dexie cache.
+ * Bookmark a received share as "Want to Try" — unlike save/dismiss this
+ * keeps the share visible locally (in a dedicated Try Soon list) instead of
+ * fully importing it into the library or removing it from view.
+ * @param {string} shareId
+ */
+export async function bookmarkShare(shareId) {
+  await markShareStatus(shareId, 'bookmarked');
+}
+
+/**
+ * Remove a bookmark, returning the share to the pending inbox.
+ * @param {string} shareId
+ */
+export async function unbookmarkShare(shareId) {
+  await markShareStatus(shareId, 'pending');
+}
+
+/**
+ * Mark a share's status. Updates Supabase (or queues if offline).
+ *
+ * 'saved' and 'dismissed' are terminal from the local UI's point of view —
+ * the recipe now lives in the meal/drink library (saved) or the user is
+ * done with it (dismissed) — so the row is removed from the local Dexie
+ * cache same as before. 'bookmarked' (and reverting to 'pending') keep the
+ * row so it can still be listed locally (Try Soon / inbox).
  */
 async function markShareStatus(shareId, status) {
-  // Remove from local Dexie first (optimistic)
-  await db.recipeShares.delete(shareId);
+  const keepLocally = status === 'bookmarked' || status === 'pending';
+
+  if (keepLocally) {
+    // Optimistic local update in place.
+    const existing = await db.recipeShares.get(shareId);
+    if (existing) {
+      await db.recipeShares.update(shareId, { status });
+    }
+  } else {
+    // Remove from local Dexie first (optimistic)
+    await db.recipeShares.delete(shareId);
+  }
 
   // Try to update Supabase
   try {
@@ -293,6 +386,61 @@ export async function getPendingShareCount() {
   return db.recipeShares.where('status').equals('pending').count();
 }
 
+/**
+ * Get bookmarked ("Want to Try") shares from Dexie, newest first.
+ */
+export async function getLocalBookmarkedShares() {
+  return db.recipeShares
+    .where('status')
+    .equals('bookmarked')
+    .reverse()
+    .sortBy('createdAt');
+}
+
+// ── Share history ──────────────────────────────────────────────────────────
+
+/**
+ * Fetch the full exchange history (sent + received, any status) with one
+ * friend, newest first. Online-only — Supabase retains the full history
+ * (markShareStatus only ever deletes the *local* Dexie cache, never the
+ * server row), so this always reflects the true history rather than
+ * whatever happens to still be cached locally.
+ * @param {string} otherUserId
+ * @param {{ limit?: number }} [opts]
+ * @returns {Array<object>} rows shaped like the Dexie recipeShares cache,
+ *   plus a `direction` field ('sent' | 'received')
+ */
+export async function getShareHistoryWithFriend(otherUserId, { limit = 50 } = {}) {
+  const supabase = getSupabase();
+  const myUserId = await getCurrentUserId();
+  if (!myUserId) return [];
+
+  const { data, error } = await supabase
+    .from('recipe_shares')
+    .select('*')
+    .or(`and(from_user_id.eq.${myUserId},to_user_id.eq.${otherUserId}),and(from_user_id.eq.${otherUserId},to_user_id.eq.${myUserId})`)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.warn('[RecipeShare] getShareHistoryWithFriend error:', error.message);
+    throw new Error('Could not load share history — try again.');
+  }
+
+  return (data || []).map(s => ({
+    id: s.id,
+    fromUserId: s.from_user_id,
+    toUserId: s.to_user_id,
+    direction: s.from_user_id === myUserId ? 'sent' : 'received',
+    itemType: s.item_type,
+    status: s.status,
+    createdAt: s.created_at,
+    recipeData: s.recipe_data,
+    note: s.note || '',
+    reaction: s.reaction || null,
+  }));
+}
+
 // ── Realtime handler ───────────────────────────────────────────────────────
 
 /**
@@ -335,10 +483,36 @@ export async function handleIncomingShareRealtime(payload, myUserId) {
   };
 }
 
+/**
+ * Handle a Realtime UPDATE on recipe_shares where I'm the sender — used to
+ * detect when a friend reacts to a recipe I shared with them, so we can
+ * pop a toast ("Sarah reacted 🔥 to your Pad Thai!") instead of the reaction
+ * being invisible until the next time Share History happens to be opened.
+ * @param {object} payload — Supabase Realtime payload
+ * @param {string} myUserId
+ * @returns {{ recipeName: string, reaction: string, reactorUserId: string } | null}
+ */
+export function handleShareReactionRealtime(payload, myUserId) {
+  const row = payload.new;
+  const oldRow = payload.old;
+  if (!row || row.from_user_id !== myUserId) return null;
+  if (!row.reaction || row.reaction === oldRow?.reaction) return null;
+
+  return {
+    recipeName: row.recipe_data?.name || 'your recipe',
+    reaction: row.reaction,
+    reactorUserId: row.to_user_id, // the recipient of the share is who reacted
+  };
+}
+
 // ── Emoji reactions ───────────────────────────────────────────────────────
 
-/** Allowed reaction emojis */
-export const SHARE_REACTIONS = ['❤️', '🔥', '😋', '👨‍🍳', '🤤', '👍'];
+/**
+ * Allowed reaction emojis. Must exactly match the CHECK constraint on
+ * recipe_shares.reaction (see supabase/migrations/005_social_features_tier1.sql)
+ * or the server will reject a reaction the UI just offered.
+ */
+export const SHARE_REACTIONS = ['❤️', '🔥', '😋', '👨‍🍳', '🤤', '👍', '💯', '🎉'];
 
 /**
  * React to a received share (or remove reaction with null).

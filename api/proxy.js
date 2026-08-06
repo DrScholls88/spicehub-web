@@ -16,6 +16,14 @@ export const config = {
 const INSTAGRAM_HOST = /instagram\.com/i;
 const REDDIT_HOST = /(^|\.)reddit\.com$/i;
 
+// HTML size cap (harden-ideas-audit-2026-08-06.md §3) — api/extract.js already
+// caps its own fetch at MAX_HTML_BYTES=2_500_000; this generic passthrough
+// (used by blogLinkFollower.js's fetchHtmlViaProxy for every blog/short-link/
+// bio-hub fetch) had no cap at all, so a large page would be read into memory
+// in full before any parsing happened. 2MB is comfortably past any real
+// recipe blog page while still bounding worst-case memory per request.
+const MAX_HTML_CHARS = 2_000_000;
+
 /**
  * SSRF guard. Edge Runtime has no `dns`/`net` modules, so this can't re-resolve
  * a hostname and check the live IP the way the Node-based server/index.js does
@@ -304,6 +312,21 @@ export default async function handler(req) {
       const latestComments = Array.isArray(post.latestComments)
         ? post.latestComments.slice(0, 5).map((c) => c?.text || c?.body || (typeof c === 'string' ? c : '')).filter(Boolean)
         : [];
+      // Defensive bio/external-URL extraction (harden-ideas-audit-2026-08-06.md
+      // §2). apify~instagram-post-scraper is a POST scraper, not a profile
+      // scraper — dataDetailLevel='basicData' items are not guaranteed to carry
+      // the owner's bio link at all. This checks every field name Apify's
+      // post-scraper output has been observed to expose it under, so if the
+      // actor DOES already return it somewhere, it's captured for free. If none
+      // are present, profileBioUrl stays '' exactly as it did before this
+      // change (no regression). Closing this gap for real — guaranteed, not
+      // best-effort — would need either a `dataDetailLevel` upgrade (cost/
+      // latency hit on every call, not just failures) or a separate Apify
+      // profile-scraper actor call; that tradeoff needs a live-API check
+      // against the actual response shape before committing to it, so it's
+      // deliberately not done here.
+      const profileBioUrl = post.ownerExternalUrl || post.externalUrl || post.bioLink
+        || post.owner?.externalUrl || post.owner?.bioLink || '';
       const result = {
         ok: true,
         caption: post.caption || '',
@@ -312,6 +335,7 @@ export default async function handler(req) {
         videoUrl: post.videoUrl || '',
         ownerUsername: post.ownerUsername || '',
         ownerFullName: post.ownerFullName || '',
+        profileBioUrl,
         shortCode: post.shortCode || '',
         hashtags: post.hashtags || [],
         timestamp: post.timestamp || '',
@@ -412,7 +436,8 @@ export default async function handler(req) {
     });
 
     const contentType = response.headers.get('content-type') || 'text/html';
-    const html = await response.text();
+    const rawHtml = await response.text();
+    const html = rawHtml.length > MAX_HTML_CHARS ? rawHtml.slice(0, MAX_HTML_CHARS) : rawHtml;
 
     // Pass through the target's actual HTTP status so the client can distinguish
     // a successful fetch (2xx) from a bot-wall/auth block (403, 429, etc.).

@@ -14,7 +14,8 @@
 import { useEffect, useRef } from 'react';
 import { isFriendsEnabled, getSupabase, getCurrentUserId } from '../lib/supabaseClient';
 import { handleFriendshipRealtimeEvent } from '../lib/friends';
-import { handleIncomingShareRealtime } from '../lib/recipeShare';
+import { handleIncomingShareRealtime, handleShareReactionRealtime } from '../lib/recipeShare';
+import db from '../db';
 
 /**
  * @param {{ showToast?: Function, enabled?: boolean }} options
@@ -90,7 +91,36 @@ export default function useFriendsRealtime({ showToast, enabled = true } = {}) {
         })
         .subscribe();
 
-      channelsRef.current = [friendsCh, sharesCh];
+      // ── Channel 3: reactions on shares I sent ───────────────────────────
+      // Tier 1 "Reaction expansion": tell the sender when a friend reacts,
+      // instead of the reaction only being visible if they happen to open
+      // Share History later.
+      const reactionsCh = supabase
+        .channel(`sent-share-reactions:${userId}`)
+        .on('postgres_changes', {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'recipe_shares',
+          filter: `from_user_id=eq.${userId}`,
+        }, async (payload) => {
+          const info = handleShareReactionRealtime(payload, userId);
+          if (info) {
+            window.dispatchEvent(new CustomEvent('spicehub:shares-updated'));
+            // Reactor's name isn't on the recipe_shares row itself — check
+            // the local friends cache (already populated for anyone we'd
+            // be sharing recipes with) rather than a second network round
+            // trip just to label a toast.
+            let name = 'Someone';
+            try {
+              const friend = await db.friends.where('otherUserId').equals(info.reactorUserId).first();
+              name = friend?.displayName || (friend?.username ? `@${friend.username}` : 'Someone');
+            } catch { /* fall back to "Someone" */ }
+            showToast?.(`${name} reacted ${info.reaction} to "${info.recipeName}"`, 'info', 3500);
+          }
+        })
+        .subscribe();
+
+      channelsRef.current = [friendsCh, sharesCh, reactionsCh];
     })();
 
     return () => {

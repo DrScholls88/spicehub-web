@@ -51,6 +51,7 @@ import useFriendsRealtime from './hooks/useFriendsRealtime';
 import HomeGroupSection from './components/HomeGroupSection';
 import FriendsSheet from './components/FriendsSheet';
 import { isHomeGroupEnabled, isFriendsEnabled } from './lib/supabaseClient';
+import { setCurrentStatus } from './lib/cloudProfile';
 import { getPendingShareCount } from './lib/recipeShare';
 import { getPendingInboundCount, getLocalFriends } from './lib/friends';
 import SharePickerSheet from './components/SharePickerSheet';
@@ -1428,6 +1429,13 @@ useEffect(() => {
   // ── Cook Mode ────────────────────────────────────────────────────────────────
   const startCookMode = useCallback((meal, scaleFactor = 1.0) => {
     setCookModeMeal({ meal, scaleFactor });
+    // Tier 1 "What's Cooking?" status — one-tap is literally zero extra
+    // taps here: starting to cook a recipe IS the signal. Fire-and-forget,
+    // best-effort (setCurrentStatus already no-ops quietly if signed out
+    // or offline) so a flaky connection never blocks Cook Mode itself.
+    if (isFriendsEnabled() && meal?.name) {
+      setCurrentStatus(meal.name, 'meal'); // best-effort, never throws
+    }
   }, []);
 
   // ── Floating PiP video player ────────────────────────────────────────────────
@@ -1457,6 +1465,10 @@ useEffect(() => {
   // ── Mix Mode (drinks) ───────────────────────────────────────────────────────
   const startMixMode = useCallback((drink, scaleFactor = 1.0) => {
     setMixModeDrink({ drink, scaleFactor });
+    // Same "What's Cooking?" ambient status as startCookMode, drink flavor.
+    if (isFriendsEnabled() && drink?.name) {
+      setCurrentStatus(drink.name, 'drink'); // best-effort, never throws
+    }
   }, []);
 
   const finishMixMode = useCallback(async () => {
@@ -1988,6 +2000,7 @@ useEffect(() => {
                 onSignIn={homeGroup.signIn}
                 onSignOut={homeGroup.signOut}
                 onRegenerateCode={homeGroup.regenerateInviteCode}
+                showToast={showToast}
               />
               {/* Friends — link to standalone sheet */}
               {isFriendsEnabled() && (
