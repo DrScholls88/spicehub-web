@@ -835,8 +835,13 @@ export async function tryBlogLinkExtraction(caption, imageUrl, {
   // Step 1: Classify caption
   const quality = assessCaptionQuality(caption);
 
-  if (quality.class === 'strong') {
-    console.log(`[BlogLinkFollower] Caption is strong (${quality.reason}), skipping`);
+  // 2026-08-07: Don't skip "strong" captions when the text contains a URL —
+  // the blog is almost always the recipe of record, and the caption is just a
+  // teaser. Let link discovery run; if no blog links are found we still return
+  // null, so this can never make things worse.
+  const captionHasUrl = /https?:\/\/[^\s]+/i.test(caption);
+  if (quality.class === 'strong' && !captionHasUrl) {
+    console.log(`[BlogLinkFollower] Caption is strong (${quality.reason}), no URLs, skipping`);
     return null;
   }
 
