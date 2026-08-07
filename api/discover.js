@@ -8,6 +8,7 @@
 // Query params:
 //   ?sources=budgetbytes,minimalistbaker  (comma-sep, default: all)
 //   ?limit=30                             (per-source cap, default: 15)
+//   ?filter=strict|relaxed                (default: strict — only single-recipe posts)
 //
 // Caching: 30-minute Cache-Control so Vercel's CDN doesn't re-fetch on
 // every request. Clients can force-refresh with Cache-Control: no-cache.
@@ -43,6 +44,15 @@ const SOURCES = {
   acouplecooks:     { name: 'A Couple Cooks',        feedUrl: 'https://www.acouplecooks.com/feed/',           emoji: '👫', tags: ['healthy', 'vegetarian'] },
   mediterraneandish:{ name: 'Mediterranean Dish',    feedUrl: 'https://www.themediterraneandish.com/feed/',   emoji: '🫒', tags: ['healthy', 'comfort'] },
   feastingathome:   { name: 'Feasting at Home',      feedUrl: 'https://www.feastingathome.com/feed/',         emoji: '🍽️', tags: ['seasonal', 'technique'] },
+  // ── Expansion v2 (2026-08-06) ──────────────────────────────────────
+  allrecipes:       { name: 'AllRecipes',            feedUrl: 'https://www.allrecipes.com/rss',               emoji: '🍽️', tags: ['weeknight', 'comfort'] },
+  simplyrecipes:    { name: 'Simply Recipes',        feedUrl: 'https://www.simplyrecipes.com/feed',           emoji: '📖', tags: ['technique', 'weeknight'] },
+  thekitchn:        { name: 'The Kitchn',            feedUrl: 'https://www.thekitchn.com/main.rss',           emoji: '🏠', tags: ['technique', 'healthy'] },
+  eatingwell:       { name: 'EatingWell',            feedUrl: 'https://www.eatingwell.com/rss',               emoji: '🥬', tags: ['healthy', 'mealprep'] },
+  epicurious:       { name: 'Epicurious',            feedUrl: 'https://www.epicurious.com/feed/recipes-rss-feed/rss', emoji: '🧑‍🍳', tags: ['technique', 'seasonal'] },
+  bonappetit:       { name: 'Bon Appétit',           feedUrl: 'https://www.bonappetit.com/feed/recipes-rss-feed/rss', emoji: '🇫🇷', tags: ['technique', 'comfort'] },
+  foodnetwork:      { name: 'Food Network',          feedUrl: 'https://www.foodnetwork.com/fn-dish/recipes.rss',      emoji: '📺', tags: ['comfort', 'weeknight'] },
+  nytcooking:       { name: 'NYT Cooking',           feedUrl: 'https://rss.nytimes.com/services/xml/rss/nyt/Cooking.xml', emoji: '📰', tags: ['technique', 'seasonal'] },
 };
 
 // ─── Minimal RSS parser ──────────────────────────────────────────────────────
@@ -106,30 +116,74 @@ function stripHtml(html) {
     .trim();
 }
 
-function parseRssFeed(xml, sourceKey, limit) {
+// ─── Post-type detection ─────────────────────────────────────────────────────
+// Classify each RSS post so the client can filter/badge appropriately.
+// Returns: 'recipe' | 'roundup' | 'mealplan' | 'guide' | 'baking-tool'
+
+const ROUNDUP_TITLE_RX   = /\d{2,}\s+(best|easy|quick|favorite|delicious|healthy|amazing)|roundup|recipe ideas|meal ideas|what to (?:cook|make)|top\s+\d+/i;
+const MEALPLAN_TITLE_RX  = /meal\s*plan|weekly\s*menu|week of meals|\d+\s*day\s*(?:meal|menu|eating)/i;
+const GUIDE_TITLE_RX     = /best .+(?:to buy|we tested|we tried|for \d{4})|how to (?:choose|pick|buy|select)|kitchen gadget|product review|equipment guide/i;
+const BAKING_TOOL_RX     = /best .+(?:pan|mixer|sheet|spatula|thermometer|scale|bakeware|rolling pin)/i;
+
+function detectPostType(title, contentEncoded, link) {
+  if (MEALPLAN_TITLE_RX.test(title))  return 'mealplan';
+  if (BAKING_TOOL_RX.test(title))     return 'baking-tool';
+  if (GUIDE_TITLE_RX.test(title))     return 'guide';
+  if (ROUNDUP_TITLE_RX.test(title))   return 'roundup';
+
+  // Link density check: roundup posts embed many same-domain recipe links
+  if (contentEncoded) {
+    try {
+      const domain = new URL(link).hostname.replace(/^www\./, '');
+      const linkMatches = contentEncoded.match(/<a\s[^>]*href=["'][^"']*[^"']+["']/gi) || [];
+      const sameDomainLinks = linkMatches.filter(l => l.includes(domain)).length;
+      if (sameDomainLinks > 4) return 'roundup';
+    } catch { /* ignore URL parse failures */ }
+  }
+
+  return 'recipe';
+}
+
+// ─── Hard-skip patterns (always removed regardless of filter mode) ───────────
+const HARD_SKIP_RX = /giveaway|sweepstakes|gift\s*card|announcement|sponsored/i;
+
+function parseRssFeed(xml, sourceKey, limit, filterMode) {
   const source = SOURCES[sourceKey];
   if (!source) return [];
 
-  // Split on <item> boundaries
-  const items = xml.split(/<item>/i).slice(1); // first chunk is channel header
+  // Support both RSS (<item>) and Atom (<entry>) feeds
+  let items = xml.split(/<item>/i).slice(1);
+  const isAtom = items.length === 0;
+  if (isAtom) {
+    items = xml.split(/<entry>/i).slice(1);
+  }
+
   const results = [];
 
   for (const itemXml of items.slice(0, limit)) {
     const title = stripHtml(extractTag(itemXml, 'title'));
-    const link = extractTag(itemXml, 'link');
-    const pubDate = extractTag(itemXml, 'pubDate');
-    const description = extractTag(itemXml, 'description');
-    const contentEncoded = extractTag(itemXml, 'content:encoded');
+    const pubDate = extractTag(itemXml, 'pubDate') || extractTag(itemXml, 'published') || extractTag(itemXml, 'updated');
+    const description = extractTag(itemXml, 'description') || extractTag(itemXml, 'summary');
+    const contentEncoded = extractTag(itemXml, 'content:encoded') || extractTag(itemXml, 'content');
     const categories = extractAllTags(itemXml, 'category').map(c => stripHtml(c));
 
-    // Skip non-recipe posts (giveaways, product roundups, gear reviews, announcements)
-    const skipPatterns = /giveaway|sweepstakes|gift\s*card|roundup|announcement|sponsored|best .+(?:to buy|we tested|we tried)|pepper grinder|kitchen gadget|product review/i;
-    if (skipPatterns.test(title) || skipPatterns.test(categories.join(' '))) continue;
+    // Link extraction: RSS uses <link>url</link>, Atom uses <link href="url"/>
+    let link = extractTag(itemXml, 'link');
+    if (!link) {
+      const hrefMatch = itemXml.match(/<link[^>]+href=["']([^"']+)["']/i);
+      if (hrefMatch) link = hrefMatch[1].trim();
+    }
+
+    // Hard skip — always removed (spam, giveaways, sponsored)
+    if (HARD_SKIP_RX.test(title) || HARD_SKIP_RX.test(categories.join(' '))) continue;
+    if (!title || !link) continue;
 
     const imageUrl = extractImage(itemXml, contentEncoded, description);
-    const snippet = stripHtml(description).slice(0, 200);
+    const snippet = stripHtml(description).slice(0, 300);
+    const postType = detectPostType(title, contentEncoded, link);
 
-    if (!title || !link) continue;
+    // In strict mode, only single-recipe posts pass through
+    if (filterMode === 'strict' && postType !== 'recipe') continue;
 
     results.push({
       title,
@@ -137,6 +191,7 @@ function parseRssFeed(xml, sourceKey, limit) {
       imageUrl,
       snippet,
       pubDate: pubDate || null,
+      postType,
       categories: categories.filter(c =>
         // Drop ingredient-level categories (Budget Bytes includes them)
         c.length > 2 && !/^(Garlic|Salt|Pepper|Oil|Butter|Onion|Sugar)$/i.test(c)
@@ -173,6 +228,7 @@ export default async function handler(req) {
   const { searchParams } = new URL(req.url);
   const requestedSources = searchParams.get('sources');
   const limit = Math.min(parseInt(searchParams.get('limit') || '15', 10), 50);
+  const filterMode = searchParams.get('filter') === 'relaxed' ? 'relaxed' : 'strict';
 
   // Determine which sources to fetch
   let sourceKeys = Object.keys(SOURCES);
@@ -202,7 +258,7 @@ export default async function handler(req) {
         clearTimeout(timer);
         if (!resp.ok) throw new Error(`${resp.status}`);
         const xml = await resp.text();
-        return { key, items: parseRssFeed(xml, key, limit) };
+        return { key, items: parseRssFeed(xml, key, limit, filterMode) };
       } catch (err) {
         clearTimeout(timer);
         console.log(`[discover] Feed ${key} failed: ${err.message}`);

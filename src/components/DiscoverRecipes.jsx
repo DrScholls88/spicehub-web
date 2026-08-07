@@ -1,18 +1,24 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Loader2, WifiOff, RefreshCw, ArrowUpRight, Search } from 'lucide-react';
+import { X, Loader2, WifiOff, RefreshCw, ArrowUpRight, Search, ExternalLink, Download } from 'lucide-react';
 import { fetchDiscoveryFeed, filterPosts, clearDiscoveryCache, DISCOVER_CATEGORIES } from '../scrapers/blogDiscovery';
 import { hapticLight } from '../haptics';
 import SafeMediaImage from './SafeMediaImage';
 import './DiscoverRecipes.css';
 
-// Redesigned Discovery surface: multi-source recipe blog aggregator.
-// Replaces the Reddit-only feed (which required OAuth credentials and kept
-// 403'ing) with a zero-auth RSS-based system that scrapes ~10 popular
-// recipe blogs server-side and returns unified JSON.
+// Discovery v2: multi-source blog aggregator with expandable preview cards,
+// post-type filtering (strict/relaxed), and 25-source feed.
 //
 // UX: search bar, source pills (horizontal scroll), category chips,
-// recipe cards with source badge + snippet. Tap → import pipeline.
+// "Unfiltered" toggle, recipe cards that expand inline for preview.
+// Only expanded card's Import button fires the import pipeline.
+
+const POST_TYPE_LABELS = {
+  roundup:       'Roundup',
+  mealplan:      'Meal Plan',
+  guide:         'Guide',
+  'baking-tool': 'Baking Tool',
+};
 
 export default function DiscoverRecipes({ onClose, onSelectUrl }) {
   // ─── State ───────────────────────────────────────────────────────────
@@ -23,17 +29,21 @@ export default function DiscoverRecipes({ onClose, onSelectUrl }) {
   const [activeCategory, setActiveCategory] = useState('all');
   const [activeSource, setActiveSource] = useState('all');
   const [searchText, setSearchText] = useState('');
+  const [showAll, setShowAll] = useState(false); // unfiltered toggle
+  const [expandedPost, setExpandedPost] = useState(null); // preview card
   const searchRef = useRef(null);
+  const expandedRef = useRef(null);
   const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
 
   // ─── Load feed ───────────────────────────────────────────────────────
-  const loadFeed = useCallback(async ({ force = false } = {}) => {
+  const loadFeed = useCallback(async ({ force = false, filter } = {}) => {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
     setLoading(true);
     setError(null);
     try {
       if (force) clearDiscoveryCache();
-      const data = await fetchDiscoveryFeed({ force });
+      const filterMode = filter !== undefined ? filter : (showAll ? 'relaxed' : 'strict');
+      const data = await fetchDiscoveryFeed({ force, filter: filterMode });
       setAllPosts(data.posts || []);
       setSources(data.sources || {});
     } catch (err) {
@@ -42,12 +52,18 @@ export default function DiscoverRecipes({ onClose, onSelectUrl }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showAll]);
 
   useEffect(() => {
     loadFeed();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Re-fetch when filter toggle changes
+  useEffect(() => {
+    loadFeed({ filter: showAll ? 'relaxed' : 'strict' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAll]);
 
   // ─── Filtered posts ──────────────────────────────────────────────────
   const filteredPosts = useMemo(() =>
@@ -70,15 +86,43 @@ export default function DiscoverRecipes({ onClose, onSelectUrl }) {
     setActiveSource(key === activeSource ? 'all' : key);
   };
 
-  const handleSelect = (post) => {
+  const handleCardTap = (post) => {
+    hapticLight();
+    // Toggle expand: tap same card collapses, tap different expands
+    setExpandedPost(prev => prev?.link === post.link ? null : post);
+  };
+
+  const handleImport = (post) => {
     hapticLight();
     onSelectUrl(post.link);
   };
 
   const handleRefresh = () => {
     hapticLight();
+    setExpandedPost(null);
     loadFeed({ force: true });
   };
+
+  const handleToggleFilter = () => {
+    hapticLight();
+    setExpandedPost(null);
+    setShowAll(prev => !prev);
+  };
+
+  // Close expanded card on Escape
+  useEffect(() => {
+    if (!expandedPost) return;
+    const onKey = (e) => { if (e.key === 'Escape') setExpandedPost(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [expandedPost]);
+
+  // Scroll expanded card into view
+  useEffect(() => {
+    if (expandedPost && expandedRef.current) {
+      expandedRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [expandedPost]);
 
   // Source list for the pills row
   const sourceList = useMemo(() => {
@@ -119,7 +163,7 @@ export default function DiscoverRecipes({ onClose, onSelectUrl }) {
         <div className="discover-header">
           <div>
             <h2 className="discover-title">Discover Recipes</h2>
-            <p className="discover-subtitle">Fresh picks from top recipe blogs</p>
+            <p className="discover-subtitle">Fresh picks from {Object.keys(sources).length || '25'} top recipe blogs</p>
           </div>
           <div className="discover-header-actions">
             {!isOffline && (
@@ -198,6 +242,14 @@ export default function DiscoverRecipes({ onClose, onSelectUrl }) {
                     <span aria-hidden="true">{cat.emoji}</span> {cat.label}
                   </button>
                 ))}
+                {/* Unfiltered toggle chip */}
+                <button
+                  className={`discover-chip discover-chip-unfiltered${showAll ? ' discover-chip-active' : ''}`}
+                  onClick={handleToggleFilter}
+                  aria-pressed={showAll}
+                >
+                  <span aria-hidden="true">🔓</span> Unfiltered
+                </button>
               </div>
             </div>
 
@@ -231,37 +283,115 @@ export default function DiscoverRecipes({ onClose, onSelectUrl }) {
 
               {!loading && !error && filteredPosts.length > 0 && (
                 <AnimatePresence initial={false}>
-                  {filteredPosts.map((post, idx) => (
-                    <motion.button
-                      key={post.link}
-                      className="discover-card"
-                      onClick={() => handleSelect(post)}
-                      initial={{ opacity: 0, y: 8 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: Math.min(idx * 0.025, 0.3), duration: 0.2 }}
-                      whileTap={{ scale: 0.98 }}
-                    >
-                      <div className="discover-card-thumb">
-                        <SafeMediaImage
-                          src={post.imageUrl}
-                          alt=""
-                          className="discover-card-img"
-                          fallbackEmoji="🍽️"
-                        />
-                      </div>
-                      <div className="discover-card-body">
-                        <span className="discover-card-title">{post.title}</span>
-                        <span className="discover-card-source">
-                          {post.sourceEmoji} {post.sourceName}
-                          {post.pubDate && <span className="discover-card-date"> · {timeAgo(post.pubDate)}</span>}
-                        </span>
-                        {post.snippet && (
-                          <span className="discover-card-snippet">{post.snippet}</span>
-                        )}
-                      </div>
-                      <ArrowUpRight size={16} strokeWidth={2.5} className="discover-card-arrow" aria-hidden="true" />
-                    </motion.button>
-                  ))}
+                  {filteredPosts.map((post, idx) => {
+                    const isExpanded = expandedPost?.link === post.link;
+                    const typeLabel = POST_TYPE_LABELS[post.postType];
+
+                    return (
+                      <motion.div
+                        key={post.link}
+                        layout
+                        className={`discover-card-wrapper${isExpanded ? ' discover-card-wrapper-expanded' : ''}`}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: Math.min(idx * 0.025, 0.3), duration: 0.2 }}
+                        ref={isExpanded ? expandedRef : undefined}
+                      >
+                        {/* Collapsed card */}
+                        <motion.button
+                          className={`discover-card${isExpanded ? ' discover-card-expanded' : ''}`}
+                          onClick={() => handleCardTap(post)}
+                          whileTap={isExpanded ? undefined : { scale: 0.98 }}
+                          layout
+                        >
+                          <div className="discover-card-thumb">
+                            <SafeMediaImage
+                              src={post.imageUrl}
+                              alt=""
+                              className="discover-card-img"
+                              fallbackEmoji="🍽️"
+                            />
+                          </div>
+                          <div className="discover-card-body">
+                            <span className="discover-card-title">{post.title}</span>
+                            <span className="discover-card-source">
+                              {post.sourceEmoji} {post.sourceName}
+                              {post.pubDate && <span className="discover-card-date"> · {timeAgo(post.pubDate)}</span>}
+                              {typeLabel && (
+                                <span className="discover-card-type-badge">{typeLabel}</span>
+                              )}
+                            </span>
+                            {!isExpanded && post.snippet && (
+                              <span className="discover-card-snippet">{post.snippet}</span>
+                            )}
+                          </div>
+                          {!isExpanded && (
+                            <ArrowUpRight size={16} strokeWidth={2.5} className="discover-card-arrow" aria-hidden="true" />
+                          )}
+                        </motion.button>
+
+                        {/* Expanded preview */}
+                        <AnimatePresence>
+                          {isExpanded && (
+                            <motion.div
+                              className="discover-preview"
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: 'auto', opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: 0.25, ease: [0.32, 0.72, 0, 1] }}
+                            >
+                              {/* Hero image */}
+                              {post.imageUrl && (
+                                <div className="discover-preview-hero">
+                                  <SafeMediaImage
+                                    src={post.imageUrl}
+                                    alt={post.title}
+                                    className="discover-preview-hero-img"
+                                    fallbackEmoji="🍽️"
+                                  />
+                                </div>
+                              )}
+
+                              {/* Description */}
+                              {post.snippet && (
+                                <p className="discover-preview-snippet">{post.snippet}</p>
+                              )}
+
+                              {/* Category chips */}
+                              {post.categories?.length > 0 && (
+                                <div className="discover-preview-tags">
+                                  {post.categories.map(cat => (
+                                    <span key={cat} className="discover-preview-tag">{cat}</span>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* Actions */}
+                              <div className="discover-preview-actions">
+                                <button
+                                  className="discover-preview-import"
+                                  onClick={(e) => { e.stopPropagation(); handleImport(post); }}
+                                >
+                                  <Download size={15} strokeWidth={2.5} />
+                                  Import
+                                </button>
+                                <a
+                                  className="discover-preview-link"
+                                  href={post.link}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <ExternalLink size={14} strokeWidth={2.5} />
+                                  View on {post.sourceName}
+                                </a>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </motion.div>
+                    );
+                  })}
                 </AnimatePresence>
               )}
 
@@ -269,6 +399,7 @@ export default function DiscoverRecipes({ onClose, onSelectUrl }) {
                 <div className="discover-footer-note">
                   Showing {filteredPosts.length} recipe{filteredPosts.length !== 1 ? 's' : ''}
                   {activeSource !== 'all' || activeCategory !== 'all' || searchText ? ' (filtered)' : ''}
+                  {showAll ? ' · unfiltered' : ''}
                 </div>
               )}
             </div>
