@@ -54,14 +54,17 @@ export default function DiscoverRecipes({ onClose, onSelectUrl }) {
     }
   }, [showAll]);
 
+  // Fetch on mount + re-fetch when filter toggle changes.
+  // Single effect avoids the double-fetch race that two separate effects
+  // caused (both fired on mount → concurrent setLoading calls).
+  const didMount = useRef(false);
   useEffect(() => {
-    loadFeed();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Re-fetch when filter toggle changes
-  useEffect(() => {
-    loadFeed({ filter: showAll ? 'relaxed' : 'strict' });
+    if (!didMount.current) {
+      didMount.current = true;
+      loadFeed();
+    } else {
+      loadFeed({ filter: showAll ? 'relaxed' : 'strict' });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showAll]);
 
@@ -290,7 +293,6 @@ export default function DiscoverRecipes({ onClose, onSelectUrl }) {
                     return (
                       <motion.div
                         key={post.link}
-                        layout
                         className={`discover-card-wrapper${isExpanded ? ' discover-card-wrapper-expanded' : ''}`}
                         initial={{ opacity: 0, y: 8 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -298,11 +300,9 @@ export default function DiscoverRecipes({ onClose, onSelectUrl }) {
                         ref={isExpanded ? expandedRef : undefined}
                       >
                         {/* Collapsed card */}
-                        <motion.button
+                        <button
                           className={`discover-card${isExpanded ? ' discover-card-expanded' : ''}`}
                           onClick={() => handleCardTap(post)}
-                          whileTap={isExpanded ? undefined : { scale: 0.98 }}
-                          layout
                         >
                           <div className="discover-card-thumb">
                             <SafeMediaImage
@@ -328,7 +328,7 @@ export default function DiscoverRecipes({ onClose, onSelectUrl }) {
                           {!isExpanded && (
                             <ArrowUpRight size={16} strokeWidth={2.5} className="discover-card-arrow" aria-hidden="true" />
                           )}
-                        </motion.button>
+                        </button>
 
                         {/* Expanded preview */}
                         <AnimatePresence>
