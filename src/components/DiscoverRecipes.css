@@ -267,6 +267,10 @@
 
 /* ── Card wrapper (holds collapsed + expanded) ───────────────────── */
 .discover-card-wrapper {
+  flex-shrink: 0;            /* prevent flex compression — overflow:hidden
+                                resolves min-height:auto→0 in flex, which
+                                lets the column algorithm crush wrappers
+                                to zero height before the scrollbar kicks in */
   border-radius: 14px;
   overflow: hidden;
   border: 1px solid var(--border, #e0e0e0);
@@ -288,11 +292,11 @@
   background: transparent;
   text-align: left;
   min-height: 72px;
-  transition: background 0.15s;
+  transition: background 0.15s, transform 0.1s ease;
   border: none;
   border-radius: 0;
   /* ▼ Button reset — browsers don't inherit these by default */
-  color: inherit;
+  color: var(--text);
   font: inherit;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -302,6 +306,7 @@
 }
 .discover-card:active {
   background: var(--surface-2, #f5f5f5);
+  transform: scale(0.98);
 }
 
 .discover-card-thumb {
