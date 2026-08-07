@@ -112,6 +112,15 @@ export default function DiscoverRecipes({ onClose, onSelectUrl }) {
     setShowAll(prev => !prev);
   };
 
+  // ─── Body scroll lock ─────────────────────────────────────────────
+  // iOS Safari ignores CSS overflow:hidden on <body> during touch, so we
+  // must also capture touchmove on the overlay element itself.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, []);
+
   // Close expanded card on Escape
   useEffect(() => {
     if (!expandedPost) return;
@@ -151,10 +160,20 @@ export default function DiscoverRecipes({ onClose, onSelectUrl }) {
   };
 
   return (
-    <div className="discover-overlay" onClick={onClose}>
+    <div
+      className="discover-overlay"
+      onClick={onClose}
+      onTouchEnd={(e) => {
+        // On mobile, onClick can be swallowed when touch-action:none is set
+        // on the overlay.  Fire onClose if the touch landed on the backdrop
+        // itself (not on the sheet or its children).
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <motion.div
         className="discover-sheet"
         onClick={e => e.stopPropagation()}
+        onTouchEnd={e => e.stopPropagation()}
         initial={{ y: '100%' }}
         animate={{ y: 0 }}
         exit={{ y: '100%' }}
