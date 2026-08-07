@@ -275,7 +275,10 @@ export default async function handler(req) {
     try {
       // Use Apify's synchronous run endpoint — starts the actor and waits for results
       const actorId = 'apify~instagram-post-scraper';
-      const apiUrl = `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${apifyToken}&timeout=25`;
+      // Pin actor version when APIFY_ACTOR_VERSION is set (harden-ideas §2)
+      const actorVersion = process.env.APIFY_ACTOR_VERSION || '';
+      const versionParam = actorVersion ? `&build=${encodeURIComponent(actorVersion)}` : '';
+      const apiUrl = `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${apifyToken}&timeout=25${versionParam}`;
       const resp = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

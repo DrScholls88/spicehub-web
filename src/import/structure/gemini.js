@@ -198,6 +198,13 @@ export async function serverStructurePack(pack, { type = 'meal', signal } = {}) 
       signal: signal || AbortSignal.timeout(REQUEST_TIMEOUT_MS + 5000),
     });
     if (!res.ok) {
+      if (res.status === 429) {
+        console.warn('[SpiceHub] /api/structure rate-limited (429) — back off');
+        // Surface 429 so callers can show a toast instead of silent fail
+        const err429 = new Error('AI structuring rate-limited — try again shortly');
+        err429.status = 429;
+        throw err429;
+      }
       console.log(`[SpiceHub] /api/structure HTTP ${res.status}`);
       return null;
     }

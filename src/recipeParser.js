@@ -35,6 +35,10 @@ import { selectHeroImage, persistCarousel } from './import/images.js';
 import { packHasCompleteCandidate, createContextPack, packFromCaption } from './import/contextPack.js';
 import { structurePack, serverStructurePack } from './import/structure/gemini.js';
 import { tryBlogLinkExtraction, assessCaptionQuality } from './lib/blogLinkFollower.js';
+import {
+  validateApifyPayload, schemaQualityGate, deduplicateImport,
+  capGeminiInput,
+} from './lib/importGuards.js';
 
 // ── Null-byte sanitizer ─────────────────────────────────────────────────────
 // LLMs occasionally emit null bytes or control characters in JSON output.
@@ -2898,6 +2902,11 @@ export async function parseFromUrl(url, onProgress, { type = 'meal', signal } = 
 }
 
 export async function importRecipeFromUrl(url, onProgress, { type = 'meal', signal } = {}) {
+  // In-flight dedup: concurrent imports of the same URL share one promise
+  return deduplicateImport(url, () => _importRecipeFromUrlOuter(url, onProgress, { type, signal }));
+}
+
+async function _importRecipeFromUrlOuter(url, onProgress, { type = 'meal', signal } = {}) {
   const DEFAULT_TIMEOUT_MS = 45_000;
   const MAX_TIMEOUT_MS = 90_000;
   const startedAt = Date.now();
@@ -5114,6 +5123,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
         // an empty profileBioUrl as "no bio link available" and skips it.
         profileBioUrl: capturedProfileBioUrl,
         carouselImages: capturedImages,
+        signal,
       });
 
       if (blogRecipe && !blogRecipe._isPartial && blogRecipe.ingredients?.length >= 2) {
@@ -5150,6 +5160,18 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
           sourceUrl: url,
           importedAt: new Date().toISOString(),
         };
+        // Schema quality gate (harden-ideas §7)
+        const gate = schemaQualityGate(finalRecipe);
+        if (!gate.pass) {
+          console.log(`[SpiceHub] Blog recipe failed quality gate: ${gate.reasons.join(', ')}`);
+          finalRecipe._qualityGateReasons = gate.reasons;
+        }
+        // Finalize telemetry
+        logImportTelemetry({
+          stage: 'finalize', ok: gate.pass, reason: gate.pass ? 'blog-direct' : gate.reasons.join(','),
+          domain: domainForTelemetry(blogRecipe.link || url), extractionSource: 'blog_link_follower',
+          ms: 0, url,
+        });
         try { await setCachedImport(url, finalRecipe); } catch { /* non-fatal */ }
         return finalRecipe;
 
@@ -5256,9 +5278,11 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
     };
   }
 
-  const textForGemini = capturedCaption?.trim().length >= 20
+  const textForGeminiRaw = capturedCaption?.trim().length >= 20
     ? capturedCaption
     : capturedRawPageText?.trim().length >= 100 ? capturedRawPageText : '';
+  // Cap input to Gemini (8k chars) to control cost + latency
+  const textForGemini = capGeminiInput(textForGeminiRaw);
 
   if (textForGemini || whisperTranscript) {
     if (whisperTranscript && !textForGemini) {
@@ -5369,6 +5393,18 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
           };
           finalRecipe._discoveredDomain = blogPartial._discoveredDomain || '';
         }
+        // Schema quality gate + finalize telemetry (harden-ideas §7)
+        const gate = schemaQualityGate(finalRecipe);
+        if (!gate.pass) {
+          console.log(`[SpiceHub] Gemini recipe failed quality gate: ${gate.reasons.join(', ')}`);
+          finalRecipe._qualityGateReasons = gate.reasons;
+        }
+        logImportTelemetry({
+          stage: 'finalize', ok: gate.pass,
+          reason: gate.pass ? (blogPartial ? 'blog+ai' : 'caption-ai') : gate.reasons.join(','),
+          domain: domainForTelemetry(url), extractionSource: finalRecipe._extractionSource || '',
+          ms: 0, url,
+        });
         try { await setCachedImport(url, finalRecipe); } catch { /* cache write failure is non-fatal */ }
         return finalRecipe;
       }

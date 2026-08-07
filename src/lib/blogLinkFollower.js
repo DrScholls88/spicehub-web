@@ -12,6 +12,7 @@
 
 import { fetchHtmlViaProxy } from '../api.js';
 import { recordLearnedDomain, getLearnedDomains, logImportTelemetry, domainForTelemetry } from '../db.js';
+import { isSsrfTarget, capHtml } from './importGuards.js';
 
 // ─── CONFIG ──────────────────────────────────────────────
 
@@ -218,6 +219,8 @@ function extractUrls(text) {
 /** Classify a URL: skip, short-link, bio-hub, or direct */
 function classifyUrl(url) {
   try {
+    // SSRF guard: block private/reserved/metadata IPs before any fetch
+    if (isSsrfTarget(url)) return { skip: true };
     const host = new URL(url).hostname.replace(/^www\./, '');
     const matchesDomain = (set) => set.has(host) || [...set].some(d => host.endsWith('.' + d));
     if (matchesDomain(SKIP_DOMAINS)) return { skip: true };
@@ -264,14 +267,22 @@ function scoreUrl(url, learnedDomains) {
  */
 async function unwrapShortLink(shortUrl) {
   try {
-    const html = await fetchHtmlViaProxy(shortUrl, 5000);
-    if (!html) return null;
+    // SSRF guard on the short-link itself
+    if (isSsrfTarget(shortUrl)) return null;
+
+    const rawHtml = await fetchHtmlViaProxy(shortUrl, 5000);
+    if (!rawHtml) return null;
+    const html = capHtml(rawHtml);
 
     // Try canonical URL
     const canonMatch = html.match(/<link[^>]+rel=["']canonical["'][^>]+href=["']([^"']+)["']/i)
       || html.match(/<meta[^>]+property=["']og:url["'][^>]+content=["']([^"']+)["']/i);
 
     const resolvedUrl = canonMatch?.[1] || shortUrl;
+
+    // SSRF guard on the resolved destination
+    if (isSsrfTarget(resolvedUrl)) return null;
+
     return { resolvedUrl, html };
   } catch {
     return null;
@@ -290,8 +301,10 @@ async function unwrapShortLink(shortUrl) {
  */
 async function expandLinkInBio(bioUrl) {
   try {
-    const html = await fetchHtmlViaProxy(bioUrl, 6000);
-    if (!html) return [];
+    if (isSsrfTarget(bioUrl)) return [];
+    const rawHtml = await fetchHtmlViaProxy(bioUrl, 6000);
+    if (!rawHtml) return [];
+    const html = capHtml(rawHtml);
 
     // Extract all href links from the hub page
     const hrefRegex = /href=["'](https?:\/\/[^"']+)["']/gi;
@@ -337,12 +350,21 @@ export async function extractRecipeFromBlog(url, prefetchedHtml = null) {
   console.log(`[BlogLinkFollower] Fetching: ${url}`);
 
   try {
-    const html = prefetchedHtml || await fetchHtmlViaProxy(url, 12000);
+    // SSRF guard: reject private/reserved targets before fetching
+    if (isSsrfTarget(url)) {
+      console.log('[BlogLinkFollower] SSRF-blocked URL:', url);
+      return null;
+    }
 
-    if (!html || typeof html !== 'string' || html.length < 200) {
+    const rawHtml = prefetchedHtml || await fetchHtmlViaProxy(url, 12000);
+
+    if (!rawHtml || typeof rawHtml !== 'string' || rawHtml.length < 200) {
       console.log('[BlogLinkFollower] Empty or trivial response');
       return null;
     }
+
+    // Cap HTML size to prevent memory spikes on giant pages (2 MB)
+    const html = capHtml(rawHtml);
 
     // Detect paywall / challenge pages
     const lowerHtml = html.substring(0, 3000).toLowerCase();
@@ -785,6 +807,7 @@ function normalizeRecipe(raw, sourceUrl, discoveredDomain = '') {
  * @param {string[]}     [opts.comments]       First N comments
  * @param {string}       [opts.profileBioUrl]  Bio URL from Apify
  * @param {string[]}     [opts.carouselImages] IG carousel URLs
+ * @param {AbortSignal}  [opts.signal]         External abort (pipeline timeout)
  * @returns {Promise<Object|null>}
  */
 export async function tryBlogLinkExtraction(caption, imageUrl, {
@@ -792,10 +815,22 @@ export async function tryBlogLinkExtraction(caption, imageUrl, {
   comments = [],
   profileBioUrl = '',
   carouselImages = [],
+  signal,
 } = {}) {
   const t0 = Date.now();
-  const BUDGET_MS = 14000; // 14s wall-time cap so Gemini Phase 3 still runs
-  const budgetExpired = () => Date.now() - t0 > BUDGET_MS;
+  const BUDGET_MS = 15000; // 15s wall-time cap so Gemini Phase 3 still runs
+
+  // Hard abort when budget expires — kills any in-flight fetch
+  const budgetCtrl = new AbortController();
+  const budgetTimer = setTimeout(() => budgetCtrl.abort(), BUDGET_MS);
+  // Also abort if caller's pipeline signal fires
+  if (signal) {
+    if (signal.aborted) { clearTimeout(budgetTimer); return null; }
+    signal.addEventListener('abort', () => budgetCtrl.abort(), { once: true });
+  }
+  const budgetExpired = () => budgetCtrl.signal.aborted;
+
+  try { // ← wraps entire body so budgetTimer is always cleared
 
   // Step 1: Classify caption
   const quality = assessCaptionQuality(caption);
@@ -900,6 +935,10 @@ export async function tryBlogLinkExtraction(caption, imageUrl, {
 
   logResult(quality, links.length, 'none', '', t0, null, instagramUrl);
   return null;
+
+  } finally { // ← matches the try opened after budgetTimer setup
+    clearTimeout(budgetTimer);
+  }
 }
 
 /**
