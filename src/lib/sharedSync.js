@@ -39,9 +39,15 @@ export async function enqueueSync({ table, action, payload, homeGroupId }) {
  * throws a Dexie SchemaError (KeyPath not indexed) at runtime.
  */
 export async function discardQueueForGroup(homeGroupId) {
-  await db.sharedSyncQueue
+  // Collection.filter().delete() is unreliable with some IndexedDB shims
+  // (fake-indexeddb); manual toArray→bulkDelete is safer and equally fast
+  // on a small queue.
+  const items = await db.sharedSyncQueue
     .filter(item => item.homeGroupId === homeGroupId)
-    .delete();
+    .toArray();
+  if (items.length > 0) {
+    await db.sharedSyncQueue.bulkDelete(items.map(i => i.id));
+  }
 }
 
 /**

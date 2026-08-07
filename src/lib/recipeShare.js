@@ -9,15 +9,63 @@ import { getSupabase, getCurrentUserId } from './supabaseClient';
 import { isPublicUrl } from './slotMapper';
 import { getProfile } from './profile';
 
+// ── Image compression for share payload ──────────────────────────────────
+
+/**
+ * Compress a data: URL image to a small JPEG thumbnail suitable for
+ * inclusion in the share payload JSONB (which has a ~100 KB server cap).
+ * Returns a data:image/jpeg;base64,... string, or null on failure.
+ *
+ * Target: 400px wide, 0.6 quality → ~10-25 KB base64 for a typical food photo.
+ */
+const SHARE_IMAGE_MAX_WIDTH = 400;
+const SHARE_IMAGE_QUALITY = 0.6;
+const SHARE_IMAGE_MAX_BYTES = 40000; // 40 KB cap for the data URL portion
+
+async function compressImageForShare(dataUrl) {
+  if (!dataUrl || typeof dataUrl !== 'string') return null;
+  try {
+    return await new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, SHARE_IMAGE_MAX_WIDTH / img.width);
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        const compressed = canvas.toDataURL('image/jpeg', SHARE_IMAGE_QUALITY);
+        // Safety check: don't blow the payload budget
+        if (compressed.length > SHARE_IMAGE_MAX_BYTES) {
+          // Try lower quality
+          const smaller = canvas.toDataURL('image/jpeg', 0.35);
+          resolve(smaller.length > SHARE_IMAGE_MAX_BYTES ? null : smaller);
+        } else {
+          resolve(compressed);
+        }
+      };
+      img.onerror = () => resolve(null);
+      img.src = dataUrl;
+    });
+  } catch {
+    return null;
+  }
+}
+
 // ── Build recipe_data payload ──────────────────────────────────────────────
 
 /**
  * Strip private fields and build a shareable recipe_data JSONB payload.
+ * Now async — compresses data: URL images into small JPEG thumbnails so
+ * the photo travels with the recipe instead of being silently dropped.
+ *
  * @param {object} meal — full Dexie meal or drink record
  * @param {'meal'|'drink'} itemType
- * @returns {object} recipe_data safe for sharing
+ * @returns {Promise<object>} recipe_data safe for sharing
  */
-export function buildSharePayload(meal, itemType = 'meal') {
+export async function buildSharePayload(meal, itemType = 'meal') {
   const data = {
     name: meal.name || '',
     ingredients: Array.isArray(meal.ingredients)
@@ -37,9 +85,12 @@ export function buildSharePayload(meal, itemType = 'meal') {
     recipeYield: meal.recipeYield || undefined,
   };
 
-  // Public URLs only
+  // Include image: public URLs pass through, data: URLs get compressed
   if (isPublicUrl(meal.imageUrl)) {
     data.imageUrl = meal.imageUrl;
+  } else if (meal.imageUrl && meal.imageUrl.startsWith('data:')) {
+    const compressed = await compressImageForShare(meal.imageUrl);
+    if (compressed) data.imageUrl = compressed;
   }
 
   // Drink-specific fields
@@ -100,7 +151,7 @@ function checkPayloadSize(recipeData) {
  * @returns {{ success: boolean, shareId?: string, error?: string }}
  */
 export async function sendRecipeShare(toUserId, meal, itemType = 'meal', note = '') {
-  const recipeData = buildSharePayload(meal, itemType);
+  const recipeData = await buildSharePayload(meal, itemType);
 
   const sizeError = checkPayloadSize(recipeData);
   if (sizeError) {
@@ -140,7 +191,7 @@ export async function sendRecipeShareToMany(friendUserIds, meal, itemType = 'mea
 
   // If offline, queue everything for later
   if (!navigator.onLine) {
-    const recipeData = buildSharePayload(meal, itemType);
+    const recipeData = await buildSharePayload(meal, itemType);
 
     const sizeError = checkPayloadSize(recipeData);
     if (sizeError) {

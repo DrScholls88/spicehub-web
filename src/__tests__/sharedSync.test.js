@@ -1,17 +1,15 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import 'fake-indexeddb/auto';
-import Dexie from 'dexie';
+import db from '../db.js';
+import { enqueueSync, discardQueueForGroup } from '../lib/sharedSync';
 
 beforeEach(async () => {
-  await Dexie.delete('SpiceHubDB');
+  await db.sharedSyncQueue.clear();
 });
 
 describe('sharedSync', () => {
   describe('enqueueSync', () => {
     it('adds a pending item to sharedSyncQueue', async () => {
-      const { enqueueSync } = await import('../lib/sharedSync');
-      const db = (await import('../db')).default;
-
       await enqueueSync({
         table: 'shared_week_plan',
         action: 'upsert',
@@ -29,9 +27,6 @@ describe('sharedSync', () => {
 
   describe('discardQueueForGroup', () => {
     it('deletes all queue items for a group', async () => {
-      const { enqueueSync, discardQueueForGroup } = await import('../lib/sharedSync');
-      const db = (await import('../db')).default;
-
       await enqueueSync({ table: 'shared_week_plan', action: 'upsert', payload: {}, homeGroupId: 'g1' });
       await enqueueSync({ table: 'shared_week_plan', action: 'upsert', payload: {}, homeGroupId: 'g2' });
 

@@ -73,14 +73,19 @@ export default function useFriendsRealtime({ showToast, enabled = true } = {}) {
         })
         .subscribe();
 
-      // ── Channel 2: incoming recipe shares ───────────────────────────────
+      // ── Channel 2: incoming recipe shares + reactions on sent shares ────
+      // 2026-08-07: Supabase Realtime column filters (e.g. to_user_id=eq.X)
+      // silently fail to match on non-PK columns without REPLICA IDENTITY
+      // FULL, which this table doesn't have. Removing the server-side filter
+      // so all recipe_shares events reach the client; handleIncomingShareRealtime
+      // and handleShareReactionRealtime already filter by userId client-side,
+      // so non-matching rows are discarded cheaply without side effects.
       const sharesCh = supabase
-        .channel(`incoming-shares:${userId}`)
+        .channel(`recipe-shares:${userId}`)
         .on('postgres_changes', {
           event: 'INSERT',
           schema: 'public',
           table: 'recipe_shares',
-          filter: `to_user_id=eq.${userId}`,
         }, async (payload) => {
           const info = await handleIncomingShareRealtime(payload, userId);
           if (info) {
@@ -89,27 +94,14 @@ export default function useFriendsRealtime({ showToast, enabled = true } = {}) {
             showToast?.(`${sender} shared "${info.recipeName}" with you`, 'info', 4000);
           }
         })
-        .subscribe();
-
-      // ── Channel 3: reactions on shares I sent ───────────────────────────
-      // Tier 1 "Reaction expansion": tell the sender when a friend reacts,
-      // instead of the reaction only being visible if they happen to open
-      // Share History later.
-      const reactionsCh = supabase
-        .channel(`sent-share-reactions:${userId}`)
         .on('postgres_changes', {
           event: 'UPDATE',
           schema: 'public',
           table: 'recipe_shares',
-          filter: `from_user_id=eq.${userId}`,
         }, async (payload) => {
           const info = handleShareReactionRealtime(payload, userId);
           if (info) {
             window.dispatchEvent(new CustomEvent('spicehub:shares-updated'));
-            // Reactor's name isn't on the recipe_shares row itself — check
-            // the local friends cache (already populated for anyone we'd
-            // be sharing recipes with) rather than a second network round
-            // trip just to label a toast.
             let name = 'Someone';
             try {
               const friend = await db.friends.where('otherUserId').equals(info.reactorUserId).first();
@@ -120,7 +112,7 @@ export default function useFriendsRealtime({ showToast, enabled = true } = {}) {
         })
         .subscribe();
 
-      channelsRef.current = [friendsCh, sharesCh, reactionsCh];
+      channelsRef.current = [friendsCh, sharesCh];
     })();
 
     return () => {

@@ -4922,6 +4922,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   ].filter(Boolean).join('\n');
 
   let capturedCaption   = '';
+  let capturedRawCaption = '';  // pre-cleaning caption — preserves URLs for blog link discovery
   let capturedImageUrl  = '';
   let capturedTitle     = '';   // best title found across all phases
   let capturedAuthor    = '';   // creator handle/name (oEmbed author_name / Apify owner*) — attribution only
@@ -4979,6 +4980,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
     try {
       const igPack = await acquireInstagramPack(url, { signal });
       if (igPack?.caption) {
+        capturedRawCaption = igPack.caption;   // preserve URLs for blog link discovery
         capturedCaption = cleanSocialCaption(igPack.caption);
         capturedSource = igPack.acquiredVia;
         capturedImages = igPack.images.map((im) => im.url).filter(Boolean);
@@ -5031,6 +5033,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
       if (embedData?.author && !capturedAuthor) capturedAuthor = embedData.author;
 
       if (embedData?.caption) {
+        if (embedData.caption.length > (capturedRawCaption || '').length) capturedRawCaption = embedData.caption;
         const embedCaption = cleanSocialCaption(embedData.caption);
         if (embedCaption.length > capturedCaption.length) { capturedCaption = embedCaption; if (!capturedSource) capturedSource = 'embed'; }
 
@@ -5105,22 +5108,36 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   // profile bio), unwraps short links, expands link-in-bio hubs, then extracts
   // structured recipe data from blog pages via JSON-LD → microdata → WPRM → heuristic.
   // When partial (ingredients but no directions), injects article text for Phase 3 Gemini.
+  //
+  // BUG FIX 2026-08-07: cleanSocialCaption strips bare URLs from the caption,
+  // so discoverLinks() was never seeing the blog link. Now we:
+  //   (a) pass the RAW (pre-clean) caption to tryBlogLinkExtraction for URL discovery
+  //   (b) also trigger when the raw caption contains a URL even if the cleaned
+  //       caption rates as "strong" — the blog is the recipe of record
   let blogPartial = null;
   const captionQuality = capturedCaption ? assessCaptionQuality(capturedCaption) : { class: 'weak', reason: 'empty' };
-  if (capturedCaption && (captionQuality.class === 'weak' || captionQuality.class === 'incomplete')) {
+  // Detect blog URLs in the RAW caption (before cleanSocialCaption stripped them)
+  const rawHasUrl = capturedRawCaption && /https?:\/\/[^\s]+/i.test(capturedRawCaption);
+  const shouldTryBlogLink = (
+    // Caption exists and is weak/incomplete
+    (capturedCaption && (captionQuality.class === 'weak' || captionQuality.class === 'incomplete')) ||
+    // Blog link present in raw caption — always worth trying even if caption is "strong"
+    rawHasUrl ||
+    // No caption at all but we have comments or bio that might contain blog links
+    (!capturedCaption && (capturedComments.length > 0 || capturedProfileBioUrl))
+  );
+  if (shouldTryBlogLink) {
     try {
-      progress(3, 'running', captionQuality.class === 'incomplete'
-        ? 'Caption points to blog — following recipe link…'
-        : 'Caption thin — checking for recipe blog links…');
-      const blogRecipe = await tryBlogLinkExtraction(capturedCaption, capturedImageUrl, {
+      progress(3, 'running', rawHasUrl
+        ? 'Caption has a link — following to recipe blog…'
+        : captionQuality.class === 'incomplete'
+          ? 'Caption points to blog — following recipe link…'
+          : 'Caption thin — checking for recipe blog links…');
+      // Pass the RAW caption so discoverLinks() can find URLs that
+      // cleanSocialCaption stripped. Falls back to cleaned caption if no raw.
+      const blogRecipe = await tryBlogLinkExtraction(capturedRawCaption || capturedCaption, capturedImageUrl, {
         instagramUrl: url,
         comments: capturedComments,
-        // profileBioUrl (harden-ideas-audit-2026-08-06.md §2): best-effort —
-        // populated only when api/proxy.js's instagram-apify mode happened to
-        // find a bio/external-URL field on the post-scraper response (see the
-        // defensive-extraction comment there). Empty string is a normal,
-        // expected outcome today, not a bug — discoverLinks() already treats
-        // an empty profileBioUrl as "no bio link available" and skips it.
         profileBioUrl: capturedProfileBioUrl,
         carouselImages: capturedImages,
         signal,
