@@ -38,17 +38,19 @@ function getSeasonalKeywords() {
 }
 
 // ─── Client-side cache ───────────────────────────────────────────────────────
+// Separate caches for strict vs relaxed filter mode so toggling doesn't re-fetch
 
-let _cache = null; // { posts, sources, fetchedAt, expiresAt }
+const _cacheByFilter = { strict: null, relaxed: null };
 const CACHE_DURATION_MS = 25 * 60 * 1000; // 25min (server caches 30min)
 
-function getCached() {
-  if (_cache && Date.now() < _cache.expiresAt) return _cache;
+function getCached(filterMode = 'strict') {
+  const c = _cacheByFilter[filterMode];
+  if (c && Date.now() < c.expiresAt) return c;
   return null;
 }
 
-function setCache(data) {
-  _cache = {
+function setCache(data, filterMode = 'strict') {
+  _cacheByFilter[filterMode] = {
     ...data,
     expiresAt: Date.now() + CACHE_DURATION_MS,
   };
@@ -60,17 +62,20 @@ function setCache(data) {
  * Fetch recipe posts from the discovery API.
  * Returns { posts, sources, errors? }.
  *
- * @param {{ force?: boolean, sources?: string[] }} options
+ * @param {{ force?: boolean, sources?: string[], filter?: 'strict'|'relaxed' }} options
  */
-export async function fetchDiscoveryFeed({ force = false, sources } = {}) {
+export async function fetchDiscoveryFeed({ force = false, sources, filter = 'strict' } = {}) {
+  const filterMode = filter === 'relaxed' ? 'relaxed' : 'strict';
+
   if (!force) {
-    const cached = getCached();
+    const cached = getCached(filterMode);
     if (cached) return cached;
   }
 
   const params = new URLSearchParams();
   if (sources?.length) params.set('sources', sources.join(','));
   params.set('limit', '15');
+  params.set('filter', filterMode);
 
   const url = `/api/discover?${params.toString()}`;
   const resp = await fetch(url, {
@@ -83,7 +88,7 @@ export async function fetchDiscoveryFeed({ force = false, sources } = {}) {
   }
 
   const data = await resp.json();
-  setCache(data);
+  setCache(data, filterMode);
   return data;
 }
 
@@ -133,7 +138,9 @@ export function filterPosts(posts, { categoryId, sourceKey, search } = {}) {
 
 /**
  * Clear the client cache (e.g. on manual refresh).
+ * Clears both strict and relaxed caches.
  */
 export function clearDiscoveryCache() {
-  _cache = null;
+  _cacheByFilter.strict = null;
+  _cacheByFilter.relaxed = null;
 }

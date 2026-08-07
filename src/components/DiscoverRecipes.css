@@ -1,6 +1,6 @@
-/* DiscoverRecipes — multi-source recipe blog aggregator.
+/* DiscoverRecipes v2 — multi-source recipe blog aggregator.
    Bottom-sheet overlay with search, source pills, category chips,
-   and recipe cards with source badges. */
+   expandable preview cards, and post-type badges. */
 
 /* ── Overlay + Sheet ──────────────────────────────────────────────── */
 .discover-overlay {
@@ -18,11 +18,12 @@
   right: 0;
   background: var(--card);
   border-radius: 20px 20px 0 0;
-  padding: 20px 20px calc(20px + env(safe-area-inset-bottom));
+  padding: 20px 20px calc(20px + env(safe-area-inset-bottom) + var(--keyboard-inset, 0px));
   max-width: 600px;
   margin: 0 auto;
   z-index: 501;
   max-height: 88vh;
+  max-height: 88dvh; /* iOS: tracks dynamic viewport (keyboard-aware) */
   display: flex;
   flex-direction: column;
 }
@@ -96,10 +97,11 @@
   border-radius: 12px;
   background: var(--surface-2, #f5f5f5);
   color: var(--text);
-  font-size: 14px;
+  font-size: 16px; /* ≥16px prevents iOS Safari auto-zoom on focus */
   outline: none;
   transition: border-color 0.15s;
-  min-height: 42px;
+  min-height: 44px; /* iOS 44px touch target */
+  -webkit-appearance: none; /* remove iOS default input styling */
 }
 .discover-search:focus {
   border-color: var(--primary);
@@ -125,8 +127,6 @@
 }
 
 /* ── Filter rows shared ───────────────────────────────────────────── */
-/* Both scroll rows need explicit stacking context so overflow-x: auto
-   doesn't create implicit layers that z-fight with each other. */
 .discover-filter-section {
   flex-shrink: 0;
   position: relative;
@@ -153,7 +153,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 6px 11px;
+  padding: 8px 12px;
   border-radius: 999px;
   border: 1px solid var(--border, #e0e0e0);
   background: transparent;
@@ -161,8 +161,9 @@
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
-  min-height: 34px;
+  min-height: 44px; /* iOS 44px touch target */
   transition: all 0.15s;
+  -webkit-tap-highlight-color: transparent;
 }
 .discover-source-pill-active {
   background: var(--primary);
@@ -195,7 +196,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 7px 12px;
+  padding: 8px 12px;
   border-radius: 999px;
   border: 1px solid var(--border, #e0e0e0);
   background: var(--surface-2, #f5f5f5);
@@ -203,8 +204,9 @@
   font-size: 12.5px;
   font-weight: 600;
   white-space: nowrap;
-  min-height: 36px;
+  min-height: 44px; /* iOS 44px touch target */
   transition: all 0.15s;
+  -webkit-tap-highlight-color: transparent;
 }
 .discover-chip-active {
   background: var(--primary);
@@ -212,10 +214,17 @@
   color: #fff;
 }
 
+/* Unfiltered chip — subtle dashed border when inactive */
+.discover-chip-unfiltered:not(.discover-chip-active) {
+  border-style: dashed;
+  opacity: 0.75;
+}
+
 /* ── Results list ─────────────────────────────────────────────────── */
 .discover-results {
   flex: 1;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -256,19 +265,32 @@
   min-height: 40px;
 }
 
-/* ── Recipe card ──────────────────────────────────────────────────── */
+/* ── Card wrapper (holds collapsed + expanded) ───────────────────── */
+.discover-card-wrapper {
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--border, #e0e0e0);
+  background: var(--surface, #fff);
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+.discover-card-wrapper-expanded {
+  border-color: var(--primary);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+/* ── Recipe card (collapsed row) ─────────────────────────────────── */
 .discover-card {
   display: flex;
   align-items: center;
   gap: 12px;
   width: 100%;
   padding: 10px;
-  border: 1px solid var(--border, #e0e0e0);
-  border-radius: 14px;
-  background: var(--surface, #fff);
+  background: transparent;
   text-align: left;
   min-height: 72px;
   transition: background 0.15s;
+  border: none;
+  border-radius: 0;
 }
 .discover-card:active {
   background: var(--surface-2, #f5f5f5);
@@ -316,6 +338,7 @@
   display: flex;
   align-items: center;
   gap: 3px;
+  flex-wrap: wrap;
 }
 
 .discover-card-date {
@@ -339,6 +362,109 @@
   flex-shrink: 0;
   color: var(--text-light, #888);
   opacity: 0.6;
+}
+
+/* ── Post-type badge ─────────────────────────────────────────────── */
+.discover-card-type-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--text-muted, #aaa);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-left: 4px;
+  line-height: 1.4;
+}
+
+/* ── Expanded preview ────────────────────────────────────────────── */
+.discover-preview {
+  overflow: hidden;
+  border-top: 1px solid var(--border, #e0e0e0);
+}
+
+.discover-preview-hero {
+  width: 100%;
+  max-height: 200px;
+  overflow: hidden;
+}
+
+.discover-preview-hero-img {
+  width: 100%;
+  height: 200px;
+  object-fit: cover;
+}
+
+.discover-preview-snippet {
+  padding: 12px 14px 4px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  margin: 0;
+}
+
+.discover-preview-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 8px 14px 4px;
+}
+
+.discover-preview-tag {
+  display: inline-flex;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--surface-2, #f0f0f0);
+  color: var(--text-light, #666);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.discover-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px 14px;
+}
+
+.discover-preview-import {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border-radius: 12px;
+  border: none;
+  background: var(--primary);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  min-height: 44px;
+  transition: opacity 0.15s;
+}
+.discover-preview-import:active {
+  opacity: 0.85;
+}
+
+.discover-preview-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border, #e0e0e0);
+  background: transparent;
+  color: var(--text-light, #888);
+  font-size: 12.5px;
+  font-weight: 600;
+  text-decoration: none;
+  min-height: 44px;
+  transition: background 0.15s;
+}
+.discover-preview-link:active {
+  background: var(--surface-2, #f5f5f5);
 }
 
 /* ── Footer ───────────────────────────────────────────────────────── */
@@ -379,9 +505,13 @@
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.12);
 }
-[data-theme="dark"] .discover-card {
+[data-theme="dark"] .discover-card-wrapper {
   background: rgba(255, 255, 255, 0.04);
   border-color: rgba(255, 255, 255, 0.1);
+}
+[data-theme="dark"] .discover-card-wrapper-expanded {
+  border-color: var(--primary);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 [data-theme="dark"] .discover-card:active {
   background: rgba(255, 255, 255, 0.08);
@@ -390,4 +520,17 @@
 [data-theme="dark"] .discover-refresh-btn {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.12);
+}
+[data-theme="dark"] .discover-preview {
+  border-top-color: rgba(255, 255, 255, 0.1);
+}
+[data-theme="dark"] .discover-preview-tag {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-light, #aaa);
+}
+[data-theme="dark"] .discover-preview-link {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+[data-theme="dark"] .discover-preview-link:active {
+  background: rgba(255, 255, 255, 0.08);
 }
