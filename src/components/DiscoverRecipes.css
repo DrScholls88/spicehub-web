@@ -291,6 +291,14 @@
   transition: background 0.15s;
   border: none;
   border-radius: 0;
+  /* ▼ Button reset — browsers don't inherit these by default */
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  box-sizing: border-box;
 }
 .discover-card:active {
   background: var(--surface-2, #f5f5f5);
