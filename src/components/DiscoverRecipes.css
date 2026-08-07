@@ -9,6 +9,12 @@
   background: rgba(0, 0, 0, 0.5);
   z-index: 500;
   animation: fadeIn 0.2s ease-out;
+  /* ▼ Scroll-isolation: block touch-scroll on the backdrop so events
+     don't chain to the main page.  The sheet re-enables touch-action
+     for its own scrollable content. */
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
 }
 
 .discover-sheet {
@@ -26,6 +32,9 @@
   max-height: 88dvh; /* iOS: tracks dynamic viewport (keyboard-aware) */
   display: flex;
   flex-direction: column;
+  /* ▼ Re-enable touch inside the sheet (overlay sets touch-action:none) */
+  touch-action: pan-y;
+  overscroll-behavior: contain;
 }
 
 /* ── Header ───────────────────────────────────────────────────────── */
@@ -145,6 +154,7 @@
   scrollbar-width: none;
   position: relative;
   z-index: 2;
+  touch-action: pan-x pan-y;  /* allow horizontal swipe (sheet is pan-y only) */
 }
 .discover-sources::-webkit-scrollbar { display: none; }
 
@@ -185,6 +195,7 @@
   padding: 2px 0 6px;
   margin-bottom: 6px;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;  /* allow horizontal swipe (sheet is pan-y only) */
   scrollbar-width: none;
   position: relative;
   z-index: 1;
@@ -225,6 +236,7 @@
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;  /* stop scroll-chain to body */
   display: flex;
   flex-direction: column;
   gap: 6px;
