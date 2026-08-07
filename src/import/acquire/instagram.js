@@ -18,6 +18,7 @@ import {
 import { createContextPack, addProvenance } from '../contextPack.js';
 import { extractEndpoint } from './website.js';
 import { logImportTelemetry, domainForTelemetry } from '../../db.js';
+import { validateApifyPayload } from '../../lib/importGuards.js';
 
 const MIN_CAPTION = 30;
 
@@ -52,6 +53,9 @@ function buildRace(url, f) {
   const attempts = [
     (async () => {
       const d = await f.apify(url);
+      // Validate Apify payload shape before trusting any fields
+      const v = validateApifyPayload(d);
+      if (!v.ok) throw new Error(`apify-${v.reason}`);
       if (!d?.caption || d.caption.length <= MIN_CAPTION) throw new Error('apify-weak');
       const images = [d.displayUrl, ...(Array.isArray(d.images) ? d.images : [])].filter(Boolean);
       const creator = d.ownerFullName || d.ownerUsername || '';

@@ -19,6 +19,7 @@ Full Output Enforcement on modified files. Do not leave modified files truncated
 ## High-Priority Focus Areas (Current Sprint)
 1. Instagram Import
    - Significantly better text scraping and auto-sorting
+2. IOS compatibility check. Primary testing space is windows and Android, but each update must also be optimized for Apple IOS
 
 You are now operating under this constitution.
 
