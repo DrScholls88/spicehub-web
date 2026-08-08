@@ -1,4 +1,5 @@
 import React, { createContext, useState, useEffect, useCallback, useContext } from 'react';
+import { hapticLight } from '../haptics';
 
 // Create the theme context
 const ThemeContext = createContext(undefined);
@@ -91,39 +92,49 @@ export const useTheme = () => {
   return context;
 };
 
-// Theme Settings Component
+// Theme Settings Component — visual swatch pickers (color circles, not text
+// buttons). See SettingsPlan.md §2 "Visual Theme Swatches": upgrade the
+// picker itself, skip the "mini app mockup" idea (bad scope-to-payoff ratio
+// for a settings row).
 export const ThemeSettings = () => {
   const { theme, setTheme, accent, setAccent } = useTheme();
 
   const themes = [
-    { id: 'light', label: 'Light', emoji: '☀️' },
-    { id: 'dark', label: 'Dark', emoji: '🌙' },
-    { id: 'auto', label: 'Auto', emoji: '🔄' },
+    { id: 'light', label: 'Light' },
+    { id: 'dark', label: 'Dark' },
+    { id: 'auto', label: 'Auto' },
   ];
 
   const accents = [
-    { id: 'default', label: 'Default', emoji: '🎨' },
-    { id: 'autumn', label: 'Autumn', emoji: '🍂' },
-    { id: 'spring', label: 'Spring', emoji: '🌸' },
-    { id: 'summer', label: 'Summer', emoji: '☀️' },
-    { id: 'winter', label: 'Winter', emoji: '❄️' },
+    { id: 'default', label: 'Default' },
+    { id: 'autumn', label: 'Autumn' },
+    { id: 'spring', label: 'Spring' },
+    { id: 'summer', label: 'Summer' },
+    { id: 'winter', label: 'Winter' },
   ];
+
+  const pick = (setter, id) => {
+    hapticLight(); // no-op on iOS (no navigator.vibrate) — the stg-pulse
+    // scale-down on :active is the universal fallback, see App.css
+    setter(id);
+  };
 
   return (
     <div className="ts-settings-container">
       <div className="ts-section">
         <h3 className="ts-section-title">Theme</h3>
-        <div className="ts-button-group">
+        <div className="ts-swatch-row">
           {themes.map((t) => (
             <button
               key={t.id}
-              className={`ts-button ts-theme-button ${theme === t.id ? 'ts-active' : ''}`}
-              onClick={() => setTheme(t.id)}
+              type="button"
+              className={`ts-swatch ts-swatch-${t.id} stg-pulse ${theme === t.id ? 'ts-swatch-active' : ''}`}
+              onClick={() => pick(setTheme, t.id)}
               aria-pressed={theme === t.id}
-              title={t.label}
+              aria-label={t.label}
             >
-              <span className="ts-emoji">{t.emoji}</span>
-              <span className="ts-label">{t.label}</span>
+              <span className="ts-swatch-circle" />
+              <span className="ts-swatch-label">{t.label}</span>
             </button>
           ))}
         </div>
@@ -131,17 +142,18 @@ export const ThemeSettings = () => {
 
       <div className="ts-section">
         <h3 className="ts-section-title">Seasonal Accent</h3>
-        <div className="ts-button-group">
+        <div className="ts-swatch-row ts-swatch-row-scroll">
           {accents.map((a) => (
             <button
               key={a.id}
-              className={`ts-button ts-accent-button ${accent === a.id ? 'ts-active' : ''}`}
-              onClick={() => setAccent(a.id)}
+              type="button"
+              className={`ts-swatch stg-pulse ${accent === a.id ? 'ts-swatch-active' : ''}`}
+              onClick={() => pick(setAccent, a.id)}
               aria-pressed={accent === a.id}
-              title={a.label}
+              aria-label={a.label}
             >
-              <span className="ts-emoji">{a.emoji}</span>
-              <span className="ts-label">{a.label}</span>
+              <span className={`ts-swatch-circle ts-accent-${a.id}`} />
+              <span className="ts-swatch-label">{a.label}</span>
             </button>
           ))}
         </div>

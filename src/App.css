@@ -1744,6 +1744,11 @@ body::before {
   justify-content: center;
   z-index: 1000;
   padding: 0;
+  /* iOS: inset:0 on a fixed element is measured against the large viewport, so
+     the flex-end alignment parks the sheet behind the Safari toolbar. Pinning
+     the height to the dynamic viewport keeps "bottom" meaning the bottom the
+     user can actually see. */
+  height: 100dvh;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
@@ -1768,6 +1773,13 @@ body::before {
   width: 100%;
   max-width: 600px;
   max-height: 92vh;
+  /* iOS Safari resolves vh against the LARGE viewport (URL bar hidden), so
+     92vh overflows the visible area while the toolbars are showing — which is
+     exactly what pushed Meal Detail's sticky action bar (Scale / Add to
+     Rotation / Start Cooking) off the bottom of the screen on iPhone. dvh
+     tracks the live visible viewport; the vh line above stays as the fallback
+     for browsers without dvh. */
+  max-height: 92dvh;
   overflow-y: auto;
   padding: 20px 20px 32px;
   padding-bottom: calc(32px + env(safe-area-inset-bottom));
@@ -5406,17 +5418,25 @@ body::before {
   margin-left: auto;
 }
 
+/* Was background:#fff3e0 / border:#ffe0b2 — hardcoded cream that stayed cream
+   in dark mode, printing a bright block against the dark sheet. Derived from
+   --primary now so it tints correctly in both themes. */
 .detail-category-chip {
   display: inline-block;
-  background: #fff3e0;
+  /* Solid token first as the fallback for engines without color-mix
+     (iOS Safari < 16.2) — those simply drop the line below. */
+  background: var(--surface);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
   color: var(--primary);
   border-radius: 8px;
   padding: 4px 10px;
   font-size: 12px;
   font-weight: 700;
-  border: 1px solid #ffe0b2;
+  border: 1px solid var(--border);
+  border-color: color-mix(in srgb, var(--primary) 28%, transparent);
 }
 
+/* Was background:#f5f5f5 — same hardcoded-light problem as the chip above. */
 .detail-cook-count {
   display: inline-flex;
   align-items: center;
@@ -5424,9 +5444,100 @@ body::before {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-light);
-  background: #f5f5f5;
+  background: var(--surface);
   padding: 4px 10px;
   border-radius: 8px;
+}
+
+/* ── Meal Detail labels row (2026-08-07) ──
+   Total time / cuisine / dietary tags / the user's custom labels. All four are
+   Meal Library filter facets that had no representation on the recipe itself,
+   so a meal's tags appeared to vanish the moment you opened it. Wraps rather
+   than scrolls: on a phone this is 2-6 short chips, and a hidden horizontal
+   scroller would bury the last label. */
+.detail-labels-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 0 0 14px;
+  margin-top: -8px;
+}
+
+.detail-label-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-light);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Each pair below is a solid-token fallback followed by the tinted color-mix
+   version — engines without color-mix (iOS Safari < 16.2) keep the first. */
+.detail-label-chip--diet {
+  color: var(--success);
+  border-color: var(--border);
+  border-color: color-mix(in srgb, var(--success) 30%, transparent);
+  background: var(--surface);
+  background: color-mix(in srgb, var(--success) 10%, transparent);
+}
+
+/* Custom labels get their tag colour inline from JSX; this is the fallback for
+   a label whose tag record was deleted out from under it. */
+.detail-label-chip--custom {
+  color: var(--primary);
+  border-color: var(--border);
+  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
+  background: var(--surface);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  font-weight: 700;
+}
+
+.detail-label-edit,
+.detail-label-empty {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px dashed var(--border);
+  background: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  line-height: 1.2;
+  cursor: pointer;
+  /* 44px hit area without a 44px-tall chip — the padding box stays small, the
+     touch target grows outward. */
+  min-height: 32px;
+  position: relative;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.detail-label-edit::after,
+.detail-label-empty::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+}
+
+.detail-label-edit:active,
+.detail-label-empty:active {
+  color: var(--primary);
+  border-color: var(--primary);
 }
 
 /* ── Detail notes styling ── */
@@ -5504,7 +5615,10 @@ body::before {
   display: flex;
   flex-direction: column;
   gap: 0;
-  padding-bottom: 80px;
+  /* .tab-bar is min-height 52px + max(8px, safe-area-inset-bottom) of padding,
+     so a flat 80px left the last tile row tucked under the bar on iPhones with
+     a home indicator (34px inset). */
+  padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
   position: relative;
 }
 
@@ -6113,6 +6227,10 @@ body::before {
   left: 0;
   right: 0;
   bottom: 0;
+  /* Same iOS large-vs-dynamic viewport issue as .modal-overlay: without an
+     explicit dvh height the centred card sits low enough that its bottom
+     actions fall under the Safari toolbar. */
+  height: 100dvh;
   background: rgba(0, 0, 0, 0.55);
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
@@ -6121,6 +6239,8 @@ body::before {
   align-items: center;
   justify-content: center;
   padding: 16px;
+  padding-top: calc(16px + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
 }
 
 /* Expandable card: centered modal that the tile morphs into */
@@ -6130,8 +6250,13 @@ body::before {
   width: 100%;
   max-width: 460px;
   max-height: 88vh;
+  /* dvh so the expandable card never exceeds the visible viewport on iOS.
+     The overlay's own safe-area padding already carves out the notch and
+     home indicator, so 100% here is the remaining usable box. */
+  max-height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
+  overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.45),
               0 0 0 1px rgba(0, 0, 0, 0.04);
@@ -11555,42 +11680,93 @@ body::before {
   letter-spacing: 0.5px;
 }
 
-.ts-button-group {
+/* Visual swatch pickers (SettingsPlan.md PKG B-2/B-3) — replaced the old
+   text-button .ts-button/.ts-active pair with color-circle swatches.
+   Active state uses outline, not an animated box-shadow: iOS Safari can
+   spike compositing cost when several sibling circles all animate
+   box-shadow at once; outline is cheaper and gives the same "ring" look. */
+.ts-swatch-row {
   display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
+  gap: 14px;
 }
 
-.ts-button {
+.ts-swatch-row-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+  padding-bottom: 2px;
+}
+
+.ts-swatch {
   display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 6px;
-  padding: 10px 16px;
-  border: 2px solid var(--border);
-  border-radius: 12px;
-  background: var(--card);
+  background: none;
+  border: none;
   cursor: pointer;
-  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+  padding: 2px;
+  flex-shrink: 0;
+  scroll-snap-align: center;
+  touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
 
-.ts-button:active {
-  transform: scale(0.96);
+.ts-swatch-circle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  display: block;
+  transition: border-color 0.15s, outline-color 0.15s;
 }
 
-.ts-button.ts-active {
+.ts-swatch-active .ts-swatch-circle {
   border-color: var(--primary);
-  background: rgba(76, 175, 80, 0.08);
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
-.ts-emoji {
-  font-size: 18px;
-}
-
-.ts-label {
-  font-size: 13px;
+.ts-swatch-label {
+  font-size: 11px;
   font-weight: 600;
+  color: var(--text-muted);
+}
+
+.ts-swatch-active .ts-swatch-label {
   color: var(--text);
+}
+
+.ts-swatch-light .ts-swatch-circle {
+  background: linear-gradient(135deg, #fffdf9, #fff0dc);
+}
+
+.ts-swatch-dark .ts-swatch-circle {
+  background: linear-gradient(135deg, #2c2722, #1f1a16);
+}
+
+.ts-swatch-auto .ts-swatch-circle {
+  background: linear-gradient(90deg, #fff0dc 50%, #1f1a16 50%);
+}
+
+.ts-accent-default {
+  background: linear-gradient(135deg, #e65100, #2e7d32);
+}
+
+.ts-accent-autumn {
+  background: linear-gradient(135deg, #e65100, #ff8f00);
+}
+
+.ts-accent-spring {
+  background: linear-gradient(135deg, #ec407a, #ab47bc);
+}
+
+.ts-accent-summer {
+  background: linear-gradient(135deg, #ff8f00, #fdd835);
+}
+
+.ts-accent-winter {
+  background: linear-gradient(135deg, #42a5f5, #7e57c2);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -12161,7 +12337,6 @@ body::before {
 [data-theme="dark"] .cm-prev,
 [data-theme="dark"] .fm-close,
 [data-theme="dark"] .ms-close-btn,
-[data-theme="dark"] .ts-button:not(.ts-active),
 [data-theme="dark"] .fm-quick-chip:not(.added) {
   background: #2a2a2a;
   color: var(--text);
@@ -12651,6 +12826,325 @@ body::before {
 [data-theme="dark"] .st-install-btn {
   background: #1e1e1e;
   border-color: #333;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   SETTINGS COMMAND CENTER (stg-*) — grouped iOS-style sections
+   SettingsPlan.md PKG A/B/C. Wraps existing .st-install-btn / .st-section
+   content in rounded, dividered "grouped list" cards without touching the
+   internals of components that already have working state machines
+   (HomeGroupSection's create/join/leave flows keep their original
+   .st-section styling — see .stg-community-card below).
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.stg-section {
+  margin-bottom: 22px;
+}
+
+.stg-section:last-child {
+  margin-bottom: 0;
+}
+
+.stg-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0 0 8px;
+  padding: 0 2px;
+}
+
+.stg-eyebrow-danger {
+  color: var(--danger);
+}
+
+/* iOS Safari note: overflow:visible, not hidden — combining overflow:hidden
+   with border-radius on a scrollable-ancestor sheet clips child content
+   incorrectly on iOS Safari in a way it doesn't on Chrome/Android. */
+.stg-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: visible;
+  background: var(--card);
+}
+
+.stg-group-pad {
+  padding: 6px 14px 14px;
+}
+
+[data-theme="dark"] .stg-group {
+  background: #1e1e1e;
+  border-color: #333;
+}
+
+/* Grouped-list row — used for App Health + Danger Zone rows via <button
+   className="stg-row">. Touch target ≥48px, touch-action: manipulation
+   kills the iOS 300ms tap delay. */
+.stg-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 14px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s;
+}
+
+.stg-row:last-child {
+  border-bottom: none;
+}
+
+.stg-row:active {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+[data-theme="dark"] .stg-row {
+  border-bottom-color: #333;
+}
+
+[data-theme="dark"] .stg-row:active {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.stg-row-icon {
+  font-size: 19px;
+  line-height: 1;
+  width: 22px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.stg-row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.stg-row-chevron {
+  color: var(--text-muted);
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+/* Storage summary row — richer body (title + stats + bar) */
+.stg-storage-row {
+  align-items: center;
+}
+
+.stg-storage-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.stg-storage-stats {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.stg-storage-track {
+  display: block;
+  margin-top: 8px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+  width: 100%;
+}
+
+.stg-storage-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+/* Danger zone — red-tinted border, red row text */
+.stg-danger {
+  border-color: rgba(211, 47, 47, 0.35);
+}
+
+.stg-danger .stg-row {
+  color: var(--danger);
+}
+
+/* Community — wraps HomeGroupSection + Friends link without touching their
+   internal .st-section styling (which already provides working padding/
+   divider rules used elsewhere). */
+.stg-community-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: visible;
+  background: var(--card);
+  padding: 0 14px;
+}
+
+[data-theme="dark"] .stg-community-card {
+  background: #1e1e1e;
+  border-color: #333;
+}
+
+/* Universal haptic fallback — navigator.vibrate() doesn't exist on iOS, so
+   every tappable swatch/avatar also gets a brief scale-down on :active so
+   iOS users still feel the interaction. */
+.stg-pulse {
+  transition: transform 120ms ease-out;
+}
+
+.stg-pulse:active {
+  transform: scale(0.92);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════════
+   PROFILE CARD (pc-*) — Settings "Identity" section
+   ═══════════════════════════════════════════════════════════════════════════════ */
+
+.pc-card {
+  padding: 16px;
+}
+
+.pc-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.pc-avatar-btn {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  flex-shrink: 0;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pc-avatar-emoji {
+  line-height: 1;
+}
+
+.pc-identity {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pc-name-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 4px 0;
+  cursor: pointer;
+  text-align: left;
+  min-height: 32px;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pc-name {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.pc-edit-hint {
+  font-size: 12px;
+  opacity: 0.5;
+}
+
+.pc-name-input {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text);
+  background: var(--bg);
+  border: 1.5px solid var(--primary);
+  border-radius: 8px;
+  padding: 4px 8px;
+  width: 100%;
+  max-width: 220px;
+  box-sizing: border-box;
+}
+
+.pc-member-dots {
+  display: flex;
+  align-items: center;
+}
+
+.pc-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: #fff;
+  border: 2px solid var(--card);
+  margin-left: -6px;
+}
+
+.pc-dot:first-child {
+  margin-left: 0;
+}
+
+.pc-dot-more {
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.pc-avatar-picker {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+  padding-bottom: 2px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+}
+
+.pc-avatar-swatch {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  font-size: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  scroll-snap-align: center;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pc-avatar-active {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════════

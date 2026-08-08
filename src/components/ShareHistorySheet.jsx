@@ -16,7 +16,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useSwipeDismiss from '../hooks/useSwipeDismiss';
 import { getShareHistoryWithFriend } from '../lib/recipeShare';
-import { getAvatar } from '../data/pixelAvatars';
+import AvatarCircle from './AvatarCircle';
 
 const sheetVariants = {
   hidden: { y: '100%' },
@@ -73,7 +73,6 @@ export default function ShareHistorySheet({ open, onClose, friend, isOnline }) {
   }, [open, load]);
 
   const friendLabel = friend?.displayName || (friend?.username ? `@${friend.username}` : 'this friend');
-  const avatar = getAvatar(friend?.avatarId);
 
   return (
     <AnimatePresence>
@@ -99,7 +98,13 @@ export default function ShareHistorySheet({ open, onClose, friend, isOnline }) {
             <div className="st-handle" />
             <div className="st-header">
               <h2 className="st-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 20 }}>{avatar.emoji}</span>
+                <AvatarCircle
+                  avatarUrl={friend?.avatarUrl}
+                  avatarId={friend?.avatarId}
+                  displayName={friend?.displayName}
+                  username={friend?.username}
+                  size={28}
+                />
                 {friendLabel}
               </h2>
               <button className="st-close" onClick={onClose}>✕</button>

@@ -341,6 +341,17 @@ db.version(26).stores({
   importTelemetry: '++id, url, stage, ok, domain, ts',
 });
 
+// v27: Friend activity feed cache (offline-first instant load) + avatar_url
+// support on friends. See 2026-08-08 social tab optimization plan §A3/§B4 —
+// getFriendActivity() was online-only; this caches the last page in Dexie so
+// the feed renders instantly (then refreshes in the background), and adds
+// avatarUrl to the friends store schema so custom photo avatars are indexed
+// the same way avatarId already is.
+db.version(27).stores({
+  friends: 'id, otherUserId, username, displayName, avatarId, avatarUrl, status, updatedAt',
+  friendActivityCache: '++id, occurredAt',
+});
+
 export default db;
 
 // ── Import pipeline telemetry (v26) ─────────────────────────────────────────

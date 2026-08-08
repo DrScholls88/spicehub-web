@@ -15,7 +15,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { getLocalFriends } from '../lib/friends';
 import { sendRecipeShareToMany } from '../lib/recipeShare';
 import { isFriendsEnabled } from '../lib/supabaseClient';
-import { getAvatar } from '../data/pixelAvatars';
+import AvatarCircle from './AvatarCircle';
 import useOnlineStatus from '../hooks/useOnlineStatus';
 
 // ── Quips that rotate on each open ──────────────────────────────────────────
@@ -315,7 +315,6 @@ export default function SharePickerSheet({ open, onClose, meal, itemType = 'meal
                 <div style={{ maxHeight: '35vh', overflowY: 'auto', marginBottom: 12 }}>
                   <AnimatePresence>
                     {friends.map((f, i) => {
-                      const avatar = getAvatar(f.avatarId);
                       const isSelected = selected.has(f.otherUserId);
                       return (
                         <motion.button
@@ -339,7 +338,13 @@ export default function SharePickerSheet({ open, onClose, meal, itemType = 'meal
                             textAlign: 'left',
                           }}
                         >
-                          <span style={{ fontSize: 22 }}>{avatar.emoji}</span>
+                          <AvatarCircle
+                            avatarUrl={f.avatarUrl}
+                            avatarId={f.avatarId}
+                            displayName={f.displayName}
+                            username={f.username}
+                            size={36}
+                          />
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{
                               fontSize: 14, fontWeight: 600, color: 'var(--text)',

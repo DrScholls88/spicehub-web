@@ -360,13 +360,24 @@ const ANIMATIONS_CSS = `
   .wv-week-toolbar-btn.primary {
     background: var(--primary-soft); color: var(--primary);
   }
+  /* iOS Safari zooms the whole page whenever a focused form control computes
+     under 16px, and a PWA with a locked viewport gives you no way back out —
+     this <select> at 12px was doing exactly that on every Diet-filter tap.
+     16px + a 44px minimum keeps it zoom-free and inside Apple's HIG target;
+     the row has the width for it now that it sits on its own line. */
   .wv-diet-pill {
     flex: 1; min-width: 0; margin-left: auto;
-    padding: 7px 10px; border-radius: 20px;
+    padding: 6px 10px; border-radius: 20px;
     border: 1.5px solid var(--border); background: var(--card);
-    color: var(--text); font: inherit; font-weight: 700; font-size: 12px;
-    max-width: 132px;
+    color: var(--text); font: inherit; font-weight: 700; font-size: 16px;
+    max-width: 168px;
+    min-height: 44px;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
   }
+  /* Let the toolbar wrap rather than crush the Diet select at 16px on narrow
+     phones — three controls at full touch size don't fit one 360px row. */
+  .wv-week-toolbar { flex-wrap: wrap; row-gap: 8px; }
   /* ── Next-week empty hero — one CTA + day chips instead of 7 stacked
      placeholder rows when there's nothing planned yet. ── */
   .wv-next-hero { padding: 4px 12px 10px; }
@@ -392,15 +403,29 @@ const ANIMATIONS_CSS = `
     letter-spacing: 0.4px; color: var(--text-muted);
   }
   .wv-next-hero-chip-num { font-size: 13px; font-weight: 800; color: var(--text); }
+  /* Now a real <button> (was a <div onClick>, which iOS Safari was dropping
+     taps on inside this user-select:none page) — so it needs the button reset
+     that a div got for free: full width, inherited font, no UA chrome. */
   .wv-tl-next-collapsed {
+    width: calc(100% - 24px);
     margin: 6px 12px 8px; padding: 12px 14px;
     background: var(--surface); border-radius: 12px;
-    display: flex; align-items: center; justify-content: space-between;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
     cursor: pointer; border: 1px solid var(--border);
+    color: inherit; font: inherit; text-align: left;
+    /* Comfortably past the 44px Apple HIG minimum, and no 300ms tap delay. */
+    min-height: 56px;
+    touch-action: manipulation;
     transition: transform 160ms cubic-bezier(0.23,1,0.32,1);
     -webkit-tap-highlight-color: transparent;
+    -webkit-appearance: none;
+    appearance: none;
   }
   .wv-tl-next-collapsed:active { transform: scale(0.98); }
+  .wv-tl-next-collapsed:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+  }
   .wv-tl-toggle {
     display: flex; gap: 0; padding: 3px;
     background: var(--surface); border-radius: 12px;
@@ -521,6 +546,12 @@ const ANIMATIONS_CSS = `
   /* ── Previous weeks ── */
   .wv-prev-weeks { margin-bottom: 4px; }
   .wv-prev-toggle { margin: 6px 12px 8px; }
+  .wv-prev-empty {
+    margin: 0 12px 10px; padding: 14px;
+    border: 1px dashed var(--border); border-radius: 12px;
+    color: var(--text-muted); font-size: 12px; line-height: 1.5;
+    max-width: 46ch;
+  }
   .wv-prev-month-link {
     display: block; width: calc(100% - 24px);
     margin: 4px 12px 12px; padding: 10px;
@@ -629,6 +660,11 @@ export default function WeekView({
   // gesture the browser might silently swallow.
   const [carry, setCarry] = useState(null); // { meal, date, dayName, key }
   const [prevWeeksExpanded, setPrevWeeksExpanded] = useState(false);
+  // Declared here rather than down beside nextWeekDates because handlePickUp
+  // (further up this file) calls setNextWeekExpanded(true) to surface both
+  // valid drop targets — reading the setter above its own useState made the
+  // React Compiler bail out of optimizing this entire component.
+  const [nextWeekExpanded, setNextWeekExpanded] = useState(false);
 
   // ── Search modal state ──────────────────────────────────────────────────────
   const [searchOpen, setSearchOpen] = useState(false);
@@ -661,6 +697,10 @@ export default function WeekView({
 
   const calendarCells = useMemo(() => getCalendarCells(viewYear, viewMonth), [viewYear, viewMonth]);
   const calendarGridRef = useRef(null);
+  // Timeline scroll pane + the two disclosure panels, so expanding a week can
+  // pull its contents into view instead of opening it silently below the fold.
+  const timelineScrollRef = useRef(null);
+  const nextWeekPanelRef = useRef(null);
 
   useEffect(() => {
     if (document.getElementById('wv-anim-style')) return;
@@ -1243,7 +1283,8 @@ export default function WeekView({
   const nextWeekMonday = useMemo(() => addDays(currentWeekMonday, 7), [currentWeekMonday]);
   const nextWeekDates = useMemo(() =>
     [0,1,2,3,4,5,6].map(i => addDays(nextWeekMonday, i)), [nextWeekMonday]);
-  const [nextWeekExpanded, setNextWeekExpanded] = useState(false);
+  // nextWeekExpanded now lives with the rest of the state up top — see the note
+  // beside its useState for why.
 
   const nextWeekPlannedCount = useMemo(() => {
     return nextWeekDates.filter(d => {
@@ -1251,6 +1292,21 @@ export default function WeekView({
       return !!meal;
     }).length;
   }, [nextWeekDates, getMealForDate]);
+
+  // Expanding Next week used to open the panel below the fold with no scroll —
+  // on a phone the toggle sits near the bottom of the pane, so the week
+  // appeared not to open at all. Pull the panel into view once its
+  // height:auto animation has laid out.
+  const handleToggleNextWeek = useCallback(() => {
+    const willExpand = !nextWeekExpanded;
+    setNextWeekExpanded(willExpand);
+    if (!willExpand) return;
+    // Two frames: one for React to mount the panel, one for framer-motion to
+    // resolve height:auto into a real measurement before we scroll to it.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      nextWeekPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }));
+  }, [nextWeekExpanded]);
 
   const enterGroceryMode = useCallback(() => {
     const autoSelected = new Set();
@@ -1293,7 +1349,22 @@ export default function WeekView({
   const groceryDayCount = groceryDays.size;
 
   return (
-    <div className="wv-plan-root" style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'var(--bg)', userSelect: 'none' }}>
+    <div
+      className="wv-plan-root"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        /* Without min-height:0 a flex column refuses to shrink below its
+           content, so the timeline pane below (flex:1 + overflow-y:auto) grows
+           instead of scrolling and its lower rows end up under the tab bar.
+           Chrome papers over this more often than iOS Safari does. */
+        minHeight: 0,
+        background: 'var(--bg)',
+        userSelect: 'none',
+        WebkitUserSelect: 'none',
+      }}
+    >
 
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
@@ -1371,7 +1442,22 @@ export default function WeekView({
       )}
 
       {viewMode === 'timeline' && (
-        <div style={{ flex: 1, overflowY: 'auto', paddingTop: 4, paddingBottom: 8, position: 'relative' }}>
+        <div
+          ref={timelineScrollRef}
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            WebkitOverflowScrolling: 'touch',
+            overscrollBehaviorY: 'contain',
+            paddingTop: 4,
+            /* Was a flat 8px, which left the expanded Next week panel's last
+               row sitting under the fixed .tab-bar (52px + safe-area inset) on
+               iPhone — the panel opened but you could not scroll to it. */
+            paddingBottom: 'calc(24px + env(safe-area-inset-bottom, 0px))',
+            position: 'relative',
+          }}
+        >
 
           {/* ── Carry status bar — sticky so it stays visible while you scroll to find a spot ── */}
           <AnimatePresence>
@@ -1497,30 +1583,24 @@ export default function WeekView({
             onSwapDrag={handleDragSwap}
           />
 
-          <div
-            className="wv-tl-next-collapsed"
-            onClick={() => setNextWeekExpanded(x => !x)}
-          >
-            <div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-light)' }}>
-                Next week
-              </div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
+          <WeekDisclosureToggle
+            id="wv-next-week"
+            title="Next week"
+            subtitle={
+              <>
                 {nextWeekDates[0].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – {nextWeekDates[6].toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                 <span style={{ marginLeft: 6 }}>{nextWeekPlannedCount}/7 planned</span>
-              </div>
-            </div>
-            <motion.div
-              animate={{ rotate: nextWeekExpanded ? 180 : 0 }}
-              transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
-            >
-              <ChevronDown size={18} color="var(--text-muted)" strokeWidth={2} />
-            </motion.div>
-          </div>
+              </>
+            }
+            expanded={nextWeekExpanded}
+            onToggle={handleToggleNextWeek}
+          />
 
           <AnimatePresence>
             {nextWeekExpanded && (
               <motion.div
+                id="wv-next-week-panel"
+                ref={nextWeekPanelRef}
                 initial={{ height: 0, opacity: 0 }}
                 animate={{ height: 'auto', opacity: 1 }}
                 exit={{ height: 0, opacity: 0 }}
@@ -2340,6 +2420,44 @@ function TimelineWeek({
   );
 }
 
+// ── Shared week disclosure header ───────────────────────────────────────────
+// Both "Previous weeks" and "Next week" used to be a bare <div onClick>. On
+// iOS Safari a non-interactive element only receives a synthesized click under
+// a specific set of conditions, and inside this page — which sets
+// user-select:none on its root and nests framer-motion children in the row —
+// those taps were being dropped, so the panel simply never opened. A real
+// <button> is always clickable, is reachable by keyboard and VoiceOver, and
+// gets touch-action:manipulation to kill the 300ms tap delay. It also carries
+// aria-expanded/aria-controls, which the div version had no way to express.
+function WeekDisclosureToggle({ id, title, subtitle, expanded, onToggle, className = '' }) {
+  return (
+    <button
+      type="button"
+      id={`${id}-toggle`}
+      className={`wv-tl-next-collapsed${className ? ` ${className}` : ''}`}
+      onClick={onToggle}
+      aria-expanded={expanded}
+      aria-controls={`${id}-panel`}
+    >
+      <div style={{ textAlign: 'left', minWidth: 0 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-light)' }}>
+          {title}
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
+          {subtitle}
+        </div>
+      </div>
+      <motion.div
+        animate={{ rotate: expanded ? 180 : 0 }}
+        transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+        style={{ flexShrink: 0, display: 'flex' }}
+      >
+        <ChevronDown size={18} color="var(--text-muted)" strokeWidth={2} />
+      </motion.div>
+    </button>
+  );
+}
+
 // ── Previous Weeks — quick reference + pick-up source for the last 6 weeks ──
 // Sits above "This week" so scrolling *up* through the Plan page is literally
 // scrolling back through history — cap at 6 weeks; anything older belongs in
@@ -2357,47 +2475,53 @@ function PreviousWeeksSection({
       const monday = addDays(currentWeekMonday, -7 * i);
       const dates = [0,1,2,3,4,5,6].map(d => addDays(monday, d));
       const plannedCount = dates.reduce((n, d) => n + (getMealForDate(d).meal ? 1 : 0), 0);
-      if (plannedCount === 0) continue; // nothing recorded — skip, don't clutter
+      if (plannedCount === 0) continue; // nothing recorded for that week
       list.push({ monday, dates, plannedCount });
     }
     return list;
   }, [currentWeekMonday, weekHistory, getMealForDate]);
 
-  if (weeks.length === 0) return null;
+  // Previously: `if (weeks.length === 0) return null` — the whole section
+  // vanished whenever the last 6 weeks happened to hold no saved plans, which
+  // reads as "the Previous weeks control is missing" rather than "you have no
+  // history yet". The toggle now always renders; an empty history just gets an
+  // honest empty state behind it, with Month view as the escape hatch for
+  // anything older than the 6-week window.
+  const isEmpty = weeks.length === 0;
 
   const noop = () => {};
 
   return (
     <div className="wv-prev-weeks">
-      <div
-        className="wv-tl-next-collapsed wv-prev-toggle"
-        onClick={onToggleExpanded}
-      >
-        <div>
-          <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-light)' }}>
-            Previous weeks
-          </div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
-            {weeks.length} week{weeks.length !== 1 ? 's' : ''} to glance back at · tap a meal's grip to reuse it
-          </div>
-        </div>
-        <motion.div
-          animate={{ rotate: expanded ? 180 : 0 }}
-          transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
-        >
-          <ChevronDown size={18} color="var(--text-muted)" strokeWidth={2} />
-        </motion.div>
-      </div>
+      <WeekDisclosureToggle
+        id="wv-prev-weeks"
+        className="wv-prev-toggle"
+        title="Previous weeks"
+        subtitle={
+          isEmpty
+            ? 'No saved plans in the last 6 weeks yet'
+            : `${weeks.length} week${weeks.length !== 1 ? 's' : ''} to glance back at · tap a meal's grip to reuse it`
+        }
+        expanded={expanded}
+        onToggle={onToggleExpanded}
+      />
 
       <AnimatePresence>
         {expanded && (
           <motion.div
+            id="wv-prev-weeks-panel"
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
             style={{ overflow: 'hidden' }}
           >
+            {isEmpty && (
+              <p className="wv-prev-empty">
+                Weeks are saved here automatically once you plan them. Spin or
+                fill in this week and it'll show up next Monday.
+              </p>
+            )}
             {weeks.map(({ monday, dates, plannedCount }) => (
               <div key={monday.getTime()} style={{ marginBottom: 10 }}>
                 <div className="wv-tl-section-header" style={{ padding: '8px 16px 4px' }}>

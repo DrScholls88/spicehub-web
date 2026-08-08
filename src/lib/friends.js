@@ -206,6 +206,41 @@ export async function cancelFriendRequest(friendshipId) {
 
 let syncFriendsInFlight = null;
 
+const FRIENDS_SYNC_COOLDOWN_MS = 60_000; // 1 minute
+let _friendsEventFiredSinceLastSync = false;
+
+// Listen for Realtime events — when one fires, the next sync must NOT be skipped.
+if (typeof window !== 'undefined') {
+  window.addEventListener('spicehub:friends-updated', () => {
+    _friendsEventFiredSinceLastSync = true;
+  });
+}
+
+/**
+ * Check whether a full friends sync can be safely skipped.
+ * Skip if: (a) last sync was < 60s ago, AND (b) no Realtime event has
+ * arrived since. This prevents 4 redundant RPCs when the user rapidly
+ * opens/closes the Friends sheet.
+ */
+export async function shouldSkipFriendsSync() {
+  if (_friendsEventFiredSinceLastSync) return false;
+  try {
+    const entry = await db.storageMetadata.get('lastFriendsSyncAt');
+    if (!entry?.value) return false;
+    return (Date.now() - entry.value) < FRIENDS_SYNC_COOLDOWN_MS;
+  } catch {
+    return false;
+  }
+}
+
+/** Record that a full sync just completed. */
+export async function recordFriendsSync() {
+  _friendsEventFiredSinceLastSync = false;
+  try {
+    await db.storageMetadata.put({ key: 'lastFriendsSyncAt', value: Date.now() });
+  } catch { /* non-critical */ }
+}
+
 /**
  * Fetch all friends (accepted) + pending requests from Supabase
  * and write them to local Dexie cache. Called on sign-in bootstrap.
@@ -215,10 +250,19 @@ let syncFriendsInFlight = null;
  * guard, both fire their own RPC round trips + a Dexie clear/refill,
  * and whichever finishes last silently wins. Concurrent callers now
  * share the same in-flight request.
+ *
+ * Time-gated skip: if we synced < 60s ago and no Realtime event has
+ * arrived since, serve from Dexie instead of firing 4 more RPCs — avoids
+ * burning egress/RPC quota when the user rapidly opens/closes the sheet.
  */
 export async function syncFriendsToLocal() {
+  if (await shouldSkipFriendsSync()) {
+    return;
+  }
   if (syncFriendsInFlight) return syncFriendsInFlight;
-  syncFriendsInFlight = doSyncFriendsToLocal().finally(() => {
+  syncFriendsInFlight = doSyncFriendsToLocal().then((rows) => {
+    return recordFriendsSync().then(() => rows);
+  }).finally(() => {
     syncFriendsInFlight = null;
   });
   return syncFriendsInFlight;
@@ -274,6 +318,7 @@ async function doSyncFriendsToLocal() {
         username: f.username,
         displayName: f.display_name,
         avatarId: f.avatar_id,
+        avatarUrl: f.avatar_url || null,
         status: 'accepted',
         updatedAt: f.created_at,
         // "What's Cooking?" ambient status — { emoji, recipeName, itemType,
@@ -291,6 +336,7 @@ async function doSyncFriendsToLocal() {
         username: f.username,
         displayName: f.display_name,
         avatarId: f.avatar_id,
+        avatarUrl: f.avatar_url || null,
         status: 'pending_inbound',
         updatedAt: f.created_at,
       });
@@ -309,6 +355,7 @@ async function doSyncFriendsToLocal() {
         username: f.username,
         displayName: f.display_name,
         avatarId: f.avatar_id,
+        avatarUrl: f.avatar_url || null,
         status: 'pending_outbound',
         updatedAt: f.created_at,
       });
@@ -323,6 +370,7 @@ async function doSyncFriendsToLocal() {
         username: f.username,
         displayName: f.display_name,
         avatarId: f.avatar_id,
+        avatarUrl: f.avatar_url || null,
         status: 'blocked',
         updatedAt: f.created_at,
       });

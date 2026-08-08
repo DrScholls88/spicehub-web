@@ -19,7 +19,7 @@ import {
   reactToShare,
   SHARE_REACTIONS,
 } from '../lib/recipeShare';
-import { getAvatar } from '../data/pixelAvatars';
+import AvatarCircle from './AvatarCircle';
 
 /**
  * @param {{ onToast?: Function, onReload?: Function }} props
@@ -112,7 +112,6 @@ export default function SharedWithYouSection({ onToast, onReload }) {
       </h4>
       <AnimatePresence>
         {shares.map(share => {
-          const avatar = getAvatar(null); // sender avatar not stored locally; use default
           const isLoading = actionLoading === share.id;
           return (
             <motion.div
@@ -145,7 +144,12 @@ export default function SharedWithYouSection({ onToast, onReload }) {
                   }}>
                     {share.recipeData?.name || 'Untitled'}
                   </div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <AvatarCircle
+                      displayName={share.fromDisplayName}
+                      username={share.fromUsername}
+                      size={16}
+                    />
                     from {share.fromDisplayName || share.fromUsername ? `@${share.fromUsername}` : 'a friend'}
                     {share.itemType === 'drink' ? ' · Drink' : ''}
                   </div>

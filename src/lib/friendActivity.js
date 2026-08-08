@@ -10,6 +10,7 @@
  * keeps this additive and avoids yet another table to keep in sync.
  */
 import { getSupabase } from './supabaseClient';
+import db from '../db';
 
 /**
  * @typedef {object} FriendActivityItem
@@ -19,6 +20,7 @@ import { getSupabase } from './supabaseClient';
  * @property {string|null} otherUsername
  * @property {string|null} otherDisplayName
  * @property {string|null} otherAvatarId
+ * @property {string|null} otherAvatarUrl
  * @property {'meal'|'drink'|null} itemType
  * @property {string|null} recipeName
  */
@@ -47,9 +49,48 @@ export async function getFriendActivity({ limit = 20, offset = 0 } = {}) {
     otherUsername: row.other_username,
     otherDisplayName: row.other_display_name,
     otherAvatarId: row.other_avatar_id,
+    otherAvatarUrl: row.other_avatar_url || null,
     itemType: row.item_type,
     recipeName: row.recipe_name,
   }));
+}
+
+// ── Dexie cache (offline-first instant load) ────────────────────────────────
+
+const ACTIVITY_CACHE_KEY = 'friendActivityCachedAt';
+
+/**
+ * Load cached activity feed items from Dexie.
+ * Returns [] if no cache exists — never throws.
+ */
+export async function getCachedActivity() {
+  try {
+    const items = await db.friendActivityCache
+      .orderBy('occurredAt')
+      .reverse()
+      .limit(20)
+      .toArray();
+    return items;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Replace the local activity cache with fresh items from the server.
+ */
+export async function cacheActivityItems(items) {
+  try {
+    await db.friendActivityCache.clear();
+    if (items.length > 0) {
+      await db.friendActivityCache.bulkPut(
+        items.map((item, idx) => ({ ...item, id: idx + 1 }))
+      );
+    }
+    await db.storageMetadata.put({ key: ACTIVITY_CACHE_KEY, value: Date.now() });
+  } catch (err) {
+    console.warn('[FriendActivity] cacheActivityItems error:', err.message);
+  }
 }
 
 /**

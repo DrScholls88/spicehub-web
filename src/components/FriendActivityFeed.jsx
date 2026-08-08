@@ -11,8 +11,8 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { getFriendActivity, describeActivity } from '../lib/friendActivity';
-import { getAvatar } from '../data/pixelAvatars';
+import { getFriendActivity, describeActivity, getCachedActivity, cacheActivityItems } from '../lib/friendActivity';
+import AvatarCircle from './AvatarCircle';
 
 const PAGE_SIZE = 15;
 
@@ -42,14 +42,26 @@ export default function FriendActivityFeed({ isOnline }) {
   const [errored, setErrored] = useState(false);
 
   const load = useCallback(async () => {
+    // 1. Show cached data instantly (no spinner if we have cache)
+    const cached = await getCachedActivity();
+    if (cached.length > 0) {
+      setItems(cached);
+      setLoading(false);
+    }
+
+    // 2. If offline, stop here — cached data (if any) is all we can show
     if (!isOnline) { setLoading(false); return; }
-    setLoading(true);
+
+    // 3. Fetch fresh from server in background
     setErrored(false);
     try {
       const rows = await getFriendActivity({ limit: PAGE_SIZE });
       setItems(rows);
+      setErrored(false);
+      await cacheActivityItems(rows);
     } catch {
-      setErrored(true);
+      // Only show error if we had no cached data to fall back on
+      if (cached.length === 0) setErrored(true);
     } finally {
       setLoading(false);
     }
@@ -109,7 +121,6 @@ export default function FriendActivityFeed({ isOnline }) {
               }}>
                 {items.map((item, idx) => {
                   const { emoji, text } = describeActivity(item);
-                  const avatar = getAvatar(item.otherAvatarId);
                   return (
                     <div
                       key={`${item.activityType}-${item.otherUserId}-${item.occurredAt}-${idx}`}
@@ -121,9 +132,13 @@ export default function FriendActivityFeed({ isOnline }) {
                       <span style={{ fontSize: 16, width: 20, textAlign: 'center', flexShrink: 0 }}>
                         {emoji}
                       </span>
-                      <span style={{ fontSize: 14, flexShrink: 0 }} aria-hidden="true">
-                        {avatar.emoji}
-                      </span>
+                      <AvatarCircle
+                        avatarUrl={item.otherAvatarUrl}
+                        avatarId={item.otherAvatarId}
+                        displayName={item.otherDisplayName}
+                        username={item.otherUsername}
+                        size={24}
+                      />
                       <span style={{
                         flex: 1, minWidth: 0, fontSize: 13, color: 'var(--text)',
                         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',

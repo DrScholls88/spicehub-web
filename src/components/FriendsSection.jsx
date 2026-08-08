@@ -19,7 +19,7 @@ import {
   getLocalPendingOutbound, getLocalBlocked,
 } from '../lib/friends';
 import { isStatusFresh } from '../lib/cloudProfile';
-import { getAvatar } from '../data/pixelAvatars';
+import AvatarCircle from './AvatarCircle';
 import SetUsernameSheet from './SetUsernameSheet';
 import ShareHistorySheet from './ShareHistorySheet';
 import FriendActivityFeed from './FriendActivityFeed';
@@ -538,7 +538,6 @@ export default function FriendsSection({ isOnline, showToast }) {
           >
             {searchResults.map(user => {
               const rel = getRelationship(user.user_id);
-              const avatar = getAvatar(user.avatar_id);
               return (
                 <div key={user.user_id} style={{
                   display: 'flex', alignItems: 'center', gap: 10,
@@ -546,7 +545,13 @@ export default function FriendsSection({ isOnline, showToast }) {
                   background: 'var(--card)', border: '1px solid var(--border)',
                   marginBottom: 6,
                 }}>
-                  <span style={{ fontSize: 22 }}>{avatar.emoji}</span>
+                  <AvatarCircle
+                    avatarUrl={user.avatar_url}
+                    avatarId={user.avatar_id}
+                    displayName={user.display_name}
+                    username={user.username}
+                    size={36}
+                  />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {user.display_name || user.username}
@@ -601,7 +606,6 @@ export default function FriendsSection({ isOnline, showToast }) {
           </h4>
           <AnimatePresence>
             {pendingIn.map(f => {
-              const avatar = getAvatar(f.avatarId);
               return (
                 <motion.div
                   key={f.id}
@@ -617,7 +621,13 @@ export default function FriendsSection({ isOnline, showToast }) {
                     marginBottom: 6,
                   }}
                 >
-                  <span style={{ fontSize: 22 }}>{avatar.emoji}</span>
+                  <AvatarCircle
+                    avatarUrl={f.avatarUrl}
+                    avatarId={f.avatarId}
+                    displayName={f.displayName}
+                    username={f.username}
+                    size={36}
+                  />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {f.displayName || f.username || 'User'}
@@ -682,7 +692,6 @@ export default function FriendsSection({ isOnline, showToast }) {
           </div>
           <AnimatePresence>
             {sortedFriends.map(f => {
-              const avatar = getAvatar(f.avatarId);
               return (
                 <motion.div
                   key={f.id}
@@ -698,7 +707,15 @@ export default function FriendsSection({ isOnline, showToast }) {
                     marginBottom: 6,
                   }}
                 >
-                  <span style={{ fontSize: 22 }}>{avatar.emoji}</span>
+                  <AvatarCircle
+                    avatarUrl={f.avatarUrl}
+                    avatarId={f.avatarId}
+                    displayName={f.displayName}
+                    username={f.username}
+                    size={36}
+                    showPresence={true}
+                    isRecent={isStatusFresh(f.currentStatus)}
+                  />
                   {/*
                     Tier 1 "Share History View": tap a friend's name/avatar
                     to see everything you've exchanged with them. The star
@@ -711,6 +728,7 @@ export default function FriendsSection({ isOnline, showToast }) {
                       displayName: f.displayName,
                       username: f.username,
                       avatarId: f.avatarId,
+                      avatarUrl: f.avatarUrl,
                     })}
                     style={{
                       flex: 1, minWidth: 0, textAlign: 'left',
@@ -865,7 +883,6 @@ export default function FriendsSection({ isOnline, showToast }) {
           </button>
           <AnimatePresence>
             {showSent && pendingOut.map(f => {
-              const avatar = getAvatar(f.avatarId);
               return (
                 <motion.div
                   key={f.id}
@@ -879,7 +896,13 @@ export default function FriendsSection({ isOnline, showToast }) {
                     marginTop: 6, overflow: 'hidden',
                   }}
                 >
-                  <span style={{ fontSize: 22 }}>{avatar.emoji}</span>
+                  <AvatarCircle
+                    avatarUrl={f.avatarUrl}
+                    avatarId={f.avatarId}
+                    displayName={f.displayName}
+                    username={f.username}
+                    size={36}
+                  />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {f.displayName || f.username || 'User'}
@@ -918,7 +941,6 @@ export default function FriendsSection({ isOnline, showToast }) {
           </button>
           <AnimatePresence>
             {showBlocked && blocked.map(f => {
-              const avatar = getAvatar(f.avatarId);
               return (
                 <motion.div
                   key={f.id}
@@ -932,7 +954,13 @@ export default function FriendsSection({ isOnline, showToast }) {
                     marginTop: 6, overflow: 'hidden',
                   }}
                 >
-                  <span style={{ fontSize: 22 }}>{avatar.emoji}</span>
+                  <AvatarCircle
+                    avatarUrl={f.avatarUrl}
+                    avatarId={f.avatarId}
+                    displayName={f.displayName}
+                    username={f.username}
+                    size={36}
+                  />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {f.displayName || f.username || 'User'}

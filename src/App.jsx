@@ -27,7 +27,6 @@ import RoomTransition from './components/RoomTransition';
 import MealSpinner from './components/MealSpinner';
 import SyncQueue from './components/SyncQueue';
 import OfflineIndicator from './components/OfflineIndicator';
-import { ThemeSettings } from './components/ThemeProvider';
 import { isMobileDevice } from './isMobile';
 import useOnlineStatus, { onOnlineStatusChange } from './hooks/useOnlineStatus';
 import useBackHandler from './hooks/useBackHandler';
@@ -48,7 +47,7 @@ import LegalFooter from './components/LegalFooter';
 import useProfile from './hooks/useProfile';
 import useHomeGroup from './hooks/useHomeGroup';
 import useFriendsRealtime from './hooks/useFriendsRealtime';
-import HomeGroupSection from './components/HomeGroupSection';
+import SettingsSheet from './components/SettingsSheet';
 import FriendsSheet from './components/FriendsSheet';
 import { isHomeGroupEnabled, isFriendsEnabled } from './lib/supabaseClient';
 import { setCurrentStatus } from './lib/cloudProfile';
@@ -171,7 +170,7 @@ export default function App() {
   }, []);
 
   // ── Home Group: profile + sync hooks ────────────────────────────────────────
-  const { profile, loading: profileLoading, updateDietaryPref: profileUpdateDietaryPref } = useProfile();
+  const { profile, loading: profileLoading, update: updateProfile, updateDietaryPref: profileUpdateDietaryPref } = useProfile();
 
   // Week rotation state (plan, history, locks, diet/spin filtering) — Dexie-
   // persisted, optimistic-write, offline-first. See useRotationEngine.js.
@@ -197,8 +196,25 @@ export default function App() {
     onGroceryUpdate: (items) => setGroceryItems(items),
   });
 
-  // Friends Realtime — subscribes to friendships + recipe_shares channels
-  useFriendsRealtime({ showToast });
+  // Friends Realtime — subscribes to friendships + recipe_shares channels.
+  // Scoped to Friends sheet lifecycle (+ 30s grace after close) instead of
+  // the whole session, to stay well under the free-tier 200 concurrent
+  // Realtime connection cap — see 2026-08-08 social tab optimization plan §A2.
+  const [showFriendsSheet, setShowFriendsSheet] = useState(false);
+  const [realtimeGrace, setRealtimeGrace] = useState(false);
+  const graceTimerRef = useRef(null);
+
+  useEffect(() => {
+    if (showFriendsSheet) {
+      setRealtimeGrace(true);
+      if (graceTimerRef.current) clearTimeout(graceTimerRef.current);
+    } else {
+      graceTimerRef.current = setTimeout(() => setRealtimeGrace(false), 30_000);
+    }
+    return () => { if (graceTimerRef.current) clearTimeout(graceTimerRef.current); };
+  }, [showFriendsSheet]);
+
+  useFriendsRealtime({ showToast, enabled: realtimeGrace });
 
   // Handle Supabase auth callback (OAuth redirect / magic link)
   useEffect(() => {
@@ -296,7 +312,6 @@ export default function App() {
   const [pendingShareCount, setPendingShareCount] = useState(0);
   const [pendingRequestCount, setPendingRequestCount] = useState(0);
   const [friendCount, setFriendCount] = useState(0);
-  const [showFriendsSheet, setShowFriendsSheet] = useState(false);
   const [detailShareMeal, setDetailShareMeal] = useState(null); // meal for SharePickerSheet from MealDetail
   const [showBarShelf, setShowBarShelf] = useState(false);
   const [showBarFridge, setShowBarFridge] = useState(false);
@@ -385,7 +400,8 @@ export default function App() {
 
   // ── Swipe-down-to-dismiss for inline bottom sheets ──────────────────────────
   const storageSwipe = useSwipeDismiss(() => setShowStorageManager(false));
-  const settingsSwipe = useSwipeDismiss(() => setShowSettings(false));
+  // Settings sheet's own swipe-to-dismiss now lives inside SettingsSheet.jsx
+  // (PKG A extraction) — it creates its own useSwipeDismiss(onClose).
 
   // ── Hardware back button handlers (Android PWA / iOS swipe / Escape) ────────
   // LIFO: innermost layer closes first. Central stack in navigation/backStack.js.
@@ -1976,146 +1992,27 @@ useEffect(() => {
       />
 
       {showSettings && (
-        <div className="st-overlay" data-sheet-overlay onClick={() => setShowSettings(false)}>
-          <div className="st-sheet" ref={settingsSwipe.sheetRef} onClick={e => e.stopPropagation()}
-            onTouchStart={settingsSwipe.handleTouchStart} onTouchMove={settingsSwipe.handleTouchMove} onTouchEnd={settingsSwipe.handleTouchEnd}>
-            <div className="st-handle" />
-            <div className="st-header">
-              <h2 className="st-title">⚙️ Settings</h2>
-              <button className="st-close" onClick={() => setShowSettings(false)}>✕</button>
-            </div>
-            <div className="st-content">
-              <div className="st-section">
-                <h3>Theme</h3>
-                <ThemeSettings />
-              </div>
-              {/* Home Group — behind feature flag */}
-              <HomeGroupSection
-                homeGroup={homeGroup}
-                profile={profile}
-                isOnline={isOnline}
-                onCreateGroup={homeGroup.createGroup}
-                onJoinGroup={homeGroup.joinGroup}
-                onLeaveGroup={homeGroup.leaveGroup}
-                onSignIn={homeGroup.signIn}
-                onSignOut={homeGroup.signOut}
-                onRegenerateCode={homeGroup.regenerateInviteCode}
-                showToast={showToast}
-              />
-              {/* Friends — link to standalone sheet */}
-              {isFriendsEnabled() && (
-                <div className="st-section">
-                  <h3>Friends</h3>
-                  <button
-                    className="st-install-btn"
-                    onClick={() => { setShowSettings(false); setShowFriendsSheet(true); }}
-                  >
-                    <span className="st-install-icon">👤</span>
-                    <span>Manage Friends{(pendingRequestCount + pendingShareCount) > 0 ? ` (${pendingRequestCount + pendingShareCount} new)` : ''}</span>
-                  </button>
-                </div>
-              )}
-                {/* PWA Install — shown in Settings on every tab (consistent header) */}
-                <div className="st-section st-install-section">
-                  <h3>App</h3>
-                  {!isStandalone && (deferredPrompt || isAndroid() || isIOS()) && (
-                    <button
-                      className="st-install-btn"
-                      onClick={() => {
-                        localStorage.removeItem('pwa-install-dismissed');
-                        handleInstallApp();
-                      }}
-                    >
-                      <span className="st-install-icon">📲</span>
-                      <span>
-                        {deferredPrompt || isAndroid() ? 'Install to phone' : 'Add to Home Screen'}
-                      </span>
-                    </button>
-                  )}
-                {/* Storage moved here from the header (feedback 2026-07-15:
-                    header decluttering) */}
-                <button
-                  className="st-install-btn"
-                  type="button"
-                  onClick={() => { setShowSettings(false); setShowStorageManager(true); }}
-                >
-                  <span className="st-install-icon">💾</span>
-                  <span>Storage Manager</span>
-                </button>
-                {/* iOS home-screen PWAs don't reliably notice a new build on
-                    their own (main.jsx now auto-checks on foreground + auto-
-                    reloads once an update takes over, but this gives users an
-                    explicit "did I get it yet?" control instead of relying on
-                    delete-and-re-add). If an update IS found it activates and
-                    the page reloads on its own within a couple seconds; if
-                    nothing happens, they're already current. */}
-                <button
-                  className="st-install-btn"
-                  type="button"
-                  onClick={async () => {
-                    if (!navigator.onLine) {
-                      showToast("You're offline — can't check for updates", 'error', 3000);
-                      return;
-                    }
-                    showToast('Checking for updates…', 'info', 2000);
-                    try {
-                      const reg = window.__spicehubSWRegistration
-                        || (navigator.serviceWorker && await navigator.serviceWorker.getRegistration());
-                      if (!reg) { showToast('Updates need a browser reload to check', 'error', 3000); return; }
-                      await reg.update();
-                      // reg.update() resolves once sw.js has been re-fetched. A new
-                      // build shows up as an installing/waiting worker; the
-                      // updatefound flow (main.jsx) then surfaces the Refresh
-                      // prompt. Only claim "latest" when there's genuinely no new
-                      // worker — no more fixed-timer false success.
-                      if (reg.waiting) {
-                        // Waiting worker already ready — surface the banner directly
-                        setUpdateReady(true);
-                        showToast('New version ready — tap Refresh above', 'success', 3000);
-                      } else if (reg.installing) {
-                        showToast('New version found — installing…', 'success', 3000);
-                      } else {
-                        showToast(`You're on the latest version (build #${__SPICEHUB_BUILD__})`, 'success', 3000);
-                      }
-                    } catch {
-                      showToast('Could not check for updates — check your connection', 'error', 3000);
-                    }
-                  }}
-                >
-                  <span className="st-install-icon">🔄</span>
-                  <span>Check for Updates</span>
-                </button>
-              </div>
-              <div className="st-section">
-                <h3>Starter Kit</h3>
-                <p style={{ fontSize: '13px', color: 'var(--text-light)', margin: '0 0 10px' }}>
-                  {meals.some(m => m.starterKit)
-                    ? `${meals.filter(m => m.starterKit).length} starter recipe${meals.filter(m => m.starterKit).length === 1 ? '' : 's'} in your library — a curated pack to try Spin and grocery.`
-                    : 'Load a curated pack of cookable recipes so Spin and grocery work out of the box.'}
-                </p>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <button className="st-install-btn" type="button" onClick={handleAddStarterKit}>
-                    <span className="st-install-icon">🍳</span>
-                    <span>{meals.some(m => m.starterKit) ? 'Restore Missing Starter Recipes' : 'Add Starter Pack'}</span>
-                  </button>
-                  {meals.some(m => m.starterKit) && (
-                    <button className="st-install-btn" type="button" onClick={handleRemoveStarterKit}>
-                      <span className="st-install-icon">🧹</span>
-                      <span>Remove Starter Kit Recipes</span>
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="st-section">
-                <h3>Legal</h3>
-                <LegalFooter />
-              </div>
-              <div className="st-version-footer">
-                SpiceHub Meal Spinner · v{__SPICEHUB_VERSION__}
-              </div>
-            </div>
-          </div>
-        </div>
+        <SettingsSheet
+          onClose={() => setShowSettings(false)}
+          profile={profile}
+          onUpdateProfile={updateProfile}
+          isOnline={isOnline}
+          showToast={showToast}
+          homeGroup={homeGroup}
+          meals={meals}
+          pendingRequestCount={pendingRequestCount}
+          pendingShareCount={pendingShareCount}
+          onOpenFriends={() => { setShowSettings(false); setShowFriendsSheet(true); }}
+          isStandalone={isStandalone}
+          deferredPrompt={deferredPrompt}
+          isAndroid={isAndroid}
+          isIOS={isIOS}
+          onInstallApp={handleInstallApp}
+          setUpdateReady={setUpdateReady}
+          onOpenStorageManager={() => { setShowSettings(false); setShowStorageManager(true); }}
+          onAddStarterKit={handleAddStarterKit}
+          onRemoveStarterKit={handleRemoveStarterKit}
+        />
       )}
 
       {/* ── Drink Responsibly age gate — blocks first entry to Bar/Saloon ── */}
