@@ -12,6 +12,12 @@
 import { getSupabase } from './supabaseClient';
 import db from '../db';
 
+// Friends tab feedback (2026-08-08): the feed was running long (15 fetched /
+// 20 cached) and cluttering the tab. Capped to the 8 most recent updates —
+// single source of truth so the server fetch, the offline Dexie cache read,
+// and the component's page size can't drift out of sync with each other.
+export const ACTIVITY_FEED_LIMIT = 8;
+
 /**
  * @typedef {object} FriendActivityItem
  * @property {'friend_added'|'share_sent'|'share_received'} activityType
@@ -30,7 +36,7 @@ import db from '../db';
  * @param {{ limit?: number, offset?: number }} [opts]
  * @returns {Promise<FriendActivityItem[]>}
  */
-export async function getFriendActivity({ limit = 20, offset = 0 } = {}) {
+export async function getFriendActivity({ limit = ACTIVITY_FEED_LIMIT, offset = 0 } = {}) {
   const supabase = getSupabase();
   const { data, error } = await supabase.rpc('get_friend_activity', {
     p_limit: limit,
@@ -68,7 +74,7 @@ export async function getCachedActivity() {
     const items = await db.friendActivityCache
       .orderBy('occurredAt')
       .reverse()
-      .limit(20)
+      .limit(ACTIVITY_FEED_LIMIT)
       .toArray();
     return items;
   } catch {

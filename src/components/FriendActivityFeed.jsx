@@ -5,16 +5,17 @@
  * Friends tab, above search — matches the doc's "lightweight feed on the
  * Friends tab" framing.
  *
- * Online-only (see src/lib/friendActivity.js for why there's no offline
- * cache for this). Silently renders nothing when offline or empty so it
- * never competes for space with the friends list itself.
+ * Shows cached items instantly (Dexie), then refreshes from the server in
+ * the background — see src/lib/friendActivity.js. Capped to the last
+ * ACTIVITY_FEED_LIMIT updates (feedback 2026-08-08: the feed was running
+ * long and cluttering the Friends tab). Silently renders nothing when
+ * offline-with-no-cache or empty so it never competes for space with the
+ * friends list itself.
  */
 import { useState, useEffect, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { getFriendActivity, describeActivity, getCachedActivity, cacheActivityItems } from '../lib/friendActivity';
+import { getFriendActivity, describeActivity, getCachedActivity, cacheActivityItems, ACTIVITY_FEED_LIMIT } from '../lib/friendActivity';
 import AvatarCircle from './AvatarCircle';
-
-const PAGE_SIZE = 15;
 
 /** Compact relative time — "just now", "5m ago", "3h ago", "2d ago". */
 function relativeTime(isoString) {
@@ -55,7 +56,7 @@ export default function FriendActivityFeed({ isOnline }) {
     // 3. Fetch fresh from server in background
     setErrored(false);
     try {
-      const rows = await getFriendActivity({ limit: PAGE_SIZE });
+      const rows = await getFriendActivity({ limit: ACTIVITY_FEED_LIMIT });
       setItems(rows);
       setErrored(false);
       await cacheActivityItems(rows);
