@@ -13,7 +13,11 @@ import {
   RECONCILIATION_RULES,
   VERIFIER_RULES,
   IG_RECONCILIATION,
+  PINTEREST_RECONCILIATION,
+  DRINK_RECONCILIATION,
+  KIND_LOCK_RULE,
   PACK_RESPONSE_SCHEMA,
+  buildLockedResponseSchema,
   buildPackContents,
   sanitizeModelJson,
 } from '../src/import/structure/gemini.js';
@@ -56,10 +60,19 @@ export function packFromRequestBody(body = {}) {
   return null;
 }
 
-async function geminiCall(model, contents, mode, apiKey, sourceType = null) {
+async function geminiCall(model, contents, mode, apiKey, sourceType = null, kind = null, kindLocked = false) {
   const systemParts = [{ text: SYSTEM_INSTRUCTION }, { text: RECONCILIATION_RULES }];
   if (mode === 'verify') systemParts.push({ text: VERIFIER_RULES });
+  // I-4/1.4: this is the real production path (the client always routes
+  // through /api/structure — see file header), so the drink addendum and the
+  // kind lock both have to live here, not just in the client-only fallback
+  // in src/import/structure/gemini.js.
+  if (kind === 'drink') systemParts.push({ text: DRINK_RECONCILIATION });
   if (sourceType === 'instagram') systemParts.push({ text: IG_RECONCILIATION });
+  if (sourceType === 'pinterest') systemParts.push({ text: PINTEREST_RECONCILIATION });
+  if (kindLocked && kind && KIND_LOCK_RULE[kind]) systemParts.push({ text: KIND_LOCK_RULE[kind] });
+
+  const responseSchema = (kindLocked && kind) ? buildLockedResponseSchema(kind) : PACK_RESPONSE_SCHEMA;
 
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
@@ -72,7 +85,7 @@ async function geminiCall(model, contents, mode, apiKey, sourceType = null) {
         generationConfig: {
           temperature: 0.1,
           responseMimeType: 'application/json',
-          responseSchema: PACK_RESPONSE_SCHEMA,
+          responseSchema,
         },
       }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -112,8 +125,15 @@ export default async function handler(req, res) {
   const started = Date.now();
   try {
     const { contents, mode, kind } = buildPackContents(pack, { type: req.body?.type || 'meal' });
+    // I-6/1.6: a caller-supplied sourceType overrides the pack's own value
+    // (mirrors structurePack's client-side fix) instead of only trusting
+    // whatever the acquirer happened to stamp onto the pack.
+    const sourceType = req.body?.sourceType !== undefined ? req.body.sourceType : (pack.sourceType || null);
+    // I-4/1.4: explicit user confirmation (Bar tab entry, or a manual chip
+    // tap) pins the model's kind output — see api/structure.js's geminiCall.
+    const kindLocked = !!req.body?.kindLocked;
 
-    const primary = await geminiCall(PRIMARY_MODEL, contents, mode, apiKey, pack.sourceType);
+    const primary = await geminiCall(PRIMARY_MODEL, contents, mode, apiKey, sourceType, kind, kindLocked);
     if (primary.status) return res.status(502).json({ ok: false, reason: 'gemini-' + primary.status });
     if (primary.failed || !primary.structured?.isRecipe) {
       return res.status(200).json({ ok: true, structured: null, mode, elapsedMs: Date.now() - started });
@@ -122,7 +142,7 @@ export default async function handler(req, res) {
     let best = primary.structured;
     const lowConfidence = typeof best.confidence === 'number' && best.confidence < CONFIDENCE_FLOOR;
     if (lowConfidence && FLAGSHIP_MODEL && FLAGSHIP_MODEL !== PRIMARY_MODEL) {
-      const esc = await geminiCall(FLAGSHIP_MODEL, contents, mode, apiKey, pack.sourceType);
+      const esc = await geminiCall(FLAGSHIP_MODEL, contents, mode, apiKey, sourceType, kind, kindLocked);
       if (esc.structured?.isRecipe && (esc.structured.confidence ?? 0) > (best.confidence ?? 0)) {
         best = esc.structured;
         best._escalated = true;

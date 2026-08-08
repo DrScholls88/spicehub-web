@@ -5503,6 +5503,68 @@ body::before {
   font-weight: 700;
 }
 
+/* 1.7: drink spec strip — Glass · Method · Garnish text, plus a strength
+   chip. Mirrors detail-description-bar's plain-text treatment so it reads as
+   part of the same header block, not a competing UI element. */
+.detail-drink-spec-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px 8px;
+}
+
+.detail-drink-spec-text {
+  font-size: 14px;
+  color: var(--text-light);
+}
+
+.detail-strength-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: var(--sh-pill, 999px);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-light);
+}
+/* Each pair is a solid-token fallback followed by the tinted color-mix
+   version — see .detail-label-chip--diet above for the same iOS-4 pattern. */
+.detail-strength-chip--virgin {
+  color: var(--success);
+  border-color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 30%, transparent);
+  background: var(--surface);
+  background: color-mix(in srgb, var(--success) 10%, transparent);
+}
+.detail-strength-chip--light {
+  color: var(--primary);
+  border-color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 25%, transparent);
+  background: var(--surface);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+.detail-strength-chip--medium {
+  color: #b8860b;
+  border-color: #b8860b;
+  border-color: color-mix(in srgb, #b8860b 30%, transparent);
+  background: var(--surface);
+  background: color-mix(in srgb, #b8860b 10%, transparent);
+}
+.detail-strength-chip--strong,
+.detail-strength-chip--very-strong {
+  color: #c0392b;
+  border-color: #c0392b;
+  border-color: color-mix(in srgb, #c0392b 30%, transparent);
+  background: var(--surface);
+  background: color-mix(in srgb, #c0392b 10%, transparent);
+}
+
 .detail-label-edit,
 .detail-label-empty {
   display: inline-flex;

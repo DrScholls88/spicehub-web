@@ -1229,7 +1229,7 @@ function _applyCaptionCrossCheck(result, textForAI, type) {
   return result;
 }
 
-export async function captionToRecipe(captionText, { title = '', imageUrl = '', sourceUrl = '', type = 'meal', transcript = null, sourceType = 'text', author = '' } = {}) {
+export async function captionToRecipe(captionText, { title = '', imageUrl = '', sourceUrl = '', type = 'meal', transcript = null, sourceType = 'text', author = '', kindLocked = false } = {}) {
   const hasCaption = !!(captionText && captionText.trim().length >= 20);
   const hasTranscript = !!(transcript && String(transcript).trim().length >= 20);
   if (!hasCaption && !hasTranscript) return null;
@@ -1244,7 +1244,7 @@ export async function captionToRecipe(captionText, { title = '', imageUrl = '', 
   // structureWithAI path below, so this is strictly additive. ──
   try {
     const pack = packFromCaption({ caption: textForAI, transcript, title, sourceUrl, imageUrl, sourceType });
-    const structured = await structurePack(pack, { type });
+    const structured = await structurePack(pack, { type, kindLocked });
     if (structured?.isRecipe) {
       const packRecipe = finalizeAIRecipe(thinFromStructured(structured), {
         hintTitle: title,
@@ -2328,7 +2328,7 @@ function parseSpokenTranscript(text) {
   return { ingredients, directions };
 }
 
-async function tryVideoExtraction(url, onProgress, { type = 'meal' } = {}) {
+async function tryVideoExtraction(url, onProgress, { type = 'meal', kindLocked = false } = {}) {
   const serverUrl = await detectServer();
   if (!serverUrl) return null;
 
@@ -2370,6 +2370,7 @@ async function tryVideoExtraction(url, onProgress, { type = 'meal' } = {}) {
       imageUrl: baseRecipe.imageUrl,
       sourceUrl: url,
       type,
+      kindLocked,
     });
     if (aiRecipe && hasRecipeContent(aiRecipe)) {
       return {
@@ -2397,7 +2398,7 @@ async function tryVideoExtraction(url, onProgress, { type = 'meal' } = {}) {
  *
  * Returns a parsed recipe object with imageUrls[] or null on failure.
  */
-async function extractInstagramAgent(url, onProgress, { type = 'meal' } = {}) {
+async function extractInstagramAgent(url, onProgress, { type = 'meal', kindLocked = false } = {}) {
   const serverUrl = await detectServer();
   if (!serverUrl) return null;
 
@@ -2422,7 +2423,7 @@ async function extractInstagramAgent(url, onProgress, { type = 'meal' } = {}) {
     if (rawText.trim().length < 20 && !imageUrl) return null;
 
     const recipe = rawText.trim().length >= 20
-      ? await captionToRecipe(rawText, { title: data.title || '', imageUrl, sourceUrl: url, type })
+      ? await captionToRecipe(rawText, { title: data.title || '', imageUrl, sourceUrl: url, type, kindLocked })
       : null;
 
     if (recipe && hasRecipeContent(recipe)) {
@@ -2896,17 +2897,17 @@ async function persistRedditImages(structured) {
  *      or { _error: true, reason } on failure
  *      or null if completely failed
  */
-export async function parseFromUrl(url, onProgress, { type = 'meal', signal } = {}) {
+export async function parseFromUrl(url, onProgress, { type = 'meal', signal, kindLocked = false } = {}) {
   // Backwards compatibility alias
-  return await importRecipeFromUrl(url, onProgress, { type, signal });
+  return await importRecipeFromUrl(url, onProgress, { type, signal, kindLocked });
 }
 
-export async function importRecipeFromUrl(url, onProgress, { type = 'meal', signal } = {}) {
+export async function importRecipeFromUrl(url, onProgress, { type = 'meal', signal, kindLocked = false } = {}) {
   // In-flight dedup: concurrent imports of the same URL share one promise
-  return deduplicateImport(url, () => _importRecipeFromUrlOuter(url, onProgress, { type, signal }));
+  return deduplicateImport(url, () => _importRecipeFromUrlOuter(url, onProgress, { type, signal, kindLocked }));
 }
 
-async function _importRecipeFromUrlOuter(url, onProgress, { type = 'meal', signal } = {}) {
+async function _importRecipeFromUrlOuter(url, onProgress, { type = 'meal', signal, kindLocked = false } = {}) {
   const DEFAULT_TIMEOUT_MS = 45_000;
   const MAX_TIMEOUT_MS = 90_000;
   const startedAt = Date.now();
@@ -2940,7 +2941,7 @@ async function _importRecipeFromUrlOuter(url, onProgress, { type = 'meal', signa
 
   try {
     return await Promise.race([
-      _importRecipeFromUrlInner(url, onProgress, { type, signal, requestBudget }),
+      _importRecipeFromUrlInner(url, onProgress, { type, signal, requestBudget, kindLocked }),
       timeoutPromise,
     ]);
   } finally {
@@ -2948,7 +2949,7 @@ async function _importRecipeFromUrlOuter(url, onProgress, { type = 'meal', signa
   }
 }
 
-async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signal, requestBudget } = {}) {
+async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signal, requestBudget, kindLocked = false } = {}) {
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ 0. Reddit: zero-auth JSON endpoint (fastest non-Instagram path) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   // Reddit's .json trick gives structured post data with no scraping, no auth,
@@ -2997,7 +2998,7 @@ async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signa
     const instagramRecipe = await importFromInstagram(url, (phaseOrMsg, status, msg, metadata) => {
       if (!onProgress) return;
       onProgress(typeof msg === 'string' ? msg : String(phaseOrMsg || 'Importing Instagram post...'), metadata);
-    }, { type, signal, requestBudget });
+    }, { type, signal, requestBudget, kindLocked });
     if (instagramRecipe && !instagramRecipe._needsManualCaption && !instagramRecipe._error) {
       return instagramRecipe;
     }
@@ -3013,7 +3014,7 @@ async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signa
     if (onProgress) onProgress('Extracting from Pinterest...');
     const pinterestPack = await acquirePinterestPack(url, { signal });
     if (pinterestPack) {
-      const structured = await structurePack(pinterestPack, { type, sourceType: 'pinterest' });
+      const structured = await structurePack(pinterestPack, { type, sourceType: 'pinterest', kindLocked });
       if (structured) {
         const thin = thinFromStructured(structured);
         return finalizeAIRecipe(thin, { sourceUrl: url, sourceType: 'pinterest' });
@@ -3025,7 +3026,7 @@ async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signa
   if (isSocialMediaUrl(url)) {
     console.log('[SpiceHub] Social/video URL Ã¢â‚¬â€ trying extraction pipeline...');
 
-    const videoRecipe = await tryVideoExtraction(url, onProgress, { type });
+    const videoRecipe = await tryVideoExtraction(url, onProgress, { type, kindLocked });
     if (videoRecipe && !videoRecipe._error && hasRecipeContent(videoRecipe)) return videoRecipe;
 
     // Fallback: CORS proxy (sometimes works for public pages)
@@ -3084,7 +3085,7 @@ async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signa
     if (serverPack.markdown && serverPack.markdown.length > 200) {
       if (onProgress) onProgress('Structuring page content with AI...');
       try {
-        const structured = await structurePack(serverPack, { type });
+        const structured = await structurePack(serverPack, { type, kindLocked });
         if (structured?.isRecipe) {
           const packRecipe = finalizeAIRecipe(thinFromStructured(structured), {
             hintTitle: serverPack.title,
@@ -4888,7 +4889,7 @@ async function resolveDisplayableImage(rawUrl, persistFn) {
   return { url: rawUrl, status: 'raw' };
 }
 
-export async function importFromInstagram(url, onProgress = () => {}, { type = 'meal', signal, requestBudget } = {}) {
+export async function importFromInstagram(url, onProgress = () => {}, { type = 'meal', signal, requestBudget, kindLocked = false } = {}) {
   url = cleanUrl(url);
   const progress = (phase, status, msg) => {
     onProgress(phase, status, msg, { imageUrl: capturedImageUrl, title: capturedTitle });
@@ -4896,7 +4897,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
 
   // ── Cache check: return early if we already have a fresh result ──────────────
   try {
-    const cached = await getCachedImport(url);
+    const cached = await getCachedImport(url, type);
     if (cached) {
       progress(0, 'done',    'Loaded from cache');
       progress(1, 'skipped', 'Cached');
@@ -5085,7 +5086,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
     // -- Phase 2: Server browser extraction for thin or missing captions --
     if (!capturedCaption || isCaptionWeak(capturedCaption) || !capturedImageUrl) {
       progress(2, 'running', 'Trying browser-assisted extraction...');
-      const agentRecipe = await extractInstagramAgent(url, (msg) => progress(2, 'running', msg), { type });
+      const agentRecipe = await extractInstagramAgent(url, (msg) => progress(2, 'running', msg), { type, kindLocked });
       if (agentRecipe && (hasRecipeContent(agentRecipe) || agentRecipe.imageUrl)) {
         const agentText = recipeToText(agentRecipe);
         if (agentText.length > capturedCaption.length) capturedCaption = agentText;
@@ -5189,7 +5190,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
           domain: domainForTelemetry(blogRecipe.link || url), extractionSource: 'blog_link_follower',
           ms: 0, url,
         });
-        try { await setCachedImport(url, finalRecipe); } catch { /* non-fatal */ }
+        try { await setCachedImport(url, finalRecipe, type); } catch { /* non-fatal */ }
         return finalRecipe;
 
       } else if (blogRecipe?._isPartial && blogRecipe._articleText) {
@@ -5335,6 +5336,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
         sourceType: 'instagram',
         transcript: igTranscriptForPack,
         author: capturedAuthor,
+        kindLocked,
       }));
       if (recipe && whisperExtractedVia) {
         recipe._transcriptSource = whisperExtractedVia;
@@ -5422,7 +5424,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
           domain: domainForTelemetry(url), extractionSource: finalRecipe._extractionSource || '',
           ms: 0, url,
         });
-        try { await setCachedImport(url, finalRecipe); } catch { /* cache write failure is non-fatal */ }
+        try { await setCachedImport(url, finalRecipe, type); } catch { /* cache write failure is non-fatal */ }
         return finalRecipe;
       }
       // Gemini returned partial — try merge with yt-dlp if available
@@ -5437,7 +5439,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
           progress(3, 'done', 'Recipe extracted from video!');
           const persistedImageUrl = await persistCapturedImage(capturedImageUrl || merged.imageUrl || '');
           const finalRecipe = { ...merged, imageUrl: persistedImageUrl, extractedVia: 'yt-dlp', sourceUrl: url, importedAt: new Date().toISOString() };
-          try { await setCachedImport(url, finalRecipe); } catch { /* non-fatal */ }
+          try { await setCachedImport(url, finalRecipe, type); } catch { /* non-fatal */ }
           return finalRecipe;
         }
       }
@@ -5447,7 +5449,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
         progress(3, 'done', 'Using video extraction (AI unavailable)');
         const persistedImageUrl = await persistCapturedImage(capturedImageUrl || videoRecipe.imageUrl || '');
         const finalRecipe = { ...videoRecipe, imageUrl: persistedImageUrl, extractedVia: 'yt-dlp', sourceUrl: url, importedAt: new Date().toISOString() };
-        try { await setCachedImport(url, finalRecipe); } catch { /* non-fatal */ }
+        try { await setCachedImport(url, finalRecipe, type); } catch { /* non-fatal */ }
         return finalRecipe;
       }
     }
@@ -5457,7 +5459,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
     progress(3, 'done', 'Recipe from video subtitles!');
     const persistedImageUrl = await persistCapturedImage(capturedImageUrl || videoRecipe.imageUrl || '');
     const finalRecipe = { ...videoRecipe, imageUrl: persistedImageUrl, extractedVia: 'yt-dlp', sourceUrl: url, importedAt: new Date().toISOString() };
-    try { await setCachedImport(url, finalRecipe); } catch { /* non-fatal */ }
+    try { await setCachedImport(url, finalRecipe, type); } catch { /* non-fatal */ }
     return finalRecipe;
   } else {
     progress(3, 'failed', 'No text captured from any source');

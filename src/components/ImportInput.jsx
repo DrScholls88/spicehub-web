@@ -33,6 +33,10 @@ const TYPE_TOGGLE_TRANSITION = `background ${SH_SPRING} 0.15s, color ${SH_SPRING
  *   setPasteText     — setter for pasteText value
  *   itemType         — controlled itemType value ('meal' | 'drink')
  *   setItemType      — setter for itemType value
+ *   onManualTypeChange()       — called when the user taps the Meal/Drink
+ *                                toggle chip, so the parent (ImportSheet) can
+ *                                honour an explicit choice even from its own
+ *                                footer CTA, which bypasses handleUrlSubmit below
  *   onImport(url, type)        — URL import callback
  *   onPasteImport(text, type)  — paste text import callback
  *   scanPages / setScanPages   — multi-page scan session state (lifted to
@@ -54,6 +58,7 @@ export default function ImportInput({
   setPasteText,
   itemType,
   setItemType,
+  onManualTypeChange,
   onImport,
   onPasteImport,
   scanPages = [],
@@ -174,7 +179,7 @@ export default function ImportInput({
 
   const handleUrlSubmit = useCallback(() => {
     if (url.trim()) {
-      onImport(url.trim(), itemType);
+      onImport(url.trim(), itemType, userTypedTypeRef.current);
     }
   }, [url, itemType, onImport]);
 
@@ -357,14 +362,14 @@ export default function ImportInput({
                   <div className="import-input-type-toggle">
                     <button
                       className={itemType === 'meal' ? 'active' : ''}
-                      onClick={() => { hapticLight(); userTypedTypeRef.current = true; setItemType('meal'); }}
+                      onClick={() => { hapticLight(); userTypedTypeRef.current = true; setItemType('meal'); onManualTypeChange?.(); }}
                       style={{ transition: TYPE_TOGGLE_TRANSITION }}
                     >
                       🍽️ Meal
                     </button>
                     <button
                       className={itemType === 'drink' ? 'active' : ''}
-                      onClick={() => { hapticLight(); userTypedTypeRef.current = true; setItemType('drink'); }}
+                      onClick={() => { hapticLight(); userTypedTypeRef.current = true; setItemType('drink'); onManualTypeChange?.(); }}
                       style={{ transition: TYPE_TOGGLE_TRANSITION }}
                     >
                       🍸 Drink

@@ -1388,12 +1388,21 @@ export async function moveDrinkToMeals(drink) {
 // ── Instagram import cache ────────────────────────────────────────────────────
 const INSTAGRAM_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
-export async function getCachedInstagramRecipe(url) {
+// Cache key is type-aware: a URL imported as a drink and the same URL imported
+// as a meal must never collide. Primary key on the `instagramCache` store is
+// still a plain string (`url, cachedAt` — no schema/version bump needed; a
+// longer composite string is still just a string).
+function cacheKey(url, type = 'meal') {
+  return `${url}::${type || 'meal'}`;
+}
+
+export async function getCachedInstagramRecipe(url, type = 'meal') {
   try {
-    const entry = await db.instagramCache.get(url);
+    const key = cacheKey(url, type);
+    const entry = await db.instagramCache.get(key);
     if (!entry) return null;
     if (Date.now() - entry.cachedAt > INSTAGRAM_CACHE_TTL_MS) {
-      await db.instagramCache.delete(url);
+      await db.instagramCache.delete(key);
       return null;
     }
     return entry.recipe;
@@ -1403,9 +1412,9 @@ export async function getCachedInstagramRecipe(url) {
   }
 }
 
-export async function cacheInstagramRecipe(url, recipe) {
+export async function cacheInstagramRecipe(url, recipe, type = 'meal') {
   try {
-    await db.instagramCache.put({ url, recipe, cachedAt: Date.now() });
+    await db.instagramCache.put({ url: cacheKey(url, type), recipe, cachedAt: Date.now() });
   } catch (e) {
     console.warn('[SpiceHub DB] instagramCache put failed:', e);
   }

@@ -8,6 +8,16 @@ import { getMealVideoSource } from '../lib/videoSource';
 import { buildPantryMatchIndex } from '../lib/pantryMatch.js';
 import { getTotalMinutes, formatMinutes } from '../lib/recipeTime.js';
 import { getUserTags } from '../db';
+import { getStrengthTier } from '../lib/abvCalculator.js';
+
+const STRENGTH_LABELS = {
+  virgin: 'Zero-proof',
+  light: 'Light',
+  medium: 'Medium',
+  strong: 'Strong',
+  'very strong': 'Very strong',
+  unknown: '',
+};
 
 function CopyLinkButton({ url }) {
   const [copied, setCopied] = useState(false);
@@ -67,6 +77,15 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
     const match = index.get(meal.id || meal.name);
     return new Set((match?.missing || []).map(n => n.toLowerCase().trim()));
   }, [fridgeInventory, meal, isDrink]);
+
+  // 1.7: glass/garnish/method/abv are extracted and persisted on import
+  // (recipeSchema.js thinFromStructured) but MealDetail — the only detail
+  // view drinks get — never rendered them, so even a correct extraction
+  // looked broken to the user (I-6, bar-library-parity-plan-2026-08-07.md).
+  const drinkStrengthTier = useMemo(
+    () => (isDrink ? getStrengthTier(typeof meal.abv === 'number' ? meal.abv : null) : 'unknown'),
+    [isDrink, meal.abv],
+  );
 
   // ── Labels row ──────────────────────────────────────────────────────────────
   // Every facet the Meal Library filters on — total time, cuisine, dietary
@@ -454,6 +473,26 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
             >
               <Tag size={12} strokeWidth={2.25} aria-hidden="true" /> Add labels
             </button>
+          </div>
+        )}
+
+        {/* Drink spec strip — Glass · Method · Garnish, plus a strength chip.
+            1.7: the smallest change with the largest "the import finally
+            works" payoff — these fields already exist on the recipe, they
+            just never rendered anywhere. */}
+        {isDrink && (meal.glass || meal.method || meal.garnish || typeof meal.abv === 'number') && (
+          <div className="detail-drink-spec-row">
+            {[meal.glass, meal.method, meal.garnish].filter(Boolean).length > 0 && (
+              <span className="detail-drink-spec-text">
+                {[meal.glass, meal.method, meal.garnish].filter(Boolean).join(' · ')}
+              </span>
+            )}
+            {typeof meal.abv === 'number' && drinkStrengthTier !== 'unknown' && (
+              <span className={`detail-strength-chip detail-strength-chip--${drinkStrengthTier.replace(' ', '-')}`}>
+                <Flame size={12} strokeWidth={2.25} aria-hidden="true" />
+                {STRENGTH_LABELS[drinkStrengthTier] || drinkStrengthTier} · {meal.abv}% ABV
+              </span>
+            )}
           </div>
         )}
 

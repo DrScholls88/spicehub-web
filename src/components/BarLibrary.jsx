@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Martini } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import db from '../db';
-import { getBarInventory } from '../db';
+import { getBarInventory, clearInstagramCache } from '../db';
 import SafeMediaImage from './SafeMediaImage';
 import ReExtractSheet from './ReExtractSheet';
 import useBackHandler from '../hooks/useBackHandler';
@@ -984,6 +984,21 @@ export default function BarLibrary({
             <button className="bl-sheet-button" onClick={handleBackup}>Backup Bar</button>
             <button className="bl-sheet-button" onClick={() => restoreRef.current?.click()}>Restore Backup</button>
             <input ref={restoreRef} type="file" accept=".json" onChange={handleRestore} style={{ display: 'none' }} />
+            {/* 1.1: dev/QA affordance — the instagram import cache is now keyed
+                by url+type (drink vs meal), so a cold re-import needs the old
+                cached entry cleared first when testing the fix
+                (bar-library-parity-plan-2026-08-07.md 1.1 "Verify first"). */}
+            <button
+              className="bl-sheet-button"
+              onClick={async () => {
+                hapticLight();
+                await clearInstagramCache();
+                onToast?.('Import cache cleared');
+                handleMenuClose();
+              }}
+            >
+              Clear Import Cache
+            </button>
           </div>
         </>
       )}

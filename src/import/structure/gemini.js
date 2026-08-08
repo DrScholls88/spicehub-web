@@ -72,6 +72,31 @@ export const IG_RECONCILIATION = [
 ].join('\n');
 
 /**
+ * DRINK_RECONCILIATION — appended whenever kind === 'drink' (Phase 1 / I-4,
+ * bar-library-parity-plan-2026-08-07.md). The base SYSTEM_INSTRUCTION and
+ * RECONCILIATION_RULES speak entirely in meal terms ("steps", "amounts") —
+ * this fills the gap so cocktail captions get treated on their own terms
+ * instead of being force-fit into a meal shape.
+ */
+export const DRINK_RECONCILIATION = [
+  'DRINK RULES. This is a cocktail/drink recipe, not a meal.',
+  '- oz / dash / dashes / splash / barspoon / part / parts / cl / ml / jigger / shot',
+  '  are INGREDIENT MEASURES, not steps. Do not turn a measured ingredient line',
+  '  into a direction.',
+  '- "garnish" is its own field and must never be duplicated into ingredients.',
+  '- Populate `glass` (e.g. coupe, rocks glass, highball, martini glass) and',
+  '  `method` (one of: shaken, stirred, built, blended, muddled, thrown)',
+  '  whenever the source specifies or clearly implies them.',
+  '- A syrup, infusion, or other sub-recipe component (e.g. "simmer equal parts',
+  '  sugar and water for the simple syrup") belongs in `notes` as a component of',
+  '  the drink — it is NOT the main recipe and must never cause you to classify',
+  '  the whole thing as a meal.',
+  '- Never reclassify a drink as a meal because a step mentions simmering,',
+  '  boiling, or heating a component (simple syrup, mulled wine, hot toddy water,',
+  '  infusions). Those are drink-making steps.',
+].join('\n');
+
+/**
  * PINTEREST_RECONCILIATION — appended for Pinterest pins (sourceType === 'pinterest').
  * Pinterest recipe pins usually have excellent schema.org/Recipe data.
  * We prefer the structured data, fall back to the pin description, and never invent.
@@ -106,6 +131,30 @@ export const PACK_RESPONSE_SCHEMA = {
       },
     },
   },
+};
+
+/**
+ * buildLockedResponseSchema — PACK_RESPONSE_SCHEMA with `kind`'s enum narrowed
+ * to a single value. Used when the user has explicitly confirmed the item
+ * type (Bar tab entry, or a manual Meal/Drink chip tap) — Gemini structured
+ * output respects a single-value enum, which removes the "model overrides the
+ * user's stated intent" failure mode entirely instead of just asking nicely
+ * via prompt text (Phase 1 / I-1/I-4, bar-library-parity-plan-2026-08-07.md).
+ */
+export function buildLockedResponseSchema(kind) {
+  return {
+    ...PACK_RESPONSE_SCHEMA,
+    properties: {
+      ...PACK_RESPONSE_SCHEMA.properties,
+      kind: { type: 'string', enum: [kind] },
+    },
+  };
+}
+
+/** System-part text pinning the model's `kind` output to an explicit user choice. */
+export const KIND_LOCK_RULE = {
+  drink: 'The user has confirmed this is a DRINK. Set kind="drink". Do not classify as a meal.',
+  meal: 'The user has confirmed this is a MEAL. Set kind="meal". Do not classify as a drink.',
 };
 
 /** Strip control chars + code fences from a model response before JSON.parse. */
@@ -146,12 +195,22 @@ export function buildPackContents(pack, { type = 'meal' } = {}) {
  * result contract: { structured } | { status } | { failed } | { error }.
  * Never throws.
  */
-export async function geminiPackRequest(model, contents, clientKey, { mode = 'extract', sourceType = null } = {}) {
+export async function geminiPackRequest(
+  model, contents, clientKey,
+  { mode = 'extract', sourceType = null, kind = null, kindLocked = false } = {},
+) {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${clientKey}`;
   const systemParts = [{ text: SYSTEM_INSTRUCTION }, { text: RECONCILIATION_RULES }];
   if (mode === 'verify') systemParts.push({ text: VERIFIER_RULES });
+  if (kind === 'drink') systemParts.push({ text: DRINK_RECONCILIATION });
   if (sourceType === 'instagram') systemParts.push({ text: IG_RECONCILIATION });
   if (sourceType === 'pinterest') systemParts.push({ text: PINTEREST_RECONCILIATION });
+  // I-4/1.4: an explicit user choice pins the model's kind output rather than
+  // merely hinting at it via few-shot selection (which buildPackContents alone
+  // already did, but couldn't stop the model choosing 'meal' anyway).
+  if (kindLocked && kind && KIND_LOCK_RULE[kind]) systemParts.push({ text: KIND_LOCK_RULE[kind] });
+
+  const responseSchema = (kindLocked && kind) ? buildLockedResponseSchema(kind) : PACK_RESPONSE_SCHEMA;
 
   try {
     const res = await fetch(endpoint, {
@@ -163,7 +222,7 @@ export async function geminiPackRequest(model, contents, clientKey, { mode = 'ex
         generationConfig: {
           temperature: 0.1,
           responseMimeType: 'application/json',
-          responseSchema: PACK_RESPONSE_SCHEMA,
+          responseSchema,
         },
       }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -189,12 +248,12 @@ export function structureEndpoint() {
  * serverStructurePack — POST the pack to /api/structure so the Gemini key can
  * stay server-side. Returns the raw structured object or null. Never throws.
  */
-export async function serverStructurePack(pack, { type = 'meal', signal } = {}) {
+export async function serverStructurePack(pack, { type = 'meal', signal, kindLocked = false, sourceType } = {}) {
   try {
     const res = await fetch(structureEndpoint(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pack, type }),
+      body: JSON.stringify({ pack, type, kindLocked, sourceType }),
       signal: signal || AbortSignal.timeout(REQUEST_TIMEOUT_MS + 5000),
     });
     if (!res.ok) {
@@ -222,17 +281,27 @@ export async function serverStructurePack(pack, { type = 'meal', signal } = {}) 
  * Always routes through the /api/structure server proxy so the Gemini key
  * stays server-side. The `clientKey` override is retained only for tests.
  */
-export async function structurePack(pack, { type = 'meal', clientKey: keyOverride, signal } = {}) {
+export async function structurePack(
+  pack,
+  { type = 'meal', clientKey: keyOverride, signal, kindLocked = false, sourceType: sourceTypeOverride } = {},
+) {
   if (!pack) return null;
+  // I-6/1.6: honour an explicit sourceType override instead of silently
+  // discarding it — previously only `pack.sourceType` was read (and only on
+  // the client-key test path below), so a caller passing
+  // `{ sourceType: 'pinterest' }` (recipeParser.js:3017) had no effect unless
+  // the pack itself already carried that value. Computed before the server
+  // early-return so the real production path (no clientKey) gets it too.
+  const sourceType = sourceTypeOverride !== undefined ? sourceTypeOverride : (pack.sourceType || null);
+
   // Security: never read VITE_GOOGLE_AI_KEY from the client bundle.
   // If a test passes an explicit key override, honour it; otherwise go server.
   const clientKey = keyOverride !== undefined ? keyOverride : null;
-  if (!clientKey) return serverStructurePack(pack, { type, signal });
+  if (!clientKey) return serverStructurePack(pack, { type, signal, kindLocked, sourceType });
 
   const { contents, mode, kind } = buildPackContents(pack, { type });
-  const sourceType = pack.sourceType || null;
 
-  const primary = await geminiPackRequest(GEMINI_MODEL, contents, clientKey, { mode, sourceType });
+  const primary = await geminiPackRequest(GEMINI_MODEL, contents, clientKey, { mode, sourceType, kind, kindLocked });
   if (primary.status || primary.error || primary.failed) {
     console.warn(
       `[SpiceHub] structurePack ${primary.status ? 'HTTP ' + primary.status : primary.error || 'empty'} (${GEMINI_MODEL})`,
@@ -247,7 +316,7 @@ export async function structurePack(pack, { type = 'meal', clientKey: keyOverrid
   const lowConfidence = typeof best.confidence === 'number' && best.confidence < GEMINI_CONFIDENCE_FLOOR;
   if (lowConfidence && GEMINI_MODEL_FLAGSHIP && GEMINI_MODEL_FLAGSHIP !== GEMINI_MODEL) {
     console.log(`[SpiceHub] structurePack escalating to ${GEMINI_MODEL_FLAGSHIP} (confidence ${best.confidence})`);
-    const esc = await geminiPackRequest(GEMINI_MODEL_FLAGSHIP, contents, clientKey, { mode, sourceType });
+    const esc = await geminiPackRequest(GEMINI_MODEL_FLAGSHIP, contents, clientKey, { mode, sourceType, kind, kindLocked });
     if (esc.structured?.isRecipe && (esc.structured.confidence ?? 0) > (best.confidence ?? 0)) {
       best = esc.structured;
       best._structureMode = mode;

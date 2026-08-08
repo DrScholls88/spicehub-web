@@ -43,16 +43,30 @@ import { advanceTimeline, INITIAL_TIMELINE } from '../import/progressMap.js';
  *
  * @param {object|null} result        raw engine result
  * @param {string}      fallbackType  'meal' | 'drink' when the result carries no type
+ * @param {object}      opts
+ * @param {boolean}     opts.userChose  true when fallbackType came from an explicit
+ *   user action (Bar tab entry point, or a manual Meal/Drink chip tap) rather than
+ *   just being the generic 'meal' default. When true, the user's intent outranks
+ *   the parser's kind guess outright instead of only filling a gap the model left
+ *   empty (2026-08-08 Phase 1 fix — see bar-library-parity-plan-2026-08-07.md I-1).
  */
-export function normalizeRecipeForReview(result, fallbackType = 'meal') {
+export function normalizeRecipeForReview(result, fallbackType = 'meal', { userChose = false } = {}) {
   if (!result) return null;
   const title = (result.title || result.name || '').trim();
   const image = result.image || result.imageUrl || result.capturedImageUrl || '';
   const technique = result.technique || result.method || '';
-  const itemType =
+  const modelGuess =
     result.itemType || result.type || result._type
     || (result.kind === 'drink' ? 'drink' : '')
-    || fallbackType || 'meal';
+    || '';
+  const itemType = userChose
+    ? (fallbackType || 'meal')                          // explicit intent wins outright
+    : (modelGuess || fallbackType || 'meal');
+  // Surface the disagreement instead of silently overriding it — see I-1/1.2.
+  const typeDisagreement =
+    (userChose && modelGuess && modelGuess !== (fallbackType || 'meal'))
+      ? { userChose: fallbackType || 'meal', modelGuess }
+      : null;
   return {
     ...result,
     title,
@@ -66,6 +80,7 @@ export function normalizeRecipeForReview(result, fallbackType = 'meal') {
     method: result.method || technique,
     itemType,
     type: result.type || itemType,
+    _typeDisagreement: typeDisagreement,
   };
 }
 
@@ -125,6 +140,12 @@ export default function ImportSheet({
   const [progressMsg, setProgressMsg] = useState('');
   const [importUrl, setImportUrl] = useState('');
   const [itemType, setItemType] = useState(initialItemType);
+  // Tracks an explicit Meal/Drink chip tap in ImportInput, lifted here so the
+  // footer "Auto-Parse & Import" CTA (which calls execute*Import directly,
+  // bypassing ImportInput's own submit handler) can also honour it. Reset
+  // whenever the input source changes so a stale override doesn't leak into
+  // an unrelated import (1.2, bar-library-parity-plan-2026-08-07.md).
+  const [manualTypeOverride, setManualTypeOverride] = useState(false);
   const [browserAssistSeed, setBrowserAssistSeed] = useState(null);
   const [capturedText, setCapturedText] = useState('');
   // Phase 4 (2026-07-20): Whisper model tier — one persisted global choice
@@ -145,7 +166,18 @@ export default function ImportSheet({
   // Multi-page scan session — lives here (not in ImportInput) because the
   // original pages are needed again at review time for dish-photo re-cropping.
   const [scanPages, setScanPages] = useState([]);
-  const [destination, setDestination] = useState('library');
+  // 1.3: initialise from the launching tab instead of always defaulting to
+  // 'library' — App.jsx's `target = destination || showImportFor` means a
+  // truthy 'library' default permanently shadows showImportFor === 'drinks'
+  // (bug I-2, bar-library-parity-plan-2026-08-07.md). Fixing the default here
+  // also makes the ImportReview "Save to" grid show the right pre-selection.
+  const [destination, setDestination] = useState(initialItemType === 'drink' ? 'bar' : 'library');
+
+  // A new URL (or a fresh source) deserves a fresh auto-detect guess — don't
+  // let a manual override on a previous link stick to the next one.
+  useEffect(() => {
+    setManualTypeOverride(false);
+  }, [url, activeTab]);
 
   // Single source of truth for the IndexedDB draft key. Autosave, save-cleanup
   // and discard all derive the key the same way — so a draft can't be written
@@ -385,13 +417,17 @@ export default function ImportSheet({
   }, [handleCloseRequest]);
 
   // ── Execute URL Import ───────────────────────────────────────────────────
-  const executeUrlImport = useCallback(async (rawUrl, type) => {
+  const executeUrlImport = useCallback(async (rawUrl, type, explicitOverride = false) => {
     const cleanU = cleanUrl(rawUrl);
     if (!cleanU) return;
 
     if (abortRef.current) abortRef.current.abort();
     const controller = new AbortController();
     abortRef.current = controller;
+
+    // 1.2: explicit intent (Bar tab entry, or a manual chip tap this session)
+    // outranks the parser's kind guess outright — see normalizeRecipeForReview.
+    const userChose = explicitOverride || manualTypeOverride || initialItemType === 'drink';
 
     setImportUrl(cleanU);
     setItemType(type || initialItemType);
@@ -411,7 +447,7 @@ export default function ImportSheet({
           setTimeline(t => advanceTimeline(t, msg));
           if (metadata?.imageUrl) setLoadingImage(metadata.imageUrl);
         },
-        { type: type || initialItemType, signal: controller.signal },
+        { type: type || initialItemType, signal: controller.signal, kindLocked: userChose },
       );
 
       if (controller.signal.aborted) return;
@@ -443,6 +479,7 @@ export default function ImportSheet({
             },
             signal: controller.signal,
             type: type || initialItemType,
+            kindLocked: userChose,
             imageUrl: result?.capturedImageUrl || '',
             model: whisperModel,
           });
@@ -450,7 +487,7 @@ export default function ImportSheet({
           if (controller.signal.aborted) return;
 
           if (transcribeResult) {
-            const tNorm = normalizeRecipeForReview(transcribeResult, type || initialItemType);
+            const tNorm = normalizeRecipeForReview(transcribeResult, type || initialItemType, { userChose });
             if (tNorm && (tNorm.title || tNorm.ingredients.length)) {
               setTimeline(t => ({ ...t, stage: 2 }));
               setRecipe(tNorm);
@@ -482,7 +519,7 @@ export default function ImportSheet({
         return;
       }
 
-      const normalized = normalizeRecipeForReview(result, type || initialItemType);
+      const normalized = normalizeRecipeForReview(result, type || initialItemType, { userChose });
       if (normalized && (normalized.title || normalized.ingredients.length)) {
         setRecipe(normalized);
         setConfidence(computeReviewConfidence(normalized));
@@ -499,9 +536,9 @@ export default function ImportSheet({
       setError(err.message || 'Import failed.');
       setPhase('input');
     }
-  }, [initialItemType, whisperModel]);
+  }, [initialItemType, whisperModel, manualTypeOverride]);
 
-  const handleUrlImport = useCallback(async (rawUrl, type) => {
+  const handleUrlImport = useCallback(async (rawUrl, type, explicitOverride = false) => {
     if (!navigator.onLine) {
       hapticError();
       // Link imports need a live connection to fetch the page — we can't queue a
@@ -515,21 +552,24 @@ export default function ImportSheet({
         fn: () => {
           lastReviewRef.current = null;
           setConfirmImport(null);
-          executeUrlImport(rawUrl, type);
+          executeUrlImport(rawUrl, type, explicitOverride);
         },
         message: "This will replace the recipe you're reviewing."
       });
     } else {
-      executeUrlImport(rawUrl, type);
+      executeUrlImport(rawUrl, type, explicitOverride);
     }
   }, [phase, executeUrlImport]);
 
   // ── Execute Paste Import ──────────────────────────────────────────────────
-  const executePasteImport = useCallback(async (text, type) => {
+  const executePasteImport = useCallback(async (text, type, explicitOverride = false) => {
     if (!text || !text.trim()) return;
 
     if (abortRef.current) abortRef.current.abort();
     abortRef.current = null;
+
+    // 1.2: explicit intent outranks the parser's kind guess — see executeUrlImport.
+    const userChose = explicitOverride || manualTypeOverride || initialItemType === 'drink';
 
     setItemType(type || initialItemType);
     setPhase('loading');
@@ -543,8 +583,8 @@ export default function ImportSheet({
     setCapturedText(text);
 
     try {
-      const result = await captionToRecipe(text, { type: type || initialItemType });
-      const normalized = normalizeRecipeForReview(result, type || initialItemType);
+      const result = await captionToRecipe(text, { type: type || initialItemType, kindLocked: userChose });
+      const normalized = normalizeRecipeForReview(result, type || initialItemType, { userChose });
       if (normalized && (normalized.title || normalized.ingredients.length)) {
         setRecipe(normalized);
         setConfidence(computeReviewConfidence(normalized));
@@ -560,20 +600,20 @@ export default function ImportSheet({
       setError(err.message || 'Import failed.');
       setPhase('input');
     }
-  }, [initialItemType]);
+  }, [initialItemType, manualTypeOverride]);
 
-  const handlePasteImport = useCallback(async (text, type) => {
+  const handlePasteImport = useCallback(async (text, type, explicitOverride = false) => {
     if (phase === 'review' || lastReviewRef.current) {
       setConfirmImport({
         fn: () => {
           lastReviewRef.current = null;
           setConfirmImport(null);
-          executePasteImport(text, type);
+          executePasteImport(text, type, explicitOverride);
         },
         message: "This will replace the recipe you're reviewing."
       });
     } else {
-      executePasteImport(text, type);
+      executePasteImport(text, type, explicitOverride);
     }
   }, [phase, executePasteImport]);
 
@@ -586,6 +626,8 @@ export default function ImportSheet({
     abortRef.current = controller;
 
     const effectiveType = type || initialItemType;
+    // 1.2: explicit intent outranks the parser's kind guess — see executeUrlImport.
+    const userChose = manualTypeOverride || initialItemType === 'drink';
     setItemType(effectiveType);
     setPhase('loading');
     setError('');
@@ -606,12 +648,13 @@ export default function ImportSheet({
     try {
       const result = await importRecipeFromPages(pages, {
         type: effectiveType,
+        kindLocked: userChose,
         onProgress,
         signal: controller.signal,
       });
       if (controller.signal.aborted) return;
 
-      const normalized = normalizeRecipeForReview(result, effectiveType);
+      const normalized = normalizeRecipeForReview(result, effectiveType, { userChose });
       if (normalized && (normalized.title || normalized.ingredients.length)) {
         setTimeline(t => ({ ...t, stage: 2 }));
         setRecipe(normalized);
@@ -633,7 +676,7 @@ export default function ImportSheet({
       );
       setPhase('input');
     }
-  }, [initialItemType]);
+  }, [initialItemType, manualTypeOverride]);
 
   // Accepts either the scan-session pages array or a single data URL (legacy
   // drop/paste and share paths) — normalizes to the pages shape.
@@ -664,6 +707,9 @@ export default function ImportSheet({
     const controller = new AbortController();
     abortRef.current = controller;
 
+    // 1.2: explicit intent outranks the parser's kind guess — see executeUrlImport.
+    const userChose = manualTypeOverride || initialItemType === 'drink';
+
     setPhase('loading');
     setError('');
     setLoadingImage('');
@@ -679,12 +725,13 @@ export default function ImportSheet({
         },
         signal: controller.signal,
         type: type || itemType || initialItemType,
+        kindLocked: userChose,
         model: whisperModel,
       });
 
       if (controller.signal.aborted) return;
 
-      const normalized = normalizeRecipeForReview(result, type || itemType || initialItemType);
+      const normalized = normalizeRecipeForReview(result, type || itemType || initialItemType, { userChose });
       if (normalized && (normalized.title || normalized.ingredients.length)) {
         setTimeline(t => ({ ...t, stage: 2 }));
         setRecipe(normalized);
@@ -702,11 +749,13 @@ export default function ImportSheet({
       setError(err.message || 'Transcription failed.');
       setPhase('input');
     }
-  }, [importUrl, itemType, initialItemType, whisperModel]);
+  }, [importUrl, itemType, initialItemType, whisperModel, manualTypeOverride]);
 
   // ── BrowserAssist recipe callback ────────────────────────────────────────
   const handleBrowserAssistRecipe = useCallback((extractedRecipe) => {
-    const normalized = normalizeRecipeForReview(extractedRecipe, itemType);
+    const normalized = normalizeRecipeForReview(extractedRecipe, itemType, {
+      userChose: manualTypeOverride || initialItemType === 'drink',
+    });
     if (normalized && (normalized.title || normalized.ingredients.length)) {
       setRecipe(normalized);
       setConfidence(computeReviewConfidence(normalized));
@@ -716,7 +765,7 @@ export default function ImportSheet({
       setError('Browser assist could not extract a recipe.');
       setPhase('input');
     }
-  }, [itemType]);
+  }, [itemType, manualTypeOverride, initialItemType]);
 
   const handleBrowserAssistFallback = useCallback((fallbackText) => {
     setCapturedText(fallbackText || '');
@@ -993,6 +1042,7 @@ export default function ImportSheet({
               setPasteText={setPasteText}
               itemType={itemType}
               setItemType={setItemType}
+              onManualTypeChange={() => setManualTypeOverride(true)}
               onImport={handleUrlImport}
               onPasteImport={handlePasteImport}
               scanPages={scanPages}

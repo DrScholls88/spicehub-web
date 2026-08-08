@@ -966,6 +966,52 @@
   color: var(--sh-text-muted);
 }
 
+/* 1.2: type-guess disagreement — same "worth a look" tone as review-flag-banner,
+   deliberately not an error color since keeping the user's choice is correct. */
+.review-type-disagreement {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 12px 0;
+  padding: 8px 12px;
+  border-radius: var(--sh-radius-sm);
+  background: #fff7e6;
+  border: 1px solid #f0d9a8;
+  font-size: var(--sh-fs-xs);
+  line-height: 1.4;
+  color: #7a5a1e;
+}
+.review-type-disagreement svg { flex-shrink: 0; color: #b8860b; }
+[data-theme="dark"] .review-type-disagreement {
+  background: rgba(178, 106, 0, 0.15);
+  border-color: rgba(178, 106, 0, 0.4);
+  color: #e8b860;
+}
+[data-theme="dark"] .review-type-disagreement svg { color: #e8b860; }
+
+/* 1.8: meal→drink one-tap correction — a real button (not a passive banner),
+   since it changes state on tap. Sized well above the 44px iOS touch-target
+   floor per the Phase 1 iOS checklist. */
+.review-type-correction {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: calc(100% - 24px);
+  margin: 8px 12px 0;
+  padding: 12px 14px;
+  min-height: 44px;
+  border-radius: var(--sh-radius-sm);
+  border: 1px dashed var(--sh-accent-bg-strong);
+  background: var(--sh-accent-bg);
+  color: var(--sh-accent);
+  font-size: var(--sh-fs-sm);
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.review-type-correction:active { opacity: 0.8; }
+
 /* Creator's note — the short friendly intro/story preserved from a social
    caption (recipeSchema `intro`). Quietly attributed; never fabricated. */
 .review-creator-note {

@@ -668,23 +668,55 @@ export const GLASSWARE = [
 export const DRINK_METHODS = ['shaken', 'stirred', 'built', 'blended', 'muddled', 'thrown'];
 const DRINK_UNIT_SIGNALS = ['oz', 'dash', 'dashes', 'splash', 'barspoon', 'part', 'parts', 'cl', 'ml', 'jigger', 'shot'];
 
+/** Words marking a simple-syrup / infusion sub-recipe component, not the main dish. */
+const SYRUP_CONTEXT_RE = /\b(syrup|infusion|shrub|oleo)\b/;
+/** Meal signals that rarely appear in cocktails on their own. */
+const MEAL_SIGNAL_RE = /\b(oven|bake|baked|preheat|roast|simmer|boil|sauté|saute|knead|marinate)\b/;
+
 /**
  * Heuristic kind detection used as a *hint* only — the AI is the authority via
  * RECIPE_SCHEMA.kind. Returns 'drink' | 'meal'. Mirrors the old inline logic
  * but centralized so prompt + parser stay in sync.
+ *
+ * 2026-08-08 (Phase 1, bar-library-parity-plan-2026-08-07.md I-4/1.5):
+ * recalibrated against two real false-negative classes —
+ *   1. A cocktail caption with a simple-syrup sub-recipe step ("simmer equal
+ *      parts sugar and water") used to eat a flat -3 penalty regardless of
+ *      context, frequently pushing an obvious cocktail to 'meal'.
+ *   2. A spirit + an actual cocktail method/action (shake, stir, build...) is
+ *      unambiguous and now short-circuits straight to 'drink', so it can't be
+ *      out-voted by unrelated meal-signal words elsewhere in the caption.
  */
 export function detectKindHeuristic(text = '') {
   const t = String(text).toLowerCase();
   let score = 0;
-  for (const s of SPIRITS) if (t.includes(s)) score += 2;
-  for (const l of LIQUEURS) if (t.includes(l)) score += 2;
-  for (const a of COCKTAIL_ACTIONS) if (t.includes(a)) score += 1;
-  for (const g of GLASSWARE) if (t.includes(g)) score += 1;
+  let hasSpiritOrLiqueur = false;
+  for (const s of SPIRITS) if (t.includes(s)) { score += 2; hasSpiritOrLiqueur = true; }
+  for (const l of LIQUEURS) if (t.includes(l)) { score += 2; hasSpiritOrLiqueur = true; }
+  let hasCocktailAction = false;
+  for (const a of COCKTAIL_ACTIONS) if (t.includes(a)) { score += 1; hasCocktailAction = true; }
+  // Glassware and drink-unit signals are weighted higher once a spirit/liqueur
+  // is already in evidence — combined, they're a much stronger signal than
+  // either alone (a "glass" or an "oz" can appear in a meal caption too).
+  const barSignalWeight = hasSpiritOrLiqueur ? 1.5 : 1;
+  for (const g of GLASSWARE) if (t.includes(g)) score += barSignalWeight;
   for (const u of DRINK_UNIT_SIGNALS) {
-    if (new RegExp(`\\b\\d[\\d.\\/ ]*\\s*${u}\\b`).test(t)) score += 1;
+    if (new RegExp(`\\b\\d[\\d.\\/ ]*\\s*${u}\\b`).test(t)) score += barSignalWeight;
   }
-  // Meal signals counterbalance (oven/bake/etc. rarely appear in cocktails).
-  if (/\b(oven|bake|baked|preheat|roast|simmer|boil|sauté|saute|knead|marinate)\b/.test(t)) score -= 3;
+  const hasDrinkMethod = DRINK_METHODS.some((m) => t.includes(m));
+
+  // Meal signals counterbalance (oven/bake/etc. rarely appear in cocktails) —
+  // UNLESS a spirit/liqueur is present alongside syrup/infusion vocabulary,
+  // which almost always means "simmer the simple syrup", not "this is dinner".
+  if (MEAL_SIGNAL_RE.test(t) && !(hasSpiritOrLiqueur && SYRUP_CONTEXT_RE.test(t))) {
+    score -= 3;
+  }
+
+  // Hard trigger: a spirit/liqueur combined with a real cocktail method or
+  // action is unambiguous, regardless of how unrelated meal-signal words
+  // elsewhere in the caption net the score out.
+  if (hasSpiritOrLiqueur && (hasDrinkMethod || hasCocktailAction)) return 'drink';
+
   return score >= 3 ? 'drink' : 'meal';
 }
 

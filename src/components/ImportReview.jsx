@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { fuzzyResolveIngredient, normalizeIngredientForMatching, learnableAliasFrom, addLearnedAlias } from '../recipeSchema';
 import { saveLearnedAliases } from '../db';
+import { hapticLight } from '../haptics';
 import PhotoGallery from './PhotoGallery';
 import DishPhotoCropper from './DishPhotoCropper';
 import CoverPicker from './import/CoverPicker.jsx';
@@ -772,6 +773,40 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
         <p className="review-import-details">
           {importDetailParts.join(' · ')}
         </p>
+      )}
+
+      {/* 1.2: honest disagreement instead of a silent override — the user
+          picked a type explicitly (Bar tab or chip tap) and the parser guessed
+          differently. We keep the user's choice, but say so, so misclassification
+          stays visible instead of vanishing (bar-library-parity-plan-2026-08-07.md I-1). */}
+      {recipe._typeDisagreement && (
+        <p className="review-type-disagreement">
+          <AlertTriangle size={13} strokeWidth={2} />
+          You chose {recipe._typeDisagreement.userChose === 'drink' ? 'Drink' : 'Meal'}; the parser guessed{' '}
+          {recipe._typeDisagreement.modelGuess === 'drink' ? 'Drink' : 'Meal'} — keeping {recipe._typeDisagreement.userChose === 'drink' ? 'Drink' : 'Meal'}.
+        </p>
+      )}
+
+      {/* 1.8: one-tap meal→drink correction, no re-import required. Mainly for
+          the iOS share-target path — sharing a reel from the Instagram app
+          skips ImportInput's Meal/Drink chip entirely, so a misclassified
+          cocktail otherwise has no in-review way to fix itself short of
+          starting over (bar-library-parity-plan-2026-08-07.md 1.6a/1.8). Shown
+          whenever the recipe currently reads as a Meal — cheap enough to leave
+          on for every import path, not just share-target. */}
+      {!isDrink && !recipe._typeDisagreement && (
+        <button
+          type="button"
+          className="review-type-correction"
+          onClick={() => {
+            hapticLight();
+            onChange({ ...recipe, itemType: 'drink', type: 'drink', _type: 'drink' });
+            setDest('bar');
+          }}
+        >
+          <Wine size={13} strokeWidth={2} />
+          Actually, this is a Drink → Bar
+        </button>
       )}
 
       {/* Creator's note — the short friendly intro/story the extraction engine
