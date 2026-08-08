@@ -4,7 +4,7 @@
  * See spec Section 5: "Settings state matrix"
  */
 import { useState } from 'react';
-import { getAvatar, getAvatarInitial } from '../data/pixelAvatars';
+import AvatarCircle from './AvatarCircle';
 
 export default function HomeGroupSection({
   homeGroup, // { state, groupInfo, syncStatus, ... } from useHomeGroup
@@ -60,17 +60,13 @@ export default function HomeGroupSection({
               Connect to the internet to create or join a group
             </p>
           )}
-
-          {state === 'auth_no_group' && (
-            <button
-              className="st-install-btn"
-              onClick={onSignOut}
-              style={{ marginTop: '8px', opacity: 0.7 }}
-            >
-              <span className="st-install-icon">🚪</span>
-              <span>Sign out</span>
-            </button>
-          )}
+          {/*
+            Sign out moved to the Settings "Danger Zone" (SettingsPlan.md
+            PKG A-4 / B-4) — same auth_no_group condition, just rendered at
+            the bottom of the sheet instead of buried mid-list. See
+            SettingsSheet.jsx. onSignOut is still passed in and used by
+            that Danger Zone section via homeGroup.signOut directly.
+          */}
         </div>
       )}
 
@@ -100,20 +96,16 @@ export default function HomeGroupSection({
           {/* Member list */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             {groupInfo.members.map(m => {
-              const av = m.avatar ? getAvatar(m.avatar) : null;
               return (
                 <div key={m.user_id} style={{
                   display: 'flex', alignItems: 'center', gap: '8px',
                   padding: '4px 0',
                 }}>
-                  <span style={{
-                    width: '28px', height: '28px', borderRadius: '50%',
-                    background: av?.color || 'var(--primary)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '16px',
-                  }}>
-                    {av?.emoji || getAvatarInitial(m.display_name)}
-                  </span>
+                  <AvatarCircle
+                    avatarId={m.avatar}
+                    displayName={m.display_name}
+                    size={28}
+                  />
                   <span style={{ fontSize: '14px' }}>{m.display_name}</span>
                   {m.role === 'owner' && (
                     <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>owner</span>

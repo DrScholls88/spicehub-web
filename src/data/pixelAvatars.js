@@ -24,4 +24,22 @@ export function getAvatarInitial(name) {
   return (name || 'M')[0].toUpperCase();
 }
 
+/**
+ * Get the best available avatar display data.
+ * Priority: avatarUrl (custom photo) > avatarId (pixel emoji) > initials.
+ * @param {{ avatarUrl?: string, avatarId?: string, displayName?: string, username?: string }} user
+ * @returns {{ type: 'photo'|'emoji'|'initials', src?: string, emoji?: string, color?: string, initial?: string }}
+ */
+export function getAvatarFallback(user) {
+  if (user?.avatarUrl) {
+    return { type: 'photo', src: user.avatarUrl };
+  }
+  if (user?.avatarId) {
+    const av = getAvatar(user.avatarId);
+    return { type: 'emoji', emoji: av.emoji, color: av.color };
+  }
+  const initial = (user?.displayName || user?.username || 'M')[0].toUpperCase();
+  return { type: 'initials', initial, color: 'var(--primary)' };
+}
+
 export default PIXEL_AVATARS;

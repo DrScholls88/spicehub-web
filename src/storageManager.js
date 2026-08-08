@@ -17,15 +17,23 @@ export async function checkStorageQuota() {
     // Modern Storage API (Chrome, Edge, Firefox, Safari 16.4+)
     if (navigator.storage && navigator.storage.estimate) {
       const estimate = await navigator.storage.estimate();
-      const usedMB = Math.round(estimate.usage / (1024 * 1024) * 10) / 10; // Round to 0.1 MB
-      const totalMB = Math.round(estimate.quota / (1024 * 1024) * 10) / 10;
-      const percentUsed = estimate.quota > 0 ? Math.round((estimate.usage / estimate.quota) * 1000) / 10 : 0;
+      // iOS Safari (pre-16.4, and some homescreen-PWA contexts even on newer
+      // versions) can resolve this call successfully but hand back
+      // {quota: 0, usage: 0} — no exception thrown, so the catch below never
+      // fires. Treat a non-positive quota as "the real API isn't usable
+      // here" and fall through to the Dexie-based estimate instead of
+      // surfacing a misleading 0%/NaN% storage bar.
+      if (estimate.quota > 0) {
+        const usedMB = Math.round(estimate.usage / (1024 * 1024) * 10) / 10; // Round to 0.1 MB
+        const totalMB = Math.round(estimate.quota / (1024 * 1024) * 10) / 10;
+        const percentUsed = Math.round((estimate.usage / estimate.quota) * 1000) / 10;
 
-      return {
-        usedMB,
-        totalMB,
-        percentUsed,
-      };
+        return {
+          usedMB,
+          totalMB,
+          percentUsed,
+        };
+      }
     }
   } catch (error) {
     console.warn('Storage API not available:', error);

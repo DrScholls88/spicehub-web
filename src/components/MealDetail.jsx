@@ -1,11 +1,13 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
-import { X, Share2, Copy, Check, Heart, Star, RefreshCw, Flame, UtensilsCrossed, ChefHat, Martini, FileDown, Play, Images, Pencil, UserPlus, MoreVertical } from 'lucide-react';
+import { X, Share2, Copy, Check, Heart, Star, RefreshCw, Flame, UtensilsCrossed, ChefHat, Martini, FileDown, Play, Images, Pencil, UserPlus, MoreVertical, Tag, Clock, Globe, Leaf } from 'lucide-react';
 import PhotoGallery from './PhotoGallery';
 import { NUTRITION_LABELS } from '../recipeSchema';
 import { formatNutritionValue, formatIngredientLine } from '../utils/displayFormatter';
 import { getMealVideoSource } from '../lib/videoSource';
 import { buildPantryMatchIndex } from '../lib/pantryMatch.js';
+import { getTotalMinutes, formatMinutes } from '../lib/recipeTime.js';
+import { getUserTags } from '../db';
 
 function CopyLinkButton({ url }) {
   const [copied, setCopied] = useState(false);
@@ -65,6 +67,54 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
     const match = index.get(meal.id || meal.name);
     return new Set((match?.missing || []).map(n => n.toLowerCase().trim()));
   }, [fridgeInventory, meal, isDrink]);
+
+  // ── Labels row ──────────────────────────────────────────────────────────────
+  // Every facet the Meal Library filters on — total time, cuisine, dietary
+  // tags, and the user's own custom labels — was filterable there but invisible
+  // here, so a recipe's tags effectively vanished the moment you opened it.
+  // This block re-surfaces all four in one metadata row.
+  //
+  // Custom labels are stored on the meal as plain name strings (meal.tags);
+  // their colours live in the userTags table, so we look the palette up once
+  // and fall back to a neutral chip for a label whose tag was since deleted.
+  const [tagPalette, setTagPalette] = useState(() => new Map());
+  useEffect(() => {
+    let cancelled = false;
+    getUserTags()
+      .then(list => {
+        if (cancelled) return;
+        setTagPalette(new Map((list || []).map(t => [t.name, t.color])));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const customTags = useMemo(
+    () => (Array.isArray(meal.tags) ? meal.tags.filter(t => typeof t === 'string' && t.trim()) : []),
+    [meal.tags]
+  );
+
+  const dietaryTags = useMemo(() => {
+    const raw = Array.isArray(meal.dietaryTags) ? meal.dietaryTags : [];
+    const seen = new Set();
+    const out = [];
+    for (const entry of raw) {
+      const name = String(
+        entry && typeof entry === 'object' ? (entry.name || entry.label || '') : (entry || '')
+      ).trim();
+      if (!name) continue;
+      const key = name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(name);
+    }
+    return out;
+  }, [meal.dietaryTags]);
+
+  const totalTimeLabel = useMemo(() => formatMinutes(getTotalMinutes(meal)), [meal]);
+  const cuisineLabel = useMemo(() => String(meal.cuisine || '').trim(), [meal.cuisine]);
+
+  const hasLabels = !!(totalTimeLabel || cuisineLabel || dietaryTags.length || customTags.length);
 
   // ── Header diet: Heart + ⋮ overflow + Close only. Everything else that
   // used to live in the header (Edit/Share/Send to Friend/Export) moves into
@@ -341,6 +391,71 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
             ) : null}
           </div>
         </div>
+
+        {/* ── Labels: time · cuisine · dietary tags · the user's custom labels.
+            All four are Meal Library filter facets that previously had no
+            representation on the recipe itself. Custom labels carry their own
+            colour from the userTags table; everything else stays neutral so
+            the user's own labels are the ones that read loudest. ── */}
+        {hasLabels && (
+          <div className="detail-labels-row">
+            {totalTimeLabel && (
+              <span className="detail-label-chip" title="Total time">
+                <Clock size={12} strokeWidth={2.25} aria-hidden="true" /> {totalTimeLabel}
+              </span>
+            )}
+            {cuisineLabel && (
+              <span className="detail-label-chip" title="Cuisine">
+                <Globe size={12} strokeWidth={2.25} aria-hidden="true" /> {cuisineLabel}
+              </span>
+            )}
+            {dietaryTags.map(name => (
+              <span key={`diet-${name}`} className="detail-label-chip detail-label-chip--diet" title="Dietary tag">
+                <Leaf size={12} strokeWidth={2.25} aria-hidden="true" /> {name}
+              </span>
+            ))}
+            {customTags.map(name => {
+              const color = tagPalette.get(name);
+              return (
+                <span
+                  key={`tag-${name}`}
+                  className="detail-label-chip detail-label-chip--custom"
+                  title="Custom label"
+                  style={color ? { borderColor: color, color, background: `color-mix(in srgb, ${color} 12%, transparent)` } : undefined}
+                >
+                  <Tag size={12} strokeWidth={2.25} aria-hidden="true" /> {name}
+                </span>
+              );
+            })}
+            {onEdit && (
+              <button
+                type="button"
+                className="detail-label-edit"
+                onClick={onEdit}
+                title="Edit labels"
+                aria-label="Edit labels"
+              >
+                <Pencil size={12} strokeWidth={2.25} aria-hidden="true" /> Edit
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* No labels yet — one quiet prompt instead of a silently empty row,
+            so "this recipe has no labels" is a state you can act on. Meals
+            only: AddEditMeal's Labels picker is gated to meal mode, so
+            offering this on a drink would open a form with nothing to set. */}
+        {!hasLabels && onEdit && !isDrink && (
+          <div className="detail-labels-row">
+            <button
+              type="button"
+              className="detail-label-empty"
+              onClick={onEdit}
+            >
+              <Tag size={12} strokeWidth={2.25} aria-hidden="true" /> Add labels
+            </button>
+          </div>
+        )}
 
         {/* Description + Yield — shown when LLM extracted a summary */}
         {(meal.description || meal.recipeYield) && (

@@ -4,6 +4,7 @@
 **Status**: Plan only. No code changed.
 **Sequencing (user-selected)**: Phase 1 (drink import) ships standalone first. Phases 2–4 follow.
 **Aesthetic direction (user-selected)**: Speakeasy / after-dark — same bones as MealLibrary, night-mode counterpart.
+**iOS**: treated as a gating requirement throughout, per the constitution. See §0.5 (audit), the per-phase iOS subsections, and the iOS acceptance checklist near the end. Five real iOS defects were found in the existing Bar code; four are fixable in a pre-Phase-1 quick-win package.
 
 ---
 
@@ -104,6 +105,41 @@ Already at parity, credit where due: speed-dial FAB, expandable card with `layou
 - Identity is split three ways: pixel-art Saloon (`BarShelf`), neon-pink library, generic meal-card tiles. Nothing bridges them.
 - Rarity is ingredient-count driven (`≥6 = legendary`, `BarLibrary.jsx:59-66`). A Long Island Iced Tea scores legendary; a Martini scores common. It is measuring the wrong thing.
 
+### 0.5 iOS audit — what's already safe, and what will bite
+
+Per the constitution, every change must be optimised for iOS even though primary testing is Windows + Android. I checked the actual baseline rather than assuming.
+
+**Already established — no new floor introduced by this plan:**
+
+| API | Safari floor | Already used |
+|---|---|---|
+| `AbortSignal.timeout` | 16.0 | 16 sites |
+| `color-mix()` | 16.2 | 14 sites |
+| `100dvh` | 15.4 | 8 sites, with explicit iOS URL-bar comments |
+| `oklch()` | **15.4** | **0 sites — new in this plan** |
+| `visualViewport` | 13 | `useKeyboardInset.js` |
+
+**Verdict on the Phase 2 token layer: `oklch()` is safe.** It landed in Safari 15.4, *earlier* than the `color-mix()` (16.2) and `AbortSignal.timeout` (16.0) the app already depends on. Introducing OKLCH raises the effective iOS floor by exactly zero. Worth stating plainly so nobody adds a defensive polyfill this project doesn't need.
+
+**Five real iOS problems, verified in the tree:**
+
+**iOS-1 — Bar tiles have no callout suppression, so long-press multi-select likely misbehaves on iOS.**
+`.bl-tile` (`App.css:8834-8846`) sets `-webkit-tap-highlight-color: transparent` but **not** `-webkit-touch-callout: none` or `user-select: none`. The only `-webkit-touch-callout` in the entire tree is inside vendored `photoswipe.css`. On iOS, a 500ms press on a tile fires the native selection callout, which competes with — and frequently preempts — the `LONG_PRESS_MS = 500` handler at `BarLibrary.jsx:250-268`. Phase 3 adds *more* long-press (tag rearrange), so this compounds.
+
+**iOS-2 — all haptic feedback is silent on iOS, and the Bar leans on it.**
+`navigator.vibrate` is unsupported in iOS Safari, including installed PWAs. `src/haptics.js` guards correctly (`SUPPORTED` check) so nothing crashes — but it means every `hapticLight()` in BarLibrary is a no-op on iPhone. Worse, `BarLibrary.jsx:264` calls raw `navigator.vibrate(15)` as the *only* confirmation that long-press select mode engaged. Combined with iOS-1: an iPhone user long-pressing a drink gets no feedback, plus a native callout they didn't ask for. Select mode is effectively undiscoverable on iOS.
+
+**iOS-3 — `woff2` is missing from the precache glob, so a self-hosted font breaks offline-first on iOS.**
+`vite.config.js:94` — `globPatterns: ['**/*.{js,mjs,css,html,ico,png,svg,jpg,webp,wasm,gz}']`. No `woff2`. The font would fall through to the `StaleWhileRevalidate` runtime route at `sw.js:90-96`, which needs a network hit first. The canonical iOS PWA scenario — install to Home Screen, open it on the subway — would render the Bar in the system fallback. There's already a comment at `vite.config.js:83-87` noting these globs previously sat under the wrong key and had no effect, so this file has burned the project once.
+
+**iOS-4 — `color-mix()` sites have no preceding fallback declaration.**
+E.g. `LandingPage.css:137` — `background: color-mix(...) !important;` with no plain declaration before it. On any Safari below 16.2 the whole property is invalid and drops to transparent. The `var(--primary, #e65100)` fallbacks inside don't help; it's the *function* that's unsupported. Not caused by this plan, but the Bar tokens must not repeat the pattern.
+
+**iOS-5 — four `backdrop-filter` sites are missing the `-webkit-` prefix.**
+29 unprefixed vs 25 prefixed across the CSS. Older iOS needs `-webkit-backdrop-filter`. Worth sweeping while the Bar surfaces are being touched.
+
+**Also noted:** `isIOS()` / `isAndroid()` are defined inline inside `App.jsx:275-283` rather than in `src/isMobile.js`, so they aren't reachable from BarLibrary. Phase 2 needs them; lift them into `isMobile.js` alongside `isMobileDevice()` and re-point the App.jsx call sites (lines 741, 2021, 2031).
+
 ---
 
 ## Phase 1 — Drink import repair (standalone, ships first)
@@ -166,6 +202,14 @@ Do (a). Then simplify `App.jsx:1385-1387` so `target === 'drinks' | 'bar'` is au
 
 Either accept `sourceType` in `structurePack`'s options (overriding `pack.sourceType`) or drop the argument at the call site. Accepting it is the better fix — the call site's intent is correct and the next person will make the same assumption.
 
+### 1.6a iOS considerations for Phase 1
+
+Phase 1 is logic-only, so the surface area is small — but three things matter:
+
+- **Dexie eviction is harsher on iOS.** iOS evicts IndexedDB for PWAs that go unused (historically ~7 days without interaction, relaxed but not eliminated in recent versions). The July `persist()` work already requests durable storage; the type-aware cache key (1.1) changes *keys*, not the store, so it inherits that protection. But do verify the composite-key change doesn't trip a Dexie schema bump — if `instagramCache` is declared `&url`, a longer string key is fine and needs no version bump. **Confirm before writing**, because a spurious `db.version()` bump is a migration all iOS users pay for.
+- **The share-target path must carry type too.** `sw.js` handles `POST /share-target` → redirect → `App.jsx` auto-opens the import sheet. On iOS this is the *primary* way drinks get imported (share sheet from the Instagram app). Sharing into SpiceHub currently can't express "this is a drink", so it inherits the default and lands in Meals. Fix 1.2 and 1.3 only cover the in-app tab. **Add**: when the share-target import resolves to a drink by heuristic, offer a one-tap "Actually, this is a drink →  Bar" correction in ImportReview rather than making the user re-import. Cheap, and it's the highest-traffic iOS entry point.
+- **No new API surface.** 1.1–1.7 use `fetch`, Dexie, and `AbortSignal.timeout` — all already in the iOS baseline. Nothing here raises the floor.
+
 ### 1.7 Render what we extract — `src/components/MealDetail.jsx`
 
 `glass` / `garnish` / `method` / `abv` currently vanish. Add a drink-only spec strip under the title, gated on `isDrink`: **Glass · Method · Garnish**, plus a computed strength chip via `abvCalculator.getStrengthTier()`. This is the smallest change with the largest "the import finally works" payoff, and it doubles as the first Phase-3 win.
@@ -179,7 +223,7 @@ npm run test:corpus             # extraction corpus — must not regress on meal
 npm run build                   # constitution: no truncation, no syntax errors
 ```
 
-Manual pass (Windows + Android, then iOS Safari):
+Manual pass (Windows + Android, then **iOS Safari and an installed iOS PWA — both**):
 1. Clear import cache. Bar tab → Import → paste a cocktail reel → **must** land in Bar Library.
 2. Same URL, Meal tab → must land in Meals, and must **not** return the cached drink.
 3. A cocktail reel whose caption contains a simple-syrup `simmer` step → classified drink.
@@ -187,6 +231,8 @@ Manual pass (Windows + Android, then iOS Safari):
 5. A genuine dinner reel from the Meal tab → unchanged (regression guard).
 6. Open an imported drink → Glass / Method / Garnish / strength all render.
 7. Airplane mode → offline queue still intact; drink import queues as before.
+8. **iOS-specific:** share a cocktail reel from the Instagram app → SpiceHub share sheet → verify the type correction affordance appears and routes to Bar.
+9. **iOS-specific:** force-quit the installed PWA, reopen after 24h+, confirm the drink is still in the Bar (Dexie survived) and the import cache behaves.
 
 ### Phase 1 commits
 
@@ -198,6 +244,7 @@ feat(import): add DRINK_RECONCILIATION addendum and lock kind when user confirms
 fix(schema): stop syrup sub-recipes flipping cocktail captions to meal in detectKindHeuristic
 fix(import): honour sourceType option in structurePack instead of silently dropping it
 feat(detail): render glass, method, garnish and strength for drinks
+feat(import): offer one-tap meal-to-drink correction for iOS share-target imports
 ```
 
 ---
@@ -226,6 +273,19 @@ Scoped tokens, not a theme fork. `.bl` and `.bl-*` opt in; everything else is un
 
 Note the chroma discipline: neutrals are tinted toward the brass hue (0.018–0.03 chroma) so surfaces and accent feel related rather than merely co-located. This is the same principle the project already applies elsewhere; the Bar just never got it.
 
+**iOS safety (see §0.5): `oklch()` needs no guard.** Safari 15.4 predates the `color-mix()` (16.2) and `AbortSignal.timeout` (16.0) the app already requires. Do **not** add an `@supports (color: oklch(...))` block or a polyfill — it would be dead code that implies a floor the app doesn't actually support.
+
+**But do not repeat iOS-4.** Any place a Bar rule *consumes* these tokens through `color-mix()`, emit a plain fallback declaration first:
+
+```css
+.bl-tile {
+  background: var(--bar-surface-raised);                                   /* always valid */
+  background: color-mix(in oklch, var(--bar-surface-raised) 92%, black);   /* 16.2+ refines */
+}
+```
+
+Two declarations, last-valid-wins. Costs nothing and removes an entire class of "the Bar is transparent on my old iPad" bug reports.
+
 **Deliberate choice:** the Bar stays dark in both themes. It is a *place* in the app, not a mode — the Saloon next door is already dark, and a light-mode Bar would break the doorway transition. Document this in `design.md` so it doesn't get "fixed" later.
 
 **Verify every pairing against WCAG AA before shipping**, since these are new values: `--bar-text-dim` on `--bar-surface`, `--bar-accent` on `--bar-surface`, and the rarity colours below. The July `--text-muted` incident was exactly this failure mode.
@@ -234,7 +294,18 @@ Note the chroma discipline: neutrals are tinted toward the brass hue (0.018–0.
 
 The project currently loads **zero** web fonts (system stack only). Adding a Google Fonts `<link>` would break offline-first — non-negotiable per the constitution.
 
-**Approach**: self-host **one** display face, Latin subset, single weight, `woff2`, in `public/fonts/`, with `font-display: swap` and an explicit `sw.js` precache entry. Budget ~18–25 KB. Applied **only** to drink names, the Saloon button, and Bar section headers — body copy stays on the existing stack so the two libraries still feel related.
+**Approach**: self-host **one** display face, Latin subset, single weight, `woff2`, in `public/fonts/`, with `font-display: swap`. Budget ~18–25 KB. Applied **only** to drink names, the Saloon button, and Bar section headers — body copy stays on the existing stack so the two libraries still feel related.
+
+**Required first, or this breaks iOS offline (iOS-3):** add `woff2` to the precache glob.
+
+```js
+// vite.config.js:94
+globPatterns: ['**/*.{js,mjs,css,html,ico,png,svg,jpg,webp,wasm,gz,woff2}'],
+```
+
+Without it the font falls to the `StaleWhileRevalidate` runtime route (`sw.js:90-96`), which needs a network round-trip — so a freshly installed iOS PWA opened offline renders the Bar in the system fallback. Note the warning already sitting at `vite.config.js:83-87` about these globs previously living under the wrong key: **verify the font actually appears in the generated `dist` precache manifest after building**, don't assume the glob took.
+
+Also pair `font-display: swap` with an explicit `size-adjust`/`ascent-override` or a matched local fallback in the `@font-face` block. iOS is where the swap flash is most visible (slower cold starts from the Home Screen), and a display face like Gloock has very different metrics from the system stack — an unadjusted swap will visibly reflow every drink name on the grid.
 
 Candidates (all outside the usual reflex set — no Inter/DM/Space/Plex/Playfair/Fraunces):
 
@@ -249,7 +320,22 @@ Scale: drink name at `clamp(1.05rem, 3.2vw, 1.25rem)` on tiles, `1.75rem` in the
 - Replace every hardcoded hex in the `.bl-*` block with the tokens above: `#ff4081`, `#1a0a2e`, `#3a1f5e`, `#ffd700`, `#42a5f5`, `#4caf50`, `#8b5cf6` (the last is inline in `BarLibrary.jsx:644` and needs a JSX change, not just CSS).
 - Re-skin `.bl-tile`: `--bar-surface-raised`, 1px `--bar-hairline` border, 10px radius, and drop the generic drop shadow in favour of a hairline + very low-opacity lift. Dark surfaces do not need drop shadows; they need edges.
 - Increase tile density to 3-column on phone (meals stay 2-column) — bottles are tall and narrow, dishes are wide. Different content shape, different grid; this is adaptation, not divergence.
-- Audit every `.bl-*` interactive target against `--touch-min-size: 44px`. The `.bl-tile-improve`, `.bl-tile-menu-btn` and `.bl-tile-play` overlay buttons are prime suspects.
+- Audit every `.bl-*` interactive target against `--touch-min-size: 44px`. The `.bl-tile-improve`, `.bl-tile-menu-btn` and `.bl-tile-play` overlay buttons are prime suspects. 44px is Apple's HIG figure specifically — this audit is an iOS requirement, not a nicety.
+
+### 2.3a iOS fixes to land with the re-skin
+
+- **Fix iOS-1** — add to `.bl-tile`:
+  ```css
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+  ```
+  Without this, long-press multi-select fights the native iOS selection callout. Apply to `.bl-tile` only, **not** to `.bl-qp-*` — the expanded card contains ingredient text a user may legitimately want to select and copy.
+- **Fix iOS-5** — sweep the 4 unprefixed `backdrop-filter` sites and add `-webkit-backdrop-filter`. If the speakeasy surfaces introduce any new blur, prefix from the start. Budget blur carefully on iOS: stacked `backdrop-filter` layers are the most reliable way to make an iPhone grid scroll at 40fps.
+- **Lift `isIOS()` / `isAndroid()`** out of `App.jsx:275-283` into `src/isMobile.js` and re-point lines 741, 2021, 2031. Phase 2 and 3 both need platform checks from inside BarLibrary.
+- **Status-bar scrim** — `body::before` (`App.css:132-142`) paints `env(safe-area-inset-top)` with `var(--primary, #e65100)`, i.e. meal-orange. On the Bar tab, a near-black speakeasy surface under an orange notch strip will look broken on a notched iPhone. Make the scrim tab-aware: `background: var(--status-scrim, var(--primary, #e65100))`, and set `--status-scrim: var(--bar-surface)` on the Bar tab's root. This is a genuine two-tone-header bug, not a theoretical one — verify on a device with a Dynamic Island, where the strip is tallest.
+- **Momentum + overscroll** — the Bar gallery becomes a denser 3-column scroller. Match the existing sheet treatment (`overscroll-behavior: contain; -webkit-overflow-scrolling: touch;`) so a fast flick in the grid doesn't rubber-band the whole page behind it on iOS.
+- **Reduced motion** — the `blSaloonShimmer` 4s infinite animation (`App.css:8257`) runs forever and has no `prefers-reduced-motion` guard. On iOS that's both an accessibility miss and a battery drain on an always-visible element. Wrap it, and any new Bar motion, in `@media (prefers-reduced-motion: no-preference)`.
 
 ### 2.4 Rarity, re-grounded
 
@@ -264,12 +350,19 @@ Rarity now answers "can I make this, and is it special?" rather than "how long i
 ### Phase 2 commits
 
 ```
+fix(pwa): add woff2 to precache globPatterns so self-hosted fonts work offline
 feat(bar): add scoped speakeasy token layer for the Bar surface
 feat(bar): self-host Gloock display face for drink names, precached for offline
 fix(bar): replace hardcoded hexes in .bl-* with theme tokens
 fix(bar): raise 7px saloon count text and audit Bar touch targets to 44px
+fix(ios): suppress touch callout on bar tiles so long-press select works
+fix(ios): add missing -webkit-backdrop-filter prefixes
+fix(ios): make status-bar scrim tab-aware so the Bar header is not two-tone
+refactor(platform): lift isIOS/isAndroid from App.jsx into isMobile.js
 refactor(bar): reground drink rarity on canon + inventory scarcity, not ingredient count
 ```
+
+*(Order matters: the `woff2` glob fix must land before or with the font commit, or the first offline iOS launch regresses.)*
 
 ---
 
@@ -297,6 +390,14 @@ Strength chip on tiles and in the expanded card (`getStrengthTier`). In `MixMode
 5. **Grid layout toggle** — persisted, same as meals.
 6. **Favourites / rating** — currently hard-nulled for drinks at `App.jsx:1792-1794`. Enable; a 5-star rating on a cocktail you've actually mixed is more meaningful than on a dinner.
 
+### 3.4a iOS considerations for Phase 3
+
+- **Fix iOS-2 before shipping tags.** Long-press is about to carry three jobs in the Bar (enter select mode, rearrange tag chips, tile context menu) and on iPhone **none of them produce any feedback**, because `navigator.vibrate` doesn't exist in iOS Safari. Add a visual confirmation to the long-press path — a brief scale/lift on the pressed tile plus the select-toolbar sliding in — so the gesture is discoverable without haptics. Keep the `hapticLight()` calls; they're correct on Android and harmless on iOS. This is a prerequisite for tags, not a follow-up.
+- **"One Bottle Away" rail is a horizontal scroller inside a vertical one.** That's the exact gesture-conflict shape that caused the July carousel work (`.sh-carousel`, gesture isolation in the import tray). Reuse that treatment rather than rediscovering it — iOS is far less forgiving than Chrome about nested scroll direction locking.
+- **Filters(n) and tag sheets are bottom sheets with inputs.** Every new text input must be **≥16px** or iOS auto-zooms the viewport on focus — the regression that hit the Import Review flow in July. The tag-name input in the tag manager is the specific risk. Also fold `var(--keyboard-inset, 0px)` into the sheet's bottom padding, per the documented pattern in `useKeyboardInset.js`.
+- **Sheet dismissal** — Bar sheets should use the existing `useSwipeDismiss` hook rather than BarLibrary's hand-rolled `handleSheetTouch*` (`BarLibrary.jsx:282-299`). The hand-rolled version sets `style.transition = 'none'` and mutates transforms directly, which on iOS can fight Safari's own scroll compositing. Consolidating also removes a duplicate implementation.
+- **Favourites/rating (3.4 item 6)** — star controls are small by default. Hold the 44px target here; rating rows are a classic iOS mis-tap.
+
 ### 3.5 Deliberately **not** ported
 
 - **Rotation / week planning** — meals go on a weekly plan; drinks don't. Forcing this would be parity for its own sake.
@@ -320,13 +421,63 @@ Ordered by (value ÷ effort). Everything in 4.1–4.3 leans on already-built mod
 
 **4.6 House Rules / batch scaling** — batch a cocktail to a pitcher (×8, ×12) with correct dilution from `barMethods.json` (batching changes dilution — the data is already there). Real bartending knowledge encoded, and it makes the Bar useful for hosting rather than just cataloguing.
 
+### iOS notes on Phase 4
+
+- **4.3 Pour Count** writes to Dexie on every mix. Harmless, but keep it a single field increment — iOS is the platform most likely to have the tab suspended mid-write when the user switches apps to answer a text. Write on mix *start*, not only on completion.
+- **4.4 Last Call** is a good candidate for `useShakeToSpin` (already in `src/hooks/`), but **iOS gates `DeviceMotionEvent` behind an explicit `requestPermission()` call that must originate from a user gesture**, and only on HTTPS. Check how the existing hook handles this before reusing it; if it doesn't request permission, shake-to-Last-Call will silently never fire on iPhone. Always ship a tappable button as the primary trigger, with shake as an enhancement.
+- **4.5 The Back Bar** is a horizontal "bottle spine" scroller — the most iOS-sensitive item in the plan. Horizontal scroll-snap plus transformed children is where iOS Safari's compositor struggles. Prototype the scroll performance on a real mid-range iPhone *before* committing to the concept, and keep the transform work on `transform`/`opacity` only.
+- **Anything using `navigator.share`** (4.2 spec export, shopping list export) works well on iOS and is arguably better there than on Android — `handleBackup` already uses the `canShare({files})` path correctly. Reuse that shape for the shopping-list export rather than the `<a download>` fallback, which is poor on iOS.
+
+---
+
+## iOS acceptance checklist
+
+Run before closing **any** phase. Test on a real device in **both** modes — mobile Safari and an installed Home Screen PWA. They behave differently, and the PWA is the one that ships.
+
+**Layout & chrome**
+- [ ] Notched device (ideally Dynamic Island): status-bar scrim matches the Bar surface, no orange strip
+- [ ] Safe-area insets respected top and bottom; FAB clears the home indicator
+- [ ] No horizontal overflow at 375px (iPhone SE/mini) on the 3-column grid
+- [ ] Collapsing URL bar doesn't clip the grid or strand the FAB (`100dvh` paths)
+
+**Touch & gesture**
+- [ ] Every `.bl-*` control ≥ 44×44px
+- [ ] Long-press on a tile enters select mode with **no** native selection callout, and gives visible feedback
+- [ ] Long-press on a tag chip enters rearrange mode without a callout
+- [ ] Horizontal rails ("One Bottle Away") scroll without hijacking vertical page scroll
+- [ ] Swipe-to-dismiss on Bar sheets works and doesn't fight page scroll
+
+**Input & keyboard**
+- [ ] Every input ≥16px — no viewport auto-zoom on focus
+- [ ] Sheet bottom padding folds in `var(--keyboard-inset)`; no control hidden behind the keyboard
+- [ ] Search field dismisses the keyboard cleanly on scroll
+
+**Rendering & color**
+- [ ] Bar surfaces render correctly (not transparent) — confirms `color-mix` fallbacks
+- [ ] All blur surfaces render — confirms `-webkit-backdrop-filter`
+- [ ] Contrast measured, not eyeballed: `--bar-text-dim` and `--bar-accent` on `--bar-surface`, plus all three rarity colours
+- [ ] Reduced Motion on (Settings → Accessibility): shimmer and tile animations stop
+
+**PWA & offline**
+- [ ] Install to Home Screen, force-quit, **enable airplane mode, then launch**: Bar renders with the display font, not the fallback
+- [ ] Bar Library, inventory and matching all work fully offline
+- [ ] Return after 24h+: Dexie data intact, drinks still present
+- [ ] Share a reel from the Instagram app → routes to Bar (or offers the correction)
+
+**Performance**
+- [ ] Bar grid scrolls smoothly with 50+ drinks on a mid-range iPhone (not just the newest)
+- [ ] Expanded-card `layoutId` morph doesn't drop frames
+
 ---
 
 ## Risks & guardrails
 
-- **Offline sovereignty**: the self-hosted font must be precached in `sw.js` and must degrade to the system stack. Verify in airplane mode before merging Phase 2.
-- **iOS**: new dark surfaces need a re-check against the `body::before` status-bar scrim (which reads `var(--primary)`) so the Bar tab doesn't produce a two-tone header. Also re-run the ≥16px input check on any new Bar inputs — that regression has happened twice.
-- **Contrast**: every new OKLCH pair must be measured, not eyeballed. The `--text-muted` failure shipped because a token *looked* fine.
+- **Offline sovereignty**: the self-hosted font must be in the **precache manifest**, not just the runtime route, and must degrade to the system stack. The `woff2` glob fix (`vite.config.js:94`) is a hard prerequisite. Verify by inspecting the generated manifest *and* by launching the installed iOS PWA in airplane mode.
+- **iOS is the gate, not the afterthought.** Primary testing is Windows + Android, so the iOS checklist above must be run explicitly at each phase close, on a real device. Simulator will not catch the callout, keyboard, or compositor issues.
+- **`oklch()` needs no polyfill** — Safari 15.4, below the app's existing 16.2 floor. Resist adding defensive `@supports` scaffolding; it's dead code that misrepresents what the app supports.
+- **`color-mix()` does need a fallback declaration.** Four existing sites get this wrong (iOS-4); don't add a fifth.
+- **Haptics are decoration on iOS, never the only signal.** `navigator.vibrate` is unsupported. Any interaction whose sole confirmation is a vibration is broken on iPhone by definition.
+- **Contrast**: every new OKLCH pair must be measured. The `--text-muted` failure shipped because a token *looked* fine.
 - **Scope discipline**: Phase 3 is mostly wiring existing tested modules. Resist rewriting `barMatch`/`barShopping`/`abvCalculator` while integrating them — if they need changes, that's a separate commit with its own test run.
 - **`npm run build` before every git command**, per the constitution. Note the known sandbox `dist/` EPERM quirk — verify with `--outDir` to a scratch path if it appears.
 - **No git mutations from the agent.** Commit commands provided; you run them.
@@ -335,9 +486,12 @@ Ordered by (value ÷ effort). Everything in 4.1–4.3 leans on already-built mod
 
 ## Suggested execution order
 
+0. **iOS quick wins** — `woff2` glob, touch-callout on `.bl-tile`, `-webkit-backdrop-filter` sweep, lift `isIOS`/`isAndroid`. Four small independent fixes, no design decisions, and they unblock everything downstream. Ship as one commit package.
 1. **Phase 1** — drink import. Standalone, ship and verify on device before touching UI.
 2. **Phase 3.1** — swap in `barMatch`. One import, immediately correct counts.
-3. **Phase 2** — speakeasy tokens, font, CSS debt, rarity.
+3. **Phase 2** — speakeasy tokens, font, CSS debt, rarity, status-bar scrim.
 4. **Phase 3.2 / 3.3** — wire `barShopping` + `abvCalculator`.
-5. **Phase 3.4** — parity items in listed order.
+5. **Phase 3.4** — parity items in listed order (long-press visual feedback **before** tags).
 6. **Phase 4** — differentiators, reassessed once 1–5 are on device.
+
+Run the iOS acceptance checklist at the close of each numbered step, not once at the end.

@@ -19,7 +19,7 @@ export async function getCloudProfile() {
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('user_id, username, display_name, avatar_id, is_searchable, username_changed_at, created_at, updated_at')
+    .select('user_id, username, display_name, avatar_id, avatar_url, is_searchable, username_changed_at, created_at, updated_at')
     .eq('user_id', userId)
     .single();
 
@@ -123,6 +123,7 @@ export async function updateCloudProfile(fields) {
   const updates = { updated_at: new Date().toISOString() };
   if (fields.displayName !== undefined) updates.display_name = fields.displayName;
   if (fields.avatarId !== undefined) updates.avatar_id = fields.avatarId;
+  if (fields.avatarUrl !== undefined) updates.avatar_url = fields.avatarUrl;
 
   const { error } = await supabase
     .from('profiles')

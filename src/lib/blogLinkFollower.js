@@ -381,13 +381,23 @@ export async function extractRecipeFromBlog(url, prefetchedHtml = null) {
     let discoveredDomain = '';
     try { discoveredDomain = new URL(url).hostname.replace(/^www\./, ''); } catch { /* ok */ }
 
+    let partialRecipe = null;
+
     // Strategy 1: JSON-LD (enhanced)
     const jsonLdRecipe = extractJsonLd(html);
     if (jsonLdRecipe) {
       console.log('[BlogLinkFollower] Found JSON-LD recipe');
       const r = normalizeRecipe(jsonLdRecipe, url, discoveredDomain);
-      r._extractionMethod = 'jsonld';
-      return r;
+      if (isCompleteRecipe(r)) {
+        r._extractionMethod = 'jsonld';
+        return r;
+      }
+      if (hasEnoughIngredients(r)) {
+        partialRecipe = attachPartialArticleText(r, html, 'jsonld_partial');
+        console.log('[BlogLinkFollower] JSON-LD recipe is partial, continuing cascade');
+      } else {
+        console.log('[BlogLinkFollower] JSON-LD recipe is too sparse, continuing cascade');
+      }
     }
 
     // Strategy 2: Microdata
@@ -395,8 +405,14 @@ export async function extractRecipeFromBlog(url, prefetchedHtml = null) {
     if (microdataRecipe) {
       console.log('[BlogLinkFollower] Found microdata recipe');
       const r = normalizeRecipe(microdataRecipe, url, discoveredDomain);
-      r._extractionMethod = 'microdata';
-      return r;
+      if (isCompleteRecipe(r)) {
+        r._extractionMethod = 'microdata';
+        return r;
+      }
+      if (hasEnoughIngredients(r) && !partialRecipe) {
+        partialRecipe = attachPartialArticleText(r, html, 'microdata_partial');
+        console.log('[BlogLinkFollower] Microdata recipe is partial, continuing cascade');
+      }
     }
 
     // Strategy 3: WPRM REST API (if recipe ID detected)
@@ -404,8 +420,14 @@ export async function extractRecipeFromBlog(url, prefetchedHtml = null) {
     if (wprmRecipe) {
       console.log('[BlogLinkFollower] Found WPRM API recipe');
       const r = normalizeRecipe(wprmRecipe, url, discoveredDomain);
-      r._extractionMethod = 'wprm';
-      return r;
+      if (isCompleteRecipe(r)) {
+        r._extractionMethod = 'wprm';
+        return r;
+      }
+      if (hasEnoughIngredients(r) && !partialRecipe) {
+        partialRecipe = attachPartialArticleText(r, html, 'wprm_partial');
+        console.log('[BlogLinkFollower] WPRM recipe is partial, continuing cascade');
+      }
     }
 
     // Strategy 4: Heuristic selectors
@@ -422,6 +444,11 @@ export async function extractRecipeFromBlog(url, prefetchedHtml = null) {
         result._extractionMethod = 'heuristic';
       }
       return result;
+    }
+
+    if (partialRecipe) {
+      console.log('[BlogLinkFollower] Returning best partial recipe with article text for Gemini');
+      return partialRecipe;
     }
 
     // Strategy 5: Article text extraction only (for hybrid Gemini)
@@ -785,6 +812,28 @@ function normalizeRecipe(raw, sourceUrl, discoveredDomain = '') {
   }
 
   return result;
+}
+
+function hasEnoughIngredients(recipe) {
+  return Array.isArray(recipe?.ingredients) && recipe.ingredients.length >= 2;
+}
+
+function hasDirections(recipe) {
+  return Array.isArray(recipe?.directions) && recipe.directions.length > 0;
+}
+
+function isCompleteRecipe(recipe) {
+  return hasEnoughIngredients(recipe) && hasDirections(recipe);
+}
+
+function attachPartialArticleText(recipe, html, extractionMethod) {
+  recipe._isPartial = true;
+  recipe._extractionMethod = extractionMethod;
+  const articleText = extractArticleText(html);
+  if (articleText && articleText.length > 300) {
+    recipe._articleText = articleText;
+  }
+  return recipe;
 }
 
 

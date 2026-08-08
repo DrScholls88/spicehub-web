@@ -15,6 +15,7 @@ import SharePickerSheet from './SharePickerSheet';
 import SharedWithYouSection from './SharedWithYouSection';
 import { isFriendsEnabled } from '../lib/supabaseClient';
 import { MEAL_TYPE_CATEGORIES, DIETARY_TAGS, CUISINE } from '../recipeSchema';
+import { getTotalMinutes } from '../lib/recipeTime.js';
 
 // I-5: a recipe is "improvable" when it was imported with a low-confidence /
 // needs-review flag AND we kept its source caption (so we can re-run extraction
@@ -119,41 +120,10 @@ function getIngredientCount(meal) {
   return 0;
 }
 
-// Parse a freeform time string ("15 min", "1 hr 30 min", "PT30M", "45") to minutes.
-function parseTimeToMinutes(str) {
-  if (!str) return null;
-  const s = String(str).trim();
-  if (!s) return null;
-  // ISO 8601 duration, e.g. PT1H30M
-  const iso = s.match(/^PT(?:(\d+)H)?(?:(\d+)M)?$/i);
-  if (iso) {
-    const h = parseInt(iso[1] || '0', 10);
-    const m = parseInt(iso[2] || '0', 10);
-    return h * 60 + m;
-  }
-  let total = 0;
-  const hrMatch = s.match(/(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h\b)/i);
-  if (hrMatch) total += parseFloat(hrMatch[1]) * 60;
-  const minMatch = s.match(/(\d+(?:\.\d+)?)\s*(?:minutes?|mins?|m\b)/i);
-  if (minMatch) total += parseFloat(minMatch[1]);
-  if (total > 0) return Math.round(total);
-  // Bare number — assume minutes
-  const bare = s.match(/^(\d+(?:\.\d+)?)$/);
-  if (bare) return Math.round(parseFloat(bare[1]));
-  return null;
-}
-
-// A meal counts as "Quick Weeknight" if its total (or prep+cook) time is
-// known and at or under QUICK_WEEKNIGHT_MAX_MIN. Meals with no time data
-// don't match — we'd rather under-promise than mislabel an unknown as quick.
-function getTotalMinutes(meal) {
-  const total = parseTimeToMinutes(meal.totalTime);
-  if (total != null) return total;
-  const prep = parseTimeToMinutes(meal.prepTime) || 0;
-  const cook = parseTimeToMinutes(meal.cookTime) || 0;
-  if (prep || cook) return prep + cook;
-  return null;
-}
+// parseTimeToMinutes / getTotalMinutes now live in lib/recipeTime.js (imported
+// at the top of this file) so MealDetail's time chip is derived from exactly
+// the same parser as this screen's "Quick" category and Time filter, instead
+// of a second copy that could drift.
 
 // Speed-dial action reveal: rise + fade, staggered from the main FAB
 const fabActionVariants = {

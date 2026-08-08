@@ -45,9 +45,11 @@ export default function StorageManager({ onClose, onToast }) {
   }, [onToast]);
 
   const getProgressColor = (percent) => {
-    if (percent < 50) return '#10b981'; // green
-    if (percent < 75) return '#f59e0b'; // yellow/amber
-    return '#ef4444'; // red
+    // Was hardcoded hex, which meant the bar never followed the seasonal
+    // accent / dark-mode token overrides used everywhere else in Settings.
+    if (percent < 50) return 'var(--success)';
+    if (percent < 75) return 'var(--warning)';
+    return 'var(--danger)';
   };
 
   const handleRequestPersistent = async () => {
@@ -225,15 +227,15 @@ export default function StorageManager({ onClose, onToast }) {
         {/* Color Legend */}
         <div className="storage-legend">
           <div className="legend-item">
-            <span className="legend-box" style={{ backgroundColor: '#10b981' }} />
+            <span className="legend-box" style={{ backgroundColor: 'var(--success)' }} />
             <span>Safe (&lt;50%)</span>
           </div>
           <div className="legend-item">
-            <span className="legend-box" style={{ backgroundColor: '#f59e0b' }} />
+            <span className="legend-box" style={{ backgroundColor: 'var(--warning)' }} />
             <span>Caution (50-75%)</span>
           </div>
           <div className="legend-item">
-            <span className="legend-box" style={{ backgroundColor: '#ef4444' }} />
+            <span className="legend-box" style={{ backgroundColor: 'var(--danger)' }} />
             <span>Critical (&gt;75%)</span>
           </div>
         </div>
