@@ -1,7 +1,8 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence, useMotionValue, animate } from 'framer-motion';
-import { Download, Dices, UtensilsCrossed } from 'lucide-react';
+import { Download, Dices, UtensilsCrossed, ShoppingCart } from 'lucide-react';
 import { hapticTap } from '../../haptics';
+import { ImportGraphic, PlanGraphic, GroceryGraphic, CookGraphic } from './stageGraphics';
 
 // ── App Intro Hero — Stage Carousel ─────────────────────────────────────────────
 // Replaces the old "Decision Fatigue Killer" GamifiedHero (big Spin CTA +
@@ -33,6 +34,12 @@ import { hapticTap } from '../../haptics';
 //    keep the horizontal drag from fighting iOS's vertical scroll and
 //    edge-swipe back-navigation gesture.
 
+// Each stage now carries a `renderGraphic` — a small looping micro-canvas
+// mockup shown above the icon/title/subtitle row (2026-08-08 hero
+// micro-canvas plan, packages D1-D5). `renderGraphic` is a function (not
+// pre-built JSX) so React only mounts the active stage's graphic — the
+// prior stage's graphic component unmounts under AnimatePresence
+// mode="wait" below, which also stops its internal loop timers for free.
 const STAGES = [
   {
     id: 'import',
@@ -40,6 +47,7 @@ const STAGES = [
     title: 'Import from anywhere',
     subtitle: 'Instagram, TikTok, or any recipe link — auto-parsed in seconds.',
     color: '#6366f1',
+    renderGraphic: (accent) => <ImportGraphic accent={accent} />,
   },
   {
     id: 'spin',
@@ -47,6 +55,7 @@ const STAGES = [
     title: 'Auto-plan your week',
     subtitle: 'Spin up a full week of meals from your saved recipes.',
     color: 'var(--primary)',
+    renderGraphic: (accent) => <PlanGraphic accent={accent} />,
   },
   {
     id: 'cook',
@@ -54,6 +63,15 @@ const STAGES = [
     title: 'Cook what you have',
     subtitle: "Match recipes to what's already in your pantry.",
     color: '#10b981',
+    renderGraphic: (accent) => <CookGraphic accent={accent} />,
+  },
+  {
+    id: 'grocery',
+    icon: ShoppingCart,
+    title: 'Smart grocery routing',
+    subtitle: 'Ingredients consolidate and sort straight to your store list.',
+    color: '#2563eb',
+    renderGraphic: (accent) => <GroceryGraphic accent={accent} />,
   },
 ];
 
@@ -150,13 +168,15 @@ export default function AppIntroHero() {
 
       {/* Stage viewport — pan-y so the browser owns vertical scroll while we
           own horizontal drag; overscroll-behavior-x stops the drag from
-          triggering iOS's edge-swipe back gesture near the left edge. */}
+          triggering iOS's edge-swipe back gesture near the left edge.
+          minHeight fits the graphic (84px) + gap + icon/text row so all 4
+          stages reserve the same footprint — no card-height jump on swipe. */}
       <div
         style={{
           position: 'relative',
           touchAction: 'pan-y',
           overscrollBehaviorX: 'none',
-          minHeight: '58px',
+          minHeight: '150px',
         }}
         onTouchStart={pause}
         onTouchEnd={resume}
@@ -179,30 +199,39 @@ export default function AppIntroHero() {
               dragElastic={0.15}
               dragConstraints={{ left: 0, right: 0 }}
               onDragEnd={handleDragEnd}
-              style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', cursor: 'grab' }}
+              style={{ display: 'flex', flexDirection: 'column', gap: '10px', cursor: 'grab' }}
               whileTap={{ cursor: 'grabbing' }}
             >
-              <div
-                style={{
-                  flexShrink: 0,
-                  width: '34px',
-                  height: '34px',
-                  borderRadius: '10px',
-                  background: 'var(--surface-2)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: stage.color,
-                }}
-              >
-                <Icon size={17} strokeWidth={2.25} />
+              {/* Micro-canvas — the stage's own small looping demo. Same
+                  draggable container as the text below, so a swipe started
+                  over the graphic still navigates the carousel. */}
+              <div style={{ height: '84px' }}>
+                {stage.renderGraphic(stage.color)}
               </div>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text)', marginBottom: '1px' }}>
-                  {stage.title}
+
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                <div
+                  style={{
+                    flexShrink: 0,
+                    width: '34px',
+                    height: '34px',
+                    borderRadius: '10px',
+                    background: 'var(--surface-2)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: stage.color,
+                  }}
+                >
+                  <Icon size={17} strokeWidth={2.25} />
                 </div>
-                <div style={{ fontSize: '12px', color: 'var(--text-light)', lineHeight: 1.4 }}>
-                  {stage.subtitle}
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: '13.5px', fontWeight: 700, color: 'var(--text)', marginBottom: '1px' }}>
+                    {stage.title}
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--text-light)', lineHeight: 1.4 }}>
+                    {stage.subtitle}
+                  </div>
                 </div>
               </div>
             </motion.div>
