@@ -13,6 +13,10 @@
 import { fetchHtmlViaProxy } from '../api.js';
 import { recordLearnedDomain, getLearnedDomains, logImportTelemetry, domainForTelemetry } from '../db.js';
 import { isSsrfTarget, capHtml } from './importGuards.js';
+// 2026-08-09: JSON-LD/microdata/CSS-heuristic extraction now shares the same
+// engine recipeParser.js's direct "paste a blog URL" import path uses,
+// instead of a separately maintained regex set that could (and did) drift.
+import { findJsonLdRecipes, extractMicrodataFromHtml, extractRecipeByCSS } from './recipeHtmlExtraction.js';
 
 // ─── CONFIG ──────────────────────────────────────────────
 
@@ -344,9 +348,12 @@ async function expandLinkInBio(bioUrl) {
  *
  * @param {string} url
  * @param {string} [prefetchedHtml]  HTML already fetched (from short-link unwrap)
+ * @param {AbortSignal} [externalSignal]  caller's wall-time budget — aborts the
+ *   underlying proxy fetch cascade when the budget expires instead of letting
+ *   it run to its own (much longer) internal timeout ceiling.
  * @returns {Promise<Object|null>}
  */
-export async function extractRecipeFromBlog(url, prefetchedHtml = null) {
+export async function extractRecipeFromBlog(url, prefetchedHtml = null, externalSignal = null) {
   console.log(`[BlogLinkFollower] Fetching: ${url}`);
 
   try {
@@ -356,7 +363,7 @@ export async function extractRecipeFromBlog(url, prefetchedHtml = null) {
       return null;
     }
 
-    const rawHtml = prefetchedHtml || await fetchHtmlViaProxy(url, 12000);
+    const rawHtml = prefetchedHtml || await fetchHtmlViaProxy(url, 12000, externalSignal);
 
     if (!rawHtml || typeof rawHtml !== 'string' || rawHtml.length < 200) {
       console.log('[BlogLinkFollower] Empty or trivial response');
@@ -383,8 +390,9 @@ export async function extractRecipeFromBlog(url, prefetchedHtml = null) {
 
     let partialRecipe = null;
 
-    // Strategy 1: JSON-LD (enhanced)
-    const jsonLdRecipe = extractJsonLd(html);
+    // Strategy 1: JSON-LD (shared engine — see import above)
+    const [jsonLdRaw] = findJsonLdRecipes(html);
+    const jsonLdRecipe = jsonLdRaw ? { ...jsonLdRaw, image: jsonLdRaw.imageUrl } : null;
     if (jsonLdRecipe) {
       console.log('[BlogLinkFollower] Found JSON-LD recipe');
       const r = normalizeRecipe(jsonLdRecipe, url, discoveredDomain);
@@ -400,8 +408,9 @@ export async function extractRecipeFromBlog(url, prefetchedHtml = null) {
       }
     }
 
-    // Strategy 2: Microdata
-    const microdataRecipe = extractMicrodata(html);
+    // Strategy 2: Microdata (shared engine)
+    const microdataRaw = extractMicrodataFromHtml(html);
+    const microdataRecipe = microdataRaw ? { ...microdataRaw, image: microdataRaw.imageUrl } : null;
     if (microdataRecipe) {
       console.log('[BlogLinkFollower] Found microdata recipe');
       const r = normalizeRecipe(microdataRecipe, url, discoveredDomain);
@@ -430,8 +439,9 @@ export async function extractRecipeFromBlog(url, prefetchedHtml = null) {
       }
     }
 
-    // Strategy 4: Heuristic selectors
-    const heuristicRecipe = extractHeuristic(html);
+    // Strategy 4: Heuristic selectors (shared engine)
+    const heuristicRaw = extractRecipeByCSS(html);
+    const heuristicRecipe = heuristicRaw ? { ...heuristicRaw, image: heuristicRaw.imageUrl } : null;
     if (heuristicRecipe) {
       console.log('[BlogLinkFollower] Found recipe via heuristic selectors');
       const result = normalizeRecipe(heuristicRecipe, url, discoveredDomain);
@@ -479,121 +489,9 @@ export async function extractRecipeFromBlog(url, prefetchedHtml = null) {
 }
 
 
-// ─── JSON-LD EXTRACTION (ENHANCED) ──────────────────────
-
-function extractJsonLd(html) {
-  const scriptRegex = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
-  let match;
-
-  while ((match = scriptRegex.exec(html)) !== null) {
-    try {
-      let data = JSON.parse(match[1].trim());
-
-      // Handle @graph wrapper (WPRM, Yoast, Rank Math)
-      if (data['@graph'] && Array.isArray(data['@graph'])) {
-        data = data['@graph'];
-      }
-
-      // Handle mainEntity wrapper (some themes nest Recipe inside Article)
-      if (data.mainEntity) {
-        const me = data.mainEntity;
-        const meType = me['@type'];
-        if (meType === 'Recipe' || (Array.isArray(meType) && meType.includes('Recipe'))) {
-          return jsonLdToRaw(me);
-        }
-      }
-
-      const items = Array.isArray(data) ? data : [data];
-
-      for (const item of items) {
-        // Check mainEntity on each item too (Article with mainEntity: Recipe)
-        if (item.mainEntity) {
-          const me = item.mainEntity;
-          const meType = me['@type'];
-          if (meType === 'Recipe' || (Array.isArray(meType) && meType.includes('Recipe'))) {
-            return jsonLdToRaw(me);
-          }
-        }
-
-        const type = item['@type'];
-        // Handle @type arrays like ["Recipe", "Article"]
-        const isRecipe = type === 'Recipe' ||
-          (Array.isArray(type) && type.includes('Recipe'));
-
-        if (isRecipe) {
-          return jsonLdToRaw(item);
-        }
-      }
-    } catch {
-      continue;
-    }
-  }
-  return null;
-}
-
-/** Convert a JSON-LD Recipe node to our raw format */
-function jsonLdToRaw(item) {
-  return {
-    name: item.name || '',
-    ingredients: normalizeIngredients(item.recipeIngredient || []),
-    directions: normalizeDirections(item.recipeInstructions || []),
-    prepTime: item.prepTime || '',
-    cookTime: item.cookTime || '',
-    totalTime: item.totalTime || '',
-    servings: item.recipeYield
-      ? (Array.isArray(item.recipeYield) ? item.recipeYield[0] : item.recipeYield)
-      : '',
-    image: extractImage(item.image),
-    description: item.description || '',
-    category: item.recipeCategory || '',
-    cuisine: item.recipeCuisine || '',
-  };
-}
-
-
-// ─── MICRODATA EXTRACTION ───────────────────────────────
-
-function extractMicrodata(html) {
-  // Look for itemtype="schema.org/Recipe" blocks
-  const recipeBlockRe = /<[^>]+itemtype=["']https?:\/\/schema\.org\/Recipe["'][^>]*>([\s\S]*?)(?=<[^>]+itemtype=["']|$)/i;
-  const blockMatch = html.match(recipeBlockRe);
-  if (!blockMatch) return null;
-
-  const block = blockMatch[0];
-
-  const getItemprop = (prop) => {
-    const re = new RegExp(`itemprop=["']${prop}["'][^>]*>([^<]*)`, 'i');
-    const m = block.match(re);
-    return m ? stripTags(m[1]) : '';
-  };
-
-  const getAllItemprop = (prop) => {
-    const re = new RegExp(`itemprop=["']${prop}["'][^>]*>([^<]*)`, 'gi');
-    return [...block.matchAll(re)].map(m => stripTags(m[1]).trim()).filter(Boolean);
-  };
-
-  const name = getItemprop('name');
-  const ingredients = getAllItemprop('recipeIngredient').length
-    ? getAllItemprop('recipeIngredient')
-    : getAllItemprop('ingredients');
-
-  if (!name || ingredients.length < 2) return null;
-
-  const directions = getAllItemprop('recipeInstructions');
-
-  return {
-    name,
-    ingredients,
-    directions: directions.length ? directions : [],
-    prepTime: getItemprop('prepTime'),
-    cookTime: getItemprop('cookTime'),
-    totalTime: getItemprop('totalTime'),
-    servings: getItemprop('recipeYield'),
-    description: getItemprop('description'),
-    image: null,
-  };
-}
-
+// extractJsonLd / jsonLdToRaw / extractMicrodata moved to
+// lib/recipeHtmlExtraction.js (2026-08-09) — see findJsonLdRecipes /
+// extractMicrodataFromHtml, imported above.
 
 // ─── WPRM REST API ──────────────────────────────────────
 
@@ -636,66 +534,8 @@ async function tryWprmApi(html, pageUrl) {
 }
 
 
-// ─── HEURISTIC EXTRACTION (ENHANCED) ────────────────────
-
-function extractHeuristic(html) {
-  const namePatterns = [
-    /<h[12][^>]*class="[^"]*wprm-recipe-name[^"]*"[^>]*>(.*?)<\/h[12]>/i,
-    /<h[12][^>]*class="[^"]*tasty-recipes-title[^"]*"[^>]*>(.*?)<\/h[12]>/i,
-    /<h[12][^>]*class="[^"]*recipe-title[^"]*"[^>]*>(.*?)<\/h[12]>/i,
-    /<h[12][^>]*class="[^"]*mv-create-title[^"]*"[^>]*>(.*?)<\/h[12]>/i,
-    /<h[12][^>]*class="[^"]*easyrecipe[^"]*"[^>]*>(.*?)<\/h[12]>/i,
-    /<h[12][^>]*itemprop="name"[^>]*>(.*?)<\/h[12]>/i,
-    // jump-to-recipe target headings
-    /<h[12][^>]*id="[^"]*recipe[^"]*"[^>]*>(.*?)<\/h[12]>/i,
-  ];
-
-  const ingredientPatterns = [
-    /<li[^>]*class="[^"]*wprm-recipe-ingredient[^"]*"[^>]*>([\s\S]*?)<\/li>/gi,
-    /<li[^>]*class="[^"]*tasty-recipe[^"]*ingredient[^"]*"[^>]*>([\s\S]*?)<\/li>/gi,
-    /<li[^>]*class="[^"]*mv-create-ingredient[^"]*"[^>]*>([\s\S]*?)<\/li>/gi,
-    /<li[^>]*class="[^"]*ingredient[^"]*"[^>]*>([\s\S]*?)<\/li>/gi,
-    /<li[^>]*itemprop="recipeIngredient"[^>]*>([\s\S]*?)<\/li>/gi,
-  ];
-
-  const directionPatterns = [
-    /<li[^>]*class="[^"]*wprm-recipe-instruction[^"]*"[^>]*>([\s\S]*?)<\/li>/gi,
-    /<li[^>]*class="[^"]*tasty-recipe[^"]*instruction[^"]*"[^>]*>([\s\S]*?)<\/li>/gi,
-    /<li[^>]*class="[^"]*mv-create-instruction[^"]*"[^>]*>([\s\S]*?)<\/li>/gi,
-    /<li[^>]*class="[^"]*instruction[^"]*"[^>]*>([\s\S]*?)<\/li>/gi,
-    /<li[^>]*itemprop="recipeInstructions"[^>]*>([\s\S]*?)<\/li>/gi,
-    /<div[^>]*class="[^"]*step-body[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
-    /<div[^>]*class="[^"]*direction[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
-  ];
-
-  let name = '';
-  for (const pat of namePatterns) {
-    const m = html.match(pat);
-    if (m) { name = stripTags(m[1]); break; }
-  }
-
-  let ingredients = [];
-  for (const pat of ingredientPatterns) {
-    const matches = [...html.matchAll(pat)];
-    if (matches.length > 0) {
-      ingredients = matches.map(m => stripTags(m[1]).trim()).filter(Boolean);
-      break;
-    }
-  }
-
-  let directions = [];
-  for (const pat of directionPatterns) {
-    const matches = [...html.matchAll(pat)];
-    if (matches.length > 0) {
-      directions = matches.map(m => stripTags(m[1]).trim()).filter(Boolean);
-      break;
-    }
-  }
-
-  if (!name || ingredients.length < 2) return null;
-  return { name, ingredients, directions };
-}
-
+// extractHeuristic moved to lib/recipeHtmlExtraction.js (2026-08-09) — see
+// extractRecipeByCSS, imported above.
 
 // ─── ARTICLE TEXT EXTRACTION ────────────────────────────
 
@@ -756,36 +596,8 @@ function stripTags(html) {
     .replace(/\s+/g, ' ').trim();
 }
 
-function normalizeIngredients(list) {
-  if (!Array.isArray(list)) return [];
-  return list.map(i => typeof i === 'string' ? i.trim() : (i.text || i.name || '')).filter(Boolean);
-}
-
-function normalizeDirections(list) {
-  if (!Array.isArray(list)) {
-    if (typeof list === 'string') return [list];
-    return [];
-  }
-  return list.flatMap(step => {
-    if (typeof step === 'string') return [step.trim()];
-    if (step['@type'] === 'HowToSection') {
-      return (step.itemListElement || []).map(s =>
-        typeof s === 'string' ? s : (s.text || '')
-      );
-    }
-    if (step['@type'] === 'HowToStep') {
-      return [step.text || step.description || ''];
-    }
-    return [step.text || step.description || ''];
-  }).map(s => s.trim()).filter(Boolean);
-}
-
-function extractImage(img) {
-  if (!img) return null;
-  if (typeof img === 'string') return img;
-  if (Array.isArray(img)) return img[0]?.url || (typeof img[0] === 'string' ? img[0] : null);
-  return img.url || null;
-}
+// normalizeIngredients / normalizeDirections / extractImage removed
+// (2026-08-09) — only used by the old local extractJsonLd, now gone.
 
 function normalizeRecipe(raw, sourceUrl, discoveredDomain = '') {
   const result = {
@@ -935,7 +747,7 @@ export async function tryBlogLinkExtraction(caption, imageUrl, {
           for (const bioLink of bioLinks.slice(0, 2)) {
             if (attempts >= MAX_ATTEMPTS || budgetExpired()) break;
             attempts++;
-            const recipe = await extractRecipeFromBlog(bioLink);
+            const recipe = await extractRecipeFromBlog(bioLink, null, budgetCtrl.signal);
             if (recipe) {
               strategyWon = recipe._isPartial ? 'short>bio>partial' : (recipe._source === 'blog_link_follower' ? 'short>bio>structured' : 'short>bio');
               winnerUrl = bioLink;
@@ -945,7 +757,7 @@ export async function tryBlogLinkExtraction(caption, imageUrl, {
           }
           continue;
         }
-        const recipe = await extractRecipeFromBlog(unwrapped.resolvedUrl, unwrapped.html);
+        const recipe = await extractRecipeFromBlog(unwrapped.resolvedUrl, unwrapped.html, budgetCtrl.signal);
         if (recipe) {
           strategyWon = 'short>direct';
           winnerUrl = unwrapped.resolvedUrl;
@@ -965,7 +777,7 @@ export async function tryBlogLinkExtraction(caption, imageUrl, {
       for (const bioLink of bioLinks.slice(0, 2)) {
         if (attempts >= MAX_ATTEMPTS || budgetExpired()) break;
         attempts++;
-        const recipe = await extractRecipeFromBlog(bioLink);
+        const recipe = await extractRecipeFromBlog(bioLink, null, budgetCtrl.signal);
         if (recipe) {
           strategyWon = 'bio_hub';
           winnerUrl = bioLink;
@@ -978,7 +790,7 @@ export async function tryBlogLinkExtraction(caption, imageUrl, {
 
     // Direct links
     attempts++;
-    const recipe = await extractRecipeFromBlog(url);
+    const recipe = await extractRecipeFromBlog(url, null, budgetCtrl.signal);
     if (recipe) {
       strategyWon = 'direct';
       winnerUrl = url;

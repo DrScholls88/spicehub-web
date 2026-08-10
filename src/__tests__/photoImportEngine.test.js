@@ -197,9 +197,6 @@ describe('transcribePagesOnline — /api/vision proxy + 429 / rate-limit handlin
   const isProxy = (url) => String(url).startsWith('/api/vision');
   const isMistralProxy = (url) => isProxy(url) && String(url).includes('provider=mistral');
   const isGeminiProxy = (url) => isProxy(url) && !String(url).includes('provider=mistral');
-  const isMistral = (url) => String(url).includes('api.mistral.ai');
-  const isDirectGemini = (url) => String(url).includes('generativelanguage');
-
   it('uses the /api/vision proxy for Gemini with no client key configured at all', async () => {
     let sawProxyCall = false;
     vi.stubGlobal('fetch', vi.fn(async (url) => {

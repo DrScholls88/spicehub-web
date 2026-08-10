@@ -2,8 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } fro
 import { AnimatePresence } from 'framer-motion';
 import db, { importSeedMeals, removeStarterKitMeals, logCook, logMix, saveGroceryList, loadGroceryList, getStoreMemory, getCookingLog, toggleRotation, addBatchQueueItems, getBatchQueueItems, updateBatchQueueItem, getLearnedAliases, moveMealToBar, moveDrinkToMeals, getCustomDayTags, addCustomDayTag, deleteCustomDayTag, saveMealDeduped } from './db';
 import { buildStarterKitMeals, STARTER_KIT_SEED_FLAG } from './data/starterKitMeals';
-import { checkStorageQuota, checkAndRecommendCleanup, requestPersistentStorage, isPersistentStorageGranted } from './storageManager';
-import { initializeBackgroundSync } from './backgroundSync';
+import { checkStorageQuota, requestPersistentStorage, isPersistentStorageGranted } from './storageManager';
 import WeekView from './components/WeekView';
 import LandingPage from './components/LandingPage';
 import MealLibrary from './components/MealLibrary';
@@ -27,7 +26,7 @@ import RoomTransition from './components/RoomTransition';
 import MealSpinner from './components/MealSpinner';
 import SyncQueue from './components/SyncQueue';
 import OfflineIndicator from './components/OfflineIndicator';
-import { isMobileDevice } from './isMobile';
+import { isIOS, isAndroid } from './isMobile';
 import useOnlineStatus, { onOnlineStatusChange } from './hooks/useOnlineStatus';
 import useBackHandler from './hooks/useBackHandler';
 import useRootBackGuard from './hooks/useRootBackGuard';
@@ -35,7 +34,6 @@ import useSwipeDismiss from './hooks/useSwipeDismiss';
 import useKeyboardInset from './hooks/useKeyboardInset';
 import { getInventory, isStaple } from './lib/pantryDomain';
 import { normalizeIngredient } from './utils/ingredientNormalizer.js';
-import { loadLandingLayout, saveLandingLayout } from './lib/landingLayout';
 import { useRotationEngine } from './hooks/useRotationEngine';
 import { SPECIAL_DAYS } from './lib/specialDays';
 import { renderRecipeExport, exportViaShare } from './utils/exportRenderer.js';
@@ -82,17 +80,20 @@ function getMondayOfWeek(date) {
   d.setHours(0, 0, 0, 0);
   return d;
 }
-function localDateKey(date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
 
 export default function App() {
   const { isOnline } = useOnlineStatus();
   useKeyboardInset();
   const [tab, setTab] = useState('home');
+
+  // 2026-08-09 (bar-library-parity-plan-2026-08-07.md §2.3a "Status-bar
+  // scrim"): body::before paints env(safe-area-inset-top) with var(--primary)
+  // — meal-orange — unconditionally. On the Bar tab, a near-black speakeasy
+  // surface under an orange notch strip reads as broken on a notched iPhone.
+  // Mirrors ThemeProvider's data-theme pattern so App.css can key off it.
+  useEffect(() => {
+    document.body.dataset.activeTab = tab;
+  }, [tab]);
   const [meals, setMeals] = useState([]);
   const [drinks, setDrinks] = useState([]);
   // Custom day tags — user-created quick-assign options for the planner
@@ -170,7 +171,7 @@ export default function App() {
   }, []);
 
   // ── Home Group: profile + sync hooks ────────────────────────────────────────
-  const { profile, loading: profileLoading, update: updateProfile, updateDietaryPref: profileUpdateDietaryPref } = useProfile();
+  const { profile, update: updateProfile, updateDietaryPref: profileUpdateDietaryPref } = useProfile();
 
   // Week rotation state (plan, history, locks, diet/spin filtering) — Dexie-
   // persisted, optimistic-write, offline-first. See useRotationEngine.js.
@@ -181,7 +182,7 @@ export default function App() {
   const rotation = useRotationEngine({ meals, showToast, profileUpdateDietaryPref });
   const {
     weekPlan, setWeekPlan,
-    weekHistory, setWeekHistory,
+    weekHistory,
     dietaryPref, updateDietaryPref,
     spinConstraints: effectiveSpinConstraints, updateSpinConstraints,
     rotationMeals, recentlyUsedIds,
@@ -287,17 +288,10 @@ export default function App() {
     window.navigator?.standalone === true
   );
 
-  // Detect iOS (Safari) for install button label
-  const isIOS = () => typeof window !== 'undefined' &&
-    /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-
-  // Detect Android — the "Install to phone" label/flow shouldn't depend on
-  // whether Chrome has actually fired beforeinstallprompt yet (it's gated by
-  // Chrome's own engagement heuristics and won't refire every session), so
-  // this is a plain UA check used to keep the button visible on Android even
-  // before/without a captured deferredPrompt.
-  const isAndroid = () => typeof window !== 'undefined' &&
-    /Android/.test(navigator.userAgent);
+  // isIOS()/isAndroid() now live in ./isMobile (2026-08-09 lift — see comment
+  // there) so BarLibrary and other components can reach them too; imported
+  // above, kept as the same call-shape here so nothing else in this file
+  // (including the prop passes below) needs to change.
 
   const [showFridge, setShowFridge] = useState(false);
   // Two doors into the same PantryMode room: the "What can I cook" tile jumps
@@ -699,7 +693,9 @@ export default function App() {
       const topMeal = allMeals.filter(m => m.cookCount > 0).sort((a, b) => (b.cookCount || 0) - (a.cookCount || 0))[0] || null;
 
       setCookingStats({ streak, totalCooked, topMeal });
-    } catch { }
+    } catch {
+      // best-effort stats — leave stale/empty stats on read failure
+    }
   }, []);
 
   useEffect(() => { computeStats(); }, [computeStats]);
@@ -1132,6 +1128,21 @@ useEffect(() => {
     await loadMeals();
   }, [loadMeals]);
 
+  // Phase 3.4.6 (bar-library-parity-plan-2026-08-07.md): favorite/rating were
+  // hard-nulled for drinks because toggleFavorite/rateMeal above write to
+  // db.meals — passing a drink through them would silently miss (or, worse,
+  // collide with an unrelated meal sharing the same auto-increment id).
+  // Same shape, right table.
+  const toggleFavoriteDrink = useCallback(async (drink) => {
+    await db.drinks.update(drink.id, { isFavorite: !drink.isFavorite });
+    await loadDrinks();
+  }, [loadDrinks]);
+
+  const rateDrink = useCallback(async (drink, rating) => {
+    await db.drinks.update(drink.id, { rating });
+    await loadDrinks();
+  }, [loadDrinks]);
+
   // ── Drink CRUD ────────────────────────────────────────────────────────────────
   const saveDrink = useCallback(async (drinkData) => {
     drinkData = await compressRecipeImage(drinkData);
@@ -1293,18 +1304,6 @@ useEffect(() => {
     showToast(`📜 ${count} ingredient${count !== 1 ? 's' : ''} added to grocery quest!`, 'success');
     if (navigator.vibrate) navigator.vibrate([30, 20, 30]);
   }, [showToast, syncGroceryAction]);
-
-  // ── Batch import: open a 'ready' row directly into ImportSheet review ─────
-  const handleBatchReview = useCallback((item) => {
-    setBatchReviewItem(item);
-  }, []);
-
-  // ── Batch import: open a 'failed' row into ImportSheet for retry ──────────
-  const handleBatchRetry = useCallback((item) => {
-    setImportModalKey(k => k + 1);
-    setShowImportFor(item.itemType === 'drink' ? 'drinks' : 'meals');
-    setSharedContent({ mode: 'url', url: item.url, title: '', text: '', isShare: true });
-  }, []);
 
   // ── Import handler — routes to meals, drinks, grocery, or week ──────────────
   // destination overrides showImportFor and is set by the Smart Action Bar
@@ -1473,7 +1472,9 @@ useEffect(() => {
         await logCook(meal.id, meal.name);
         await loadMeals(); // Refresh to pick up updated cookCount
         showToast(`Nice! Logged "${meal.name}" as cooked 🎉`);
-      } catch { }
+      } catch {
+        // best-effort cook log — don't block closing Cook Mode on a log failure
+      }
     }
     setCookModeMeal(null);
   }, [cookModeMeal, loadMeals, showToast]);
@@ -1494,7 +1495,9 @@ useEffect(() => {
         await logMix(drink.id, drink.name);
         await loadDrinks();
         showToast(`Cheers! Logged "${drink.name}" as mixed 🍹`);
-      } catch { }
+      } catch {
+        // best-effort mix log — don't block closing Mix Mode on a log failure
+      }
     }
     setMixModeDrink(null);
   }, [mixModeDrink, loadDrinks, showToast]);
@@ -1749,6 +1752,8 @@ useEffect(() => {
             onOpenBarFridge={() => setShowBarFridge(true)}
             onPlayVideo={openPipForMeal}
             onMoveToMeals={handleMoveDrinkToMeals}
+            onToggleFavorite={toggleFavoriteDrink}
+            onAddMissingToGrocery={handleAddToGrocery}
           />
         )}
         {tab === 'grocery' && (
@@ -1805,9 +1810,9 @@ useEffect(() => {
             onClose={() => setDetailItem(null)}
             onShare={() => shareItem(detailItem)}
             onExport={() => openExportSheet('recipe', detailItem)}
-            onToggleFavorite={isDrink(detailItem) ? null : toggleFavorite}
+            onToggleFavorite={isDrink(detailItem) ? toggleFavoriteDrink : toggleFavorite}
             onToggleRotation={isDrink(detailItem) ? null : handleToggleRotation}
-            onRate={isDrink(detailItem) ? null : rateMeal}
+            onRate={isDrink(detailItem) ? rateDrink : rateMeal}
             onStartCook={isDrink(detailItem) ? null : startCookMode}
             onStartMix={isDrink(detailItem) ? startMixMode : null}
             onMoveToBar={isDrink(detailItem) ? null : handleMoveMealToBar}
@@ -1857,7 +1862,7 @@ useEffect(() => {
       {showImportFor && (
         <ImportSheet
           key={importModalKey}
-          onImport={handleImport}
+          onImport={batchReviewItem ? handleBatchReviewSave : handleImport}
           onClose={() => { setShowImportFor(null); setSharedContent(null); }}
           title={showImportFor === 'drinks' ? 'Import Drink' : 'Import Recipe'}
           sharedContent={sharedContent}

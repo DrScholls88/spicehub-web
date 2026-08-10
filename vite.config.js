@@ -91,7 +91,15 @@ VitePWA({
       // tripped the real 2MiB default.
       injectManifest: {
         injectionPoint: 'self.__WB_MANIFEST',
-        globPatterns: ['**/*.{js,mjs,css,html,ico,png,svg,jpg,webp,wasm,gz}'],
+        // 2026-08-09 (bar-library-parity-plan-2026-08-07.md iOS-3): woff2 was
+        // missing here, so the Phase 2 self-hosted display font would fall
+        // through to the StaleWhileRevalidate runtime route (sw.js) instead
+        // of the precache — needs a network hit first, which breaks the
+        // canonical "install to Home Screen, open offline" iOS PWA scenario.
+        // This file has burned the project once already (see the comment
+        // above about globs previously living under the wrong key) — verify
+        // woff2 actually lands in the generated dist precache manifest.
+        globPatterns: ['**/*.{js,mjs,css,html,ico,png,svg,jpg,webp,wasm,gz,woff2}'],
         maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
         // @huggingface/transformers (browser Whisper, 2026-07-20) bundles
         // onnxruntime-web's WASM backend — the SIMD+threaded variant alone is

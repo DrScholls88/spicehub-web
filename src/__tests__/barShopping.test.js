@@ -28,11 +28,6 @@ const ginAndTonic = {
   ingredients: ['2 oz gin', '4 oz tonic water'],
 };
 
-const virginMojito = {
-  name: 'Virgin Mojito',
-  ingredients: ['1 oz lime juice', '0.75 oz simple syrup', '6 mint leaves', '3 oz soda water'],
-};
-
 // ── getMissingForDrink ───────────────────────────────────────────────────
 
 describe('getMissingForDrink', () => {

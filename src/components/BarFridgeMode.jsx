@@ -139,11 +139,6 @@ export default function BarFridgeMode({ drinks, onViewDetail, onClose, onAddToGr
     if (undoItem?.timer) clearTimeout(undoItem.timer);
   }, [undoItem]);
 
-  const clearAll = useCallback(() => {
-    shelfRecords.forEach(r => removeFromBarInventory(r.ingredient));
-    setShelfRecords([]);
-  }, [shelfRecords]);
-
   // Save edits from the bottle edit sheet (or remove the bottle entirely).
   const saveBottle = useCallback((ingredient, patch) => {
     if (patch && patch.__remove) {

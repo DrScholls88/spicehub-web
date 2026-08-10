@@ -105,10 +105,19 @@ export function cleanUrl(url) {
  *     no CORS issues, not IP-blocked like public proxies. This is the PRIMARY path.
  *  2. Public CORS proxy waterfall — fallback for local dev or if Vercel fn fails.
  */
-export async function fetchHtmlViaProxy(url, timeoutMs = 30000) {
+export async function fetchHtmlViaProxy(url, timeoutMs = 30000, externalSignal = null) {
   const targetUrl = cleanUrl(url);
   console.log('[fetchHtmlViaProxy] Target:', targetUrl);
 
+  // 2026-08-09: callers like blogLinkFollower.tryBlogLinkExtraction enforce
+  // their own wall-time budget (BUDGET_MS) via an AbortController, but that
+  // signal was never wired into the actual network calls here — so the real
+  // fetch cascade (internal proxy up to 10s + up to 4 public proxies at up to
+  // 8s each) could run 40-50s regardless of what the caller's budget said.
+  // Observed in production: a single blog fetch took ~22s against a caller
+  // budget of 15s. externalSignal lets the caller's budget actually cut this
+  // cascade short instead of merely gating whether the NEXT link is tried.
+  if (externalSignal?.aborted) return null;
 
   // ── 1. Internal Vercel /api/proxy (primary) ──────────────────────────────────
   // In production on Vercel, this is a same-origin call with zero CORS overhead.
@@ -122,8 +131,19 @@ export async function fetchHtmlViaProxy(url, timeoutMs = 30000) {
     // instance fails fast into the public-proxy cascade instead of burning the
     // whole budget here first.
     const timer = setTimeout(() => ctrl.abort(), Math.min(timeoutMs, 10000));
-    const resp = await fetch(internalUrl, { signal: ctrl.signal });
-    clearTimeout(timer);
+    // Manual bridge (not AbortSignal.any — that's Chrome 116+/Safari 17.4+
+    // only, and iOS compatibility is a constitution priority) so an expired
+    // caller budget aborts this fetch immediately instead of waiting out the
+    // full internal timeout.
+    const onExternalAbort = () => ctrl.abort();
+    if (externalSignal) externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+    let resp;
+    try {
+      resp = await fetch(internalUrl, { signal: ctrl.signal });
+    } finally {
+      clearTimeout(timer);
+      if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
+    }
 
     if (resp.ok) {
       // Check what the TARGET site actually returned (proxy always returns 200,
@@ -140,14 +160,13 @@ export async function fetchHtmlViaProxy(url, timeoutMs = 30000) {
       }
     }
     console.log('[fetchHtmlViaProxy] Internal proxy returned empty/error, trying public proxies...');
-  } catch (e) {
+  } catch {
     console.log('[fetchHtmlViaProxy] Internal proxy unavailable (local dev?), using public proxies');
   }
 
   // ── 2. Public CORS proxy waterfall (secondary / local dev fallback) ────────────
   // Ordered by observed reliability (codetabs and allorigins succeed most often).
   // corsproxy.io often returns 403 for major recipe/social sites — kept but de-prioritized.
-  // proxy.cors.sh hits 429 rate limits quickly — kept as a last resort.
   //
   // 2026-07-14: thingproxy.freeboard.io and cors.bridged.cc removed. Both
   // came back net::ERR_NAME_NOT_RESOLVED in production console logs — the
@@ -156,12 +175,19 @@ export async function fetchHtmlViaProxy(url, timeoutMs = 30000) {
   // single import ate a guaranteed-dead DNS lookup, on top of however many
   // times this whole waterfall runs per import (embed page, oEmbed, mirror
   // fallbacks can each call fetchHtmlViaProxy separately).
+  //
+  // 2026-08-09: proxy.cors.sh removed. It requires a paid x-cors-api-key
+  // (VITE_CORS_SH_KEY) that has never been configured anywhere in this repo
+  // — without one it doesn't error cleanly, it redirects the browser straight
+  // to the target URL, which the browser then blocks as a CORS violation
+  // (confirmed in BLogFollowerHTMLerrors.md, 2026-08-08). That's strictly
+  // worse than a clean skip: it burns a full timeout slot AND throws a scary
+  // uncatchable-looking console error for zero chance of success.
   const PUBLIC_PROXIES = [
     (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
     (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
     (u) => `https://api.allorigins.win/get?url=${encodeURIComponent(u)}`,
     (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-    (u) => `https://proxy.cors.sh/${u}`,
   ];
 
   // Per-proxy timeout is shorter since we try multiple. Was capped at 15s —
@@ -170,17 +196,19 @@ export async function fetchHtmlViaProxy(url, timeoutMs = 30000) {
   const perProxyTimeout = Math.min(timeoutMs / 2, 8000);
 
   for (const makeProxy of PUBLIC_PROXIES) {
+    if (externalSignal?.aborted) {
+      console.log('[fetchHtmlViaProxy] Caller budget expired, stopping proxy cascade');
+      break;
+    }
     const proxyUrl = makeProxy(targetUrl);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), perProxyTimeout);
+    const onExternalAbort = () => ctrl.abort();
+    if (externalSignal) externalSignal.addEventListener('abort', onExternalAbort, { once: true });
     try {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), perProxyTimeout);
-      const resp = await fetch(proxyUrl, {
-        signal: ctrl.signal,
-        headers: proxyUrl.includes('proxy.cors.sh')
-          ? { 'x-cors-api-key': import.meta.env.VITE_CORS_SH_KEY || '' }
-          : {},
-      });
+      const resp = await fetch(proxyUrl, { signal: ctrl.signal });
       clearTimeout(timer);
+      if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
 
          // If we get a 403 or 429, don't crash—just skip to the next proxy
     if (resp.status === 403 || resp.status === 429 || !resp.ok) {
@@ -200,7 +228,7 @@ export async function fetchHtmlViaProxy(url, timeoutMs = 30000) {
             continue;
           }
           if (j.contents) text = j.contents;
-        } catch (e) { /* ignore parse error */ }
+        } catch { /* ignore parse error */ }
       }
 
       if (!text || text.length < 1000) continue;
@@ -216,11 +244,14 @@ export async function fetchHtmlViaProxy(url, timeoutMs = 30000) {
 
       console.log(`[fetchHtmlViaProxy] ✅ Public proxy succeeded: ${proxyUrl.split('/')[2]}`);
       return text;
-  } catch (err) {
-    console.error("Proxy request failed:", err);
-    // Continue to next proxy in list
+    } catch (err) {
+      console.error('Proxy request failed:', err);
+      // Continue to next proxy in list
+    } finally {
+      clearTimeout(timer);
+      if (externalSignal) externalSignal.removeEventListener('abort', onExternalAbort);
+    }
   }
-}
 
   console.warn('[fetchHtmlViaProxy] ❌ All proxies failed for:', targetUrl);
   return null;

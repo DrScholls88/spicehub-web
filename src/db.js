@@ -352,6 +352,98 @@ db.version(27).stores({
   friendActivityCache: '++id, occurredAt',
 });
 
+// v28: Bar tag system (bar-library-parity-plan-2026-08-07.md Phase 3.4.1).
+// userTags previously had a bare `&name` unique index, which is now a
+// compound `&[domain+name]` — the same tag name can exist once per domain
+// ('meal' or 'drink'), so a drink-side "Brunch" tag doesn't collide with (or
+// leak into the picker for) a meal-side "Brunch" tag. Existing rows have no
+// `domain` field; the upgrade backfills `domain: 'meal'` on all of them,
+// which is safe under the new unique index because names were already
+// unique among themselves (old `&name` constraint), so `[meal, name]` stays
+// unique too. drinks gains a `*tags` multi-entry index (meals has had one
+// since v18) so the same setDrinkTags/bulkSetDrinkTags/deleteUserTag machinery
+// can query it the same way.
+db.version(28).stores({
+  userTags: '++id, &[domain+name], sortOrder',
+  drinks: '++id, name, profileId, *tags',
+}).upgrade(async tx => {
+  const tagsTable = tx.table('userTags');
+  await tagsTable.toCollection().modify(tag => {
+    if (!tag.domain) tag.domain = 'meal';
+  });
+  await tx.table('drinks').toCollection().modify(drink => {
+    if (!Array.isArray(drink.tags)) drink.tags = [];
+  });
+  // Bar-native default tags (plan §3.4 item 1) — only add if not already present.
+  const barDefaults = [
+    { name: 'Summer',         color: '#FF9800', emoji: '☀️', domain: 'drink', sortOrder: 0 },
+    { name: 'Batch',          color: '#8D6E63', emoji: '🪙', domain: 'drink', sortOrder: 1 },
+    { name: 'Brunch',         color: '#FFB300', emoji: '🥂', domain: 'drink', sortOrder: 2 },
+    { name: 'Nightcap',       color: '#5C6BC0', emoji: '🌙', domain: 'drink', sortOrder: 3 },
+    { name: 'Low-ABV',        color: '#66BB6A', emoji: '🍃', domain: 'drink', sortOrder: 4 },
+    { name: 'Zero-Proof',     color: '#26C6DA', emoji: '🎋', domain: 'drink', sortOrder: 5 },
+    { name: 'Crowd-pleaser',  color: '#E91E63', emoji: '🎉', domain: 'drink', sortOrder: 6 },
+  ];
+  const existing = await tagsTable.toArray();
+  const existingDrinkNames = new Set(
+    existing.filter(t => t.domain === 'drink').map(t => t.name.toLowerCase())
+  );
+  const toAdd = barDefaults.filter(t => !existingDrinkNames.has(t.name.toLowerCase()));
+  if (toAdd.length > 0) await tagsTable.bulkAdd(toAdd);
+});
+
+// ── Fresh-install seed data (Dexie 'populate' event) ────────────────────────
+// Discovered while building the v28 bar tag seed above: per Dexie's own
+// docs (dexie.org/docs/Tutorial/Design#database-versioning), "If no database
+// present, Dexie initializes the last version directly by parsing the
+// stores schema... No upgrade() functions run in this case." Every default
+// tag seeded inside a .upgrade() callback above (v18's five, v20's fourteen,
+// v28's seven bar tags) therefore ONLY ever reaches users who are upgrading
+// an existing SpiceHubDB — a genuinely fresh install (new browser profile,
+// or a from-scratch test run) gets an empty userTags table, because
+// .upgrade() is a migration hook, not a seed hook. Dexie's documented fix is
+// the separate 'populate' event, which fires exactly once, only on true
+// database creation, and never on upgrade — so it can't double-seed or
+// collide with the .upgrade() paths above. Left the v18/v20/v28 .upgrade()
+// bodies untouched (Dexie's own guidance: don't edit old version callbacks)
+// and duplicated the same literal tag lists here rather than importing
+// them, for the same reason — this event fires once per install, ever, so a
+// shared "single source of truth" constant isn't worth coupling frozen
+// migration history to a live code path.
+db.on('populate', async () => {
+  await db.userTags.bulkAdd([
+    // v18 defaults
+    { name: 'Weeknight',    color: '#4CAF50', emoji: '⚡', domain: 'meal', sortOrder: 0 },
+    { name: 'Meal Prep',    color: '#2196F3', emoji: '📦', domain: 'meal', sortOrder: 1 },
+    { name: 'Comfort Food', color: '#FF9800', emoji: '🫕', domain: 'meal', sortOrder: 2 },
+    { name: 'Date Night',   color: '#E91E63', emoji: '🌹', domain: 'meal', sortOrder: 3 },
+    { name: 'Kid-Friendly', color: '#9C27B0', emoji: '👶', domain: 'meal', sortOrder: 4 },
+    // v20 defaults
+    { name: 'Pasta',       color: '#FF7043', emoji: '🍝', domain: 'meal', sortOrder: 10 },
+    { name: 'Asian',       color: '#26A69A', emoji: '🥡', domain: 'meal', sortOrder: 11 },
+    { name: 'Mexican',     color: '#EF5350', emoji: '🌮', domain: 'meal', sortOrder: 12 },
+    { name: 'Grill',       color: '#8D6E63', emoji: '🔥', domain: 'meal', sortOrder: 13 },
+    { name: 'Sandwiches',  color: '#FFA726', emoji: '🥪', domain: 'meal', sortOrder: 14 },
+    { name: 'Dump & Bake', color: '#AB47BC', emoji: '🫕', domain: 'meal', sortOrder: 15 },
+    { name: 'Holiday',     color: '#D32F2F', emoji: '🎄', domain: 'meal', sortOrder: 16 },
+    { name: 'Vegan',       color: '#66BB6A', emoji: '🌱', domain: 'meal', sortOrder: 17 },
+    { name: 'Meat',        color: '#A1887F', emoji: '🥩', domain: 'meal', sortOrder: 18 },
+    { name: 'Seafood',     color: '#42A5F5', emoji: '🐟', domain: 'meal', sortOrder: 19 },
+    { name: 'Slow Cooker', color: '#78909C', emoji: '🍲', domain: 'meal', sortOrder: 20 },
+    { name: 'Instant Pot', color: '#5C6BC0', emoji: '⏱️', domain: 'meal', sortOrder: 21 },
+    { name: 'One-Pot',     color: '#26C6DA', emoji: '🥘', domain: 'meal', sortOrder: 22 },
+    { name: 'Appetizers',  color: '#EC407A', emoji: '🧆', domain: 'meal', sortOrder: 23 },
+    // v28 bar-native defaults
+    { name: 'Summer',        color: '#FF9800', emoji: '☀️', domain: 'drink', sortOrder: 0 },
+    { name: 'Batch',         color: '#8D6E63', emoji: '🪙', domain: 'drink', sortOrder: 1 },
+    { name: 'Brunch',        color: '#FFB300', emoji: '🥂', domain: 'drink', sortOrder: 2 },
+    { name: 'Nightcap',      color: '#5C6BC0', emoji: '🌙', domain: 'drink', sortOrder: 3 },
+    { name: 'Low-ABV',       color: '#66BB6A', emoji: '🍃', domain: 'drink', sortOrder: 4 },
+    { name: 'Zero-Proof',    color: '#26C6DA', emoji: '🎋', domain: 'drink', sortOrder: 5 },
+    { name: 'Crowd-pleaser', color: '#E91E63', emoji: '🎉', domain: 'drink', sortOrder: 6 },
+  ]);
+});
+
 export default db;
 
 // ── Import pipeline telemetry (v26) ─────────────────────────────────────────
@@ -437,29 +529,43 @@ export async function deleteCustomDayTag(id) {
   }
 }
 
-// ── User Tags helpers (v18) ─────────────────────────────────────────────────
-export async function getUserTags() {
+// ── User Tags helpers (v18; domain-scoped since v28 — see migration comment) ─
+// `domain` is 'meal' (default, preserves every pre-existing call site) or
+// 'drink'. Tags are looked up by scanning userTags.toArray() rather than an
+// indexed `.where('domain')` query — the table is a couple dozen rows at
+// most, and a plain index on `domain` alone would be redundant with the
+// compound `&[domain+name]` unique index already declared in v28.
+function tagTargetTable(domain) {
+  return domain === 'drink' ? db.drinks : db.meals;
+}
+
+export async function getUserTags(domain = 'meal') {
   try {
-    const tags = await db.userTags.orderBy('sortOrder').toArray();
-    return tags;
+    const tags = await db.userTags.toArray();
+    return tags
+      .filter(t => (t.domain || 'meal') === domain)
+      .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
   } catch (e) {
     console.warn('[SpiceHub DB] getUserTags failed:', e);
     return [];
   }
 }
 
-export async function addUserTag({ name, color, emoji }) {
+export async function addUserTag({ name, color, emoji, domain = 'meal' }) {
   if (!name || !name.trim()) return null;
   const trimmed = name.trim();
   try {
-    const existing = await db.userTags.where('name').equalsIgnoreCase(trimmed).first();
-    if (existing) return existing.id; // don't duplicate
-    const maxOrder = await db.userTags.orderBy('sortOrder').last();
+    const all = await db.userTags.toArray();
+    const domainTags = all.filter(t => (t.domain || 'meal') === domain);
+    const existing = domainTags.find(t => t.name.toLowerCase() === trimmed.toLowerCase());
+    if (existing) return existing.id; // don't duplicate within this domain
+    const maxOrder = domainTags.reduce((max, t) => Math.max(max, t.sortOrder ?? -1), -1);
     const id = await db.userTags.add({
       name: trimmed,
       color: color || '#888888',
       emoji: emoji || '🏷️',
-      sortOrder: (maxOrder?.sortOrder ?? -1) + 1,
+      domain,
+      sortOrder: maxOrder + 1,
     });
     return id;
   } catch (e) {
@@ -480,9 +586,10 @@ export async function deleteUserTag(id) {
   try {
     const tag = await db.userTags.get(id);
     if (!tag) return;
-    // Remove this tag from all meals that have it
-    await db.meals.where('tags').equals(tag.name).modify(meal => {
-      meal.tags = (meal.tags || []).filter(t => t !== tag.name);
+    // Remove this tag from every item in its own domain (meals or drinks —
+    // never both, since a tag can only belong to one domain).
+    await tagTargetTable(tag.domain).where('tags').equals(tag.name).modify(item => {
+      item.tags = (item.tags || []).filter(t => t !== tag.name);
     });
     await db.userTags.delete(id);
   } catch (e) {
@@ -491,9 +598,11 @@ export async function deleteUserTag(id) {
 }
 
 // reorderUserTags — persist a new display order for custom labels after a
-// drag-to-reorder gesture in the MealLibrary label bar (long-press to enter
-// edit mode). Takes tag ids in the desired order and rewrites sortOrder
-// sequentially so getUserTags()'s existing orderBy('sortOrder') picks it up.
+// drag-to-reorder gesture in the label bar (long-press to enter edit mode).
+// Takes tag ids in the desired order and rewrites sortOrder sequentially so
+// getUserTags()'s in-memory sort picks it up. Domain-agnostic: ids are
+// already unique per row, so reordering one domain's subset never touches
+// another domain's sortOrder values.
 export async function reorderUserTags(orderedIds) {
   if (!Array.isArray(orderedIds) || orderedIds.length === 0) return;
   try {
@@ -512,10 +621,10 @@ export async function renameUserTag(id, newName) {
     const oldName = tag.name;
     // Update tag record
     await db.userTags.update(id, { name: trimmed });
-    // Rename in all meals that carry the old name
+    // Rename in every item (of this tag's own domain) that carries the old name
     if (oldName !== trimmed) {
-      await db.meals.where('tags').equals(oldName).modify(meal => {
-        meal.tags = (meal.tags || []).map(t => t === oldName ? trimmed : t);
+      await tagTargetTable(tag.domain).where('tags').equals(oldName).modify(item => {
+        item.tags = (item.tags || []).map(t => t === oldName ? trimmed : t);
       });
     }
   } catch (e) {
@@ -568,6 +677,59 @@ export async function bulkSetMealTags(mealIds, tagName, add = true) {
     });
   } catch (e) {
     console.warn('[SpiceHub DB] bulkSetMealTags failed:', e);
+  }
+}
+
+// ── Drink Tags helpers (v28 — Phase 3.4.1 bar tag system) ──────────────────
+// Byte-for-byte mirrors of the meal versions above, targeting db.drinks
+// instead. Kept as separate exports (rather than a single itemType-switched
+// function) to match the existing db.js convention of one function per
+// table — see setMealTags/bulkSetMealTags immediately above.
+export async function setDrinkTags(drinkId, tags) {
+  try {
+    await db.drinks.update(drinkId, { tags: Array.isArray(tags) ? tags : [] });
+  } catch (e) {
+    console.warn('[SpiceHub DB] setDrinkTags failed:', e);
+  }
+}
+
+export async function addDrinkTag(drinkId, tagName) {
+  try {
+    const drink = await db.drinks.get(drinkId);
+    if (!drink) return;
+    const current = Array.isArray(drink.tags) ? drink.tags : [];
+    if (!current.includes(tagName)) {
+      await db.drinks.update(drinkId, { tags: [...current, tagName] });
+    }
+  } catch (e) {
+    console.warn('[SpiceHub DB] addDrinkTag failed:', e);
+  }
+}
+
+export async function removeDrinkTag(drinkId, tagName) {
+  try {
+    const drink = await db.drinks.get(drinkId);
+    if (!drink) return;
+    const current = Array.isArray(drink.tags) ? drink.tags : [];
+    await db.drinks.update(drinkId, { tags: current.filter(t => t !== tagName) });
+  } catch (e) {
+    console.warn('[SpiceHub DB] removeDrinkTag failed:', e);
+  }
+}
+
+export async function bulkSetDrinkTags(drinkIds, tagName, add = true) {
+  if (!Array.isArray(drinkIds) || !drinkIds.length || !tagName) return;
+  try {
+    await db.drinks.where('id').anyOf(drinkIds).modify(drink => {
+      const current = Array.isArray(drink.tags) ? drink.tags : [];
+      if (add) {
+        if (!current.includes(tagName)) drink.tags = [...current, tagName];
+      } else {
+        drink.tags = current.filter(t => t !== tagName);
+      }
+    });
+  } catch (e) {
+    console.warn('[SpiceHub DB] bulkSetDrinkTags failed:', e);
   }
 }
 

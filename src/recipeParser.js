@@ -35,6 +35,21 @@ import { selectHeroImage, persistCarousel } from './import/images.js';
 import { packHasCompleteCandidate, createContextPack, packFromCaption } from './import/contextPack.js';
 import { structurePack, serverStructurePack } from './import/structure/gemini.js';
 import { tryBlogLinkExtraction, assessCaptionQuality } from './lib/blogLinkFollower.js';
+// 2026-08-09: shared HTML->recipe extraction engine (JSON-LD/microdata/CSS
+// heuristics + the decode/image/instruction helpers it depends on) — moved
+// out of this file so blogLinkFollower.js's blog-link-follow path uses the
+// exact same extraction logic instead of a separately maintained copy.
+// NOTE: cleanTitle/stripSocialMetaPrefix stay LOCAL to this file (below) —
+// they're social-caption text scrubbers, not HTML extraction, and neither
+// blogLinkFollower.js nor recipeHtmlExtraction.js's JSON-LD/microdata/CSS
+// cascade actually needs the elaborate version (WPRM/Tasty-sourced titles
+// are already clean); recipeHtmlExtraction.js keeps its own minimal title
+// trim internally for its CSS-heuristic tier.
+import {
+  decodeHtml, selectBestImage, extractMeta,
+  sanitizeInstruction, parseInstructionsFlexible, findJsonLdRecipes,
+  extractMicrodataFromHtml, extractRecipeByCSS, parseHtmlStructured, pickImage,
+} from './lib/recipeHtmlExtraction.js';
 import {
   validateApifyPayload, schemaQualityGate, deduplicateImport,
   capGeminiInput,
@@ -239,57 +254,7 @@ export function extractMultipleUrls(text) {
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Image selection: pick the best/largest from candidates Ã¢â€â‚¬Ã¢â€â‚¬
 // JSON-LD `image` can be: a string, an array of strings, an ImageObject,
 // an array of ImageObjects, or nested combinations.
-function selectBestImage(imageField) {
-  if (!imageField) return '';
-
-  const candidates = [];
-  function collect(val) {
-    if (!val) return;
-    if (typeof val === 'string') {
-      const trimmed = val.trim();
-      if (trimmed && (trimmed.startsWith('http') || trimmed.startsWith('//'))) {
-        candidates.push(trimmed);
-      }
-      return;
-    }
-    if (Array.isArray(val)) {
-      for (const item of val) collect(item);
-      return;
-    }
-    if (typeof val === 'object') {
-      if (val.url) collect(val.url);
-      else if (val.contentUrl) collect(val.contentUrl);
-      else if (val['@id']) collect(val['@id']);
-      if (val.thumbnail?.url) collect(val.thumbnail.url);
-    }
-  }
-
-  collect(imageField);
-  if (candidates.length === 0) return '';
-  if (candidates.length === 1) return candidates[0];
-
-  function scoreUrl(url) {
-    let score = 0;
-    // Prefer images with explicit dimensions in URL
-    const sizeMatch = url.match(/(\d{3,4})x(\d{3,4})/);
-    if (sizeMatch) {
-      const w = parseInt(sizeMatch[1]), h = parseInt(sizeMatch[2]);
-      score = w * h;
-      // Penalize extreme aspect ratios (likely banners or strips)
-      const ratio = Math.max(w, h) / Math.min(w, h);
-      if (ratio > 3) score *= 0.3;
-    }
-    // Keyword bonuses/penalties
-    if (/\b(full|large|original|hero|featured|1080|1200|1440)\b/i.test(url)) score += 500000;
-    if (/\b(thumb|small|tiny|icon|avatar|emoji|s150|s320|150x150|320x320|profile_pic)\b/i.test(url)) score -= 1000000;
-    // Prefer shorter URLs (cleaner, fewer query params = more likely direct image)
-    score -= url.length * 0.5;
-    return score;
-  }
-
-  candidates.sort((a, b) => scoreUrl(b) - scoreUrl(a));
-  return candidates[0];
-}
+// selectBestImage moved to lib/recipeHtmlExtraction.js (2026-08-09)
 
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Ingredient / Direction heuristics (enhanced) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 const UNITS_RE = /\b(cups?|tbsp|tsp|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|grams?|g\b|kg|ml|cl|liters?|litres?|pinch|dash(?:es)?|splash(?:es)?|drops?|parts?|barspoons?|bar spoons?|bunch|cloves?|cans?|jars?|packages?|pkg|sticks?|slices?|handful|sprigs?|heads?|stalks?|fillets?|breasts?|thighs?|inches?|inch|pieces?|pcs?|medium|large|small|whole|half|to taste|chopped|diced|minced|sliced|crushed|grated|shredded|fresh|dried|frozen|peeled|deveined|boneless|skinless|room temperature|softened|melted|divided)\b/i;
@@ -1675,26 +1640,7 @@ function parseSpeechTranscript(text) {
 }
 
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ HTML helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-function decodeHtml(text) {
-  return text
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&apos;/g, "'")
-    .replace(/&#x27;/g, "'").replace(/&nbsp;/g, ' ')
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
-}
-
-function extractMeta(html, property) {
-  const patterns = [
-    new RegExp(`<meta[^>]+(?:property|name)\\s*=\\s*["']${property}["'][^>]+content\\s*=\\s*["']([^"']*)["']`, 'i'),
-    new RegExp(`<meta[^>]+content\\s*=\\s*["']([^"']*)["'][^>]+(?:property|name)\\s*=\\s*["']${property}["']`, 'i'),
-  ];
-  for (const re of patterns) {
-    const m = re.exec(html);
-    if (m) return decodeHtml(m[1]);
-  }
-  return null;
-}
+// decodeHtml, extractMeta moved to lib/recipeHtmlExtraction.js (2026-08-09)
 
 function cleanTitle(title) {
   if (!title) return 'Imported Recipe';
@@ -1765,7 +1711,14 @@ function cleanTitle(title) {
 //   - Array of { "@type": "HowToSection", itemListElement: [...] }
 //   - A single string (newline-separated or JSON-encoded)
 //   - Dict-indexed objects { "0": { text: "..." }, "1": { text: "..." } }
-function parseInstructionsFlexible(inst) {
+// 2026-08-09: superseded by the imported parseInstructionsFlexible from
+// lib/recipeHtmlExtraction.js (module-scope import shadows this old local
+// clone's name at every call site in this file — see import block up top).
+// Renamed instead of deleted: this function's body contains a few comment
+// lines with byte-corrupted mojibake (pre-existing, unrelated to this
+// change) that the text-editing tool cannot reliably match/delete safely.
+// It is dead code from here down — nothing in this file calls this name.
+function _DEAD_parseInstructionsFlexible(inst) {
   if (!inst) return [];
 
   // String Ã¢â‚¬â€ could be newline-separated or a JSON string
@@ -1818,7 +1771,9 @@ function parseInstructionsFlexible(inst) {
  * Iterative instruction sanitization:
  * Strip HTML, decode entities, collapse whitespace Ã¢â‚¬â€ loop until stable.
  */
-function sanitizeInstruction(text) {
+// 2026-08-09: superseded by the imported sanitizeInstruction — see note above
+// _DEAD_parseInstructionsFlexible. Dead code from here down.
+function _DEAD_sanitizeInstruction(text) {
   if (!text || typeof text !== 'string') return '';
   let clean = text.trim();
   let prev = '';
@@ -1830,7 +1785,11 @@ function sanitizeInstruction(text) {
 }
 
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ JSON-LD extraction Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-function findJsonLdRecipes(html) {
+// 2026-08-09: superseded by the imported findJsonLdRecipes — see note above
+// _DEAD_parseInstructionsFlexible. Dead code from here down (extractRecipeFromJsonLd
+// and parseRecipeNode below are only called from this dead function, so they're
+// dead too — left in place for the same mojibake-matching reason).
+function _DEAD_findJsonLdRecipes(html) {
   const results = [];
   const re = /<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
   let m;
@@ -3211,7 +3170,51 @@ async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signa
  *   3. Heuristic CSS class matching
  *   4. OG meta tags fallback
  */
+/**
+ * Parse recipe from raw HTML.
+ * 2026-08-09: strategies 1-3 (JSON-LD -> microdata -> CSS heuristics) now
+ * delegate to the shared lib/recipeHtmlExtraction.js cascade -- the same one
+ * blogLinkFollower.js uses for the "Instagram caption has a weak/partial
+ * caption + a blog link" path, so both import paths get identical extraction
+ * quality instead of two independently-maintained regex sets. Strategy 4
+ * (meta tags + parseCaption text classification) stays local -- it depends on
+ * parseCaption, a general text engine that lives in this file and would
+ * create a circular import if pulled into the shared module.
+ */
 export function parseHtml(html, sourceUrl) {
+  const structured = parseHtmlStructured(html, sourceUrl);
+  if (structured) return structured;
+
+  // 4. Meta tags fallback
+  let title = extractMeta(html, 'og:title') || extractMeta(html, 'twitter:title');
+  let description = extractMeta(html, 'og:description') || extractMeta(html, 'twitter:description');
+  let imageUrl = pickImage(html);
+
+  if (!title) return null;
+  title = cleanTitle(title);
+
+  // Strip social media prefix from description
+  description = stripSocialMetaPrefix(description || '');
+
+  let ingredients = [];
+  let directions = [];
+
+  if (description) {
+    const parsed = parseCaption(description);
+    if (parsed.ingredients.length > 0) ingredients = parsed.ingredients;
+    if (parsed.directions.length > 0) directions = parsed.directions;
+    if (parsed.title) title = parsed.title;
+  }
+
+  return { name: title, ingredients, directions, link: sourceUrl, imageUrl };
+}
+
+// 2026-08-09: original implementation kept below, renamed and unreachable --
+// its strategies 1-3 are now handled by parseHtml() above via the shared
+// parseHtmlStructured() import. Renamed rather than deleted because several
+// of its comment lines carry pre-existing byte-corrupted mojibake (unrelated
+// to this change) that this text-editing tool cannot reliably match/delete.
+function _DEAD_oldParseHtml(html, sourceUrl) {
   // Aggressive image extraction Ã¢â‚¬â€ tries every known source, returns first non-empty.
   // Order: caller-provided Ã¢â€ â€™ JSON-LD (via selectBestImage) Ã¢â€ â€™ og:image Ã¢â€ â€™ twitter:image
   //        Ã¢â€ â€™ schema itemprop="image" Ã¢â€ â€™ video poster Ã¢â€ â€™ largest recipe-context <img>.
@@ -3299,7 +3302,9 @@ export function parseHtml(html, sourceUrl) {
 }
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ Client-side Microdata extraction Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-function extractMicrodataFromHtml(html) {
+// 2026-08-09: superseded by the imported extractMicrodataFromHtml — see note
+// above _DEAD_parseInstructionsFlexible. Dead code from here down.
+function _DEAD_extractMicrodataFromHtml(html) {
   if (!html.includes('schema.org/Recipe')) return null;
 
   const stripTags = (s) => s.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
@@ -3340,7 +3345,9 @@ function extractMicrodataFromHtml(html) {
 }
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ Client-side heuristic CSS class extraction Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-function extractRecipeByCSS(html) {
+// 2026-08-09: superseded by the imported extractRecipeByCSS — see note above
+// _DEAD_parseInstructionsFlexible. Dead code from here down.
+function _DEAD_extractRecipeByCSS(html) {
   const stripTags = (s) => s.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 
   // Look for popular recipe plugin patterns

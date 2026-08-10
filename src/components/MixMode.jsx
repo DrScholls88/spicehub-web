@@ -1,6 +1,70 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { motion, useDragControls } from 'framer-motion';
 import { X, CheckCircle2, Check, Pause, Play, Timer, Martini } from 'lucide-react';
+import { calculateVolumeMl, calculateCalories, calculateAlcoholUnits, getStrengthTier } from '../lib/abvCalculator';
+
+// Phase 3.3 (bar-library-parity-plan-2026-08-07.md §3.3): abvCalculator was
+// built and tested but consumed by nothing. Wiring it here needs a volume in
+// ml, which means parsing the amount+unit off whatever ingredient data this
+// drink has — ingredientsStructured (quantity is a DISPLAY STRING, not a
+// number — see structuredItemFromRaw in recipeSchema.js) when present, else
+// the flat text strings. ABV% itself is NOT recomputed per-ingredient here —
+// that would need a spirit-strength lookup table this codebase doesn't have,
+// and inventing one risks showing a confidently wrong number for something
+// alcohol-content-adjacent. drink.abv (the LLM's own estimate for THIS
+// recipe, captured at import time) is used as-is; it's scale-invariant by
+// definition (diluting a recipe proportionally doesn't change its %), so
+// only volume/calories/units need to move with scaleFactor — which is also
+// the physically correct behavior, not a shortcut.
+const UNICODE_FRACTIONS = { '½': 0.5, '¼': 0.25, '¾': 0.75, '⅓': 1 / 3, '⅔': 2 / 3, '⅛': 0.125, '⅜': 0.375, '⅝': 0.625, '⅞': 0.875 };
+const UNIT_ALIASES = {
+  oz: 'oz', ounce: 'oz', ounces: 'oz',
+  cl: 'cl', centiliter: 'cl', centilitre: 'cl',
+  ml: 'ml', milliliter: 'ml', millilitre: 'ml',
+  dash: 'dash', dashes: 'dash',
+  barspoon: 'barspoon', barspoons: 'barspoon',
+  tsp: 'tsp', teaspoon: 'tsp', teaspoons: 'tsp',
+  tbsp: 'tbsp', tablespoon: 'tbsp', tablespoons: 'tbsp',
+  shot: 'shot', shots: 'shot', jigger: 'shot', jiggers: 'shot',
+  part: 'part', parts: 'part',
+  cup: 'cup', cups: 'cup',
+};
+
+function parseQuantityToNumber(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return null;
+  const uf = /^(\d+)?\s*([½¼¾⅓⅔⅛⅜⅝⅞])$/.exec(s);
+  if (uf) {
+    const whole = uf[1] ? parseInt(uf[1], 10) : 0;
+    return whole + (UNICODE_FRACTIONS[uf[2]] || 0);
+  }
+  const frac = /^(\d+)?\s*(\d+)\/(\d+)$/.exec(s);
+  if (frac) {
+    const whole = frac[1] ? parseInt(frac[1], 10) : 0;
+    const denom = parseInt(frac[3], 10);
+    return denom ? whole + parseInt(frac[2], 10) / denom : null;
+  }
+  const num = parseFloat(s);
+  return Number.isFinite(num) ? num : null;
+}
+
+function volumeItemsFromDrink(drink) {
+  const structured = Array.isArray(drink.ingredientsStructured) ? drink.ingredientsStructured : [];
+  if (structured.length) {
+    return structured.map((it) => ({
+      amount: parseQuantityToNumber(it.quantity),
+      unit: UNIT_ALIASES[String(it.unit || '').toLowerCase().trim()] || null,
+    }));
+  }
+  // Fallback: leading "<amount> <unit>" off the flat ingredient strings
+  // (handles unicode fractions, which MixMode's own scaleIngredient() above
+  // does not — a pre-existing gap, not something this touches).
+  return (drink.ingredients || []).map((ing) => {
+    const m = /^(\d+\s*[½¼¾⅓⅔⅛⅜⅝⅞]?|[½¼¾⅓⅔⅛⅜⅝⅞]|\d+\/\d+)\s*([a-zA-Z]+)/.exec(String(ing || '').trim());
+    if (!m) return { amount: null, unit: null };
+    return { amount: parseQuantityToNumber(m[1]), unit: UNIT_ALIASES[m[2].toLowerCase()] || null };
+  });
+}
 
 /**
  * Mix Mode — full-screen, step-by-step bartender walkthrough.
@@ -157,6 +221,20 @@ export default function MixMode({ drink, scaleFactor = 1.0, onClose }) {
     return `${fmt} ${rest}`;
   };
 
+  // Phase 3.3: live spec — volume/calories/units scale with scaleFactor,
+  // ABV% does not (see the module-level comment above).
+  const drinkAbv = typeof drink.abv === 'number' ? drink.abv : null;
+  const strengthTier = getStrengthTier(drinkAbv);
+  const scaledVolumeMl = useMemo(() => {
+    const items = volumeItemsFromDrink(drink).filter(it => it.amount != null && it.unit);
+    if (!items.length) return null;
+    const baseMl = calculateVolumeMl(items);
+    return baseMl > 0 ? baseMl * scaleFactor : null;
+  }, [drink, scaleFactor]);
+  const scaledCalories = scaledVolumeMl != null && drinkAbv != null ? calculateCalories(scaledVolumeMl, drinkAbv) : null;
+  const scaledUnits = scaledVolumeMl != null && drinkAbv != null ? calculateAlcoholUnits(scaledVolumeMl, drinkAbv) : null;
+  const hasSpec = drinkAbv != null || scaledVolumeMl != null;
+
   // Toggle ingredient checkbox
   const toggleIngredient = useCallback((idx) => {
     setCheckedIngredients(prev => {
@@ -283,6 +361,24 @@ export default function MixMode({ drink, scaleFactor = 1.0, onClose }) {
               {scaleFactor !== 1 && <span className="mm-scale-badge">{scaleFactor}×</span>}
               <span className="mm-check-count">{checkedIngredients.size}/{drink.ingredients.length}</span>
             </div>
+            {hasSpec && (
+              <div className="mm-spec-strip">
+                {drinkAbv != null && (
+                  <span className={'mm-spec-chip mm-spec-strength-' + strengthTier.replace(' ', '-')}>
+                    {drinkAbv}% ABV
+                  </span>
+                )}
+                {scaledVolumeMl != null && (
+                  <span className="mm-spec-chip">{(scaledVolumeMl / 29.5735).toFixed(1)} oz</span>
+                )}
+                {scaledCalories != null && (
+                  <span className="mm-spec-chip">{scaledCalories} cal</span>
+                )}
+                {scaledUnits != null && (
+                  <span className="mm-spec-chip">{scaledUnits} unit{scaledUnits === 1 ? '' : 's'}</span>
+                )}
+              </div>
+            )}
             <ul className="mm-checklist">
               {drink.ingredients.map((ing, i) => (
                 <li

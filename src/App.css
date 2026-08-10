@@ -136,9 +136,20 @@ body::before {
   left: 0;
   right: 0;
   height: env(safe-area-inset-top, 0px);
-  background: var(--primary, #e65100);
+  background: var(--status-scrim, var(--primary, #e65100));
   z-index: 2147483647;
   pointer-events: none;
+}
+
+/* Phase 2.3a: Bar tab gets a near-black scrim instead of meal-orange, so the
+   notch/Dynamic-Island strip matches the speakeasy surface underneath
+   instead of reading as a two-tone header. This is a literal duplicate of
+   tokens.css's --bar-surface value, not a var() reference to it — CSS custom
+   properties only inherit to descendants, and .bl (where --bar-surface is
+   declared) is itself a descendant of <body>, so body::before structurally
+   cannot see it. Keep these in sync if the token value ever changes. */
+[data-theme] body[data-active-tab="bar"] {
+  --status-scrim: oklch(0.19 0.018 62);
 }
 
 .app-header {
@@ -8409,6 +8420,13 @@ body::before {
    override the flow layout inside .bl-fab-group. */
 
 /* ── "Enter the Saloon" hero button ── */
+/* Phase 2.3: retokenized off the old neon-pink-on-purple hardcoded hexes onto
+   the brass/near-black Bar tokens — this is one of the three split identities
+   the plan's §0.4 diagnosis called out, and it's the one directly bridging
+   the flat library into the pixel Saloon doorway. iOS-4: color-mix() sites
+   below all carry a plain rgba fallback declaration first (215,160,61 is
+   --bar-accent's own sRGB value, not a guess — see tokens.css's measured
+   hex list). */
 .bl-saloon-btn {
   display: flex;
   align-items: center;
@@ -8417,28 +8435,39 @@ body::before {
   width: calc(100% - 24px);
   margin: 8px 12px;
   padding: 14px 16px;
-  background: linear-gradient(135deg, #1a0a2e 0%, #3a1f5e 50%, #1a0a2e 100%);
+  background: var(--bar-surface-raised); /* always valid */
+  background: linear-gradient(135deg, var(--bar-surface) 0%, var(--bar-surface-raised) 50%, var(--bar-surface) 100%);
   background-size: 200% 100%;
-  animation: blSaloonShimmer 4s ease-in-out infinite;
-  border: 2px solid #ff4081;
-  color: #ff4081;
+  border: 2px solid var(--bar-accent);
+  color: var(--bar-accent);
   font-family: 'Press Start 2P', monospace;
   font-size: 11px;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  box-shadow: 0 0 16px rgba(255, 64, 129, 0.2), inset 0 0 20px rgba(255, 64, 129, 0.05);
+  box-shadow: 0 0 16px rgba(215, 160, 61, 0.2), inset 0 0 20px rgba(215, 160, 61, 0.05);
+  box-shadow: 0 0 16px color-mix(in oklch, var(--bar-accent) 20%, transparent), inset 0 0 20px color-mix(in oklch, var(--bar-accent) 5%, transparent);
   transition: box-shadow 0.3s, transform 0.15s;
   border-radius: 4px;
 }
+@media (prefers-reduced-motion: no-preference) {
+  /* iOS-5/2.3a: blSaloonShimmer ran unconditionally forever — accessibility
+     miss and a battery drain on an always-visible element. */
+  .bl-saloon-btn { animation: blSaloonShimmer 4s ease-in-out infinite; }
+}
 .bl-saloon-btn:active {
   transform: scale(0.97);
-  box-shadow: 0 0 24px rgba(255, 64, 129, 0.4);
+  box-shadow: 0 0 24px rgba(215, 160, 61, 0.4);
+  box-shadow: 0 0 24px color-mix(in oklch, var(--bar-accent) 40%, transparent);
 }
 .bl-saloon-icon { font-size: 18px; }
-.bl-saloon-text { flex: 1; text-align: left; }
+.bl-saloon-text {
+  flex: 1;
+  text-align: left;
+  font-family: var(--bar-display-font, inherit); /* Phase 2.2 — falls back to inherit outside .bl */
+}
 .bl-saloon-count {
-  font-size: 7px;
-  color: #aaa;
+  font-size: 12px; /* Phase 2.3: was 7px — unreadable, a direct regression against the July legibility sweep */
+  color: var(--bar-text-dim);
   white-space: nowrap;
 }
 @keyframes blSaloonShimmer {
@@ -8490,6 +8519,256 @@ body::before {
   padding: 0 4px;
 }
 
+/* ── Tag chips (Phase 3.4.1) ── */
+/* Ported from .ml-label-* / .ml-tag-* — same generic app tokens as those
+   (var(--text)/var(--border)/var(--surface-2)), not the dark Phase 2 bar
+   tokens, because this row lives in the same light-chrome context as
+   .bl-cat-chip/.bl-qf-chip immediately above/below it. Accent color is
+   #7b1fa2 — the purple already used for selection state elsewhere in this
+   file (.bl-tile-check, .bl-tile-selected), kept separate from the gold
+   --bar-accent which is reserved for the dark speakeasy tile surfaces. */
+.bl-labels-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding: 4px 0 0;
+  flex-shrink: 0;
+}
+.bl-labels-scroll::-webkit-scrollbar { display: none; }
+.bl-labels-track {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 10px;
+  flex-wrap: nowrap;
+}
+.bl-label-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: center;
+  height: 30px;
+  padding: 0 11px;
+  border: 1.5px solid var(--border, #ddd);
+  border-radius: 16px;
+  background: var(--surface-2, var(--surface, #fff));
+  color: var(--text-light, #888);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+.bl-label-chip:active { transform: scale(0.97); }
+.bl-tag-active { color: #fff; font-weight: 700; }
+.bl-label-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border: 1.5px dashed var(--border, #ddd);
+  border-radius: 50%;
+  background: transparent;
+  color: #7b1fa2;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s, transform 0.1s;
+}
+.bl-label-add-btn:active { transform: scale(0.9); }
+.bl-label-manage-btn,
+.bl-label-done-btn {
+  color: #7b1fa2;
+  border-color: #7b1fa2;
+  background: transparent;
+}
+.bl-label-done-btn {
+  background: #7b1fa2;
+  color: #fff;
+}
+.bl-label-count {
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  padding: 1px 5px;
+  min-width: 16px;
+  text-align: center;
+}
+[data-theme="dark"] .bl-label-count { background: rgba(255, 255, 255, 0.1); }
+.bl-tag-active .bl-label-count { background: rgba(255, 255, 255, 0.25); }
+/* Rearrange/delete mode (long-press a custom tag chip) */
+.bl-labels-reorder-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.bl-label-chip--editing {
+  position: relative;
+  padding-right: 22px;
+  border-color: #7b1fa2;
+  cursor: grab;
+}
+.bl-label-chip--editing:active { cursor: grabbing; }
+.bl-label-chip-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: var(--danger, #ef5350);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 10px;
+  -webkit-tap-highlight-color: transparent;
+}
+.bl-label-chip-remove:active { transform: scale(0.85); }
+
+/* ── Tag manager / bulk tag picker sheet contents (Phase 3.4.1) ── */
+.bl-sheet-subtitle {
+  font-size: 13px;
+  color: var(--text-light);
+  margin: -8px 0 12px;
+}
+.bl-tag-manager-sheet { max-height: 75vh; }
+.bl-tag-create-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.bl-tag-create-input {
+  flex: 1;
+  height: 40px;
+  padding: 0 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2, #f5f5f5);
+  color: var(--text);
+  font-size: 16px; /* iOS-2: stops Safari zooming the page on focus */
+  outline: none;
+}
+.bl-tag-create-input:focus { border-color: #7b1fa2; }
+.bl-tag-create-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: none;
+  background: #7b1fa2;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.bl-tag-create-btn:disabled { opacity: 0.4; }
+.bl-tag-list { display: flex; flex-direction: column; }
+.bl-tag-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 4px;
+  border-radius: 8px;
+}
+.bl-tag-row:hover { background: var(--surface-2, #f5f5f5); }
+.bl-tag-row-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.bl-tag-row-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+}
+.bl-tag-row-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-light, #888);
+  background: var(--surface-2, #f0f0f0);
+  border-radius: 8px;
+  padding: 1px 7px;
+}
+.bl-tag-row-action {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-light, #888);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.bl-tag-row-action:hover { background: var(--surface-2, #f0f0f0); }
+.bl-tag-row-delete:hover { color: #d32f2f; background: #ffebee; }
+.bl-tag-edit-row {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+}
+.bl-tag-save-btn {
+  width: 32px;
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  background: #7b1fa2;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.bl-tag-cancel-btn {
+  width: 32px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-light);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* ── Filters(n) sheet (Phase 3.4.2) ── */
+.bl-filter-sheet { max-height: 80vh; }
+.bl-filter-chip-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.bl-filter-sheet-footer {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+  /* iOS: fold the on-screen keyboard inset so the footer never sits under it
+     — same pattern documented in useKeyboardInset.js for other Bar sheets. */
+  padding-bottom: var(--keyboard-inset, 0px);
+}
+.bl-filter-show-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: #7b1fa2;
+  color: #fff;
+}
+
 /* ── Rarity styling on drink cards ── */
 .bl-drink-card {
   border-left: 3px solid transparent;
@@ -8506,8 +8785,11 @@ body::before {
   line-height: 1;
   text-shadow: 0 1px 3px rgba(0,0,0,0.5);
 }
-.bl-rarity-legendary { color: #ffd700; }
-.bl-rarity-rare { color: #42a5f5; }
+/* Phase 2.4: legendary/common (ingredient-count rarity) renamed canon/house
+   (classics-list + personal-inventory rarity) — see getDrinkRarity in
+   BarLibrary.jsx. Retokenized off the old #ffd700/#42a5f5 hardcodes. */
+.bl-rarity-canon { color: var(--bar-accent, #ffd700); }
+.bl-rarity-rare { color: var(--bar-accent-dim, #42a5f5); }
 
 .bl-drink-image-container { position: relative; }
 
@@ -8636,6 +8918,52 @@ body::before {
 
 .bl-sheet-button.danger:active {
   background: #f8bbd0;
+}
+
+/* ── Bar shopping list sheet (Phase 3.2) ── */
+.bl-shoplist-sheet { max-height: 75vh; }
+.bl-shoplist-empty {
+  color: var(--text-muted);
+  font-size: 14px;
+  padding: 8px 0 16px;
+}
+.bl-shoplist-summary {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin: -8px 0 12px;
+}
+.bl-shoplist-items {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+.bl-shoplist-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border-left: 3px solid var(--border-subtle, #ddd);
+  background: #f8f5f0;
+}
+.bl-shoplist-priority-high { border-left-color: #e53935; }
+.bl-shoplist-priority-medium { border-left-color: #fb8c00; }
+.bl-shoplist-item-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  text-transform: capitalize;
+}
+.bl-shoplist-item-needed {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.bl-shoplist-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 /* Bar delete sheet */
@@ -8808,6 +9136,22 @@ body::before {
   max-width: 260px;
 }
 
+/* Phase 3.4.2: "Clear filters" affordance in the empty state (mirrors
+   .ml-empty-cta) — a centered pill, not the full-width .bl-btn-primary/
+   -secondary pair used by the "bar is empty" onboarding actions below. */
+.bl-empty-cta {
+  margin-top: 4px;
+  padding: 10px 22px;
+  background: #7b1fa2;
+  color: #fff;
+  border: none;
+  border-radius: 22px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
 .bl-btn-primary {
   width: 100%;
   padding: 13px 24px;
@@ -8862,10 +9206,15 @@ body::before {
 .bl-search-zone {
   padding: 10px 12px 6px;
   flex-shrink: 0;
+  /* Phase 3.4.5: now hosts the grid-density toggle alongside the input. */
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .bl-search-input {
-  width: 100%;
+  flex: 1;
+  min-width: 0; /* allow the input to shrink below its content width in the flex row */
   min-height: 44px;
   padding: 11px 14px;
   border: 1.5px solid var(--border);
@@ -8885,6 +9234,65 @@ body::before {
 
 .bl-search-input::placeholder {
   color: var(--text-muted, #aaa);
+}
+
+/* ── Filters(n) trigger (Phase 3.4.2) ── */
+/* Paired visually with .bl-grid-toggle right beside it — both are dark
+   accent pills against the lighter search row, echoing .bl-saloon-btn's
+   "portal to the dark speakeasy" cue elsewhere on this screen. */
+.bl-filter-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  min-height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--bar-hairline, #2a2a2a);
+  background: var(--bar-surface, #1a1a1a);
+  color: var(--bar-text-dim, #888);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.bl-filter-btn.has-active,
+.bl-filter-btn[data-active="true"] {
+  background: var(--bar-accent, #9c27b0);
+  color: #1a0a2e;
+  border-color: var(--bar-accent, #9c27b0);
+}
+
+/* ── Grid density toggle (Phase 3.4.5) ── */
+/* Renders inside .bl-search-zone, itself inside .bl, so the bar tokens are
+   reachable — but this sits above the tile grid on light OR dark app theme,
+   so every value still carries a plain fallback (iOS-4 pattern). */
+.bl-grid-toggle {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--bar-surface, #1a1a1a);
+  border: 1px solid var(--bar-hairline, #2a2a2a);
+  flex-shrink: 0;
+}
+.bl-grid-toggle-btn {
+  padding: 5px 7px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--bar-text-dim, #888);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: background-color 0.2s, color 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.bl-grid-toggle-btn.active {
+  background: var(--bar-accent, #9c27b0);
+  color: #1a0a2e;
 }
 
 /* ── Horizontal categories scroll ── */
@@ -8992,20 +9400,83 @@ body::before {
   text-align: center;
 }
 
+/* ── "One Bottle Away" rail (Phase 3.2/4.1) ──────────────────────────────────
+   Horizontal scroller nested inside the vertical gallery scroll — the exact
+   gesture-conflict shape from the July carousel work. Reusing that same
+   treatment (touch-action: pan-x + overscroll-behavior-x: contain +
+   -webkit-overflow-scrolling: touch, see .landing-next-days-scroll) rather
+   than rediscovering it — iOS is far less forgiving than Chrome about nested
+   scroll-direction locking. */
+.bl-oneaway-wrap {
+  position: relative;
+  margin: 0 12px 4px;
+}
+.bl-oneaway-scroll {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 8px 20px 8px 2px;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.bl-oneaway-card {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--bar-hairline, rgba(0,0,0,0.1));
+  background: var(--bar-surface-raised, var(--card));
+  border-radius: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  text-align: left;
+  min-width: 44px;
+}
+.bl-oneaway-card:active { transform: scale(0.97); }
+.bl-oneaway-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--bar-accent, var(--text));
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+.bl-oneaway-sub {
+  font-size: 11px;
+  color: var(--bar-text-dim, var(--text-muted));
+  white-space: nowrap;
+}
+.bl-oneaway-fade {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 28px;
+  pointer-events: none;
+  background: linear-gradient(to right, rgba(0,0,0,0), var(--bar-surface, var(--bg)));
+}
+
 /* ── Tile gallery grid ── */
+/* Phase 2.3: 3-column on phone (meals stay 2-column) — bottles are tall and
+   narrow, dishes are wide; different content shape, different grid. Also
+   adds overscroll-behavior: contain (2.3a) to match the sheet treatment, so
+   a fast flick at the top/bottom of the grid doesn't rubber-band the page
+   behind it on iOS. */
 .bl-gallery {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 10px;
   padding: 10px 12px 100px; /* extra bottom padding for FABs */
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
   flex: 1;
 }
 
 @media (min-width: 500px) {
   .bl-gallery {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     gap: 12px;
     padding: 12px 16px 100px;
   }
@@ -9013,21 +9484,142 @@ body::before {
 
 @media (min-width: 768px) {
   .bl-gallery {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
   }
 }
 
+/* ── Grid layout overrides (Phase 3.4.5) ── */
+/* '3x' is a no-op — the base .bl-gallery rules above (3/4/5 cols by
+   breakpoint) ARE the 3x density, so the default toggle state changes
+   nothing about the shipped Phase 2.3 look. '2x' and 'list' are the two
+   real overrides, applied to both .bl-gallery and the per-section grids. */
+.bl-layout-2x {
+  grid-template-columns: repeat(2, 1fr) !important;
+}
+.bl-layout-2x .bl-tile-name { font-size: 1.4rem; }
+@media (min-width: 500px) {
+  .bl-layout-2x { grid-template-columns: repeat(3, 1fr) !important; }
+}
+@media (min-width: 768px) {
+  .bl-layout-2x { grid-template-columns: repeat(4, 1fr) !important; }
+}
+.bl-layout-list {
+  grid-template-columns: 1fr !important;
+  gap: 6px !important;
+}
+.bl-layout-list .bl-tile {
+  flex-direction: row;
+  border-radius: 10px;
+  height: auto;
+}
+.bl-layout-list .bl-tile-image {
+  width: 72px;
+  min-width: 72px;
+  height: 72px;
+  aspect-ratio: unset;
+  border-radius: 10px 0 0 10px;
+}
+.bl-layout-list .bl-tile-img {
+  border-radius: 10px 0 0 10px;
+}
+.bl-layout-list .bl-tile-info {
+  padding: 8px 12px;
+  justify-content: center;
+  min-width: 0;
+  flex: 1;
+}
+.bl-layout-list .bl-tile-name {
+  font-size: 14px;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+}
+.bl-layout-list .bl-tile-fav { top: 4px; left: 4px; }
+.bl-layout-list .bl-tile-cat-tag { display: none; }
+.bl-layout-list .bl-tile-improve { display: none; }
+/* .bl-tile-pour sits left of the menu button — both can be visible at once
+   (a ready-to-pour drink still has a menu button) so they can't share a slot. */
+.bl-layout-list .bl-tile-pour { top: 50%; right: 34px; transform: translateY(-50%); }
+.bl-layout-list .bl-tile-menu-btn { top: 50%; right: 6px; transform: translateY(-50%); bottom: auto; }
+.bl-layout-list .bl-tile-play { top: 50%; left: 6px; transform: translateY(-50%); }
+
+/* ── Collapsible base-spirit sections (Phase 3.4.4) ── */
+.bl-section {
+  grid-column: 1 / -1;
+}
+.bl-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 4px 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.bl-section-header:active { opacity: 0.7; }
+.bl-section-title {
+  font-family: var(--bar-display-font, inherit);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--bar-text, var(--text));
+}
+.bl-section-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--bar-text-dim, #888);
+  background: var(--bar-surface, rgba(255,255,255,0.06));
+  border-radius: 8px;
+  padding: 1px 7px;
+  min-width: 18px;
+  text-align: center;
+}
+.bl-section-chevron {
+  margin-left: auto;
+  font-size: 14px;
+  color: var(--bar-text-dim, #888);
+  transition: transform 0.2s;
+}
+.bl-section-chevron-collapsed {
+  transform: rotate(-90deg);
+}
+.bl-section-grid {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+@media (min-width: 500px) {
+  .bl-section-grid { grid-template-columns: repeat(4, 1fr); gap: 12px; }
+}
+@media (min-width: 768px) {
+  .bl-section-grid { grid-template-columns: repeat(5, 1fr); }
+}
+
 /* ── Individual tile ── */
+/* Phase 2.3 re-skin: was byte-for-byte the meal tile (var(--card) + generic
+   drop shadow) — the Bar had no identity of its own. Dark surfaces don't
+   need drop shadows, they need edges: --bar-surface-raised + a 1px
+   --bar-hairline border, no shadow at rest, a very low-opacity lift only
+   on hover/active. iOS-4: plain background fallback before color-mix. */
 .bl-tile {
   position: relative;
-  background: var(--card);
-  border-radius: 12px;
+  background: var(--bar-surface-raised);
+  border: 1px solid var(--bar-hairline);
+  border-radius: 10px;
   overflow: hidden;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.07);
   cursor: pointer;
-  transition: transform 0.15s, box-shadow 0.15s;
+  transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
   animation: tileIn 0.3s ease-out backwards;
   -webkit-tap-highlight-color: transparent;
+  /* iOS-1 (bar-library-parity-plan-2026-08-07.md §0.5): without these, a
+     500ms press fires the native iOS selection callout, which competes with
+     — and often preempts — BarLibrary's own LONG_PRESS_MS=500 select-mode
+     handler. Deliberately NOT applied to .bl-qp-* (the expanded card) —
+     ingredient text there should stay selectable/copyable. */
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
   display: flex;
   flex-direction: column;
 }
@@ -9037,17 +9629,21 @@ body::before {
 }
 
 .bl-tile:hover {
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  border-color: var(--bar-accent-dim);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35); /* low-opacity lift, not the old flat drop shadow */
   transform: translateY(-2px);
 }
 
 /* Rarity glow variants */
-.bl-tile-legendary {
-  box-shadow: 0 2px 8px rgba(255, 215, 0, 0.25);
+/* Phase 2.4 rename: legendary -> canon. iOS-4: plain fallback before color-mix. */
+.bl-tile-canon {
+  box-shadow: 0 2px 8px rgba(215, 160, 61, 0.25);
+  box-shadow: 0 2px 8px color-mix(in oklch, var(--bar-accent) 25%, transparent);
 }
 
 .bl-tile-rare {
-  box-shadow: 0 2px 8px rgba(66, 165, 245, 0.2);
+  box-shadow: 0 2px 8px rgba(148, 108, 50, 0.2);
+  box-shadow: 0 2px 8px color-mix(in oklch, var(--bar-accent-dim) 20%, transparent);
 }
 
 /* Selected state */
@@ -9143,6 +9739,17 @@ body::before {
   pointer-events: none;
 }
 
+/* Phase 3.4.6 — parity with .ml-tile-fav. Top-left, above the (rarer)
+   .bl-tile-improve pill so the two badges don't compete when both show. */
+.bl-tile-fav {
+  position: absolute;
+  top: 4px;
+  left: 6px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
+  pointer-events: none;
+  z-index: 5;
+}
+
 /* ── ⋯ menu button (bottom-right of image) ── */
 .bl-tile-menu-btn {
   position: absolute;
@@ -9166,6 +9773,15 @@ body::before {
   touch-action: manipulation;
   transition: background 0.15s, transform 0.1s;
 }
+/* Phase 2.3 44px audit: the visual badge stays 28px (a full 44px circle
+   would overwhelm the now-denser 3-column tile) — this invisible ::before
+   pads the actual tappable area out to the HIG floor without changing how
+   the badge looks. Applies to every sub-44px .bl-tile overlay button. */
+.bl-tile-menu-btn::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
 
 .bl-tile-menu-btn:active {
   background: rgba(0, 0, 0, 0.8);
@@ -9181,7 +9797,8 @@ body::before {
 }
 
 .bl-tile-name {
-  font-size: 13px;
+  font-family: var(--bar-display-font, inherit); /* Phase 2.2 */
+  font-size: clamp(1.05rem, 3.2vw, 1.25rem); /* Phase 2.2 — genuine step vs. the old flat 13px */
   font-weight: 700;
   color: var(--text);
   display: -webkit-box;
@@ -9370,6 +9987,12 @@ body::before {
   -webkit-tap-highlight-color: transparent;
   z-index: 4;
 }
+/* Phase 2.3 44px audit — see .bl-tile-menu-btn::before comment */
+.bl-tile-improve::before {
+  content: '';
+  position: absolute;
+  inset: -10px;
+}
 .bl-tile-improve:active { transform: scale(0.92); }
 
 /* ── PiP play-video badge on tiles — parity with .ml-tile-play ── */
@@ -9394,6 +10017,12 @@ body::before {
   touch-action: manipulation;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
   transition: background 0.15s, transform 0.1s;
+}
+/* Phase 2.3 44px audit — see .bl-tile-menu-btn::before comment */
+.bl-tile-play::before {
+  content: '';
+  position: absolute;
+  inset: -6px;
 }
 
 .bl-tile-play-tri {
@@ -9494,8 +10123,29 @@ body::before {
   padding: 12px 16px 8px;
 }
 
+/* Phase 3.3: strength chip in the expanded card, parity with MealDetail's
+   detail-strength-chip. Same tier palette, reused here rather than shared
+   since the two live in different stylesheets' color systems. */
+.bl-qp-strength {
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  margin-bottom: 8px;
+  background: var(--bar-surface, rgba(0,0,0,0.08));
+  color: var(--bar-text-dim, var(--text-muted));
+  border: 1px solid var(--bar-hairline, transparent);
+}
+.bl-qp-strength-virgin { color: #66bb6a; border-color: rgba(102,187,106,0.4); }
+.bl-qp-strength-light { color: #9ccc65; border-color: rgba(156,204,101,0.4); }
+.bl-qp-strength-medium { color: #ffca28; border-color: rgba(255,202,40,0.4); }
+.bl-qp-strength-strong { color: #ffa726; border-color: rgba(255,167,38,0.4); }
+.bl-qp-strength-very-strong { color: #ef5350; border-color: rgba(239,83,80,0.4); }
+
 .bl-qp-title {
-  font-size: 18px;
+  font-family: var(--bar-display-font, inherit); /* Phase 2.2 */
+  font-size: 1.75rem; /* Phase 2.2 — ~1.4x step up from the 1.25rem tile size */
   font-weight: 800;
   margin: 0 0 10px;
   color: var(--text);
@@ -10420,6 +11070,7 @@ body::before {
   top: 12px;
   width: 180px;
   background: rgba(255, 243, 224, 0.95);
+  -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   border-radius: 14px;
   padding: 10px 12px;
@@ -10851,6 +11502,30 @@ body::before {
   color: #ce93d8;
 }
 
+/* Phase 3.3: live spec strip — ABV (static) + volume/calories/units (scale
+   with scaleFactor). Matches MixMode's existing dark-purple local palette
+   rather than introducing the Bar's Phase 2 tokens into a different surface. */
+.mm-spec-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -4px 0 14px;
+}
+.mm-spec-chip {
+  padding: 3px 9px;
+  background: rgba(171, 71, 188, 0.18);
+  border: 1px solid rgba(171, 71, 188, 0.35);
+  color: #e1bee7;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.mm-spec-strength-virgin { background: rgba(76, 175, 80, 0.18); border-color: rgba(76, 175, 80, 0.4); color: #a5d6a7; }
+.mm-spec-strength-light { background: rgba(76, 175, 80, 0.14); border-color: rgba(76, 175, 80, 0.3); color: #c5e1a5; }
+.mm-spec-strength-medium { background: rgba(255, 179, 0, 0.16); border-color: rgba(255, 179, 0, 0.35); color: #ffe082; }
+.mm-spec-strength-strong { background: rgba(251, 140, 0, 0.18); border-color: rgba(251, 140, 0, 0.4); color: #ffcc80; }
+.mm-spec-strength-very-strong { background: rgba(229, 57, 53, 0.2); border-color: rgba(229, 57, 53, 0.45); color: #ef9a9a; }
+
 /* Ingredient checklist */
 .mm-checklist {
   list-style: none;
@@ -11098,6 +11773,7 @@ body::before {
   top: 12px;
   width: 175px;
   background: rgba(74, 20, 140, 0.85);
+  -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
   border-radius: 14px;
   padding: 10px 12px;
@@ -17622,6 +18298,7 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   align-items: center;
   justify-content: center;
   padding: 20px;
+  -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
 }
 
@@ -22864,6 +23541,7 @@ select:focus-visible,
   inset: 0;
   z-index: 10000;
   background: rgba(20, 14, 8, 0.72);
+  -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
   display: flex;
   align-items: center;

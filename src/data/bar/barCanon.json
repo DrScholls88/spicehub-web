@@ -1,0 +1,21 @@
+{
+  "_comment": "Phase 2.4 (bar-library-parity-plan-2026-08-07.md §2.4): 'Canon' rarity tier — recognized classic/IBA-style cocktails, independent of any user's inventory. Lowercase, matched via name.includes(entry) against the drink's saved name (same matching style as the old LEGENDARY_NAMES seed list this file replaces). Not exhaustive — extend as real imports surface classics that should read as Canon but don't yet.",
+  "canon": [
+    "negroni", "negroni sbagliato", "manhattan", "old fashioned", "mai tai",
+    "singapore sling", "sazerac", "corpse reviver", "aviation", "last word",
+    "paper plane", "margarita", "daiquiri", "whiskey sour", "whisky sour",
+    "martini", "vesper", "mojito", "cosmopolitan", "mint julep",
+    "pina colada", "piña colada", "tom collins", "gin fizz", "french 75",
+    "sidecar", "bee's knees", "bees knees", "boulevardier", "paloma",
+    "moscow mule", "dark and stormy", "espresso martini", "white russian",
+    "black russian", "long island iced tea", "bloody mary", "irish coffee",
+    "hurricane", "zombie", "blue hawaii", "grasshopper", "amaretto sour",
+    "between the sheets", "clover club", "bramble", "penicillin", "gimlet",
+    "caipirinha", "pisco sour", "ramos gin fizz", "vieux carre", "vieux carré",
+    "hanky panky", "el presidente", "jungle bird", "naked and famous",
+    "southside", "french connection", "godfather", "rusty nail", "rob roy",
+    "americano", "kir royale", "bellini", "mimosa", "french martini",
+    "sex on the beach", "tequila sunrise", "screwdriver", "mudslide",
+    "brandy alexander", "irish mule", "dirty martini", "manhattan sweet"
+  ]
+}

@@ -163,19 +163,6 @@ export default function AddEditMeal({
 
   const updateList = (setter, idx, val) => setter(prev => prev.map((v, i) => i === idx ? val : v));
 
-  // Move item from one list to the other (cross-section arrow buttons)
-  const moveToOtherList = (fromList, idx) => {
-    if (fromList === 'ingredients') {
-      const item = ingredients[idx];
-      setIngredients(prev => prev.filter((_, i) => i !== idx));
-      setDirections(prev => [...prev, item]);
-    } else {
-      const item = directions[idx];
-      setDirections(prev => prev.filter((_, i) => i !== idx));
-      setIngredients(prev => [...prev, item]);
-    }
-  };
-
   // Swap adjacent items within a list (↑/↓ reorder buttons)
   const reorderList = (setter, list, idx, dir) => {
     const newIdx = dir === 'up' ? idx - 1 : idx + 1;

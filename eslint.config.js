@@ -13,7 +13,7 @@ export default defineConfig([
   // else's minified code, telling us nothing about our own source.
   // 'src/lib/photoswipe' is the same story — vendored minified PhotoSwipe
   // gallery build, imported as opaque JS, never hand-edited.
-  globalIgnores(['dist', 'public/tesseract', 'src/lib/photoswipe']),
+  globalIgnores(['dist', 'dist-verify*', 'public/tesseract', 'src/lib/photoswipe', 'scratch']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [

@@ -42,3 +42,82 @@
   --border-subtle: rgba(255, 255, 255, 0.12);
   --elevation-shadow: 0 0 0 1px var(--border-subtle), 0 4px 16px rgba(0, 0, 0, 0.4);
 }
+
+/* ==========================================================================
+   Bar / Speakeasy tokens (Phase 2, bar-library-parity-plan-2026-08-07.md §2.1)
+   ==========================================================================
+   Scoped to .bl / .bl-* only — not a theme fork, everything else is
+   untouched. The Bar stays dark in BOTH light and dark app themes: it is a
+   place in the app (the Saloon next door is already dark, and a light-mode
+   Bar would break the doorway transition), not a mode. [data-theme] matches
+   regardless of value (ThemeProvider always sets one of light/dark/auto), so
+   this block simply needs to out-specificity :root, it isn't theme-gated.
+
+   oklch() needs no @supports guard or polyfill — Safari 15.4, BELOW the
+   color-mix() (16.2) and AbortSignal.timeout (16.0) floors this app already
+   requires. Any Bar rule that *consumes* these tokens via color-mix() must
+   still emit a plain fallback declaration first (iOS-4) — see .bl-tile in
+   App.css for the pattern.
+
+   Contrast measured 2026-08-09 (OKLab->linear-sRGB->WCAG relative luminance,
+   not eyeballed — the exact failure mode that shipped the July --text-muted
+   bug): bar-text/bar-surface 15.04:1, bar-text-dim/bar-surface 7.44:1,
+   bar-text-dim/bar-surface-raised 6.73:1, bar-accent/bar-surface 7.90:1,
+   bar-accent/bar-surface-raised 7.14:1, bar-ready/bar-surface 6.73:1,
+   bar-ready/bar-surface-raised 6.09:1 — all comfortably clear AA (4.5:1).
+   bar-accent-dim/bar-surface is 3.92:1 — meets the AA *large-text/UI-component*
+   floor (3:1) only; do not use it for small body text. bar-hairline is a
+   decorative 1px border, not text — no contrast floor applies. */
+[data-theme] .bl {
+  --bar-surface:        oklch(0.19 0.018 62);   /* warm near-black, never #000 */
+  --bar-surface-raised: oklch(0.235 0.022 62);
+  --bar-hairline:       oklch(0.38 0.030 68);
+  --bar-text:           oklch(0.93 0.012 70);
+  --bar-text-dim:       oklch(0.72 0.016 70);   /* clears 4.5:1 on both surfaces */
+  --bar-accent:         oklch(0.74 0.130 78);   /* brass */
+  --bar-accent-dim:     oklch(0.56 0.090 74);   /* large text / icons only — 3.92:1 */
+  --bar-ready:          oklch(0.68 0.110 152);  /* bottle green — replaces #4caf50 */
+  --bar-display-font: 'Gloock', 'Gloock Fallback', Georgia, 'Times New Roman', serif;
+}
+
+/* ==========================================================================
+   Bar display face (Phase 2.2) — self-hosted, offline-first, single weight.
+   ==========================================================================
+   The project loads zero web fonts otherwise (system stack only) — a Google
+   Fonts <link> would break offline-first, so this is self-hosted in
+   public/fonts/ instead. Latin subset (covers accented drink names like
+   "Piña Colada" / "José Cuervo" and curly punctuation), single 400 weight,
+   ~26KB. Requires woff2 in the SW precache glob (vite.config.js — see the
+   2026-08-09 iOS-3 comment there) or this falls back to a network-dependent
+   runtime route and a freshly-installed offline iOS PWA renders system serif
+   instead. Applied ONLY to drink names, the Saloon button, and Bar section
+   headers (see .bl-tile-name / .bl-qp-title / .bl-saloon-btn-label in
+   App.css) — body copy stays on the existing stack.
+
+   The second @font-face ("Gloock Fallback") is the metrics-override technique:
+   Gloock is a high-contrast didone with very different vertical metrics than
+   the system stack, so an unadjusted font-display:swap visibly reflows every
+   drink name when the real font finishes loading — most visible on iOS,
+   where cold starts from the Home Screen are slower. ascent-override /
+   descent-override are Gloock's own OS/2.usWinAscent/usWinDescent as a % of
+   its 1000-unit em (measured 2026-08-09 via fontTools directly against the
+   shipped woff2, not estimated), applied to a local system-serif stand-in so
+   it occupies the same line-box Gloock will before the swap happens. */
+@font-face {
+  font-family: 'Gloock';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/gloock-latin-400.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191,
+    U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'Gloock Fallback';
+  src: local('Georgia'), local('Times New Roman');
+  ascent-override: 100.4%;
+  descent-override: 36.3%;
+  line-gap-override: 0%;
+}

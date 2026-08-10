@@ -25,6 +25,7 @@ export const BROWSER_HEADERS = {
 };
 
 // Control characters (except \t \n \r) — they break JSON.parse on sloppy sites.
+// eslint-disable-next-line no-control-regex -- intentionally stripping control chars
 const CONTROL_CHARS_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F]/g;
 
 // ── Rate limiting (best-effort in-memory; resets on cold start) ──────────────

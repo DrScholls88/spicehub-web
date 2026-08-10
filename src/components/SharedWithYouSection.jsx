@@ -22,9 +22,18 @@ import {
 import AvatarCircle from './AvatarCircle';
 
 /**
- * @param {{ onToast?: Function, onReload?: Function }} props
+ * Phase 3.4.3 (bar-library-parity-plan-2026-08-07.md): itemType is optional
+ * and filters the pending/bookmarked lists client-side. Each recipeShares
+ * row already carries itemType end-to-end (buildSharePayload/sendRecipeShare
+ * stamp it, saveShareToLibrary already branches db.drinks vs db.meals on it)
+ * — only this display component was mixing meal and drink shares into one
+ * undifferentiated list. Passing itemType="meal" from MealLibrary and
+ * itemType="drink" from BarLibrary gives each its own inbox instead of both
+ * showing every share, including a friend's shared drink flatly stuck at the
+ * top of the Meal Library today.
+ * @param {{ onToast?: Function, onReload?: Function, itemType?: 'meal'|'drink' }} props
  */
-export default function SharedWithYouSection({ onToast, onReload }) {
+export default function SharedWithYouSection({ onToast, onReload, itemType = null }) {
   const [shares, setShares] = useState([]);
   const [bookmarked, setBookmarked] = useState([]);
   const [showTrySoon, setShowTrySoon] = useState(false);
@@ -37,13 +46,14 @@ export default function SharedWithYouSection({ onToast, onReload }) {
         getLocalPendingShares(),
         getLocalBookmarkedShares(),
       ]);
-      setShares(s || []);
-      setBookmarked(b || []);
+      const matches = (row) => !itemType || (row?.itemType || 'meal') === itemType;
+      setShares((s || []).filter(matches));
+      setBookmarked((b || []).filter(matches));
     } catch {
       setShares([]);
       setBookmarked([]);
     }
-  }, []);
+  }, [itemType]);
 
   useEffect(() => {
     refresh();

@@ -1,17 +1,27 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Martini } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { Martini, Heart, Grid2x2, Grid3x3, List, Tag, Plus, Pencil, Check, Trash2 } from 'lucide-react';
+import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import db from '../db';
-import { getBarInventory, clearInstagramCache } from '../db';
+import {
+  getBarInventory, clearInstagramCache,
+  getUserTags, addUserTag, deleteUserTag, renameUserTag, reorderUserTags,
+  setDrinkTags, bulkSetDrinkTags,
+} from '../db';
 import SafeMediaImage from './SafeMediaImage';
 import ReExtractSheet from './ReExtractSheet';
 import useBackHandler from '../hooks/useBackHandler';
+import useSwipeDismiss from '../hooks/useSwipeDismiss';
 import { hapticLight } from '../haptics';
 import { getMealVideoSource } from '../lib/videoSource';
 import { RefreshCw } from 'lucide-react';
 import SquigglyText from './SquigglyText';
 import SharePickerSheet from './SharePickerSheet';
+import SharedWithYouSection from './SharedWithYouSection';
 import { isFriendsEnabled } from '../lib/supabaseClient';
+import { matchDrink, categorizeBottle } from '../lib/barMatch';
+import { getOneAwayDrinks, buildShoppingList, exportShoppingListText } from '../lib/barShopping';
+import { getStrengthTier } from '../lib/abvCalculator';
+import canonData from '../data/bar/barCanon.json';
 
 // ── Assignable drink categories ──────────────────────────────────────────────
 const DRINK_CATEGORY_OPTIONS = [
@@ -51,46 +61,131 @@ const fabActionVariants = {
 };
 
 // ── Rarity system ────────────────────────────────────────────────────────────
-const LEGENDARY_NAMES = [
-  'negroni','manhattan','old fashioned','mai tai','singapore sling','sazerac',
-  'corpse reviver','aviation','last word','paper plane',
-];
+// Phase 2.4 (bar-library-parity-plan-2026-08-07.md §2.4): ingredient count was
+// the wrong metric — a Long Island Iced Tea scored legendary, a Martini
+// scored common; it measured "how long is the list", not anything real.
+// Rarity now answers "can I make this, and is it special?":
+//   canon (brass) — matches the classics list (barCanon.json), independent
+//                   of inventory.
+//   rare  (copper)— missing a spirit/modifier the USER doesn't stock right
+//                   now. Personal, not static: re-evaluated against whatever
+//                   inventory is passed in, via the real barMatch matcher
+//                   (not the old bidirectional-substring one). A missing
+//                   mixer (soda water etc.) does NOT trigger this — running
+//                   out of club soda shouldn't make a drink read as rare.
+//   house (green) — everything else: you already have what it needs.
+const CANON_NAMES = (canonData && canonData.canon) || [];
+const NON_KEY_CATEGORIES = new Set(['soda']); // plain mixers, not spirits/modifiers
 
-function getDrinkRarity(drink) {
-  const ingCount = drink.ingredients?.length || 0;
+function isCanonDrink(drink) {
   const name = (drink.name || '').toLowerCase();
-  if (LEGENDARY_NAMES.some(n => name.includes(n))) return 'legendary';
-  if (ingCount >= 6) return 'legendary';
-  if (ingCount >= 4) return 'rare';
-  return 'common';
+  return CANON_NAMES.some(n => name.includes(n));
+}
+
+function getDrinkRarity(drink, inventory) {
+  if (isCanonDrink(drink)) return 'canon';
+  const ingredients = drink.ingredients;
+  if (Array.isArray(inventory) && inventory.length > 0 && Array.isArray(ingredients) && ingredients.length > 0) {
+    const m = matchDrink(drink, inventory);
+    const missesKeyIngredient = m.missing.some((ing) => {
+      const cat = categorizeBottle(ing);
+      return cat && !NON_KEY_CATEGORIES.has(cat);
+    });
+    if (missesKeyIngredient) return 'rare';
+  }
+  return 'house';
 }
 
 function getRarityColor(rarity) {
-  if (rarity === 'legendary') return '#ffd700';
-  if (rarity === 'rare') return '#42a5f5';
+  if (rarity === 'canon') return 'var(--bar-accent, #ffd700)';
+  if (rarity === 'rare') return 'var(--bar-accent-dim, #42a5f5)';
   return null;
 }
 
+// ── Base-spirit grouping (Phase 3.4.4) ──────────────────────────────────────
+// Plan: "Collapsible sections — group by base spirit rather than category.
+// More useful than the assignable category chips for a bar." Only the six
+// true base spirits count as a "base" — vermouth/liqueur/bitters/soda are
+// modifiers, not what defines a drink's shelf, so grouping by them would
+// just scatter every Negroni-family drink across three sections.
+const BASE_SPIRIT_CATEGORIES = ['whiskey', 'rum', 'gin', 'vodka', 'tequila', 'brandy'];
+const SPIRIT_SECTION_LABELS = {
+  whiskey: 'Whiskey', rum: 'Rum', gin: 'Gin', vodka: 'Vodka',
+  tequila: 'Tequila', brandy: 'Brandy',
+};
+const SPIRIT_SECTION_ORDER = [...BASE_SPIRIT_CATEGORIES, 'Other'];
+
+// Returns the display label for a drink's base spirit, or 'Other' for
+// mocktails / beer & wine / anything with no recognized base spirit.
+function getDrinkBaseSpirit(drink) {
+  const ingredients = Array.isArray(drink?.ingredients) ? drink.ingredients : [];
+  for (const ing of ingredients) {
+    const cat = categorizeBottle(ing);
+    if (cat && BASE_SPIRIT_CATEGORIES.includes(cat)) return SPIRIT_SECTION_LABELS[cat];
+  }
+  return 'Other';
+}
+
 function getRarityLabel(rarity) {
-  if (rarity === 'legendary') return '★';
+  if (rarity === 'canon') return '★';
   if (rarity === 'rare') return '◆';
   return '';
 }
 
+// Phase 3.3 — same labels MealDetail.jsx already uses, kept as a small local
+// copy (matches that file's own pattern) rather than a shared export, per the
+// plan's "resist rewriting abvCalculator" guardrail — this only reads it.
+const STRENGTH_LABELS = {
+  virgin: 'Zero-proof',
+  light: 'Light',
+  medium: 'Medium',
+  strong: 'Strong',
+  'very strong': 'Very strong',
+  unknown: '',
+};
+
 // ── Ingredient matching (inventory-powered) ───────────────────────────────────
+// Phase 3.1 (bar-library-parity-plan-2026-08-07.md §3.1): this used to be a
+// bidirectional substring matcher — "ice" matched inside "juice", every count
+// in the library was wrong. barMatch.matchDrink() is the real, tested,
+// alias/category/derivable-aware matcher already powering BarFridgeMode and
+// PantryMode; this is a thin adapter so every existing call site here
+// (ms.matched/total/missing/pct) keeps working unchanged. `missing` stays a
+// hard-missing count (derivable ingredients — e.g. ice from the freezer —
+// don't count against "can I make this"); `pct` blends matched + half-credit
+// for derivable, matching matchDrink's own scoring so the progress bar and
+// the "ready to pour" state agree with each other.
 function matchScore(drink, inventory) {
   if (!drink.ingredients?.length || !inventory.length) {
-    return { matched: 0, total: 0, missing: 0, pct: 0 };
+    return { matched: 0, total: 0, missing: 0, derivable: 0, pct: 0, tier: 'reach' };
   }
-  let matched = 0;
-  for (const ing of drink.ingredients) {
-    const ingLower = ing.toLowerCase();
-    if (inventory.some(inv => ingLower.includes(inv) || inv.includes(ingLower.split(' ').pop()))) {
-      matched++;
-    }
+  const m = matchDrink(drink, inventory);
+  if (m.total === 0) return { matched: 0, total: 0, missing: 0, derivable: 0, pct: 0, tier: 'reach' };
+  const pct = Math.round(((m.matchedCount + 0.5 * m.derivable.length) / m.total) * 100);
+  return {
+    matched: m.matchedCount,
+    total: m.total,
+    missing: m.missing.length,
+    derivable: m.derivable.length,
+    pct: Math.min(100, pct),
+    tier: m.tier, // 'ready' | 'almost' | 'reach'
+  };
+}
+
+// Phase 3.2: navigator.share works well on iOS and is arguably better there
+// than Android (per plan §Phase 4 iOS notes — handleBackup already uses the
+// canShare({files}) shape correctly). Plain-text share/clipboard fallback,
+// same pattern GroceryList.jsx's sendToKeep already uses for its own export.
+function shareText(title, text, onToast) {
+  if (navigator.share) {
+    navigator.share({ title, text }).catch(() => {});
+    return;
   }
-  const total = drink.ingredients.length;
-  return { matched, total, missing: total - matched, pct: Math.round((matched / total) * 100) };
+  navigator.clipboard.writeText(text).then(() => {
+    onToast?.('Shopping list copied to clipboard', 'success');
+  }).catch(() => {
+    onToast?.('Could not copy shopping list', 'error');
+  });
 }
 
 // ── Date formatter ────────────────────────────────────────────────────────────
@@ -127,7 +222,7 @@ function DrinkImage({ src, alt, className, phClass }) {
 export default function BarLibrary({
   drinks, onAdd, onEdit, onDelete, onViewDetail, onShare,
   onImport, onReload, onToast, onOpenShelf, onOpenBarFridge, onPlayVideo,
-  onMoveToMeals,
+  onMoveToMeals, onToggleFavorite, onAddMissingToGrocery,
 }) {
   const [search, setSearch]                   = useState('');
   const [category, setCategory]               = useState('All');
@@ -144,15 +239,76 @@ export default function BarLibrary({
   const [reExtractDrink, setReExtractDrink]   = useState(null);  // I-5: drink being re-extracted
   const [reimportingPhotoId, setReimportingPhotoId] = useState(null); // parity w/ Meal Library's Find Photo
   const [friendShareDrink, setFriendShareDrink] = useState(null); // drink for SharePickerSheet
+  const [showShoppingList, setShowShoppingList] = useState(false); // Phase 3.2
+  // Phase 3.4.4-5: grid density + collapsible base-spirit sections.
+  // Default '3x' preserves the exact look Phase 2.3 shipped (bottles are
+  // tall/narrow, 3-up is the tuned default) — the toggle only changes things
+  // if the user reaches for it, mirroring MealLibrary's 'ml-grid-layout' key.
+  const [gridLayout, setGridLayout] = useState(() => {
+    try { return localStorage.getItem('bl-grid-layout') || '3x'; } catch { return '3x'; }
+  });
+  const [collapsedSections, setCollapsedSections] = useState({}); // { spiritLabel: true }
+
+  // Phase 3.4.1: tag system (domain-scoped 'drink' — see db.js v28 migration).
+  const [drinkTags, setDrinkTagsList]       = useState([]);
+  const [activeTags, setActiveTags]         = useState([]); // active tag names for filtering
+  const [showTagManager, setShowTagManager] = useState(false);
+  const [showBulkTagPicker, setShowBulkTagPicker] = useState(false);
+  const [newTagName, setNewTagName]         = useState('');
+  const [editingTagId, setEditingTagId]     = useState(null);
+  const [editingTagName, setEditingTagName] = useState('');
+  const [tagEditMode, setTagEditMode]       = useState(false);
+  const tagLongPressTimer = useRef(null);
+  const tagTouchStartPos  = useRef(null);
+
+  // Phase 3.4.2: Filters(n) sheet — bar dimensions (base spirit / strength /
+  // method / zero-proof) instead of MealLibrary's time/diet/cuisine, all
+  // computable from data already on the drink (plan §3.4 item 2).
+  const [showFilterSheet, setShowFilterSheet] = useState(false);
+  const [filterSpirit, setFilterSpirit]       = useState([]); // subset of BASE_SPIRIT_CATEGORIES
+  const [filterStrength, setFilterStrength]   = useState(null); // null | 'light'|'medium'|'strong'|'very strong'
+  const [filterMethod, setFilterMethod]       = useState([]); // subset of lowercased drink.method values
+  const [filterZeroProof, setFilterZeroProof] = useState(false);
 
   const longPressTimer    = useRef(null);
   const touchStartPos     = useRef(null);
-  const sheetRef          = useRef(null);
-  const sheetDragStartY   = useRef(null);
-  const sheetCurrentDragY = useRef(0);
   const restoreRef        = useRef(null);
 
   useEffect(() => { getBarInventory().then(setBarInventory); }, []);
+
+  // ── Load drink tags from DB (domain: 'drink') ─────────────────────────────
+  const refreshTags = useCallback(async () => {
+    const tags = await getUserTags('drink');
+    setDrinkTagsList(tags);
+  }, []);
+  useEffect(() => { refreshTags(); }, [refreshTags]);
+  useEffect(() => { refreshTags(); }, [drinks, refreshTags]);
+
+  // ── Phase 3.2: "One Bottle Away" — the flagship differentiator (§3.2/4.1
+  // of the plan). getOneAwayDrinks returns one row per drink; group by the
+  // missing ingredient so the rail reads "Buy Campari → unlocks 4 drinks"
+  // instead of one card per drink.
+  const oneAwayGroups = useMemo(() => {
+    if (barInventory.length === 0 || drinks.length === 0) return [];
+    const oneAway = getOneAwayDrinks(drinks, barInventory);
+    const byIngredient = new Map();
+    for (const { drink, missingIngredient } of oneAway) {
+      const key = missingIngredient.toLowerCase().trim();
+      if (!key) continue;
+      if (!byIngredient.has(key)) byIngredient.set(key, { ingredient: missingIngredient, drinks: [] });
+      byIngredient.get(key).drinks.push(drink);
+    }
+    return [...byIngredient.values()].sort((a, b) => b.drinks.length - a.drinks.length);
+  }, [drinks, barInventory]);
+
+  // Bar shopping list (3.2) — computed from every drink currently missing
+  // something, not just the "one away" set. Only actually built while the
+  // sheet is open or has ever been opened isn't worth the complexity here;
+  // buildShoppingList is O(drinks) and cheap.
+  const shoppingList = useMemo(
+    () => buildShoppingList(drinks, barInventory),
+    [drinks, barInventory],
+  );
 
   // ── Filtering ─────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
@@ -184,16 +340,101 @@ export default function BarLibrary({
       });
     }
 
+    // Phase 3.4.1: tag filter — a drink must carry ALL active tags (AND, same
+    // rule as MealLibrary.matchTags).
+    if (activeTags.length > 0) {
+      result = result.filter(d => activeTags.every(t => (d.tags || []).includes(t)));
+    }
+
+    // Phase 3.4.2: Filters(n) sheet — additive (AND) with everything above,
+    // same convention as MealLibrary's Time/Diet/Cuisine block.
+    if (filterSpirit.length > 0) {
+      result = result.filter(d => filterSpirit.includes(getDrinkBaseSpirit(d)));
+    }
+    if (filterStrength) {
+      result = result.filter(d => getStrengthTier(d.abv) === filterStrength);
+    }
+    if (filterMethod.length > 0) {
+      result = result.filter(d => filterMethod.includes(String(d.method || '').toLowerCase().trim()));
+    }
+    if (filterZeroProof) {
+      result = result.filter(d => getStrengthTier(d.abv) === 'virgin');
+    }
+
     return result;
-  }, [drinks, search, category, quickFilter, barInventory]);
+  }, [drinks, search, category, quickFilter, barInventory, activeTags, filterSpirit, filterStrength, filterMethod, filterZeroProof]);
+
+  // Methods actually present among current drinks — avoids offering an empty
+  // picker full of options nobody has any drinks for (mirrors MealLibrary's
+  // availableCuisines).
+  const availableMethods = useMemo(() => {
+    const set = new Set();
+    for (const d of drinks) {
+      const m = String(d.method || '').trim();
+      if (m) set.add(m);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [drinks]);
+
+  const activeFilterCount = filterSpirit.length + (filterStrength ? 1 : 0) + filterMethod.length + (filterZeroProof ? 1 : 0);
+
+  const toggleFilterSpirit = useCallback((cat) => {
+    hapticLight();
+    setFilterSpirit(prev => prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]);
+  }, []);
+  const toggleFilterMethod = useCallback((m) => {
+    hapticLight();
+    const key = m.toLowerCase().trim();
+    setFilterMethod(prev => prev.includes(key) ? prev.filter(x => x !== key) : [...prev, key]);
+  }, []);
+  const clearAllFilters = useCallback(() => {
+    hapticLight();
+    setFilterSpirit([]);
+    setFilterStrength(null);
+    setFilterMethod([]);
+    setFilterZeroProof(false);
+  }, []);
 
   const sorted = useMemo(() =>
     [...filtered].sort((a, b) => {
+      // Phase 3.4.6: favorites first — same rule as MealLibrary.
+      if (a.isFavorite && !b.isFavorite) return -1;
+      if (!a.isFavorite && b.isFavorite) return 1;
       const aDate = a.importedAt || a.createdAt || a.created || '';
       const bDate = b.importedAt || b.createdAt || b.created || '';
       return bDate.localeCompare(aDate);
     }),
   [filtered]);
+
+  // Phase 3.4.5: grid density toggle — persisted, mirrors MealLibrary.
+  const handleGridChange = useCallback((layout) => {
+    hapticLight();
+    setGridLayout(layout);
+    try { localStorage.setItem('bl-grid-layout', layout); } catch {}
+  }, []);
+
+  // Phase 3.4.4: collapsible-section toggle.
+  const toggleSection = useCallback((sectionKey) => {
+    hapticLight();
+    setCollapsedSections(prev => ({ ...prev, [sectionKey]: !prev[sectionKey] }));
+  }, []);
+
+  // Group sorted drinks by base spirit for collapsible sections. Same
+  // suppression rule as MealLibrary's groupedByCategory: only group the
+  // unfiltered "browse everything" view — a search or active quick-filter
+  // already narrows the list enough that sections just add scroll friction.
+  const groupedBySpirit = useMemo(() => {
+    if (category !== 'All' || search.trim() || quickFilter !== 'all' || activeTags.length > 0 || activeFilterCount > 0) return null;
+    const groups = {};
+    for (const drink of sorted) {
+      const spirit = getDrinkBaseSpirit(drink);
+      if (!groups[spirit]) groups[spirit] = [];
+      groups[spirit].push(drink);
+    }
+    return Object.entries(groups).sort(([a], [b]) =>
+      SPIRIT_SECTION_ORDER.indexOf(a) - SPIRIT_SECTION_ORDER.indexOf(b)
+    );
+  }, [sorted, category, search, quickFilter, activeTags, activeFilterCount]);
 
   const canMakeCount = useMemo(() =>
     barInventory.length === 0 ? 0 : drinks.filter(d => matchScore(d, barInventory).missing === 0).length,
@@ -237,6 +478,9 @@ export default function BarLibrary({
   useBackHandler(fabOpen, () => setFabOpen(false), 'bar-fab');
   useBackHandler(!!reExtractDrink, () => setReExtractDrink(null), 'bar-reextract');
   useBackHandler(!!quickPreview, () => setQuickPreview(null), 'bar-quickpreview');
+  useBackHandler(showTagManager, () => { setShowTagManager(false); setEditingTagId(null); }, 'bar-tagmgr');
+  useBackHandler(showBulkTagPicker, () => setShowBulkTagPicker(false), 'bar-bulktag');
+  useBackHandler(showFilterSheet, () => setShowFilterSheet(false), 'bar-filters');
 
   // ── Escape key closes the expandable card (desktop / keyboard) ──────────────
   useEffect(() => {
@@ -278,25 +522,96 @@ export default function BarLibrary({
 
   const handleTouchEnd = useCallback(() => cancelLongPress(), [cancelLongPress]);
 
+  // ── Long-press a tag chip → enter rearrange/delete mode (Phase 3.4.1) ─────
+  // Mirrors MealLibrary's tag long-press exactly, on its own timer/ref pair
+  // (a tag-chip press and a tile press can't overlap, but sharing one timer
+  // would still be a subtle bug waiting to happen). Reuses this component's
+  // own LONG_PRESS_MS/MOVE_THRESHOLD_PX above.
+  const cancelTagLongPress = useCallback(() => {
+    if (tagLongPressTimer.current) { clearTimeout(tagLongPressTimer.current); tagLongPressTimer.current = null; }
+    tagTouchStartPos.current = null;
+  }, []);
+
+  const handleTagTouchStart = useCallback((e) => {
+    if (tagEditMode) return;
+    const touch = e.changedTouches?.[0];
+    tagTouchStartPos.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
+    tagLongPressTimer.current = setTimeout(() => {
+      tagLongPressTimer.current = null;
+      hapticLight();
+      setTagEditMode(true);
+    }, LONG_PRESS_MS);
+  }, [tagEditMode]);
+
+  const handleTagTouchMove = useCallback((e) => {
+    if (!tagTouchStartPos.current || !tagLongPressTimer.current) return;
+    const touch = e.changedTouches?.[0];
+    if (!touch) return;
+    const dx = Math.abs(touch.clientX - tagTouchStartPos.current.x);
+    const dy = Math.abs(touch.clientY - tagTouchStartPos.current.y);
+    if (dx > MOVE_THRESHOLD_PX || dy > MOVE_THRESHOLD_PX) cancelTagLongPress();
+  }, [cancelTagLongPress]);
+
+  const handleTagTouchEnd = useCallback(() => cancelTagLongPress(), [cancelTagLongPress]);
+
+  const handleReorderTags = useCallback((newOrder) => {
+    setDrinkTagsList(newOrder);
+    reorderUserTags(newOrder.map(t => t.id)).catch(() => {});
+  }, []);
+
+  const handleTagToggle = useCallback((tagName) => {
+    hapticLight();
+    setActiveTags(prev =>
+      prev.includes(tagName) ? prev.filter(t => t !== tagName) : [...prev, tagName]
+    );
+  }, []);
+
+  const handleCreateTag = useCallback(async () => {
+    if (!newTagName.trim()) return;
+    const TAG_COLORS = ['#FF9800', '#8D6E63', '#FFB300', '#5C6BC0', '#66BB6A', '#26C6DA', '#E91E63', '#9C27B0', '#795548', '#42A5F5'];
+    const color = TAG_COLORS[drinkTags.length % TAG_COLORS.length];
+    await addUserTag({ name: newTagName.trim(), color, emoji: '🏷️', domain: 'drink' });
+    setNewTagName('');
+    await refreshTags();
+  }, [newTagName, drinkTags.length, refreshTags]);
+
+  const handleDeleteTag = useCallback(async (tagId) => {
+    const tag = drinkTags.find(t => t.id === tagId);
+    if (!tag) return;
+    if (!window.confirm(`Delete "${tag.name}" tag? It will be removed from all drinks.`)) return;
+    await deleteUserTag(tagId);
+    setActiveTags(prev => prev.filter(t => t !== tag.name));
+    await refreshTags();
+    onReload?.();
+  }, [drinkTags, refreshTags, onReload]);
+
+  const handleRenameTag = useCallback(async (tagId) => {
+    if (!editingTagName.trim()) return;
+    await renameUserTag(tagId, editingTagName.trim());
+    setEditingTagId(null);
+    setEditingTagName('');
+    await refreshTags();
+    onReload?.();
+  }, [editingTagName, refreshTags, onReload]);
+
+  const handleBulkTag = useCallback(async (tagName) => {
+    await bulkSetDrinkTags([...selectedIds], tagName, true);
+    onReload?.();
+    onToast?.(`Tagged ${selectedIds.size} drink${selectedIds.size !== 1 ? 's' : ''} with "${tagName}"`);
+    setShowBulkTagPicker(false);
+    exitSelectMode();
+  }, [selectedIds, onReload, onToast, exitSelectMode]);
+
   // ── Quick preview swipe-to-dismiss ────────────────────────────────────────
-  const handleSheetTouchStart = useCallback((e) => {
-    sheetDragStartY.current  = e.touches[0].clientY;
-    sheetCurrentDragY.current = 0;
-    if (sheetRef.current) sheetRef.current.style.transition = 'none';
-  }, []);
-
-  const handleSheetTouchMove = useCallback((e) => {
-    const dy = e.touches[0].clientY - sheetDragStartY.current;
-    if (dy < 0) return;
-    sheetCurrentDragY.current = dy;
-    if (sheetRef.current) sheetRef.current.style.transform = 'translateY(' + dy + 'px)';
-  }, []);
-
-  const handleSheetTouchEnd = useCallback(() => {
-    if (sheetRef.current) sheetRef.current.style.transition = '';
-    if (sheetCurrentDragY.current > 100) { setQuickPreview(null); }
-    else if (sheetRef.current) sheetRef.current.style.transform = '';
-  }, []);
+  // Phase 2.3a (bar-library-parity-plan-2026-08-07.md): this used to be a
+  // hand-rolled drag handler that set style.transition='none' and mutated
+  // transforms directly — on iOS that can fight Safari's own scroll
+  // compositing. useSwipeDismiss is the same hook the rest of the app's
+  // sheets already use (velocity-aware release, overlay fade, scrollable-
+  // content passthrough so dragging a scrolled ingredient list doesn't
+  // trigger dismiss).
+  const { sheetRef, handleTouchStart: handleSheetTouchStart, handleTouchMove: handleSheetTouchMove, handleTouchEnd: handleSheetTouchEnd } =
+    useSwipeDismiss(() => setQuickPreview(null));
 
   // ── Batch category assignment ─────────────────────────────────────────────
   const handleBatchSetCategory = useCallback(async (newCategory) => {
@@ -370,6 +685,125 @@ export default function BarLibrary({
     setQuickPreview(drink);
   }, [selectMode, toggleSelect]);
 
+  // ── Render Tile (Phase 3.4.4-5: extracted so both the flat gallery and the
+  // collapsible base-spirit sections share one implementation) ──────────────
+  const renderTile = (drink, idx) => {
+    const rarity      = getDrinkRarity(drink, barInventory);
+    const rarityColor = getRarityColor(rarity);
+    const rarityBadge = getRarityLabel(rarity);
+    const ms          = barInventory.length > 0 ? matchScore(drink, barInventory) : null;
+    const isSelected  = selectedIds.has(drink.id);
+
+    return (
+      <div
+        key={drink.id}
+        className={'bl-tile bl-tile-' + rarity + (selectMode && isSelected ? ' bl-tile-selected' : '')}
+        style={{ animationDelay: Math.min(idx * 25, 250) + 'ms' }}
+        onClick={() => handleTileClick(drink)}
+        onTouchStart={e => handleTouchStart(drink, e)}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+        onTouchCancel={handleTouchEnd}
+        onContextMenu={e => { e.preventDefault(); if (!selectMode) setQuickPreview(drink); }}
+      >
+        {selectMode && (
+          <div className="bl-tile-check">
+            {isSelected ? '✓' : ''}
+          </div>
+        )}
+
+        <motion.div className="bl-tile-image" layoutId={`bl-card-img-${drink.id}`}>
+          <DrinkImage
+            src={drink.imageUrl}
+            alt={drink.name}
+            className="bl-tile-img"
+            phClass="bl-tile-placeholder"
+          />
+          {rarityBadge && (
+            <span className={'bl-rarity-pip bl-rarity-' + rarity}>{rarityBadge}</span>
+          )}
+          {drink.category && (
+            <span className="bl-tile-cat-tag">{drink.category}</span>
+          )}
+          {drink.isFavorite && (
+            <span className="bl-tile-fav"><Heart size={14} fill="#e53935" color="#e53935" aria-label="Favorite" /></span>
+          )}
+          {ms && ms.missing === 0 && (
+            <span className="bl-tile-pour">&#127864;</span>
+          )}
+          {/* I-5: low-confidence import → one-tap re-extraction (parity with Meal Library) */}
+          {!selectMode && isImprovable(drink) && (
+            <button
+              className="bl-tile-improve"
+              aria-label="Improve this drink with the latest engine"
+              title="Low-confidence import — tap to re-run extraction"
+              onClick={e => { e.stopPropagation(); hapticLight(); setReExtractDrink(drink); }}
+              onTouchEnd={e => e.stopPropagation()}
+            >
+              <span aria-hidden="true">✨</span> Improve
+            </button>
+          )}
+          {!selectMode && (
+            <button
+              className="bl-tile-menu-btn"
+              aria-label="More options"
+              onClick={e => { e.stopPropagation(); setQuickPreview(drink); }}
+              onTouchEnd={e => e.stopPropagation()}
+            >
+              &hellip;
+            </button>
+          )}
+          {/* PiP: play-video badge — only on cards with a YouTube/Instagram source */}
+          {!selectMode && onPlayVideo && (() => {
+            const vsrc = getMealVideoSource(drink);
+            if (!vsrc) return null;
+            return (
+              <button
+                className={'bl-tile-play bl-tile-play-' + vsrc.platform}
+                aria-label={'Play ' + vsrc.label + ' video in floating player'}
+                title={'Play video (' + vsrc.label + ')'}
+                onClick={e => { e.stopPropagation(); hapticLight(); onPlayVideo(drink); }}
+                onTouchEnd={e => e.stopPropagation()}
+              >
+                <span className="bl-tile-play-tri" aria-hidden="true">▶</span>
+              </button>
+            );
+          })()}
+        </motion.div>
+
+        <div className="bl-tile-info">
+          <motion.span
+            className="bl-tile-name"
+            layoutId={`bl-card-title-${drink.id}`}
+            style={rarityColor ? { color: rarityColor } : undefined}
+          >
+            {drink.name || 'Untitled Drink'}
+          </motion.span>
+          <span className="bl-tile-meta">
+            {drink.ingredients?.length ?? 0} ing
+            {ms && ms.pct > 0 && ms.pct < 100 && ' - ' + ms.pct + '% ready'}
+          </span>
+          {formatAddedDate(drink.importedAt || drink.createdAt || drink.created) && (
+            <span className="bl-tile-added">
+              {formatAddedDate(drink.importedAt || drink.createdAt || drink.created)}
+            </span>
+          )}
+          {ms && ms.total > 0 && (
+            <div className="bl-mini-progress">
+              <div
+                className="bl-mini-progress-fill"
+                style={{
+                  width: ms.pct + '%',
+                  background: ms.missing === 0 ? 'var(--bar-ready, #4caf50)' : (rarityColor || 'var(--bar-accent-dim, #8b5cf6)'),
+                }}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   // ── Backup / restore ──────────────────────────────────────────────────────
   const handleMenuOpen  = () => { setShowMenu(true); setMenuAnimation(false); };
   const handleMenuClose = () => {
@@ -439,6 +873,32 @@ export default function BarLibrary({
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
+        {/* Phase 3.4.2: Filters(n) sheet trigger — mirrors MealLibrary's ml-filter-btn */}
+        <button
+          className={'bl-filter-btn' + (activeFilterCount > 0 ? ' has-active' : '')}
+          onClick={() => { hapticLight(); setShowFilterSheet(true); }}
+          aria-label="Filters"
+        >
+          Filters{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
+        </button>
+        {/* Phase 3.4.5: grid density toggle — mirrors MealLibrary's ml-grid-toggle */}
+        <div className="bl-grid-toggle">
+          {[
+            { id: '2x', icon: <Grid2x2 size={15} strokeWidth={2} />, label: '2 columns' },
+            { id: '3x', icon: <Grid3x3 size={15} strokeWidth={2} />, label: '3 columns' },
+            { id: 'list', icon: <List size={15} strokeWidth={2} />, label: 'List view' },
+          ].map(opt => (
+            <button
+              key={opt.id}
+              type="button"
+              aria-label={opt.label}
+              className={'bl-grid-toggle-btn' + (gridLayout === opt.id ? ' active' : '')}
+              onClick={() => handleGridChange(opt.id)}
+            >
+              {opt.icon}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Enter the Saloon hero button */}
@@ -480,6 +940,86 @@ export default function BarLibrary({
         </div>
       )}
 
+      {/* ── Tag chips (Phase 3.4.1) — user-created multi-select labels ── */}
+      <div className="bl-labels-scroll">
+        <div className="bl-labels-track">
+          <button
+            className="bl-label-add-btn"
+            onClick={() => { hapticLight(); setShowTagManager(true); }}
+            aria-label="Create a new tag"
+            title="Create a new tag"
+          >
+            <Plus size={16} strokeWidth={2.5} />
+          </button>
+
+          {tagEditMode ? (
+            <Reorder.Group
+              as="div"
+              axis="x"
+              values={drinkTags}
+              onReorder={handleReorderTags}
+              className="bl-labels-reorder-group"
+            >
+              {drinkTags.map(tag => (
+                <Reorder.Item
+                  as="div"
+                  key={tag.id}
+                  value={tag}
+                  layout
+                  className="bl-label-chip bl-label-chip--editing"
+                  whileDrag={{ scale: 1.08, zIndex: 2, boxShadow: '0 6px 16px -4px rgba(0,0,0,0.35)' }}
+                >
+                  <Tag size={11} strokeWidth={2.5} /> {tag.name}
+                  <button
+                    type="button"
+                    className="bl-label-chip-remove"
+                    onClick={(e) => { e.stopPropagation(); hapticLight(); handleDeleteTag(tag.id); }}
+                    aria-label={`Delete ${tag.name} label`}
+                  >
+                    ✕
+                  </button>
+                </Reorder.Item>
+              ))}
+            </Reorder.Group>
+          ) : (
+            drinkTags.map(tag => (
+              <button
+                key={tag.id}
+                className={'bl-label-chip' + (activeTags.includes(tag.name) ? ' bl-tag-active' : '')}
+                onClick={() => handleTagToggle(tag.name)}
+                onTouchStart={handleTagTouchStart}
+                onTouchMove={handleTagTouchMove}
+                onTouchEnd={handleTagTouchEnd}
+                onTouchCancel={handleTagTouchEnd}
+                style={activeTags.includes(tag.name) ? { background: tag.color, borderColor: tag.color, color: '#fff' } : undefined}
+              >
+                <Tag size={11} strokeWidth={2.5} /> {tag.name}
+                {(() => {
+                  const count = drinks.filter(d => (d.tags || []).includes(tag.name)).length;
+                  return count > 0 ? <span className="bl-label-count">{count}</span> : null;
+                })()}
+              </button>
+            ))
+          )}
+
+          {tagEditMode ? (
+            <button
+              className="bl-label-chip bl-label-done-btn"
+              onClick={() => { hapticLight(); setTagEditMode(false); }}
+            >
+              <Check size={12} strokeWidth={3} /> Done
+            </button>
+          ) : (
+            <button
+              className="bl-label-chip bl-label-manage-btn"
+              onClick={() => { hapticLight(); setShowTagManager(true); }}
+            >
+              <Pencil size={11} strokeWidth={2.5} /> Manage
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Multi-select toolbar */}
       {selectMode && (
         <div className="bl-select-toolbar">
@@ -492,6 +1032,13 @@ export default function BarLibrary({
             disabled={selectedIds.size === 0}
           >
             Category
+          </button>
+          <button
+            className="bl-select-toolbar-btn"
+            onClick={() => setShowBulkTagPicker(true)}
+            disabled={selectedIds.size === 0}
+          >
+            Tag
           </button>
           <button
             className="bl-select-toolbar-btn bl-select-delete"
@@ -513,15 +1060,45 @@ export default function BarLibrary({
         </div>
       )}
 
+      {/* Phase 3.4.3: drinks-only inbox — straight port, itemType scoped */}
+      <SharedWithYouSection onToast={onToast} onReload={onReload} itemType="drink" />
+
+      {/* ── "One Bottle Away" rail (Phase 3.2/4.1) ── */}
+      {oneAwayGroups.length > 0 && (
+        <div className="bl-oneaway-wrap">
+          <div className="bl-oneaway-scroll sh-carousel">
+            {oneAwayGroups.map(g => (
+              <button
+                key={g.ingredient}
+                className="bl-oneaway-card"
+                onClick={() => { hapticLight(); setSearch(g.ingredient); }}
+                title={g.drinks.map(d => d.name || 'Untitled').join(', ')}
+              >
+                <span className="bl-oneaway-title">Buy {g.ingredient}</span>
+                <span className="bl-oneaway-sub">
+                  &#8594; unlocks {g.drinks.length} drink{g.drinks.length !== 1 ? 's' : ''}
+                </span>
+              </button>
+            ))}
+          </div>
+          <div className="bl-oneaway-fade" aria-hidden="true" />
+        </div>
+      )}
+
       {/* Tile gallery */}
-      <div className="bl-gallery">
+      <div className={'bl-gallery bl-layout-' + gridLayout}>
         {sorted.length === 0 ? (
           <div className="bl-empty-state bl-empty-state-anim" style={{ gridColumn: '1 / -1' }}>
             <div className="bl-empty-emoji"><Martini size={32} strokeWidth={1.75} /></div>
-            {search || category !== 'All' || quickFilter !== 'all' ? (
+            {search || category !== 'All' || quickFilter !== 'all' || activeTags.length > 0 || activeFilterCount > 0 ? (
               <>
                 <p className="bl-empty-text">No drinks match your search.</p>
-                <p className="bl-empty-hint">Try a different keyword or filter.</p>
+                <p className="bl-empty-hint">Try a different keyword, tag, or filter.</p>
+                {activeFilterCount > 0 && (
+                  <button className="bl-empty-cta" type="button" onClick={clearAllFilters}>
+                    Clear filters
+                  </button>
+                )}
               </>
             ) : (
               <>
@@ -529,127 +1106,36 @@ export default function BarLibrary({
                 <p className="bl-empty-hint">Import a cocktail from Instagram or add one manually to get pouring.</p>
               </>
             )}
-            {!search && category === 'All' && quickFilter === 'all' && (
+            {!search && category === 'All' && quickFilter === 'all' && activeTags.length === 0 && activeFilterCount === 0 && (
               <div className="bl-empty-actions">
                 <button className="bl-btn-primary" onClick={onImport}>Import from Instagram</button>
                 <button className="bl-btn-secondary" onClick={onAdd}>+ Add Manually</button>
               </div>
             )}
           </div>
-        ) : (
-          sorted.map((drink, idx) => {
-            const rarity      = getDrinkRarity(drink);
-            const rarityColor = getRarityColor(rarity);
-            const rarityBadge = getRarityLabel(rarity);
-            const ms          = barInventory.length > 0 ? matchScore(drink, barInventory) : null;
-            const isSelected  = selectedIds.has(drink.id);
-
-            return (
-              <div
-                key={drink.id}
-                className={'bl-tile bl-tile-' + rarity + (selectMode && isSelected ? ' bl-tile-selected' : '')}
-                style={{ animationDelay: Math.min(idx * 25, 250) + 'ms' }}
-                onClick={() => handleTileClick(drink)}
-                onTouchStart={e => handleTouchStart(drink, e)}
-                onTouchMove={handleTouchMove}
-                onTouchEnd={handleTouchEnd}
-                onTouchCancel={handleTouchEnd}
-                onContextMenu={e => { e.preventDefault(); if (!selectMode) setQuickPreview(drink); }}
+        ) : groupedBySpirit ? (
+          /* ── Collapsible sections by base spirit (Phase 3.4.4) ── */
+          groupedBySpirit.map(([spiritName, spiritDrinks]) => (
+            <div key={spiritName} className="bl-section">
+              <button
+                className="bl-section-header"
+                onClick={() => toggleSection(spiritName)}
+                aria-expanded={!collapsedSections[spiritName]}
               >
-                {selectMode && (
-                  <div className="bl-tile-check">
-                    {isSelected ? '✓' : ''}
-                  </div>
-                )}
-
-                <motion.div className="bl-tile-image" layoutId={`bl-card-img-${drink.id}`}>
-                  <DrinkImage
-                    src={drink.imageUrl}
-                    alt={drink.name}
-                    className="bl-tile-img"
-                    phClass="bl-tile-placeholder"
-                  />
-                  {rarityBadge && (
-                    <span className={'bl-rarity-pip bl-rarity-' + rarity}>{rarityBadge}</span>
-                  )}
-                  {drink.category && (
-                    <span className="bl-tile-cat-tag">{drink.category}</span>
-                  )}
-                  {ms && ms.pct === 100 && (
-                    <span className="bl-tile-pour">&#127864;</span>
-                  )}
-                  {/* I-5: low-confidence import → one-tap re-extraction (parity with Meal Library) */}
-                  {!selectMode && isImprovable(drink) && (
-                    <button
-                      className="bl-tile-improve"
-                      aria-label="Improve this drink with the latest engine"
-                      title="Low-confidence import — tap to re-run extraction"
-                      onClick={e => { e.stopPropagation(); hapticLight(); setReExtractDrink(drink); }}
-                      onTouchEnd={e => e.stopPropagation()}
-                    >
-                      <span aria-hidden="true">✨</span> Improve
-                    </button>
-                  )}
-                  {!selectMode && (
-                    <button
-                      className="bl-tile-menu-btn"
-                      aria-label="More options"
-                      onClick={e => { e.stopPropagation(); setQuickPreview(drink); }}
-                      onTouchEnd={e => e.stopPropagation()}
-                    >
-                      &hellip;
-                    </button>
-                  )}
-                  {/* PiP: play-video badge — only on cards with a YouTube/Instagram source */}
-                  {!selectMode && onPlayVideo && (() => {
-                    const vsrc = getMealVideoSource(drink);
-                    if (!vsrc) return null;
-                    return (
-                      <button
-                        className={'bl-tile-play bl-tile-play-' + vsrc.platform}
-                        aria-label={'Play ' + vsrc.label + ' video in floating player'}
-                        title={'Play video (' + vsrc.label + ')'}
-                        onClick={e => { e.stopPropagation(); hapticLight(); onPlayVideo(drink); }}
-                        onTouchEnd={e => e.stopPropagation()}
-                      >
-                        <span className="bl-tile-play-tri" aria-hidden="true">▶</span>
-                      </button>
-                    );
-                  })()}
-                </motion.div>
-
-                <div className="bl-tile-info">
-                  <motion.span
-                    className="bl-tile-name"
-                    layoutId={`bl-card-title-${drink.id}`}
-                    style={rarityColor ? { color: rarityColor } : undefined}
-                  >
-                    {drink.name || 'Untitled Drink'}
-                  </motion.span>
-                  <span className="bl-tile-meta">
-                    {drink.ingredients?.length ?? 0} ing
-                    {ms && ms.pct > 0 && ms.pct < 100 && ' - ' + ms.pct + '% ready'}
-                  </span>
-                  {formatAddedDate(drink.importedAt || drink.createdAt || drink.created) && (
-                    <span className="bl-tile-added">
-                      {formatAddedDate(drink.importedAt || drink.createdAt || drink.created)}
-                    </span>
-                  )}
-                  {ms && ms.total > 0 && (
-                    <div className="bl-mini-progress">
-                      <div
-                        className="bl-mini-progress-fill"
-                        style={{
-                          width: ms.pct + '%',
-                          background: ms.pct === 100 ? '#4caf50' : (rarityColor || '#8b5cf6'),
-                        }}
-                      />
-                    </div>
-                  )}
+                <span className="bl-section-title">{spiritName}</span>
+                <span className="bl-section-count">{spiritDrinks.length}</span>
+                <span className={'bl-section-chevron' + (collapsedSections[spiritName] ? ' bl-section-chevron-collapsed' : '')}>▾</span>
+              </button>
+              {!collapsedSections[spiritName] && (
+                <div className={'bl-section-grid bl-layout-' + gridLayout}>
+                  {spiritDrinks.map((drink, idx) => renderTile(drink, idx))}
                 </div>
-              </div>
-            );
-          })
+              )}
+            </div>
+          ))
+        ) : (
+          /* ── Flat list (filtered / searched / quick-filtered) ── */
+          sorted.map((drink, idx) => renderTile(drink, idx))
         )}
       </div>
 
@@ -813,6 +1299,12 @@ export default function BarLibrary({
                 {quickPreview.name || 'Untitled Drink'}
               </motion.h3>
 
+              {typeof quickPreview.abv === 'number' && (
+                <div className={'bl-qp-strength bl-qp-strength-' + getStrengthTier(quickPreview.abv).replace(' ', '-')}>
+                  {STRENGTH_LABELS[getStrengthTier(quickPreview.abv)] || ''} · {quickPreview.abv}% ABV
+                </div>
+              )}
+
               {drinkEngineLabel(quickPreview._structuredVia) && (
                 <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginBottom: 8 }}>
                   Parsed by {drinkEngineLabel(quickPreview._structuredVia)}
@@ -855,6 +1347,11 @@ export default function BarLibrary({
                 <button className="bl-qp-btn" onClick={() => { setQuickPreview(null); onViewDetail?.(quickPreview); }}>View</button>
                 <button className="bl-qp-btn" onClick={() => { setQuickPreview(null); onEdit?.(quickPreview); }}>Edit</button>
                 <button className="bl-qp-btn" onClick={() => { setQuickPreview(null); onShare?.(quickPreview); }}>Share</button>
+                {onToggleFavorite && (
+                  <button className="bl-qp-btn" onClick={() => { hapticLight(); onToggleFavorite(quickPreview); setQuickPreview(null); }}>
+                    {quickPreview.isFavorite ? '💔 Unfavorite' : '❤️ Favorite'}
+                  </button>
+                )}
                 {isFriendsEnabled() && (
                   <button className="bl-qp-btn" onClick={() => { setQuickPreview(null); setFriendShareDrink(quickPreview); }}>👤 Send to Friend</button>
                 )}
@@ -949,6 +1446,222 @@ export default function BarLibrary({
         </>
       )}
 
+      {/* ── Filters(n) sheet (Phase 3.4.2) ── */}
+      {showFilterSheet && (
+        <>
+          <div className="bl-overlay" onClick={() => setShowFilterSheet(false)} />
+          <div className="bl-bottom-sheet bl-filter-sheet">
+            <div className="bl-sheet-handle" />
+            <div className="bl-sheet-title">Filters</div>
+
+            <p className="bl-sheet-subtitle">Base spirit</p>
+            <div className="bl-filter-chip-row">
+              {BASE_SPIRIT_CATEGORIES.map(cat => {
+                const label = SPIRIT_SECTION_LABELS[cat];
+                return (
+                  <button
+                    key={cat}
+                    className={'bl-label-chip' + (filterSpirit.includes(label) ? ' bl-tag-active' : '')}
+                    onClick={() => toggleFilterSpirit(label)}
+                    style={filterSpirit.includes(label) ? { background: '#7b1fa2', borderColor: '#7b1fa2' } : undefined}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+
+            <p className="bl-sheet-subtitle">Strength</p>
+            <div className="bl-filter-chip-row">
+              {[
+                { id: 'light', label: 'Light' },
+                { id: 'medium', label: 'Medium' },
+                { id: 'strong', label: 'Strong' },
+                { id: 'very strong', label: 'Very strong' },
+              ].map(opt => (
+                <button
+                  key={opt.id}
+                  className={'bl-label-chip' + (filterStrength === opt.id ? ' bl-tag-active' : '')}
+                  onClick={() => { hapticLight(); setFilterStrength(prev => prev === opt.id ? null : opt.id); }}
+                  style={filterStrength === opt.id ? { background: '#7b1fa2', borderColor: '#7b1fa2' } : undefined}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+
+            <p className="bl-sheet-subtitle">Zero-proof</p>
+            <div className="bl-filter-chip-row">
+              <button
+                className={'bl-label-chip' + (filterZeroProof ? ' bl-tag-active' : '')}
+                onClick={() => { hapticLight(); setFilterZeroProof(v => !v); }}
+                style={filterZeroProof ? { background: '#7b1fa2', borderColor: '#7b1fa2' } : undefined}
+              >
+                Zero-proof only
+              </button>
+            </div>
+
+            {availableMethods.length > 0 && (
+              <>
+                <p className="bl-sheet-subtitle">Method</p>
+                <div className="bl-filter-chip-row" style={{ marginBottom: 8 }}>
+                  {availableMethods.map(m => {
+                    const key = m.toLowerCase().trim();
+                    return (
+                      <button
+                        key={m}
+                        className={'bl-label-chip' + (filterMethod.includes(key) ? ' bl-tag-active' : '')}
+                        onClick={() => toggleFilterMethod(m)}
+                        style={filterMethod.includes(key) ? { background: '#7b1fa2', borderColor: '#7b1fa2' } : undefined}
+                      >
+                        {m}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+
+            <div className="bl-filter-sheet-footer">
+              <button
+                className="bl-sheet-button bl-sheet-cancel"
+                onClick={clearAllFilters}
+                disabled={activeFilterCount === 0}
+                style={{ flex: 1, opacity: activeFilterCount === 0 ? 0.5 : 1 }}
+              >
+                Clear all
+              </button>
+              <button
+                className="bl-sheet-button bl-filter-show-btn"
+                onClick={() => setShowFilterSheet(false)}
+                style={{ flex: 1 }}
+              >
+                <Check size={15} strokeWidth={2.5} /> Show {filtered.length} drink{filtered.length !== 1 ? 's' : ''}
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ── Tag Manager sheet (Phase 3.4.1) ── */}
+      {showTagManager && (
+        <>
+          <div className="bl-overlay" onClick={() => { setShowTagManager(false); setEditingTagId(null); }} />
+          <div className="bl-bottom-sheet bl-tag-manager-sheet">
+            <div className="bl-sheet-handle" />
+            <div className="bl-sheet-title">Manage Drink Tags</div>
+            <p className="bl-sheet-subtitle">Create custom tags to organize your bar</p>
+
+            {/* New tag input — 16px font per iOS-2 (no zoom-on-focus) */}
+            <div className="bl-tag-create-row">
+              <input
+                type="text"
+                className="bl-tag-create-input"
+                placeholder="New tag name…"
+                value={newTagName}
+                onChange={e => setNewTagName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleCreateTag(); }}
+                maxLength={30}
+              />
+              <button
+                className="bl-tag-create-btn"
+                onClick={handleCreateTag}
+                disabled={!newTagName.trim()}
+              >
+                <Plus size={16} strokeWidth={2.5} />
+              </button>
+            </div>
+
+            {/* Existing tags */}
+            <div className="bl-tag-list">
+              {drinkTags.map(tag => (
+                <div key={tag.id} className="bl-tag-row">
+                  {editingTagId === tag.id ? (
+                    <div className="bl-tag-edit-row">
+                      <input
+                        type="text"
+                        className="bl-tag-create-input"
+                        value={editingTagName}
+                        onChange={e => setEditingTagName(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleRenameTag(tag.id); }}
+                        autoFocus
+                      />
+                      <button className="bl-tag-save-btn" onClick={() => handleRenameTag(tag.id)}>
+                        <Check size={14} strokeWidth={2.5} />
+                      </button>
+                      <button className="bl-tag-cancel-btn" onClick={() => setEditingTagId(null)}>✕</button>
+                    </div>
+                  ) : (
+                    <>
+                      <span className="bl-tag-row-dot" style={{ background: tag.color }} />
+                      <span className="bl-tag-row-name">{tag.emoji} {tag.name}</span>
+                      <span className="bl-tag-row-count">
+                        {drinks.filter(d => (d.tags || []).includes(tag.name)).length}
+                      </span>
+                      <button
+                        className="bl-tag-row-action"
+                        onClick={() => { setEditingTagId(tag.id); setEditingTagName(tag.name); }}
+                        title="Rename"
+                      >
+                        <Pencil size={13} strokeWidth={2} />
+                      </button>
+                      <button
+                        className="bl-tag-row-action bl-tag-row-delete"
+                        onClick={() => handleDeleteTag(tag.id)}
+                        title="Delete"
+                      >
+                        <Trash2 size={13} strokeWidth={2} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              ))}
+              {drinkTags.length === 0 && (
+                <p style={{ textAlign: 'center', color: 'var(--text-light)', fontSize: 13, padding: 16 }}>
+                  No tags yet — create one above
+                </p>
+              )}
+            </div>
+
+            <button
+              className="bl-sheet-button bl-sheet-cancel"
+              onClick={() => { setShowTagManager(false); setEditingTagId(null); }}
+            >
+              Done
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ── Bulk Tag Picker sheet (multi-select mode, Phase 3.4.1) ── */}
+      {showBulkTagPicker && (
+        <>
+          <div className="bl-overlay" onClick={() => setShowBulkTagPicker(false)} />
+          <div className="bl-bottom-sheet">
+            <div className="bl-sheet-handle" />
+            <div className="bl-sheet-title">Tag {selectedIds.size} Drink{selectedIds.size !== 1 ? 's' : ''}</div>
+            {drinkTags.map(tag => (
+              <button
+                key={tag.id}
+                className="bl-sheet-button"
+                onClick={() => handleBulkTag(tag.name)}
+              >
+                <span className="bl-tag-row-dot" style={{ background: tag.color }} />
+                <span>{tag.emoji} {tag.name}</span>
+              </button>
+            ))}
+            {drinkTags.length === 0 && (
+              <p style={{ textAlign: 'center', color: 'var(--text-light)', fontSize: 13, padding: 16 }}>
+                No tags yet — create tags in the tag manager first
+              </p>
+            )}
+            <button className="bl-sheet-button bl-sheet-cancel" onClick={() => setShowBulkTagPicker(false)}>
+              Cancel
+            </button>
+          </div>
+        </>
+      )}
+
       {/* Delete Confirmation */}
       {confirmDelete && (
         <>
@@ -999,6 +1712,66 @@ export default function BarLibrary({
             >
               Clear Import Cache
             </button>
+            {/* Phase 3.2: barShopping.js wired in — was built and tested but
+                consumed by nothing until now. */}
+            <button
+              className="bl-sheet-button"
+              onClick={() => { hapticLight(); handleMenuClose(); setShowShoppingList(true); }}
+            >
+              Shopping List{shoppingList.summary.totalMissing > 0 ? ` (${shoppingList.summary.totalMissing})` : ''}
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ── Bar shopping list sheet (Phase 3.2) ── */}
+      {showShoppingList && (
+        <>
+          <div className="bl-overlay" onClick={() => setShowShoppingList(false)} />
+          <div className="bl-bottom-sheet bl-shoplist-sheet">
+            <div className="bl-sheet-handle" />
+            <div className="bl-sheet-title">Bar Shopping List</div>
+            {shoppingList.items.length === 0 ? (
+              <p className="bl-shoplist-empty">Nothing to buy — your bar is fully stocked!</p>
+            ) : (
+              <>
+                <p className="bl-shoplist-summary">
+                  {shoppingList.summary.totalMissing} item{shoppingList.summary.totalMissing !== 1 ? 's' : ''}
+                  {shoppingList.summary.unlockableDrinks > 0
+                    ? ` · unlocks ${shoppingList.summary.unlockableDrinks} drink${shoppingList.summary.unlockableDrinks !== 1 ? 's' : ''}`
+                    : ''}
+                </p>
+                <div className="bl-shoplist-items">
+                  {shoppingList.items.map(item => (
+                    <div key={item.ingredient} className={'bl-shoplist-item bl-shoplist-priority-' + item.priority}>
+                      <span className="bl-shoplist-item-name">{item.displayName}</span>
+                      <span className="bl-shoplist-item-needed">needed for {item.neededBy.join(', ')}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="bl-shoplist-actions">
+                  <button
+                    className="bl-sheet-button"
+                    onClick={() => {
+                      hapticLight();
+                      onAddMissingToGrocery?.(
+                        shoppingList.items.map(item => ({ name: item.displayName, tag: 'bar-quest' })),
+                      );
+                      onToast?.(`Added ${shoppingList.items.length} item${shoppingList.items.length !== 1 ? 's' : ''} to your grocery list`);
+                      setShowShoppingList(false);
+                    }}
+                  >
+                    Add All to Grocery List
+                  </button>
+                  <button
+                    className="bl-sheet-button"
+                    onClick={() => shareText('Bar Shopping List', exportShoppingListText(shoppingList), onToast)}
+                  >
+                    Share / Copy List
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </>
       )}

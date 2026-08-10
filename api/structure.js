@@ -23,7 +23,12 @@ import {
 } from '../src/import/structure/gemini.js';
 import { createContextPack } from '../src/import/contextPack.js';
 
-const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash-lite';
+// 2026-08-09: gemini-2.0-flash-lite is officially shut down (confirmed via
+// Google's own model list, "Previous models" table, updated 2026-08-05) —
+// any call to it now fails outright, which is why primary.status was always
+// truthy and every /api/structure call was returning 502. gemini-2.5-flash-lite
+// is its direct same-tier replacement (still listed Stable).
+const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
 const FLAGSHIP_MODEL = process.env.GEMINI_MODEL_FLAGSHIP || 'gemini-2.5-flash';
 const CONFIDENCE_FLOOR = 0.6;
 const REQUEST_TIMEOUT_MS = 20000;
@@ -133,14 +138,36 @@ export default async function handler(req, res) {
     // tap) pins the model's kind output — see api/structure.js's geminiCall.
     const kindLocked = !!req.body?.kindLocked;
 
-    const primary = await geminiCall(PRIMARY_MODEL, contents, mode, apiKey, sourceType, kind, kindLocked);
-    if (primary.status) return res.status(502).json({ ok: false, reason: 'gemini-' + primary.status });
+    let primary = await geminiCall(PRIMARY_MODEL, contents, mode, apiKey, sourceType, kind, kindLocked);
+    // 2026-08-09: an HTTP-level failure from the primary model (bad model ID,
+    // quota, transient 5xx) used to fail the whole request immediately with
+    // no attempt at the flagship model — the flagship fallback only ever ran
+    // for a *successful-but-low-confidence* primary call, not an outright
+    // error. That's backwards: an outright failure is exactly when a second
+    // model is most worth trying. This is also what silently broke every
+    // import while PRIMARY_MODEL pointed at a retired Gemini model — the
+    // flagship model (still valid) never got a chance to save the request.
+    if (primary.status) {
+      if (FLAGSHIP_MODEL && FLAGSHIP_MODEL !== PRIMARY_MODEL) {
+        const esc = await geminiCall(FLAGSHIP_MODEL, contents, mode, apiKey, sourceType, kind, kindLocked);
+        if (esc.status) {
+          return res.status(502).json({ ok: false, reason: `gemini-${primary.status}+${esc.status}` });
+        }
+        if (esc.failed || !esc.structured?.isRecipe) {
+          return res.status(200).json({ ok: true, structured: null, mode, elapsedMs: Date.now() - started });
+        }
+        primary = esc;
+        primary.structured._escalated = true;
+      } else {
+        return res.status(502).json({ ok: false, reason: 'gemini-' + primary.status });
+      }
+    }
     if (primary.failed || !primary.structured?.isRecipe) {
       return res.status(200).json({ ok: true, structured: null, mode, elapsedMs: Date.now() - started });
     }
 
     let best = primary.structured;
-    const lowConfidence = typeof best.confidence === 'number' && best.confidence < CONFIDENCE_FLOOR;
+    const lowConfidence = !best._escalated && typeof best.confidence === 'number' && best.confidence < CONFIDENCE_FLOOR;
     if (lowConfidence && FLAGSHIP_MODEL && FLAGSHIP_MODEL !== PRIMARY_MODEL) {
       const esc = await geminiCall(FLAGSHIP_MODEL, contents, mode, apiKey, sourceType, kind, kindLocked);
       if (esc.structured?.isRecipe && (esc.structured.confidence ?? 0) > (best.confidence ?? 0)) {

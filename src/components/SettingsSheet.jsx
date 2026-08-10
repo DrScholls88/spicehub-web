@@ -12,6 +12,7 @@
  * - navigator.vibrate() is dead on iOS — every tap that calls hapticLight()
  *   also gets the `.stg-pulse` scale-down as a universal visual fallback.
  */
+import { useState } from 'react';
 import { ThemeSettings } from './ThemeProvider';
 import HomeGroupSection from './HomeGroupSection';
 import LegalFooter from './LegalFooter';
@@ -44,6 +45,16 @@ export default function SettingsSheet({
   const swipe = useSwipeDismiss(onClose);
 
   const starterCount = meals.filter(m => m.starterKit).length;
+
+  // 2026-08-09: iOS/iPadOS Safari has never implemented the Web Share Target
+  // API (share_target in the manifest) — a home-screen-installed PWA cannot
+  // register as an OS share-sheet destination the way it can on Android.
+  // This is a WebKit platform limitation, not something fixable from app
+  // code (confirmed against MDN's browser-compat table and Apple's own
+  // WebKit feature-status page). The standard, zero-cost workaround is an
+  // iOS Shortcut that forwards the shared link to SpiceHub's existing
+  // GET-based share handler (App.jsx already listens for ?share-target=1).
+  const [showIosShareHelp, setShowIosShareHelp] = useState(false);
 
   const handleCheckForUpdates = async () => {
     if (!navigator.onLine) {
@@ -132,8 +143,43 @@ export default function SettingsSheet({
                 <span className="stg-row-icon">🔄</span>
                 <span className="stg-row-body">Check for Updates</span>
               </button>
+              {isStandalone && isIOS() && (
+                <button
+                  type="button"
+                  className="stg-row"
+                  onClick={() => setShowIosShareHelp(v => !v)}
+                >
+                  <span className="stg-row-icon">📤</span>
+                  <span className="stg-row-body">Add to iPhone/iPad Share Sheet</span>
+                </button>
+              )}
               <StorageSummaryBar meals={meals} onOpenFull={onOpenStorageManager} />
             </div>
+
+            {isStandalone && isIOS() && showIosShareHelp && (
+              <div className="stg-group stg-group-pad" style={{ marginTop: 10 }}>
+                <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 8px' }}>
+                  Apple's Safari doesn't let installed web apps show up in the
+                  Share Sheet directly — that's an iOS limitation, not a
+                  SpiceHub bug. A one-time Shortcut fixes it:
+                </p>
+                <ol style={{ fontSize: 13, color: 'var(--text-muted)', margin: 0, paddingLeft: 18, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <li>Open the <strong>Shortcuts</strong> app → <strong>+</strong> to create a new Shortcut.</li>
+                  <li>Add action <strong>"Get Text from Input"</strong> (accepts URLs from the share sheet).</li>
+                  <li>Add action <strong>"URL"</strong>, set it to:<br />
+                    <code style={{ fontSize: 11, wordBreak: 'break-all' }}>
+                      https://spicehub-web.vercel.app/?share-target=1&amp;url=[Shortcut Input]
+                    </code>
+                  </li>
+                  <li>Add action <strong>"Open URLs"</strong> using that URL.</li>
+                  <li>Rename the Shortcut "Save to SpiceHub", tap the settings icon, and enable <strong>"Show in Share Sheet"</strong> (accepting URLs/text).</li>
+                </ol>
+                <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '10px 0 0' }}>
+                  After that, "Save to SpiceHub" appears in the Share Sheet
+                  from Instagram, Safari, or any app — same as Android.
+                </p>
+              </div>
+            )}
 
             <div className="stg-group stg-group-pad" style={{ marginTop: 14 }}>
               <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 10px' }}>

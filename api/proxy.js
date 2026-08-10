@@ -68,6 +68,32 @@ const USER_AGENTS = [
   'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
 ];
 
+// 2026-08-09: root-caused the "most drink imports fail" report — for a growing
+// share of posts (confirmed live: sponsored/paid-partnership posts, likely
+// others) apify/instagram-post-scraper returns error:"restricted_page" and
+// omits the `caption` field entirely, BUT still includes a fully usable
+// `description` field in Instagram's standard oEmbed-style wrapper:
+//   '<N> likes, <N> comments - <user> on <date>: "<actual caption>". '
+// Every caller downstream (fetchInstagramViaApify → validateApifyPayload →
+// acquireInstagramPack) only ever looked at `caption`, so a restricted-page
+// response with a perfectly good recipe caption sitting in `description` was
+// silently discarded as "no caption in response", forcing the whole import
+// through the much less reliable embed/proxy-chain fallback (which is what
+// was actually failing in production for these posts).
+export function extractCaptionFromApifyDescription(description = '') {
+  const s = String(description || '').trim();
+  if (!s) return '';
+  // '... - user on date: "caption text". ' — capture between the last
+  // `: "` and the final `".` so captions containing internal quotes don't
+  // truncate early.
+  const m = /:\s*"([\s\S]*)"\.\s*$/.exec(s);
+  if (m && m[1] && m[1].trim().length > 10) return m[1].trim();
+  // Unrecognized wrapper shape — the raw description is still better than
+  // nothing (Gemini's DRINK_RECONCILIATION/structuring prompt can work with
+  // loosely-formatted text same as any other caption source).
+  return s.length > 10 ? s : '';
+}
+
 function cleanUrl(input = '') {
   if (typeof input !== 'string') return '';
   let url = input.trim();
@@ -167,7 +193,7 @@ export default async function handler(req) {
         status: 200,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
-    } catch (e) {
+    } catch {
       return new Response(JSON.stringify({ error: 'oEmbed fetch failed' }), {
         status: 502,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
@@ -330,14 +356,20 @@ export default async function handler(req) {
       // deliberately not done here.
       const profileBioUrl = post.ownerExternalUrl || post.externalUrl || post.bioLink
         || post.owner?.externalUrl || post.owner?.bioLink || '';
+      // restricted_page (and any other error-flagged) responses drop `caption`,
+      // `displayUrl`, and the top-level owner fields — fall back to `description`
+      // (see extractCaptionFromApifyDescription above) and the nested `user`
+      // object so a partial/restricted fetch still yields a usable result
+      // instead of silently looking like "no data".
+      const caption = post.caption || extractCaptionFromApifyDescription(post.description) || '';
       const result = {
         ok: true,
-        caption: post.caption || '',
-        displayUrl: post.displayUrl || '',
+        caption,
+        displayUrl: post.displayUrl || post.image || '',
         images: carousel,
         videoUrl: post.videoUrl || '',
-        ownerUsername: post.ownerUsername || '',
-        ownerFullName: post.ownerFullName || '',
+        ownerUsername: post.ownerUsername || post.user?.username || '',
+        ownerFullName: post.ownerFullName || post.user?.full_name || post.user?.username || '',
         profileBioUrl,
         shortCode: post.shortCode || '',
         hashtags: post.hashtags || [],
@@ -345,6 +377,9 @@ export default async function handler(req) {
         type: post.type || 'Unknown',
         latestComments,
         isVideo: post.type === 'Video' || !!post.videoUrl,
+        // Diagnostic only — not consumed by validateApifyPayload/client code,
+        // but useful in logs/telemetry to see how often this path is hit.
+        restricted: !!post.error,
       };
       return new Response(JSON.stringify(result), {
         status: 200,

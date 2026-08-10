@@ -17,8 +17,13 @@ import {
 } from '../../recipeSchema.js';
 import { buildPackSections, packHasCompleteCandidate } from '../contextPack.js';
 
+// 2026-08-09: gemini-2.0-flash-lite is shut down (Google's model list,
+// "Previous models", updated 2026-08-05) — mirrors the same fix in
+// api/structure.js, which is the real production path this file falls back
+// to (see serverStructurePack below). Kept in sync so the client-key test
+// path doesn't silently rot the same way.
 const GEMINI_MODEL =
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GEMINI_MODEL) || 'gemini-2.0-flash-lite';
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GEMINI_MODEL) || 'gemini-2.5-flash-lite';
 const GEMINI_MODEL_FLAGSHIP =
   (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GEMINI_MODEL_FLAGSHIP) || 'gemini-2.5-flash';
 const GEMINI_CONFIDENCE_FLOOR = 0.6;
@@ -264,7 +269,18 @@ export async function serverStructurePack(pack, { type = 'meal', signal, kindLoc
         err429.status = 429;
         throw err429;
       }
-      console.log(`[SpiceHub] /api/structure HTTP ${res.status}`);
+      // 2026-08-09: this used to log only the bare status (e.g. "HTTP 502"),
+      // discarding the JSON body's `reason` field that api/structure.js
+      // always sends (e.g. "gemini-404", "gemini-timeout", "no-server-key").
+      // That's the one piece of information that actually says WHY it
+      // failed — without it every failure looks identical in the console,
+      // which is exactly what made the retired-model bug hard to diagnose.
+      let reason = '';
+      try {
+        const errBody = await res.json();
+        reason = errBody?.reason || errBody?.detail || '';
+      } catch { /* body wasn't JSON — nothing more to extract */ }
+      console.log(`[SpiceHub] /api/structure HTTP ${res.status}${reason ? ` (${reason})` : ''}`);
       return null;
     }
     const body = await res.json();

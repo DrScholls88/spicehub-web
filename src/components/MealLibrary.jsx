@@ -1153,7 +1153,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
       </AnimatePresence>
 
       {/* ── Shared with you (friend shares inbox) ── */}
-      <SharedWithYouSection onToast={onToast} onReload={onReload} />
+      <SharedWithYouSection onToast={onToast} onReload={onReload} itemType="meal" />
 
       {/* ── Gallery grid ── */}
       <div className={`ml-gallery ml-layout-${gridLayout}`}>
