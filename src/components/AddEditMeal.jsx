@@ -1,16 +1,27 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { motion, useDragControls } from 'framer-motion';
-import { Tag } from 'lucide-react';
+import { motion, Reorder, useDragControls } from 'framer-motion';
+import { Tag, GripVertical, X, ArrowRightLeft, AlignLeft, List as ListIcon } from 'lucide-react';
 import { parseFromUrl, isSocialMediaUrl, getSocialPlatform } from '../recipeParser';
 import { importRecipeFromPages } from '../lib/photoImportEngine.js';
 import { getUserTags } from '../db';
 
-// Auto-expand a textarea to fit its content (call on mount + onChange)
+// Auto-expand a textarea to fit its content (call on mount + onChange).
+// field-sizing:content (CSS) already does this on modern Chrome/Safari; this
+// stays as the universal fallback for browsers that don't support it yet.
 function autoExpand(el) {
   if (!el) return;
   el.style.height = 'auto';
   el.style.height = el.scrollHeight + 'px';
 }
+
+let rowIdSeq = 0;
+const makeRowId = () => `row-${Date.now()}-${rowIdSeq++}`;
+
+// Android's soft keyboard needs a beat to finish animating before the
+// visual viewport settles — scrolling immediately on focus measures the
+// pre-keyboard layout and undershoots. 300ms matches the keyboard-inset
+// hook's own settling window used elsewhere in the app.
+const KEYBOARD_SETTLE_MS = 300;
 
 const MEAL_CATEGORIES = ['Dinners', 'Breakfasts', 'Lunches', 'Desserts', 'Sides', 'Tailgate', 'Snacks'];
 
@@ -29,7 +40,16 @@ export default function AddEditMeal({
   const [name, setName] = useState(meal?.name || '');
   const [category, setCategory] = useState(meal?.category || (isMealMode ? 'Dinners' : ''));
   const [ingredients, setIngredients] = useState(meal?.ingredients?.length ? meal.ingredients : ['']);
+  const [ingredientIds, setIngredientIds] = useState(() => ingredients.map(makeRowId));
   const [directions, setDirections] = useState(meal?.directions?.length ? meal.directions : ['']);
+  const [directionIds, setDirectionIds] = useState(() => directions.map(makeRowId));
+  // Raw Text Mode — one big textarea, one step per line. Lets a pasted or
+  // dictated recipe get entered in one motion instead of managing rows.
+  const [directionsBulkMode, setDirectionsBulkMode] = useState(false);
+  const [bulkDirectionsText, setBulkDirectionsText] = useState('');
+  // Smart Paste Splitting — inline "split into N steps?" prompt shown after
+  // a multi-line paste lands in a single step textarea.
+  const [pasteSplitPrompt, setPasteSplitPrompt] = useState(null); // { index, lines }
   const [notes, setNotes] = useState(meal?.notes || '');
   const [link, setLink] = useState(meal?.link || '');
   const [imageUrl, setImageUrl] = useState(meal?.imageUrl || '');
@@ -55,8 +75,6 @@ export default function AddEditMeal({
   const [importProgress, setImportProgress] = useState('');
   const [error, setError] = useState('');
   const ocrFileRef = useRef(null);
-  // Drag state for within-list reordering
-  const [dragSrc, setDragSrc] = useState(null); // { listName, idx }
 
   const applyParsed = (result) => {
     if (!result || result._error) return false;
@@ -147,13 +165,18 @@ export default function AddEditMeal({
 
   const handleSave = () => {
     if (!name.trim()) { setError('Meal name is required.'); return; }
+    // If the user hits Save while still in Raw Text Mode, split it the same
+    // way exitBulkMode does rather than silently dropping the toggle state.
+    const finalDirections = directionsBulkMode
+      ? bulkDirectionsText.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+      : directions;
     const data = {
       ...(isEdit ? { id: meal.id } : {}),
       name: name.trim(),
       ...(isMealMode && category ? { category } : {}),
       ...(isMealMode ? { tags } : {}),
       ingredients: ingredients.filter(i => i.trim()).length ? ingredients.filter(i => i.trim()) : ['No ingredients listed'],
-      directions: directions.filter(d => d.trim()).length ? directions.filter(d => d.trim()) : ['No directions listed'],
+      directions: finalDirections.filter(d => d.trim()).length ? finalDirections.filter(d => d.trim()) : ['No directions listed'],
       notes: notes.trim(),
       link: link.trim(),
       imageUrl: imageUrl.trim(),
@@ -163,74 +186,98 @@ export default function AddEditMeal({
 
   const updateList = (setter, idx, val) => setter(prev => prev.map((v, i) => i === idx ? val : v));
 
-  // Swap adjacent items within a list (↑/↓ reorder buttons)
-  const reorderList = (setter, list, idx, dir) => {
-    const newIdx = dir === 'up' ? idx - 1 : idx + 1;
-    if (newIdx < 0 || newIdx >= list.length) return;
-    const next = [...list];
-    [next[idx], next[newIdx]] = [next[newIdx], next[idx]];
-    setter(next);
+  // Add/remove a row and keep its parallel id array in lockstep — the ids
+  // are what framer-motion's Reorder.Group tracks (Reorder needs stable,
+  // unique values; recipe text can repeat, e.g. two "1 tsp salt" lines).
+  const addRow = (setItems, setIds) => {
+    setItems(prev => [...prev, '']);
+    setIds(prev => [...prev, makeRowId()]);
+  };
+  const removeRow = (setItems, setIds, idx) => {
+    setItems(prev => prev.filter((_, i) => i !== idx));
+    setIds(prev => prev.filter((_, i) => i !== idx));
+  };
+  // Insert/replace a run of rows at once — used by paste-splitting and
+  // Raw Text Mode conversions where more than one row changes together.
+  const spliceRows = (setItems, setIds, start, deleteCount, newVals) => {
+    setItems(prev => { const next = [...prev]; next.splice(start, deleteCount, ...newVals); return next; });
+    setIds(prev => { const next = [...prev]; next.splice(start, deleteCount, ...newVals.map(() => makeRowId())); return next; });
+  };
+  // framer-motion hands back the new id order on drop; rebuild the value
+  // array from it so ids and values stay aligned.
+  const reorderRows = (setItems, items, ids, setIds, newIdOrder) => {
+    const newItems = newIdOrder.map(id => items[ids.indexOf(id)]);
+    setIds(newIdOrder);
+    setItems(newItems);
   };
 
-  // HTML5 drag handlers — within-list reordering only
-  const handleDragStart = (listName, idx, e) => {
-    setDragSrc({ listName, idx });
-    e.dataTransfer.effectAllowed = 'move';
-    e.currentTarget.style.opacity = '0.45';
+  // Move a row between Ingredients <-> Directions. Replaces the old
+  // cross-container HTML5 drag-and-drop, which never fires on touch
+  // devices — draggable="true" has no touch equivalent without a polyfill,
+  // so on Android this control silently did nothing. A one-tap swap works
+  // everywhere.
+  const moveRowToOtherList = (fromList, idx) => {
+    const isIngredients = fromList === 'ingredients';
+    const value = (isIngredients ? ingredients : directions)[idx];
+    const setFromItems = isIngredients ? setIngredients : setDirections;
+    const setFromIds = isIngredients ? setIngredientIds : setDirectionIds;
+    const setToItems = isIngredients ? setDirections : setIngredients;
+    const setToIds = isIngredients ? setDirectionIds : setIngredientIds;
+    setFromItems(prev => prev.filter((_, i) => i !== idx));
+    setFromIds(prev => prev.filter((_, i) => i !== idx));
+    setToItems(prev => [...prev, value]);
+    setToIds(prev => [...prev, makeRowId()]);
   };
-  const handleDragOver = (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; };
-  const handleDropOnRow = (listName, dropIdx, e) => {
-    e.preventDefault();
-    if (!dragSrc) return;
-    if (dragSrc.listName === listName) {
-      // Same-list reorder
-      const setter = listName === 'ingredients' ? setIngredients : setDirections;
-      const list = listName === 'ingredients' ? [...ingredients] : [...directions];
-      const [item] = list.splice(dragSrc.idx, 1);
-      list.splice(dropIdx, 0, item);
-      setter(list);
-    } else {
-      // Cross-section drag-drop
-      const fromSetter = dragSrc.listName === 'ingredients' ? setIngredients : setDirections;
-      const toSetter = listName === 'ingredients' ? setIngredients : setDirections;
-      const fromList = dragSrc.listName === 'ingredients' ? [...ingredients] : [...directions];
-      const toList = listName === 'ingredients' ? [...ingredients] : [...directions];
-      const [item] = fromList.splice(dragSrc.idx, 1);
-      toList.splice(dropIdx, 0, item);
-      fromSetter(fromList);
-      toSetter(toList);
+
+  // Smart Paste Splitting — a multi-line paste into one step almost always
+  // means the user pasted several instructions at once. Intercept it and
+  // ask, rather than silently cramming N steps into one textarea.
+  const handlePasteInStep = (idx, e) => {
+    const text = e.clipboardData?.getData('text') ?? '';
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (lines.length > 1) {
+      e.preventDefault();
+      setPasteSplitPrompt({ index: idx, lines });
     }
-    setDragSrc(null);
+    // Single-line paste: let the browser paste it in natively.
   };
-  const handleDropOnSection = (listName, e) => {
-    e.preventDefault();
-    if (!dragSrc) return;
-    if (dragSrc.listName === listName) {
-      // Same-list: move to end
-      const setter = listName === 'ingredients' ? setIngredients : setDirections;
-      const list = listName === 'ingredients' ? [...ingredients] : [...directions];
-      const [item] = list.splice(dragSrc.idx, 1);
-      list.push(item);
-      setter(list);
+  const resolvePasteSplit = (action) => {
+    if (!pasteSplitPrompt) return;
+    const { index, lines } = pasteSplitPrompt;
+    if (action === 'split') {
+      const replacingEmptyStep = !directions[index]?.trim();
+      spliceRows(setDirections, setDirectionIds, index, replacingEmptyStep ? 1 : 0, lines);
     } else {
-      // Cross-section: append to end of target
-      const fromSetter = dragSrc.listName === 'ingredients' ? setIngredients : setDirections;
-      const toSetter = listName === 'ingredients' ? setIngredients : setDirections;
-      const fromList = dragSrc.listName === 'ingredients' ? [...ingredients] : [...directions];
-      const toList = listName === 'ingredients' ? [...ingredients] : [...directions];
-      const [item] = fromList.splice(dragSrc.idx, 1);
-      toList.push(item);
-      fromSetter(fromList);
-      toSetter(toList);
+      updateList(setDirections, index, lines.join('\n'));
     }
-    setDragSrc(null);
+    setPasteSplitPrompt(null);
   };
-  const handleDragEnd = (e) => {
-    e.currentTarget.style.opacity = '';
-    setDragSrc(null);
+
+  // Individual Steps <-> Raw Text Mode
+  const enterBulkMode = () => {
+    setBulkDirectionsText(directions.join('\n'));
+    setDirectionsBulkMode(true);
   };
-  const addToList = (setter) => setter(prev => [...prev, '']);
-  const removeFromList = (setter, idx) => setter(prev => prev.filter((_, i) => i !== idx));
+  const exitBulkMode = () => {
+    const lines = bulkDirectionsText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const next = lines.length ? lines : [''];
+    setDirections(next);
+    setDirectionIds(next.map(makeRowId));
+    setDirectionsBulkMode(false);
+  };
+
+  // Keyboard-aware focus scroll: Android shrinks the visual viewport when
+  // the soft keyboard opens, which can leave the just-focused field hidden
+  // beneath it. Nudge the field back into view once the keyboard animation
+  // has had a moment to settle (immediate scrollIntoView measures the
+  // pre-keyboard layout and undershoots).
+  const handleFieldFocus = (e) => {
+    const el = e.target;
+    if (el.tagName !== 'INPUT' && el.tagName !== 'TEXTAREA') return;
+    setTimeout(() => {
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, KEYBOARD_SETTLE_MS);
+  };
 
   // ── Drag-down-to-dismiss ──
   const dragControls = useDragControls();
@@ -324,7 +371,11 @@ export default function AddEditMeal({
         )}
 
         {/* ── Form fields ── */}
-        <div className="form-scroll">
+        {/* onFocus delegates to every input/textarea below via bubbling
+            (React's onFocus is focusin-backed, so this fires for nested
+            fields too) — nudges the just-focused field above the Android
+            soft keyboard instead of leaving it hidden underneath it. */}
+        <div className="form-scroll" onFocus={handleFieldFocus}>
           <div className="form-group">
             <label>Name *</label>
             <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder={placeholder === '🍹' ? 'e.g. Classic Margarita' : 'e.g. Chicken Parmesan'} />
@@ -379,111 +430,98 @@ export default function AddEditMeal({
             {imageUrl && <img src={imageUrl} alt="Preview" className="image-preview" onError={e => { e.target.style.display = 'none'; }} />}
           </div>
 
-          <div
-            className={`form-group${dragSrc && dragSrc.listName === 'directions' ? ' drop-target-active' : ''}`}
-            onDragOver={handleDragOver}
-            onDrop={(e) => handleDropOnSection('ingredients', e)}
-          >
-            <label>{ingredientLabel}{dragSrc && dragSrc.listName === 'directions' && <span className="drop-hint">↓ Drop here</span>}</label>
-            {ingredients.map((ing, i) => (
-              <div
-                key={i}
-                className={`list-input-row has-controls${dragSrc?.listName === 'ingredients' && dragSrc?.idx === i ? ' dragging' : ''}`}
-                draggable
-                onDragStart={(e) => handleDragStart('ingredients', i, e)}
-                onDragOver={handleDragOver}
-                onDrop={(e) => handleDropOnRow('ingredients', i, e)}
-                onDragEnd={handleDragEnd}
-              >
-                <input
-                  type="text"
+          <div className="form-group">
+            <label>{ingredientLabel}</label>
+            <Reorder.Group
+              as="div"
+              axis="y"
+              values={ingredientIds}
+              onReorder={(newIds) => reorderRows(setIngredients, ingredients, ingredientIds, setIngredientIds, newIds)}
+              className="aem-list"
+            >
+              {ingredients.map((ing, i) => (
+                <IngredientRow
+                  key={ingredientIds[i]}
+                  rowId={ingredientIds[i]}
                   value={ing}
-                  onChange={e => updateList(setIngredients, i, e.target.value)}
-                  placeholder={`Ingredient ${i + 1}`}
+                  index={i}
+                  onChange={(val) => updateList(setIngredients, i, val)}
+                  onRemove={() => removeRow(setIngredients, setIngredientIds, i)}
+                  onMoveToDirections={() => moveRowToOtherList('ingredients', i)}
+                  canRemove={ingredients.length > 1}
                 />
-                <div className="list-row-controls">
-                  <button
-                    className="list-reorder-btn"
-                    onClick={() => reorderList(setIngredients, ingredients, i, 'up')}
-                    disabled={i === 0}
-                    title="Move up"
-                    aria-label="Move ingredient up"
-                  >↑</button>
-                  <button
-                    className="list-reorder-btn"
-                    onClick={() => reorderList(setIngredients, ingredients, i, 'down')}
-                    disabled={i === ingredients.length - 1}
-                    title="Move down"
-                    aria-label="Move ingredient down"
-                  >↓</button>
-                  {/* Cross-section movement is now drag-drop only */}
-                  {ingredients.length > 1 && (
-                    <button
-                      className="btn-icon small danger"
-                      onClick={() => removeFromList(setIngredients, i)}
-                      aria-label="Remove ingredient"
-                    >✕</button>
-                  )}
-                </div>
-              </div>
-            ))}
-            <button className="btn-small" onClick={() => addToList(setIngredients)}>+ Add Ingredient</button>
+              ))}
+            </Reorder.Group>
+            <button className="btn-small" onClick={() => addRow(setIngredients, setIngredientIds)}>+ Add Ingredient</button>
           </div>
 
-<div
-  className={`form-group${dragSrc && dragSrc.listName === 'ingredients' ? ' drop-target-active' : ''}`}
-  onDragOver={handleDragOver}
-  onDrop={(e) => handleDropOnSection('directions', e)}
->
-  <label>{directionsLabel}{dragSrc && dragSrc.listName === 'ingredients' && <span className="drop-hint">↓ Drop here</span>}</label>
-  {directions.map((dir, i) => (
-    <div
-      key={i}
-      className={`list-input-row has-controls${dragSrc?.listName === 'directions' && dragSrc?.idx === i ? ' dragging' : ''}`}
-      draggable
-      onDragStart={(e) => handleDragStart('directions', i, e)}
-      onDragOver={handleDragOver}
-      onDrop={(e) => handleDropOnRow('directions', i, e)}
-      onDragEnd={handleDragEnd}
-    >
-      <textarea
-        value={dir}
-        onChange={e => {
-          updateList(setDirections, i, e.target.value);
-          autoExpand(e.target);
-        }}
-        ref={el => el && autoExpand(el)}
-        placeholder={`Step ${i + 1}...`}
-        rows={1}
-        style={{ resize: 'none', overflow: 'hidden' }}
-      />
-      <div className="list-row-controls">
-        <button
-          className="list-reorder-btn"
-          onClick={() => reorderList(setDirections, directions, i, 'up')}
-          disabled={i === 0}
-          title="Move step up"
-          aria-label="Move step up"
-        >↑</button>
-        <button
-          className="list-reorder-btn"
-          onClick={() => reorderList(setDirections, directions, i, 'down')}
-          disabled={i === directions.length - 1}
-          title="Move step down"
-          aria-label="Move step down"
-        >↓</button>
-        {/* Cross-section movement is now drag-drop only */}
-        {directions.length > 1 && (
-          <button
-            className="btn-icon small danger"
-            onClick={() => removeFromList(setDirections, i)}
-            aria-label="Remove step"
-          >✕</button>
-        )}
-      </div>
+<div className="form-group">
+  <div className="aem-section-header">
+    <label>{directionsLabel}</label>
+    <div className="aem-mode-toggle" role="tablist" aria-label="Steps input mode">
+      <button
+        type="button"
+        role="tab"
+        aria-selected={!directionsBulkMode}
+        className={`aem-mode-btn${!directionsBulkMode ? ' active' : ''}`}
+        onClick={() => directionsBulkMode && exitBulkMode()}
+      >
+        <ListIcon size={13} strokeWidth={2.25} /> Individual
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={directionsBulkMode}
+        className={`aem-mode-btn${directionsBulkMode ? ' active' : ''}`}
+        onClick={() => !directionsBulkMode && enterBulkMode()}
+      >
+        <AlignLeft size={13} strokeWidth={2.25} /> Raw Text
+      </button>
     </div>
-  ))}
-  <button className="btn-small" onClick={() => addToList(setDirections)}>+ Add Step</button>
+  </div>
+
+  {directionsBulkMode ? (
+    <>
+      <p className="help-text">One step per line — paste a whole recipe and split it up here.</p>
+      <textarea
+        value={bulkDirectionsText}
+        onChange={e => { setBulkDirectionsText(e.target.value); autoExpand(e.target); }}
+        ref={el => el && autoExpand(el)}
+        placeholder={'Preheat oven to 400°F...\nSeason the chicken...\nRoast for 25 minutes...'}
+        rows={4}
+        className="aem-step-textarea"
+      />
+    </>
+  ) : (
+    <Reorder.Group
+      as="div"
+      axis="y"
+      values={directionIds}
+      onReorder={(newIds) => reorderRows(setDirections, directions, directionIds, setDirectionIds, newIds)}
+      className="aem-list"
+    >
+      {directions.map((dir, i) => (
+        <StepRow
+          key={directionIds[i]}
+          rowId={directionIds[i]}
+          value={dir}
+          index={i}
+          stepNumber={i + 1}
+          onChange={(val) => updateList(setDirections, i, val)}
+          onRemove={() => removeRow(setDirections, setDirectionIds, i)}
+          onMoveToIngredients={() => moveRowToOtherList('directions', i)}
+          canRemove={directions.length > 1}
+          onPaste={(e) => handlePasteInStep(i, e)}
+          pastePrompt={pasteSplitPrompt?.index === i ? pasteSplitPrompt : null}
+          onResolvePaste={resolvePasteSplit}
+        />
+      ))}
+    </Reorder.Group>
+  )}
+
+  {!directionsBulkMode && (
+    <button className="btn-small" onClick={() => addRow(setDirections, setDirectionIds)}>+ Add Step</button>
+  )}
 </div>
 
 <div className="form-group">
@@ -513,6 +551,131 @@ export default function AddEditMeal({
         </div>
       </motion.div>
     </div>
+  );
+}
+
+// ── IngredientRow ──
+// A single ingredient line. Reorders via a dedicated left-edge drag handle
+// (framer-motion Reorder, pointer/touch-native) instead of the old ↑/↓
+// button pair + HTML5 draggable — draggable="true" never fires a touch drag
+// on Android/iOS without a polyfill, so the previous reorder path was
+// effectively dead on the phones this app targets.
+function IngredientRow({ rowId, value, index, onChange, onRemove, onMoveToDirections, canRemove }) {
+  const dragControls = useDragControls();
+  return (
+    <Reorder.Item
+      as="div"
+      value={rowId}
+      dragListener={false}
+      dragControls={dragControls}
+      whileDrag={{ opacity: 0.65, scale: 1.01 }}
+      className="aem-row aem-row-inline"
+    >
+      <span
+        className="aem-drag-handle"
+        onPointerDown={(e) => dragControls.start(e)}
+        aria-label="Drag to reorder ingredient"
+      >
+        <GripVertical size={16} strokeWidth={2} />
+      </span>
+      <input
+        type="text"
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={`Ingredient ${index + 1}`}
+      />
+      <button
+        type="button"
+        className="aem-row-action"
+        onClick={onMoveToDirections}
+        title="Move to directions"
+        aria-label="Move ingredient to directions"
+      >
+        <ArrowRightLeft size={14} strokeWidth={2.25} />
+      </button>
+      {canRemove && (
+        <button
+          type="button"
+          className="aem-row-action aem-row-action-danger"
+          onClick={onRemove}
+          aria-label="Remove ingredient"
+        >
+          <X size={15} strokeWidth={2.25} />
+        </button>
+      )}
+    </Reorder.Item>
+  );
+}
+
+// ── StepRow ──
+// Controls live in a header row ABOVE the textarea (drag handle + "Step N"
+// + move + delete) instead of a right-hand button column — on a 360px-wide
+// phone a right column of two 30px buttons ate ~70px off the textarea, which
+// is exactly the width pinch that made pasted text wrap into an unreadable
+// sliver. The textarea now gets the full row width.
+function StepRow({ rowId, value, index, stepNumber, onChange, onRemove, onMoveToIngredients, canRemove, onPaste, pastePrompt, onResolvePaste }) {
+  const dragControls = useDragControls();
+  const taRef = useRef(null);
+  useEffect(() => { if (taRef.current) autoExpand(taRef.current); }, [value]);
+
+  return (
+    <Reorder.Item
+      as="div"
+      value={rowId}
+      dragListener={false}
+      dragControls={dragControls}
+      whileDrag={{ opacity: 0.65, scale: 1.01 }}
+      className="aem-row aem-row-step"
+    >
+      <div className="aem-step-header">
+        <span
+          className="aem-drag-handle"
+          onPointerDown={(e) => dragControls.start(e)}
+          aria-label="Drag to reorder step"
+        >
+          <GripVertical size={16} strokeWidth={2} />
+        </span>
+        <span className="aem-step-num">Step {stepNumber}</span>
+        <span className="aem-step-spacer" />
+        <button
+          type="button"
+          className="aem-row-action"
+          onClick={onMoveToIngredients}
+          title="Move to ingredients"
+          aria-label="Move step to ingredients"
+        >
+          <ArrowRightLeft size={14} strokeWidth={2.25} />
+        </button>
+        {canRemove && (
+          <button
+            type="button"
+            className="aem-row-action aem-row-action-danger"
+            onClick={onRemove}
+            aria-label="Remove step"
+          >
+            <X size={15} strokeWidth={2.25} />
+          </button>
+        )}
+      </div>
+      <textarea
+        ref={taRef}
+        value={value}
+        onChange={e => { onChange(e.target.value); autoExpand(e.target); }}
+        onPaste={onPaste}
+        placeholder={`Step ${stepNumber}...`}
+        rows={1}
+        className="aem-step-textarea"
+      />
+      {pastePrompt && (
+        <div className="aem-paste-prompt">
+          <span>Split pasted text into {pastePrompt.lines.length} steps?</span>
+          <div className="aem-paste-prompt-actions">
+            <button type="button" className="btn-small" onClick={() => onResolvePaste('split')}>Split</button>
+            <button type="button" className="btn-small ghost" onClick={() => onResolvePaste('keep')}>Keep as one</button>
+          </div>
+        </div>
+      )}
+    </Reorder.Item>
   );
 }
 

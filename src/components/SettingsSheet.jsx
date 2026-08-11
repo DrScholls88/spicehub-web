@@ -20,6 +20,8 @@ import ProfileCard from './ProfileCard';
 import StorageSummaryBar from './StorageSummaryBar';
 import useSwipeDismiss from '../hooks/useSwipeDismiss';
 import { isFriendsEnabled } from '../lib/supabaseClient';
+import { clearInstagramCache } from '../db.js';
+import { hapticLight } from '../haptics';
 
 export default function SettingsSheet({
   onClose,
@@ -83,6 +85,25 @@ export default function SettingsSheet({
     }
   };
 
+  // 2026-08-10: importFromInstagram short-circuits on a 7-day IndexedDB cache
+  // keyed by url+type (recipeParser.js's importFromInstagram, line ~4907) —
+  // BEFORE any extraction phase runs, including the blog-link-follower. A
+  // shipped extraction-engine fix has no effect on a URL that was already
+  // imported (successfully or not) in the last 7 days; the stale cached
+  // result just gets replayed. BarLibrary.jsx already exposes this exact
+  // clear as a dev/QA affordance for drink imports — this is the same
+  // db.instagramCache.clear() call, surfaced on the meal side so users
+  // aren't stuck re-hitting a pre-fix cached failure with no visible cause.
+  const handleClearImportCache = async () => {
+    hapticLight();
+    try {
+      await clearInstagramCache();
+      showToast?.('Import cache cleared — next import will re-fetch fresh', 'success', 3000);
+    } catch {
+      showToast?.('Could not clear import cache', 'error', 3000);
+    }
+  };
+
   return (
     <div className="st-overlay" data-sheet-overlay onClick={onClose}>
       <div
@@ -142,6 +163,10 @@ export default function SettingsSheet({
               <button type="button" className="stg-row" onClick={handleCheckForUpdates}>
                 <span className="stg-row-icon">🔄</span>
                 <span className="stg-row-body">Check for Updates</span>
+              </button>
+              <button type="button" className="stg-row" onClick={handleClearImportCache}>
+                <span className="stg-row-icon">🧹</span>
+                <span className="stg-row-body">Clear Import Cache</span>
               </button>
               {isStandalone && isIOS() && (
                 <button

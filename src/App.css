@@ -2137,8 +2137,80 @@ body::before {
 }
 
 /* ── Add/Edit Modal ── */
+/* ── Edit Meal / Edit Drink sheet — mobile ergonomics pass 2026-08-10 ──
+   The sheet is restructured into header / scrollable body / footer as
+   three flex regions instead of one big overflow:auto block, so a nested
+   textarea's own scroll never fights the sheet's scroll (the root cause
+   behind "scrolling feels squashed" on Android), and Save/Cancel stay
+   reachable instead of scrolling away with the content. */
 .edit-modal {
-  padding-bottom: 20px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.edit-modal .modal-header {
+  flex-shrink: 0;
+  padding: 20px 20px 12px;
+  margin-bottom: 0;
+}
+
+.edit-modal .error-bar {
+  margin: 0 20px 12px;
+}
+
+.edit-modal .import-buttons,
+.edit-modal .import-section {
+  margin-left: 20px;
+  margin-right: 20px;
+}
+
+.edit-modal .form-scroll {
+  flex: 1 1 auto;
+  max-height: none;
+  padding: 4px 20px 24px;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.edit-modal .modal-footer {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 14px 20px calc(14px + env(safe-area-inset-bottom));
+  background: var(--card);
+}
+
+/* Full-screen sheet on phones — a centered, rounded, ~92dvh-tall bottom
+   sheet leaves almost no usable room once a ~300px Android keyboard opens
+   under a multi-row recipe form. Below 640px the sheet takes the entire
+   viewport instead, so there's always somewhere for content to go. */
+@media (max-width: 639px) {
+  .modal-content.edit-modal {
+    width: 100%;
+    max-width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .edit-modal .modal-header {
+    padding-top: calc(16px + env(safe-area-inset-top));
+  }
+
+  .edit-modal .form-scroll {
+    /* --keyboard-inset is a live px value maintained globally by
+       useKeyboardInset() (src/hooks/useKeyboardInset.js) — it mirrors the
+       gap between the layout and visual viewport whenever the on-screen
+       keyboard resizes the page, so the last field never ends up trapped
+       underneath it. */
+    padding-bottom: calc(24px + var(--keyboard-inset, 0px));
+  }
+
+  .edit-modal .modal-footer {
+    padding-bottom: calc(14px + env(safe-area-inset-bottom) + var(--keyboard-inset, 0px));
+  }
 }
 
 .import-buttons {
@@ -9471,6 +9543,14 @@ body::before {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+  /* 2026-08-10 bugfix (see .bl-tile's user-select note above): every tile
+     in this grid owns a touchstart/touchmove long-press handler. Without
+     an explicit touch-action, Android's gesture dispatcher has to infer
+     scroll-vs-something-else intent per touch, and with that many
+     touch-listening children it was losing that inference almost
+     everywhere except the grid's outer gutter. pan-y makes the container's
+     only legitimate gesture explicit instead of inferred. */
+  touch-action: pan-y;
   flex: 1;
 }
 
@@ -9612,14 +9692,33 @@ body::before {
   transition: transform 0.15s, box-shadow 0.15s, border-color 0.15s;
   animation: tileIn 0.3s ease-out backwards;
   -webkit-tap-highlight-color: transparent;
-  /* iOS-1 (bar-library-parity-plan-2026-08-07.md §0.5): without these, a
+  /* iOS-1 (bar-library-parity-plan-2026-08-07.md §0.5): without this, a
      500ms press fires the native iOS selection callout, which competes with
      — and often preempts — BarLibrary's own LONG_PRESS_MS=500 select-mode
-     handler. Deliberately NOT applied to .bl-qp-* (the expanded card) —
-     ingredient text there should stay selectable/copyable. */
+     handler. -webkit-touch-callout: none is the property that actually
+     suppresses that callout menu; it's WebKit-only so it's a no-op
+     everywhere else. Deliberately NOT applied to .bl-qp-* (the expanded
+     card) — ingredient text there should stay selectable/copyable.
+
+     2026-08-10 bugfix: this rule originally also carried
+     `user-select: none` / `-webkit-user-select: none`, on the assumption
+     they were needed alongside touch-callout. They weren't — and on
+     Android, `user-select: none` on an element that also owns a
+     touchstart/touchmove long-press handler (handleTouchStart/Move/End
+     below) is a known troublemaker for the browser's scroll-vs-selection
+     gesture disambiguation: reported symptom was "have to touch the far
+     right edge of the screen to scroll the Bar tile grid at all" — i.e.
+     nearly the entire touch surface (every tile) stopped recognizing
+     vertical swipes as scroll. .ml-tile (Meal Library's equivalent, which
+     scrolls fine) never had user-select:none, which is what pointed at
+     this. Removed; -webkit-touch-callout: none alone is sufficient for the
+     iOS-1 fix's actual goal. Also added touch-action: pan-y here directly
+     (belt-and-suspenders with .bl-gallery's own pan-y above) — the tile is
+     the actual touchstart target, and being explicit at the target element,
+     not just the scrollable ancestor, is the more reliable half of this
+     fix on Android. */
   -webkit-touch-callout: none;
-  user-select: none;
-  -webkit-user-select: none;
+  touch-action: pan-y;
   display: flex;
   flex-direction: column;
 }
@@ -23035,6 +23134,252 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
   flex-shrink: 0; align-items: center;
 }
 .list-input-row.dragging { opacity: 0.45; }
+
+/* ══════════════════════════════════════════════════════════════════════
+   AddEditMeal — ingredient/step rows, mobile ergonomics pass 2026-08-10
+   Replaces list-input-row.has-controls + list-reorder-btn for Ingredients/
+   Directions specifically: framer-motion Reorder.Group drives drag-to-
+   reorder via a left-edge handle (touch-native, same pattern already used
+   in ImportReview/BarLibrary/StoreMode) instead of HTML5 draggable, which
+   never receives a touch drag on Android/iOS without a polyfill — that was
+   dead weight on every phone this app targets. The list-input-row/
+   list-reorder-btn/list-move-btn classes above are unaffected; other list
+   UIs still use them. ── */
+
+.aem-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 8px;
+}
+
+.aem-row {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  scroll-margin-bottom: 25vh;
+}
+
+/* Ingredient row — one inline line: handle · input · move · delete. No
+   header row here; ingredients are short enough that a header per row
+   would just add vertical bulk to a list that can run 15+ items deep. */
+.aem-row-inline {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px 4px 2px;
+}
+
+.aem-row-inline input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 8px 4px;
+  font-size: 16px; /* 16px stops iOS Safari zooming the page on focus */
+  color: var(--text);
+  outline: none;
+}
+
+/* Step row — controls in a header bar above the textarea instead of a
+   right-hand button column, so the textarea gets the row's full width.
+   That right column (two 30px buttons) was eating ~70px on a 360px-wide
+   phone — exactly the pinch that made pasted steps wrap unreadably. */
+.aem-row-step {
+  padding: 6px 10px 10px;
+}
+
+.aem-step-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  margin-bottom: 2px;
+}
+
+.aem-step-num {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+.aem-step-spacer {
+  flex: 1;
+}
+
+.aem-step-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: none;
+  background: transparent;
+  padding: 6px 4px;
+  font-size: 16px;
+  font-family: inherit;
+  color: var(--text);
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.5;
+  scroll-margin-bottom: 25vh;
+  /* Progressive enhancement: modern Chrome/Safari grow the box to fit
+     pasted text immediately with no JS round-trip. autoExpand() (JS,
+     called from onChange/mount) remains the universal fallback for
+     browsers without field-sizing support yet. */
+  field-sizing: content;
+}
+
+.aem-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  cursor: grab;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.aem-drag-handle:active {
+  cursor: grabbing;
+  color: var(--text);
+}
+
+.aem-row-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s, color 0.15s, transform 0.15s;
+}
+
+.aem-row-action:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.aem-row-action:active {
+  transform: scale(0.9);
+}
+
+.aem-row-action-danger:hover {
+  background: #ffebee;
+  color: var(--danger);
+}
+
+[data-theme="dark"] .aem-row-action-danger:hover,
+[data-theme="auto"][data-system-dark="true"] .aem-row-action-danger:hover {
+  background: #2a1515;
+  color: var(--danger);
+}
+
+/* ── Individual Steps / Raw Text Mode toggle ── */
+.aem-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.aem-section-header label {
+  margin-bottom: 0;
+}
+
+.aem-mode-toggle {
+  display: inline-flex;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 2px;
+  gap: 2px;
+}
+
+.aem-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.aem-mode-btn.active {
+  background: var(--card);
+  color: var(--primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* ── Smart Paste Splitting prompt ── */
+.aem-paste-prompt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  color: var(--text);
+  animation: aemPasteIn 0.18s ease-out;
+}
+
+@keyframes aemPasteIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.aem-paste-prompt-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.aem-paste-prompt .btn-small {
+  min-height: 30px;
+  padding: 5px 10px;
+  font-size: 12px;
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+.aem-paste-prompt .btn-small:hover {
+  background: var(--primary-dark);
+}
+
+.aem-paste-prompt .btn-small.ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+
+.aem-paste-prompt .btn-small.ghost:hover {
+  background: var(--surface);
+  color: var(--text);
+}
 
 /* I-8 Clipboard Sentinel chip removed 2026-07-10 — clipboard-triggered import
    prompt was intrusive; share-target + import sheet remain the entry points. */

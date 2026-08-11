@@ -141,7 +141,7 @@ export default function ImportSheet({
   const [importUrl, setImportUrl] = useState('');
   const [itemType, setItemType] = useState(initialItemType);
   // Tracks an explicit Meal/Drink chip tap in ImportInput, lifted here so the
-  // footer "Auto-Parse & Import" CTA (which calls execute*Import directly,
+  // footer "Smart Import" CTA (which calls execute*Import directly,
   // bypassing ImportInput's own submit handler) can also honour it. Reset
   // whenever the input source changes so a stale override doesn't leak into
   // an unrelated import (1.2, bar-library-parity-plan-2026-08-07.md).
@@ -1271,10 +1271,10 @@ export default function ImportSheet({
                       (activeTab === 'photo' && scanPages.length === 0)
                     }
                   >
-                    <Zap size={17} strokeWidth={2.5} aria-hidden="true" style={{ marginRight: 6, verticalAlign: '-3px' }} />
+                    <Zap size={17} strokeWidth={2.5} aria-hidden="true" style={{ marginRight: 8, verticalAlign: '-3px' }} />
                     {activeTab === 'photo'
                       ? `Extract Recipe${scanPages.length > 1 ? ` (${scanPages.length} pages)` : ''}`
-                      : 'Auto-Parse & Import'}
+                      : 'Smart Import'}
                   </button>
                 )}
                 {phase === 'loading' && (

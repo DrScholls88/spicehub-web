@@ -52,8 +52,8 @@
   --sh-surface: #2a2520;
   --sh-surface-hover: #342e28;
   --sh-text: #e8e2d8;
-  --sh-text-secondary: #b0a898;
-  --sh-text-muted: #988e82;
+  --sh-text-secondary: #c4bcb0; /* was #b0a898 — bumped 2026-08-10 for readability in tabs/input against the dark brown surface (verified WCAG AA via relative-luminance calc) */
+  --sh-text-muted: #a89e91; /* was #988e82 — same pass; used by .import-input-url placeholder */
   --sh-border: #3a342e;
   --sh-border-light: #2e2924;
   --sh-accent-bg: rgba(230, 81, 0, 0.1);
@@ -547,7 +547,7 @@
 
 /* ── Social detected card ───────────────────────────────────────────────────
    Status indicator only — NOT a tap target. The single import action is the
-   sticky footer's "Auto-Parse & Import" button; this card just confirms
+   sticky footer's "Smart Import" button; this card just confirms
    detection so the two never compete as duplicate CTAs. */
 .import-input-social-card {
   display: flex;

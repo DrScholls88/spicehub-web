@@ -167,15 +167,29 @@ export default function ImportInput({
   // it, and only re-run when the URL itself changes (NOT itemType — that was
   // the bug: including itemType here made a manual toggle re-trigger this
   // same effect, which then reasserted the URL-based guess over the user's tap).
+  //
+  // 2026-08-10 bugfix: also skip auto-detect entirely when initialType is
+  // 'drink' — i.e. this import was launched from the Bar screen. Without
+  // this guard, pasting almost any Instagram/TikTok link (which
+  // detectImportType() defaults to 'meal' for, absent explicit drink
+  // keywords) silently flipped a Bar-launched import back to Meal the
+  // instant a URL landed in the field, even though the badge had correctly
+  // shown "Saving as Drink" a moment earlier. userTypedTypeRef alone wasn't
+  // enough to prevent this — it resets to false on every new URL (by
+  // design, so a genuinely new paste gets a fresh guess), but a Bar launch
+  // is a stronger, standing signal than any single URL's heuristics and
+  // should never be silently overridden. This mirrors the same
+  // `|| initialItemType === 'drink'` guard ImportSheet.jsx's own
+  // userChose/kindLocked logic already uses everywhere else.
   useEffect(() => {
-    if (url && !userTypedTypeRef.current) {
+    if (url && !userTypedTypeRef.current && initialType !== 'drink') {
       const detected = detectImportType(url);
       if (detected && detected !== itemType) {
         setItemType(detected);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url]);
+  }, [url, initialType]);
 
   const handleUrlSubmit = useCallback(() => {
     if (url.trim()) {
@@ -267,7 +281,7 @@ export default function ImportInput({
                       value={url}
                       onChange={(e) => setUrl(e.target.value)}
                       onKeyDown={handleUrlKeyDown}
-                      placeholder="Paste a link, or drop text or an image…"
+                      placeholder="Paste an Instagram, TikTok, or recipe link…"
                       autoFocus
                     />
                     <AnimatePresence>
@@ -304,7 +318,7 @@ export default function ImportInput({
                   </div>
                   {socialDetected && (
                     // Status-only chip — the sole import action lives in the sticky
-                    // footer's "Auto-Parse & Import" button, so this never doubles
+                    // footer's "Smart Import" button, so this never doubles
                     // as a second tap target (previously it duplicated that button).
                     <div className="import-input-social-card" aria-live="polite">
                       <div className="import-input-social-icon">
@@ -312,7 +326,7 @@ export default function ImportInput({
                       </div>
                       <div className="import-input-social-meta">
                         <strong>{socialDetected} link detected</strong>
-                        <small>Ready — tap Auto-Parse &amp; Import below</small>
+                        <small>Ready — tap Smart Import below</small>
                       </div>
                     </div>
                   )}
@@ -355,8 +369,8 @@ export default function ImportInput({
                     onClick={() => { hapticLight(); setShowTypeOverride(true); }}
                   >
                     <span className="import-input-type-chip-emoji" aria-hidden="true">{itemType === 'drink' ? '🍸' : '🍽️'}</span>
-                    Saving as <strong>{itemType === 'drink' ? 'Drink' : 'Meal'}</strong>
-                    <span className="import-input-type-chip-change">Change</span>
+                    Saving as: <strong>{itemType === 'drink' ? 'Drink' : 'Meal'}</strong>
+                    <span className="import-input-type-chip-change">(Change)</span>
                   </button>
                 ) : (
                   <div className="import-input-type-toggle">
