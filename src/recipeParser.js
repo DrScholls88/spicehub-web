@@ -5158,13 +5158,39 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
           await resolveDisplayableImage(blogRecipe.image || capturedImageUrl || '', persistCapturedImage);
         let carouselImages = [];
         try { carouselImages = await persistCarousel(capturedImages || [], persistCapturedImage); } catch { /* optional */ }
+        // 2026-08-11: dual-source photo preservation. When both the blog and
+        // Instagram have their own cover photo, the `||` above picks exactly
+        // one as `imageUrl` — the loser was previously discarded outright
+        // (not even added to the carousel pool), the exact "tapping one
+        // deletes the other" report but for the automatic cover choice
+        // rather than the manual CoverPicker one (see CoverPicker.jsx for
+        // the matching fix on the manual-switch side). Fold the runner-up
+        // into _carouselImages so MealDetail's gallery can still show it.
+        if (blogRecipe.image && capturedImageUrl && blogRecipe.image !== capturedImageUrl) {
+          const runnerUp = resolvedImageUrl === blogRecipe.image ? capturedImageUrl : blogRecipe.image;
+          const alreadyPresent = carouselImages.some(c => (c?.url || c?.dataUrl) === runnerUp);
+          if (!alreadyPresent) {
+            try {
+              const persistedRunnerUp = await persistCapturedImage(runnerUp);
+              if (persistedRunnerUp) carouselImages.push({ url: runnerUp, dataUrl: persistedRunnerUp, kind: 'alt-cover' });
+            } catch { /* best-effort — losing this extra photo is not fatal */ }
+          }
+        }
         // PiP preservation: videoUrl always = IG URL when input was a reel/video
         // capturedIsVideo covers /p/ posts that are videos (Apify flag)
         const isReel = /\/(reel|tv)\//i.test(url) || capturedIsVideo;
         const finalRecipe = {
           name: blogRecipe.name || generateTitleFromIngredients(blogRecipe.ingredients, type),
-          ingredients: blogRecipe.ingredients.join('\n'),
-          directions: blogRecipe.directions.join('\n'),
+          // 2026-08-11: was `.join('\n')` (a single string) — every other
+          // recipe-building branch in this file returns ingredients/directions
+          // as arrays, and ImportReview.jsx gates on `Array.isArray(...)`
+          // before rendering rows (falls back to [] otherwise). A joined
+          // string silently rendered as 0 ingredients / 0 steps even though
+          // extraction itself succeeded — this is what made "Extracted
+          // ... from ..." log a full recipe while the review screen showed
+          // nothing. Root cause of the theeburgerdude.com 0/0 report.
+          ingredients: blogRecipe.ingredients,
+          directions: blogRecipe.directions,
           imageUrl: resolvedImageUrl,
           link: blogRecipe.link || url,
           videoUrl: isReel ? url : '',

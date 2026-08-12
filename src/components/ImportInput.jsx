@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Pencil, X as XIcon, Sparkles } from 'lucide-react';
+import { Pencil, X as XIcon, Sparkles, ChevronDown, ArrowLeft } from 'lucide-react';
 import { isSocialMediaUrl, getSocialPlatform, detectImportType } from '../recipeParser.js';
 import { hapticLight } from '../haptics';
 import PhotoScanSession from './PhotoScanSession';
@@ -17,15 +17,16 @@ const TYPE_TOGGLE_TRANSITION = `background ${SH_SPRING} 0.15s, color ${SH_SPRING
 /**
  * ImportInput — the input form for the Collapse & Reveal import flow.
  *
- * When collapsed=false: full input area with tabs (URL | Paste Text | Photo),
- * type toggle, and import buttons.
+ * When collapsed=false: full input area with tabs (Link | Photo/File — see
+ * 2026-08-11 comment above the tabs JSX for why "Text" isn't a visible tab
+ * anymore), a type dropdown badge, and import buttons.
  *
  * When collapsed=true: compact bar showing the current URL + edit icon.
  * Tap to re-expand via onReExpand.
  *
  * Props:
  *   collapsed        — boolean, whether to show collapsed status bar
- *   activeTab        — controlled active tab ('url' | 'paste' | 'photo')
+ *   activeTab        — controlled active tab ('url' | 'paste' | 'photo' — 'paste' is reachable only via error/offline recovery now)
  *   setActiveTab     — setter for active tab
  *   url              — controlled url value
  *   setUrl           — setter for url value
@@ -73,9 +74,8 @@ export default function ImportInput({
 
   // Local state for social platform chip detection
   const [socialDetected, setSocialDetected] = useState(null);
-  // Smart ingestion: drag-over ring + auto-detected type disclosure
+  // Smart ingestion: drag-over ring
   const [dragOver, setDragOver] = useState(false);
-  const [showTypeOverride, setShowTypeOverride] = useState(false);
   // Files dropped/pasted outside the Photo tab, handed to PhotoScanSession
   const [incomingFiles, setIncomingFiles] = useState(null);
 
@@ -260,11 +260,17 @@ export default function ImportInput({
               onDragLeave={(e) => { e.preventDefault(); setDragOver(false); }}
               onPaste={handleSmartPaste}
             >
-              {/* Segmented tabs */}
+              {/* Segmented tabs — 2026-08-11: dropped the "Text" tab as a
+                  top-level entry point (redundant with Create Recipe's manual
+                  form for most users). The underlying 'paste' tab state is
+                  intentionally NOT removed — it's still how offline imports
+                  and the "couldn't read this link" error recovery work (see
+                  the "Paste instead" button and offline-import banner in
+                  ImportSheet.jsx). Only reachable programmatically now, with
+                  a back-link below instead of a tab button. */}
               <div className="import-input-tabs">
                 <button className={tab === 'url' ? 'active' : ''} onClick={() => setTab('url')} style={{ transition: TAB_BUTTON_TRANSITION }}>Link</button>
-                <button className={tab === 'paste' ? 'active' : ''} onClick={() => setTab('paste')} style={{ transition: TAB_BUTTON_TRANSITION }}>Text</button>
-                <button className={tab === 'photo' ? 'active' : ''} onClick={() => setTab('photo')} style={{ transition: TAB_BUTTON_TRANSITION }}>Photo</button>
+                <button className={tab === 'photo' ? 'active' : ''} onClick={() => setTab('photo')} style={{ transition: TAB_BUTTON_TRANSITION }}>Photo/File</button>
               </div>
 
               {/* URL tab */}
@@ -333,9 +339,19 @@ export default function ImportInput({
                 </div>
               )}
 
-              {/* Paste Text tab */}
+              {/* Paste Text — no longer a top-level tab (see comment above the
+                  segmented tabs), only entered via error recovery / offline
+                  fallback, so it gets a back-link instead of a tab indicator. */}
               {tab === 'paste' && (
                 <div>
+                  <button
+                    type="button"
+                    className="import-input-back-to-link"
+                    onClick={() => setTab('url')}
+                  >
+                    <ArrowLeft size={14} strokeWidth={2.5} aria-hidden="true" />
+                    Back to link
+                  </button>
                   <textarea
                     className="import-input-paste"
                     value={pasteText}
@@ -359,37 +375,33 @@ export default function ImportInput({
               )}
             </div>
 
-            {/* Auto-detected type — compact chip, override on demand (no forced upfront choice) */}
+            {/* Auto-detected type — single-tap inline dropdown badge. Was a
+                two-tap reveal (tap chip → tap Meal/Drink); a native <select>
+                overlaid on the styled badge gets the same result in one tap
+                and comes with built-in keyboard/a11y support for free. */}
             {tab !== 'photo' && (
               <div className="import-input-type-row">
-                {!showTypeOverride ? (
-                  <button
-                    type="button"
-                    className="import-input-type-chip"
-                    onClick={() => { hapticLight(); setShowTypeOverride(true); }}
-                  >
-                    <span className="import-input-type-chip-emoji" aria-hidden="true">{itemType === 'drink' ? '🍸' : '🍽️'}</span>
+                <div className={`import-input-type-badge type-${itemType}`} style={{ transition: TYPE_TOGGLE_TRANSITION }}>
+                  <span className="import-input-type-badge-emoji" aria-hidden="true">{itemType === 'drink' ? '🍸' : '🍽️'}</span>
+                  <span className="import-input-type-badge-text">
                     Saving as: <strong>{itemType === 'drink' ? 'Drink' : 'Meal'}</strong>
-                    <span className="import-input-type-chip-change">(Change)</span>
-                  </button>
-                ) : (
-                  <div className="import-input-type-toggle">
-                    <button
-                      className={itemType === 'meal' ? 'active' : ''}
-                      onClick={() => { hapticLight(); userTypedTypeRef.current = true; setItemType('meal'); onManualTypeChange?.(); }}
-                      style={{ transition: TYPE_TOGGLE_TRANSITION }}
-                    >
-                      🍽️ Meal
-                    </button>
-                    <button
-                      className={itemType === 'drink' ? 'active' : ''}
-                      onClick={() => { hapticLight(); userTypedTypeRef.current = true; setItemType('drink'); onManualTypeChange?.(); }}
-                      style={{ transition: TYPE_TOGGLE_TRANSITION }}
-                    >
-                      🍸 Drink
-                    </button>
-                  </div>
-                )}
+                  </span>
+                  <ChevronDown size={14} strokeWidth={2.5} className="import-input-type-badge-chevron" aria-hidden="true" />
+                  <select
+                    className="import-input-type-badge-select"
+                    value={itemType}
+                    onChange={(e) => {
+                      hapticLight();
+                      userTypedTypeRef.current = true;
+                      setItemType(e.target.value);
+                      onManualTypeChange?.();
+                    }}
+                    aria-label="Save as Meal or Drink"
+                  >
+                    <option value="meal">🍽️ Meal</option>
+                    <option value="drink">🍸 Drink</option>
+                  </select>
+                </div>
               </div>
             )}
           </motion.div>

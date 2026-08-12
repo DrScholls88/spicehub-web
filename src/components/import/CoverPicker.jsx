@@ -40,9 +40,26 @@ function CoverPicker({ recipe, onChange }) {
 
   const current = recipe.image || recipe.imageUrl || '';
 
+  // 2026-08-11: switching cover used to just overwrite image/imageUrl —
+  // the outgoing cover wasn't stored anywhere else, so it was gone the
+  // instant you tapped a different thumbnail (SpiceHub's "tapping one
+  // deletes the other" report). Fold whatever was the cover before this
+  // tap into _carouselImages so it stays available in the gallery instead
+  // of vanishing.
   const select = (src) => {
     if (src === current) return;
-    onChange({ ...recipe, image: src, imageUrl: src, _imageStatus: src.startsWith('data:') ? 'data-url' : 'remote' });
+    const alreadyKept = (Array.isArray(recipe._carouselImages) ? recipe._carouselImages : [])
+      .some(c => (c?.dataUrl || c?.url) === current);
+    const nextCarousel = alreadyKept || !current
+      ? recipe._carouselImages
+      : [...(Array.isArray(recipe._carouselImages) ? recipe._carouselImages : []), { url: current, dataUrl: current, kind: 'former-cover' }];
+    onChange({
+      ...recipe,
+      image: src,
+      imageUrl: src,
+      _imageStatus: src.startsWith('data:') ? 'data-url' : 'remote',
+      _carouselImages: nextCarousel,
+    });
   };
 
   return (

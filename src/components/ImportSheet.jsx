@@ -1271,10 +1271,12 @@ export default function ImportSheet({
                       (activeTab === 'photo' && scanPages.length === 0)
                     }
                   >
-                    <Zap size={17} strokeWidth={2.5} aria-hidden="true" style={{ marginRight: 8, verticalAlign: '-3px' }} />
-                    {activeTab === 'photo'
-                      ? `Extract Recipe${scanPages.length > 1 ? ` (${scanPages.length} pages)` : ''}`
-                      : 'Smart Import'}
+                    <span className="import-sheet-btn-content">
+                      <Zap size={17} strokeWidth={2.5} aria-hidden="true" />
+                      {activeTab === 'photo'
+                        ? `Extract Recipe${scanPages.length > 1 ? ` (${scanPages.length} pages)` : ''}`
+                        : 'Smart Import'}
+                    </span>
                   </button>
                 )}
                 {phase === 'loading' && (

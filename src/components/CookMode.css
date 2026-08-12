@@ -2,15 +2,21 @@
    A-2 ── CookMode Inline Timer Pills + Fullscreen Timer Overlay
    ══════════════════════════════════════════════════════════════════════════════ */
 
-/* Inline pill inside step text */
+/* Inline pill inside step text
+   NOTE: fills/borders are tinted from var(--primary) via color-mix so they
+   track the theme's actual accent hue (orange in light, green in dark).
+   The rgba() lines are a pre-color-mix fallback for older browsers — keep
+   them in sync with the color-mix percentage, don't delete them. */
 .cm-timer-pill {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   padding: 2px 9px 2px 6px;
   background: rgba(230, 81, 0, 0.10);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
   color: var(--primary, #e65100);
   border: 1.5px solid rgba(230, 81, 0, 0.28);
+  border: 1.5px solid color-mix(in srgb, var(--primary) 28%, transparent);
   border-radius: 999px;
   font-size: 0.85em;
   font-weight: 700;
@@ -23,7 +29,9 @@
 
 .cm-timer-pill:hover:not(:disabled) {
   background: rgba(230, 81, 0, 0.18);
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
   border-color: rgba(230, 81, 0, 0.50);
+  border-color: color-mix(in srgb, var(--primary) 50%, transparent);
   transform: scale(1.04);
 }
 
@@ -43,8 +51,10 @@
   margin-top: 10px;
   padding: 6px 14px 6px 10px;
   background: rgba(230, 81, 0, 0.08);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
   color: var(--primary, #e65100);
   border: 1.5px solid rgba(230, 81, 0, 0.22);
+  border: 1.5px solid color-mix(in srgb, var(--primary) 22%, transparent);
   border-radius: 999px;
   font-size: 13px;
   font-weight: 600;
@@ -52,7 +62,10 @@
   transition: all 0.22s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-.cm-timer-running-pill:hover { background: rgba(230, 81, 0, 0.14); }
+.cm-timer-running-pill:hover {
+  background: rgba(230, 81, 0, 0.14);
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+}
 
 /* Pulsing dot */
 .cm-timer-pulse {
@@ -84,8 +97,11 @@
   border-radius: inherit;
 }
 
-@media (prefers-color-scheme: dark) {
-  .cm-timer-fullscreen { background: rgba(18, 12, 8, 0.97); }
+/* Theme-driven, not OS-driven — must follow the app's own data-theme
+   toggle, not prefers-color-scheme, or this overlay goes light-on-dark
+   whenever the user's OS theme and in-app theme disagree. */
+[data-theme="dark"] .cm-timer-fullscreen {
+  background: rgba(20, 16, 13, 0.97);
 }
 
 .cm-tfs-close {
@@ -97,15 +113,18 @@
   border: none;
   background: rgba(0, 0, 0, 0.07);
   border-radius: 999px;
-  color: var(--text-secondary, #666);
+  color: var(--text-light);
   cursor: pointer;
   transition: background 0.18s;
 }
 .cm-tfs-close:hover { background: rgba(0, 0, 0, 0.12); }
 
+[data-theme="dark"] .cm-tfs-close { background: rgba(255, 255, 255, 0.08); }
+[data-theme="dark"] .cm-tfs-close:hover { background: rgba(255, 255, 255, 0.14); }
+
 .cm-tfs-label {
   font-size: 16px; font-weight: 600;
-  color: var(--text-secondary, #666);
+  color: var(--text-light);
   text-align: center; padding: 0 24px; margin-top: 24px;
 }
 
@@ -117,13 +136,16 @@
 }
 
 .cm-tfs-ring { width: 100%; height: 100%; overflow: visible; }
-.cm-ring-track { stroke: rgba(230, 81, 0, 0.12); }
+.cm-ring-track {
+  stroke: rgba(230, 81, 0, 0.12);
+  stroke: color-mix(in srgb, var(--primary) 12%, transparent);
+}
 
 .cm-ring-fill {
   stroke: var(--primary, #e65100);
   transition: stroke-dashoffset 0.8s cubic-bezier(0.32, 0.72, 0, 1);
 }
-.cm-ring-done { stroke: #4caf50; }
+.cm-ring-done { stroke: var(--success); }
 
 .cm-tfs-time-wrap {
   position: absolute; inset: 0;
@@ -135,15 +157,15 @@
 .cm-tfs-time {
   font-size: 46px; font-weight: 700;
   letter-spacing: -0.02em;
-  color: var(--text-primary, #1a1a1a);
+  color: var(--text);
   font-variant-numeric: tabular-nums;
   transition: color 0.3s; line-height: 1;
 }
 
-.cm-tfs-done { color: #4caf50; }
+.cm-tfs-done { color: var(--success); }
 
 .cm-tfs-urgent {
-  color: #e53935;
+  color: var(--danger);
   animation: cm-tfs-throb 0.6s ease-in-out infinite alternate;
 }
 
@@ -154,7 +176,7 @@
 
 .cm-tfs-done-label {
   font-size: 18px; font-weight: 700;
-  color: #4caf50; margin-top: 4px; letter-spacing: 0.04em;
+  color: var(--success); margin-top: 4px; letter-spacing: 0.04em;
 }
 
 .cm-tfs-controls {
@@ -171,25 +193,38 @@
 
 .cm-tfs-pause {
   background: var(--primary, #e65100); color: #fff;
-  box-shadow: 0 4px 16px rgba(230, 81, 0, 0.30);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--primary) 30%, transparent);
 }
-.cm-tfs-pause:hover { background: #bf360c; transform: scale(1.03); }
+.cm-tfs-pause:hover { filter: brightness(0.85); transform: scale(1.03); }
 
 .cm-tfs-cancel {
-  background: rgba(0, 0, 0, 0.07); color: var(--text-secondary, #666);
+  background: rgba(0, 0, 0, 0.07); color: var(--text-light);
 }
 .cm-tfs-cancel:hover { background: rgba(0, 0, 0, 0.12); }
 
+[data-theme="dark"] .cm-tfs-cancel { background: rgba(255, 255, 255, 0.08); }
+[data-theme="dark"] .cm-tfs-cancel:hover { background: rgba(255, 255, 255, 0.14); }
+
 .cm-tfs-dismiss {
-  background: #4caf50; color: #fff;
+  background: var(--success); color: #fff;
   font-size: 17px; padding: 14px 36px;
   box-shadow: 0 4px 16px rgba(76, 175, 80, 0.30);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--success) 30%, transparent);
 }
-.cm-tfs-dismiss:hover { background: #388e3c; transform: scale(1.03); }
+.cm-tfs-dismiss:hover { filter: brightness(0.9); transform: scale(1.03); }
 .cm-tfs-dismiss:active { transform: scale(0.97); }
 
+/* Dark theme's --success (#66bb6a) is too light to clear 4.5:1 against
+   white button text (2.36:1, computed) — darken it for this specific
+   white-on-success button rather than touching the shared token, which
+   is also used as a plain accent color elsewhere. 30% black mix lands
+   at 4.55:1. */
+[data-theme="dark"] .cm-tfs-dismiss {
+  background: color-mix(in srgb, var(--success) 70%, black);
+}
+
 .cm-tfs-step-ctx {
-  font-size: 12px; color: var(--text-secondary, #999);
+  font-size: 12px; color: var(--text-muted);
   text-align: center; margin-top: 4px;
 }
 
@@ -202,8 +237,10 @@
   margin: 4px auto 0;
   padding: 7px 16px;
   border: 1.5px solid rgba(230, 81, 0, 0.30);
+  border: 1.5px solid color-mix(in srgb, var(--primary) 30%, transparent);
   border-radius: 999px;
   background: rgba(230, 81, 0, 0.10);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
   color: var(--primary, #e65100);
   font-size: 13px;
   font-weight: 700;
@@ -213,5 +250,8 @@
   transition: background 0.18s ease, transform 0.1s ease;
 }
 
-.cm-watch-btn:hover { background: rgba(230, 81, 0, 0.18); }
+.cm-watch-btn:hover {
+  background: rgba(230, 81, 0, 0.18);
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+}
 .cm-watch-btn:active { transform: scale(0.96); }

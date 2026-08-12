@@ -17,6 +17,18 @@ function autoExpand(el) {
 let rowIdSeq = 0;
 const makeRowId = () => `row-${Date.now()}-${rowIdSeq++}`;
 
+// Split raw pasted/typed text into steps on BLANK lines, not every line
+// break. A single step is very often several sentences or a wrapped line —
+// treating every newline as a new step (the original behavior) chopped
+// real steps into fragments. A step boundary is one or more blank lines;
+// line breaks *within* a step are joined back into one flowing line.
+function splitIntoSteps(text) {
+  return (text || '')
+    .split(/\r?\n\s*\r?\n+/)
+    .map(para => para.split(/\r?\n/).map(l => l.trim()).filter(Boolean).join(' ').trim())
+    .filter(Boolean);
+}
+
 // Android's soft keyboard needs a beat to finish animating before the
 // visual viewport settles — scrolling immediately on focus measures the
 // pre-keyboard layout and undershoots. 300ms matches the keyboard-inset
@@ -168,7 +180,7 @@ export default function AddEditMeal({
     // If the user hits Save while still in Raw Text Mode, split it the same
     // way exitBulkMode does rather than silently dropping the toggle state.
     const finalDirections = directionsBulkMode
-      ? bulkDirectionsText.split(/\r?\n/).map(l => l.trim()).filter(Boolean)
+      ? splitIntoSteps(bulkDirectionsText)
       : directions;
     const data = {
       ...(isEdit ? { id: meal.id } : {}),
@@ -230,39 +242,41 @@ export default function AddEditMeal({
   };
 
   // Smart Paste Splitting — a multi-line paste into one step almost always
-  // means the user pasted several instructions at once. Intercept it and
-  // ask, rather than silently cramming N steps into one textarea.
+  // means the user pasted several instructions at once — but a single step
+  // is often several sentences or a wrapped line, so we only treat it as
+  // "several instructions" when there's a BLANK line between them. A plain
+  // multi-line paste (no blank lines) is just one step and pastes normally.
   const handlePasteInStep = (idx, e) => {
     const text = e.clipboardData?.getData('text') ?? '';
-    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    if (lines.length > 1) {
+    const steps = splitIntoSteps(text);
+    if (steps.length > 1) {
       e.preventDefault();
-      setPasteSplitPrompt({ index: idx, lines });
+      setPasteSplitPrompt({ index: idx, steps, raw: text });
     }
-    // Single-line paste: let the browser paste it in natively.
+    // Single step (even if it spans several lines): let the browser paste it in natively.
   };
   const resolvePasteSplit = (action) => {
     if (!pasteSplitPrompt) return;
-    const { index, lines } = pasteSplitPrompt;
+    const { index, steps, raw } = pasteSplitPrompt;
     if (action === 'split') {
       const replacingEmptyStep = !directions[index]?.trim();
-      spliceRows(setDirections, setDirectionIds, index, replacingEmptyStep ? 1 : 0, lines);
+      spliceRows(setDirections, setDirectionIds, index, replacingEmptyStep ? 1 : 0, steps);
     } else {
-      updateList(setDirections, index, lines.join('\n'));
+      updateList(setDirections, index, raw);
     }
     setPasteSplitPrompt(null);
   };
 
   // Individual Steps <-> Raw Text Mode
   const enterBulkMode = () => {
-    setBulkDirectionsText(directions.join('\n'));
+    setBulkDirectionsText(directions.join('\n\n'));
     setDirectionsBulkMode(true);
   };
   const exitBulkMode = () => {
-    const lines = bulkDirectionsText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    const next = lines.length ? lines : [''];
-    setDirections(next);
-    setDirectionIds(next.map(makeRowId));
+    const next = splitIntoSteps(bulkDirectionsText);
+    const finalSteps = next.length ? next : [''];
+    setDirections(finalSteps);
+    setDirectionIds(finalSteps.map(makeRowId));
     setDirectionsBulkMode(false);
   };
 
@@ -482,12 +496,12 @@ export default function AddEditMeal({
 
   {directionsBulkMode ? (
     <>
-      <p className="help-text">One step per line — paste a whole recipe and split it up here.</p>
+      <p className="help-text">Leave a blank line between steps — paste a whole recipe and split it up here. A step can span multiple lines.</p>
       <textarea
         value={bulkDirectionsText}
         onChange={e => { setBulkDirectionsText(e.target.value); autoExpand(e.target); }}
         ref={el => el && autoExpand(el)}
-        placeholder={'Preheat oven to 400°F...\nSeason the chicken...\nRoast for 25 minutes...'}
+        placeholder={'Preheat oven to 400°F.\n\nSeason the chicken with salt and pepper on all sides.\n\nRoast for 25 minutes, until the internal temp reads 165°F.'}
         rows={4}
         className="aem-step-textarea"
       />
@@ -668,7 +682,7 @@ function StepRow({ rowId, value, index, stepNumber, onChange, onRemove, onMoveTo
       />
       {pastePrompt && (
         <div className="aem-paste-prompt">
-          <span>Split pasted text into {pastePrompt.lines.length} steps?</span>
+          <span>Found {pastePrompt.steps.length} blank-line-separated steps in that paste — split them up?</span>
           <div className="aem-paste-prompt-actions">
             <button type="button" className="btn-small" onClick={() => onResolvePaste('split')}>Split</button>
             <button type="button" className="btn-small ghost" onClick={() => onResolvePaste('keep')}>Keep as one</button>

@@ -1167,6 +1167,29 @@ export function mergeRecipeData(existing, incoming) {
     ? { ...incoming._sources, ...existing._sources, videoUrl: mergedVideoUrl }
     : existing._sources;
 
+  // 2026-08-11: gathered-photo union. Previously this function only ever
+  // spread `...existing` as the base and never touched _carouselImages/
+  // _igCarouselImages/_scanPages, so a re-import that discovered NEW extra
+  // photos (e.g. blog page changed, or the IG carousel grew) silently
+  // couldn't add them — only the very first import's photo set ever stuck.
+  // Union both sides, deduped by src, so "keep any photos gathered in
+  // either [import]" holds across re-imports too, not just within one.
+  const mergePhotoArrays = (a, b) => {
+    const arrA = Array.isArray(a) ? a : [];
+    const arrB = Array.isArray(b) ? b : [];
+    if (!arrA.length) return arrB;
+    if (!arrB.length) return arrA;
+    const seen = new Set();
+    const out = [];
+    for (const item of [...arrA, ...arrB]) {
+      const key = typeof item === 'string' ? item : (item?.dataUrl || item?.url || '');
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(item);
+    }
+    return out;
+  };
+
   return {
     ...existing,
     // Prefer the version with more ingredients
@@ -1180,6 +1203,9 @@ export function mergeRecipeData(existing, incoming) {
     link: existing.link || incoming.link,
     videoUrl: mergedVideoUrl,
     _sources: mergedSources,
+    _carouselImages: mergePhotoArrays(existing._carouselImages, incoming._carouselImages),
+    _igCarouselImages: mergePhotoArrays(existing._igCarouselImages, incoming._igCarouselImages),
+    _scanPages: mergePhotoArrays(existing._scanPages, incoming._scanPages),
     updatedAt: new Date().toISOString(),
   };
 }

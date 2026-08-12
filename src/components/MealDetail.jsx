@@ -165,11 +165,21 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
   }, [sourceUrl, onClose]);
 
   // ── Photo gallery — swipeable when the import captured more than one photo.
-  // Multi-page photo/PDF Vision scans persist every page as meal._scanPages
-  // (see lib/photoImportEngine.js); Instagram/Reddit carousels persist extras
-  // as meal._carouselImages (see CoverPicker.jsx). Either way, the chosen
-  // cover (localImageUrl) leads, followed by whichever extra photos exist,
-  // deduped by src so the cover never appears twice.
+  // 2026-08-11: this used to be an either/or (scan pages OR carousel, never
+  // both) and never looked at _igCarouselImages at all, so a dual-source
+  // blog-link-follower import (blog hero + IG cover, or a re-import that
+  // folded a "runner-up" photo into _carouselImages — see recipeParser.js
+  // and CoverPicker.jsx) could gather photos the gallery would just never
+  // show. Now a full union of every source the pipeline can produce:
+  //   _scanPages         — multi-page photo/PDF Vision scans (lib/photoImportEngine.js)
+  //   _carouselImages     — Instagram/Reddit carousel + dual-source extras,
+  //                         persisted as {url, dataUrl, kind}
+  //   _igCarouselImages   — same carousel's *raw* remote URLs, kept as a
+  //                         fallback in case persistence failed for an entry;
+  //                         skipped here whenever _carouselImages already has
+  //                         that same raw url (same photo, don't double it up)
+  // The chosen cover (localImageUrl) always leads; everything else is deduped
+  // by src so nothing appears twice regardless of which array it came from.
   const galleryImages = useMemo(() => {
     const list = [];
     const seen = new Set();
@@ -179,20 +189,65 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
       list.push({ src, title: meal.name });
     };
     push(localImageUrl);
-    const extras = Array.isArray(meal._scanPages) && meal._scanPages.length > 1
-      ? meal._scanPages
-      : Array.isArray(meal._carouselImages)
-        ? meal._carouselImages.map(c => c?.dataUrl || c?.url)
-        : [];
-    for (const src of extras) push(src);
+
+    if (Array.isArray(meal._scanPages)) {
+      for (const src of meal._scanPages) push(src);
+    }
+
+    const carouselRawUrls = new Set();
+    if (Array.isArray(meal._carouselImages)) {
+      for (const c of meal._carouselImages) {
+        if (c?.url) carouselRawUrls.add(c.url);
+        push(c?.dataUrl || c?.url);
+      }
+    }
+
+    if (Array.isArray(meal._igCarouselImages)) {
+      for (const src of meal._igCarouselImages) {
+        if (carouselRawUrls.has(src)) continue; // same photo, already added above
+        push(src);
+      }
+    }
+
     return list;
-  }, [localImageUrl, meal._scanPages, meal._carouselImages, meal.name]);
+  }, [localImageUrl, meal._scanPages, meal._carouselImages, meal._igCarouselImages, meal.name]);
 
   const hasGallery = galleryImages.length > 1;
+  // Beyond ~8, individual dots get too small to hit reliably — fall back to
+  // the compact count pill instead of cramming the strip.
+  const useDots = hasGallery && galleryImages.length <= 8;
 
   const openLightboxAt = useCallback((idx) => {
     setLightboxIndex(idx);
     setLightboxOpen(true);
+  }, []);
+
+  // ── Swipeable hero carousel — the "multiphoto viewer" itself, not just an
+  // entry point into the lightbox. Scroll-snap does the heavy lifting (no
+  // extra JS drag library needed); this just tracks which slide is centered
+  // so the dot strip below can reflect it, and lets a dot tap jump-scroll.
+  const heroScrollRef = useRef(null);
+  const [activeSlide, setActiveSlide] = useState(0);
+  const heroRafRef = useRef(null);
+
+  const handleHeroScroll = useCallback(() => {
+    if (heroRafRef.current) return;
+    heroRafRef.current = requestAnimationFrame(() => {
+      heroRafRef.current = null;
+      const el = heroScrollRef.current;
+      if (!el || !el.clientWidth) return;
+      const idx = Math.round(el.scrollLeft / el.clientWidth);
+      setActiveSlide(prev => (prev !== idx ? idx : prev));
+    });
+  }, []);
+
+  useEffect(() => () => { if (heroRafRef.current) cancelAnimationFrame(heroRafRef.current); }, []);
+
+  const scrollToSlide = useCallback((idx) => {
+    const el = heroScrollRef.current;
+    if (!el) return;
+    el.scrollTo({ left: idx * el.clientWidth, behavior: 'smooth' });
+    setActiveSlide(idx);
   }, []);
 
   // ── PiP: floating video player — same source resolver MealLibrary tiles use.
@@ -326,7 +381,24 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
             Re-import's standalone floating copy is gone — see the ⋮ overflow
             menu above and the Source section below. ── */}
         <div className={`detail-image-wrap${videoSource ? ' detail-image-wrap-video' : ''}`}>
-          {localImageUrl ? (
+          {hasGallery ? (
+            // Multiphoto viewer: the hero itself swipes (scroll-snap, no
+            // extra drag library) instead of hiding every photo behind a
+            // tap into the lightbox. Tapping a slide still opens the full
+            // PhotoGallery/PhotoSwipe lightbox at that index for pinch-zoom.
+            <div className="detail-hero-carousel" ref={heroScrollRef} onScroll={handleHeroScroll}>
+              {galleryImages.map((img, i) => (
+                <img
+                  key={img.src.slice(0, 80) + i}
+                  src={img.src}
+                  alt={i === 0 ? meal.name : `${meal.name} — photo ${i + 1} of ${galleryImages.length}`}
+                  className="detail-hero-slide"
+                  onClick={() => openLightboxAt(i)}
+                  onError={e => { e.target.style.display = 'none'; }}
+                />
+              ))}
+            </div>
+          ) : localImageUrl ? (
             <img
               src={localImageUrl}
               alt={meal.name}
@@ -364,16 +436,35 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
             </div>
           )}
 
-          {/* Swipe-to-view badge — only when the import captured multiple photos
-              (multi-page photo/PDF Vision scans, Instagram/Reddit carousels) */}
-          {hasGallery && (
+          {/* Dot pagination — echoes Instagram's own carousel-post indicator,
+              a deliberate on-brand callback since these recipes usually came
+              FROM Instagram. Falls back to the compact count pill once the
+              strip would get too cramped to tap reliably (>8 photos). */}
+          {useDots && (
+            <div className="detail-hero-dots" role="tablist" aria-label={`${galleryImages.length} photos`}>
+              {galleryImages.map((_, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  role="tab"
+                  aria-selected={i === activeSlide}
+                  aria-label={`Photo ${i + 1} of ${galleryImages.length}`}
+                  className="detail-hero-dot"
+                  onClick={() => scrollToSlide(i)}
+                >
+                  <span className={`detail-hero-dot-inner${i === activeSlide ? ' is-active' : ''}`} />
+                </button>
+              ))}
+            </div>
+          )}
+          {hasGallery && !useDots && (
             <button
               className="detail-photo-count"
-              onClick={() => openLightboxAt(0)}
+              onClick={() => openLightboxAt(activeSlide)}
               aria-label={`View all ${galleryImages.length} photos — swipe to browse`}
               title="Swipe to view all photos"
             >
-              <Images size={13} strokeWidth={2} aria-hidden="true" /> 1/{galleryImages.length}
+              <Images size={13} strokeWidth={2} aria-hidden="true" /> {activeSlide + 1}/{galleryImages.length}
             </button>
           )}
         </div>

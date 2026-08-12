@@ -110,6 +110,11 @@
   position: relative;
   width: 100%;
   max-width: 480px;
+  /* vh fallback before dvh — matches the app-wide pattern in App.css. dvh
+     tracks the keyboard-shrunk visual viewport on browsers that support it
+     (this IS the primary fix for keyboard squeeze on mobile); vh is just the
+     safety net on older engines that don't parse dvh at all. */
+  max-height: calc(100vh - 48px);
   max-height: calc(100dvh - 48px);
   background: var(--sh-bg);
   border-radius: var(--sh-radius-lg) var(--sh-radius-lg) 0 0;
@@ -131,6 +136,7 @@
     align-items: center;
   }
   .import-sheet {
+    max-height: 85vh;
     max-height: 85dvh;
     border-radius: var(--sh-radius-lg);
     max-width: 520px;
@@ -218,17 +224,35 @@
   padding: 14px 20px;
   cursor: pointer;
   min-height: 50px;
-  transition: transform 80ms, box-shadow 120ms;
+  transition: transform 80ms, box-shadow 120ms, opacity 120ms;
   flex: 1;
 }
 .import-sheet-btn:active { transform: translateY(1px); }
+.import-sheet-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
 
 .import-sheet-btn-primary {
+  /* A full stadium pill at this width/height reads as an oversized capsule
+     rather than a button — dropped to the sheet's large-rect radius (still
+     clearly rounded, just not a chiclet) for a big full-width CTA. */
+  border-radius: var(--sh-radius-lg);
   background: var(--sh-accent);
   color: #fff;
   box-shadow: 0 4px 14px var(--sh-accent-shadow);
 }
 .import-sheet-btn-primary:hover { box-shadow: 0 6px 20px var(--sh-accent-shadow); }
+/* Icon + label as one centered group instead of an icon nudged to the left
+   edge with independently-centered text next to it. */
+.import-sheet-btn-content {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
 
 .import-sheet-btn-ghost {
   background: var(--sh-surface);
@@ -358,9 +382,11 @@
   background: transparent;
   font: inherit;
   font-weight: 600;
-  font-size: 13px;
+  /* Two tabs now instead of three (Text dropped 2026-08-11) — a bit more
+     size/padding fills the extra room instead of leaving it as dead space. */
+  font-size: 14px;
   color: var(--sh-text-secondary);
-  padding: 10px 6px;
+  padding: 11px 8px;
   border-radius: var(--sh-pill);
   cursor: pointer;
   transition: all 150ms;
@@ -398,16 +424,20 @@
   background: var(--sh-accent-bg);
 }
 
-/* ── Auto-detected type chip / override ─────────────────────────────────── */
+/* ── Auto-detected type — single-tap inline dropdown badge ──────────────── */
 .import-input-type-row {
   margin-bottom: 12px;
 }
-.import-input-type-chip {
+/* A native <select> sized to cover the whole badge (opacity: 0, positioned
+   absolute) drives this — tapping anywhere on the pill opens the OS picker,
+   so switching Meal ⇄ Drink is one tap instead of tap-to-reveal-then-tap. */
+.import-input-type-badge {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 7px;
   min-height: 40px;
-  padding: 6px 12px;
+  padding: 8px 12px;
   border-radius: var(--sh-pill);
   border: 1.5px solid var(--sh-border);
   background: var(--sh-bg);
@@ -416,15 +446,48 @@
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: border-color 150ms, background 150ms;
 }
-.import-input-type-chip strong { color: var(--sh-text); }
-.import-input-type-chip-emoji { font-size: 15px; line-height: 1; }
-.import-input-type-chip-change {
-  margin-left: 4px;
-  color: var(--sh-accent);
-  font-weight: 700;
+.import-input-type-badge.type-drink {
+  border-color: var(--sh-bar-border);
+  background: color-mix(in oklab, var(--sh-bar-bg) 10%, var(--sh-bg));
 }
+.import-input-type-badge-text strong { color: var(--sh-text); }
+.import-input-type-badge-emoji { font-size: 15px; line-height: 1; }
+.import-input-type-badge-chevron {
+  color: var(--sh-text-muted);
+  flex-shrink: 0;
+}
+.import-input-type-badge-select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  opacity: 0;
+  cursor: pointer;
+  font-size: 16px; /* stops iOS Safari zooming the sheet on open */
+}
+
+/* ── Paste-text back-link (2026-08-11: no longer a top-level tab) ───────── */
+.import-input-back-to-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: none;
+  padding: 6px 2px;
+  margin-bottom: 8px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sh-text-secondary);
+  cursor: pointer;
+  min-height: 32px;
+}
+.import-input-back-to-link:hover { color: var(--sh-accent); }
 
 /* ── Single primary CTA ─────────────────────────────────────────────────── */
 .import-input-primary-cta {
@@ -458,40 +521,6 @@
   background: var(--sh-bg);
   color: var(--sh-accent);
   box-shadow: var(--sh-shadow);
-}
-
-/* ── Type toggle (meal/drink) ───────────────────────────────────────────── */
-.import-input-type-toggle {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.import-input-type-toggle button {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 48px;
-  border-radius: var(--sh-radius-sm);
-  border: 1.5px solid var(--sh-border);
-  background: var(--sh-bg);
-  font: inherit;
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--sh-text-secondary);
-  cursor: pointer;
-  transition: all 150ms;
-}
-
-.import-input-type-toggle button.active {
-  border-color: var(--sh-accent);
-  background: var(--sh-accent-bg);
-  color: var(--sh-accent-dark);
-}
-[data-theme="dark"] .import-input-type-toggle button.active {
-  color: var(--sh-accent-light);
 }
 
 /* ── URL input ──────────────────────────────────────────────────────────── */
