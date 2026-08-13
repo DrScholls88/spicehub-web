@@ -87,6 +87,7 @@ export default function ShareHistorySheet({ open, onClose, friend, isOnline }) {
           />
           <motion.div
             className="st-sheet"
+            ref={swipe.sheetRef}
             variants={sheetVariants}
             initial="hidden"
             animate="visible"

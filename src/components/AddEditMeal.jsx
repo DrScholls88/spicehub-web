@@ -63,7 +63,20 @@ export default function AddEditMeal({
   // a multi-line paste lands in a single step textarea.
   const [pasteSplitPrompt, setPasteSplitPrompt] = useState(null); // { index, lines }
   const [notes, setNotes] = useState(meal?.notes || '');
-  const [link, setLink] = useState(meal?.link || '');
+  // Dual source links (2026-08-12): a recipe can have BOTH an Instagram/social
+  // link (the discovery surface — video, PiP) and a blog link (the recipe of
+  // record). Previously this form only exposed one "Recipe Link" field, so
+  // editing a dual-source import silently had nowhere to keep the second URL,
+  // and there was no way to manually add a blog link found separately from
+  // the social post. Mirrors the meal._sources shape MealDetail.jsx already
+  // reads (see its "Source links: dual (blog + reel)" section) — this form is
+  // now the read/write counterpart of that display, for both meals and drinks.
+  // Backward-compat seed: an existing single meal.link with no _sources yet
+  // is bucketed by whether it's a social URL or not.
+  const legacyLink = meal?.link || '';
+  const legacyLinkIsSocial = !!(legacyLink && isSocialMediaUrl(legacyLink));
+  const [igLink, setIgLink] = useState(meal?._sources?.instagramUrl || (legacyLinkIsSocial ? legacyLink : ''));
+  const [blogLink, setBlogLink] = useState(meal?._sources?.blogUrl || (!legacyLinkIsSocial ? legacyLink : ''));
   const [imageUrl, setImageUrl] = useState(meal?.imageUrl || '');
   const notesRef = useRef(null);
 
@@ -93,7 +106,14 @@ export default function AddEditMeal({
     if (result.name && result.name !== 'Imported Recipe') setName(result.name);
     if (result.ingredients?.length) setIngredients(result.ingredients);
     if (result.directions?.length) setDirections(result.directions);
-    if (result.link) setLink(result.link);
+    // Route the resolved link into the right bucket; prefer an explicit
+    // dual-source result (_sources) when the full import pipeline supplied one.
+    if (result._sources?.instagramUrl) setIgLink(result._sources.instagramUrl);
+    if (result._sources?.blogUrl) setBlogLink(result._sources.blogUrl);
+    if (!result._sources && result.link) {
+      if (isSocialMediaUrl(result.link)) setIgLink(result.link);
+      else setBlogLink(result.link);
+    }
     if (result.imageUrl) setImageUrl(result.imageUrl);
     return true;
   };
@@ -119,7 +139,8 @@ export default function AddEditMeal({
       if (!result) {
         setError('Could not extract recipe from that URL. The site may block automated access.');
       } else if (result._error) {
-        setLink(importUrl.trim());
+        const pasted = importUrl.trim();
+        if (isSocialMediaUrl(pasted)) setIgLink(pasted); else setBlogLink(pasted);
         if (result.reason === 'login-wall') {
           setError('This post requires login. You can still add the meal manually below.');
         } else {
@@ -182,6 +203,13 @@ export default function AddEditMeal({
     const finalDirections = directionsBulkMode
       ? splitIntoSteps(bulkDirectionsText)
       : directions;
+    // Primary `link` stays back-compat with every other consumer (re-import,
+    // copy-link, share, sourceHash dedup) — blog is preferred as "recipe of
+    // record" when both are present, matching the import pipeline's own
+    // preference (see recipeParser.js dual-source finalRecipe.link).
+    const igUrl = igLink.trim();
+    const blogUrl = blogLink.trim();
+    const primaryLink = blogUrl || igUrl;
     const data = {
       ...(isEdit ? { id: meal.id } : {}),
       name: name.trim(),
@@ -190,8 +218,20 @@ export default function AddEditMeal({
       ingredients: ingredients.filter(i => i.trim()).length ? ingredients.filter(i => i.trim()) : ['No ingredients listed'],
       directions: finalDirections.filter(d => d.trim()).length ? finalDirections.filter(d => d.trim()) : ['No directions listed'],
       notes: notes.trim(),
-      link: link.trim(),
+      link: primaryLink,
       imageUrl: imageUrl.trim(),
+      // Explicit even when both are blank, so clearing the fields in the form
+      // actually clears stale _sources on save instead of leaving it behind
+      // (db.meals.update() only merges keys present in this object).
+      _sources: (igUrl || blogUrl) ? {
+        primary: blogUrl ? 'blog' : 'instagram',
+        blogUrl,
+        instagramUrl: igUrl,
+        // Preserve an existing PiP videoUrl (set by the import pipeline for
+        // reels/videos) rather than dropping it just because this form
+        // doesn't have its own video-detection step.
+        videoUrl: meal?._sources?.videoUrl || (igUrl && /\/(reel|tv)\//i.test(igUrl) ? igUrl : ''),
+      } : null,
     };
     onSave(data);
   };
@@ -435,8 +475,13 @@ export default function AddEditMeal({
           )}
 
           <div className="form-group">
-            <label>Recipe Link</label>
-            <input type="url" value={link} onChange={e => setLink(e.target.value)} placeholder="https://..." />
+            <label>Instagram / Social Link</label>
+            <input type="url" value={igLink} onChange={e => setIgLink(e.target.value)} placeholder="https://instagram.com/reel/..." />
+          </div>
+          <div className="form-group">
+            <label>Blog Recipe Link</label>
+            <input type="url" value={blogLink} onChange={e => setBlogLink(e.target.value)} placeholder="https://example.com/recipe" />
+            <small className="aem-field-hint">Keep both — Instagram for the video, the blog for the full written recipe.</small>
           </div>
           <div className="form-group">
             <label>Image URL</label>

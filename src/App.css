@@ -2356,6 +2356,13 @@ body::before {
   box-shadow: 0 0 0 3px rgba(230, 81, 0, 0.1);
 }
 
+.aem-field-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
 .full-width {
   width: 100%;
   padding: 12px 14px;
@@ -13696,15 +13703,18 @@ body::before {
   height: 34px;
   border: none;
   background: #f0f0f0;
+  color: var(--text);
   border-radius: 50%;
   font-size: 16px;
+  line-height: 1;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-[data-theme="dark"] .st-close {
+[data-theme="dark"] .st-close,
+[data-theme="auto"][data-system-dark="true"] .st-close {
   background: #2a2a2a;
   color: var(--text);
 }

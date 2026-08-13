@@ -36,6 +36,7 @@ export default function FriendsSheet({ open, onClose, isOnline, showToast }) {
           {/* Sheet */}
           <motion.div
             className="st-sheet"
+            ref={swipe.sheetRef}
             variants={sheetVariants}
             initial="hidden"
             animate="visible"
