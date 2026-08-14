@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
-import { X, Share2, Copy, Check, Heart, Star, RefreshCw, Flame, UtensilsCrossed, ChefHat, Martini, FileDown, Play, Images, Pencil, UserPlus, MoreVertical, Tag, Clock, Globe, Leaf } from 'lucide-react';
+import { X, Share2, Copy, Check, Heart, Star, RefreshCw, Flame, UtensilsCrossed, ChefHat, Martini, FileDown, Play, Images, Pencil, UserPlus, MoreVertical, Tag, Clock, Globe, Leaf, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Utensils, Salad } from 'lucide-react';
 import PhotoGallery from './PhotoGallery';
 import { NUTRITION_LABELS } from '../recipeSchema';
 import { formatNutritionValue, formatIngredientLine } from '../utils/displayFormatter';
@@ -18,6 +18,15 @@ const STRENGTH_LABELS = {
   'very strong': 'Very strong',
   unknown: '',
 };
+
+/* Quick-glance ease badge — total cook time → difficulty proxy.
+   Thresholds are lenient (most social-media recipes are ≤ 45min). */
+function easeBadge(totalMin) {
+  if (!totalMin || totalMin <= 0) return null;
+  if (totalMin <= 20) return { label: 'Quick', level: 'easy', cls: 'detail-qi-ease--easy' };
+  if (totalMin <= 45) return { label: 'Moderate', level: 'moderate', cls: 'detail-qi-ease--moderate' };
+  return { label: 'Involved', level: 'involved', cls: 'detail-qi-ease--involved' };
+}
 
 function CopyLinkButton({ url }) {
   const [copied, setCopied] = useState(false);
@@ -54,8 +63,6 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
   const [scaleFactor, setScaleFactor] = useState(1.0);
 
   // ── Ingredient check-off (session-local, tap-to-strike-through) ──
-  // Resets whenever a different meal is opened, since this component instance
-  // is reused across meals (App.jsx renders it with a fixed key="meal-detail").
   const [checkedIngredients, setCheckedIngredients] = useState(() => new Set());
   useEffect(() => {
     setCheckedIngredients(new Set());
@@ -68,9 +75,7 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
     });
   }, []);
 
-  // ── Pantry cross-reference — reuses the same buildPantryMatchIndex logic
-  // MealLibrary already uses for its tile badges, scoped to just this meal so
-  // each ingredient line can show whether it's already in the pantry. ──
+  // ── Pantry cross-reference ──
   const missingIngredientSet = useMemo(() => {
     if (isDrink) return new Set();
     const index = buildPantryMatchIndex(fridgeInventory, [meal]);
@@ -78,24 +83,13 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
     return new Set((match?.missing || []).map(n => n.toLowerCase().trim()));
   }, [fridgeInventory, meal, isDrink]);
 
-  // 1.7: glass/garnish/method/abv are extracted and persisted on import
-  // (recipeSchema.js thinFromStructured) but MealDetail — the only detail
-  // view drinks get — never rendered them, so even a correct extraction
-  // looked broken to the user (I-6, bar-library-parity-plan-2026-08-07.md).
+  // Drink ABV strength tier
   const drinkStrengthTier = useMemo(
     () => (isDrink ? getStrengthTier(typeof meal.abv === 'number' ? meal.abv : null) : 'unknown'),
     [isDrink, meal.abv],
   );
 
-  // ── Labels row ──────────────────────────────────────────────────────────────
-  // Every facet the Meal Library filters on — total time, cuisine, dietary
-  // tags, and the user's own custom labels — was filterable there but invisible
-  // here, so a recipe's tags effectively vanished the moment you opened it.
-  // This block re-surfaces all four in one metadata row.
-  //
-  // Custom labels are stored on the meal as plain name strings (meal.tags);
-  // their colours live in the userTags table, so we look the palette up once
-  // and fall back to a neutral chip for a label whose tag was since deleted.
+  // ── Labels row ──
   const [tagPalette, setTagPalette] = useState(() => new Map());
   useEffect(() => {
     let cancelled = false;
@@ -135,24 +129,49 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
 
   const hasLabels = !!(totalTimeLabel || cuisineLabel || dietaryTags.length || customTags.length);
 
-  // ── Header diet: Heart + ⋮ overflow + Close only. Everything else that
-  // used to live in the header (Edit/Share/Send to Friend/Export) moves into
-  // this menu; Re-import's standalone floating-over-the-image copy is gone
-  // too — the overflow item below and the Source section's own button are
-  // the only two Re-import entry points left. ──
+  // ── Quick Info computed values ──
+  const totalMin = useMemo(() => getTotalMinutes(meal), [meal]);
+  const prepTimeLabel = useMemo(() => {
+    const raw = meal.prepTime || meal.prep_time;
+    if (!raw) return null;
+    if (typeof raw === 'number') return formatMinutes(raw);
+    const m = String(raw).match(/(\d+)/);
+    return m ? formatMinutes(parseInt(m[1], 10)) : String(raw);
+  }, [meal]);
+  const cookTimeLabel = useMemo(() => {
+    const raw = meal.cookTime || meal.cook_time;
+    if (!raw) return null;
+    if (typeof raw === 'number') return formatMinutes(raw);
+    const m = String(raw).match(/(\d+)/);
+    return m ? formatMinutes(parseInt(m[1], 10)) : String(raw);
+  }, [meal]);
+  const ease = useMemo(() => easeBadge(totalMin), [totalMin]);
+  const hasQuickInfo = !!(prepTimeLabel || cookTimeLabel || ease || meal.recipeYield);
+
+  // ── Sauces / Add-ons (collapsible) ──
+  const [saucesExpanded, setSaucesExpanded] = useState(false);
+  const hasSauces = useMemo(
+    () => Array.isArray(meal.sauces) && meal.sauces.length > 0 && meal.sauces.some(s => s && (s.name || s.ingredients?.length)),
+    [meal.sauces]
+  );
+
+  // ── Side dishes ──
+  const hasSides = useMemo(
+    () => Array.isArray(meal.sideDishes) && meal.sideDishes.length > 0 && meal.sideDishes.some(s => typeof s === 'string' && s.trim()),
+    [meal.sideDishes]
+  );
+
+  // ── Overflow menu ──
   const [overflowOpen, setOverflowOpen] = useState(false);
 
-  // ── PhotoSwipe lightbox ────────────────────────────────────────────────────────
+  // ── PhotoSwipe lightbox ──
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
 
   const localImageUrl = meal.imageUrl || null;
   const sourceUrl = meal.link || meal.sourceUrl || null;
 
-  // ── Re-import — runs the meal back through the Import Engine ─────────────────
-  // Was a photo-only "find a better photo" fetch; now a full re-import so the
-  // whole recipe (not just the image) gets refreshed, same as the Source
-  // section's Re-import action below.
+  // ── Re-import ──
   const handleReimport = useCallback(() => {
     if (!sourceUrl) return;
     if (window.__spicehubTriggerImport) {
@@ -164,22 +183,7 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
     }
   }, [sourceUrl, onClose]);
 
-  // ── Photo gallery — swipeable when the import captured more than one photo.
-  // 2026-08-11: this used to be an either/or (scan pages OR carousel, never
-  // both) and never looked at _igCarouselImages at all, so a dual-source
-  // blog-link-follower import (blog hero + IG cover, or a re-import that
-  // folded a "runner-up" photo into _carouselImages — see recipeParser.js
-  // and CoverPicker.jsx) could gather photos the gallery would just never
-  // show. Now a full union of every source the pipeline can produce:
-  //   _scanPages         — multi-page photo/PDF Vision scans (lib/photoImportEngine.js)
-  //   _carouselImages     — Instagram/Reddit carousel + dual-source extras,
-  //                         persisted as {url, dataUrl, kind}
-  //   _igCarouselImages   — same carousel's *raw* remote URLs, kept as a
-  //                         fallback in case persistence failed for an entry;
-  //                         skipped here whenever _carouselImages already has
-  //                         that same raw url (same photo, don't double it up)
-  // The chosen cover (localImageUrl) always leads; everything else is deduped
-  // by src so nothing appears twice regardless of which array it came from.
+  // ── Photo gallery ──
   const galleryImages = useMemo(() => {
     const list = [];
     const seen = new Set();
@@ -204,7 +208,7 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
 
     if (Array.isArray(meal._igCarouselImages)) {
       for (const src of meal._igCarouselImages) {
-        if (carouselRawUrls.has(src)) continue; // same photo, already added above
+        if (carouselRawUrls.has(src)) continue;
         push(src);
       }
     }
@@ -213,8 +217,6 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
   }, [localImageUrl, meal._scanPages, meal._carouselImages, meal._igCarouselImages, meal.name]);
 
   const hasGallery = galleryImages.length > 1;
-  // Beyond ~8, individual dots get too small to hit reliably — fall back to
-  // the compact count pill instead of cramming the strip.
   const useDots = hasGallery && galleryImages.length <= 8;
 
   const openLightboxAt = useCallback((idx) => {
@@ -222,10 +224,7 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
     setLightboxOpen(true);
   }, []);
 
-  // ── Swipeable hero carousel — the "multiphoto viewer" itself, not just an
-  // entry point into the lightbox. Scroll-snap does the heavy lifting (no
-  // extra JS drag library needed); this just tracks which slide is centered
-  // so the dot strip below can reflect it, and lets a dot tap jump-scroll.
+  // ── Swipeable hero carousel ──
   const heroScrollRef = useRef(null);
   const [activeSlide, setActiveSlide] = useState(0);
   const heroRafRef = useRef(null);
@@ -250,11 +249,27 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
     setActiveSlide(idx);
   }, []);
 
-  // ── PiP: floating video player — same source resolver MealLibrary tiles use.
+  // Carousel arrow navigation
+  const goPrev = useCallback(() => {
+    setActiveSlide(prev => {
+      const next = Math.max(0, prev - 1);
+      scrollToSlide(next);
+      return next;
+    });
+  }, [scrollToSlide]);
+
+  const goNext = useCallback(() => {
+    setActiveSlide(prev => {
+      const next = Math.min(galleryImages.length - 1, prev + 1);
+      scrollToSlide(next);
+      return next;
+    });
+  }, [scrollToSlide, galleryImages.length]);
+
+  // ── PiP: floating video player ──
   const videoSource = useMemo(() => (onPlayVideo ? getMealVideoSource(meal) : null), [onPlayVideo, meal]);
 
-  // Scale + format ingredients: prefer structured data (display formatter with
-  // unicode fractions + auto-pluralization), fall back to regex for legacy records.
+  // Scale + format ingredients
   const scaleIngredientLegacy = (ingredient, factor) => {
     const regex = /^(\d+\.?\d*|\d+\/\d+|\d+\s+\d+\/\d+)\s*(.*)$/;
     const match = ingredient.match(regex);
@@ -299,15 +314,110 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
         exit={{ y: '100%' }}
         transition={{ duration: 0.3, ease: [0.32, 0.72, 0, 1] }}
       >
-        {/* ── Drag handle (visual indicator for drag-down-to-close) ── */}
+        {/* ── Drag handle ── */}
         <div
           className="detail-swipe-handle"
           aria-hidden="true"
           onPointerDown={(e) => dragControls.start(e)}
         />
-        <div className="modal-header">
-          <h2>{meal.name}</h2>
-          <div className="modal-header-actions">
+
+        {/* ══════════════ HERO CAROUSEL ══════════════ */}
+        <div className={`detail-image-wrap${videoSource ? ' detail-image-wrap-video' : ''}`}>
+          {hasGallery ? (
+            <div className="detail-hero-carousel" ref={heroScrollRef} onScroll={handleHeroScroll}>
+              {galleryImages.map((img, i) => (
+                <img
+                  key={img.src.slice(0, 80) + i}
+                  src={img.src}
+                  alt={i === 0 ? meal.name : `${meal.name} — photo ${i + 1} of ${galleryImages.length}`}
+                  className="detail-hero-slide"
+                  onClick={() => openLightboxAt(i)}
+                  onError={e => { e.target.style.display = 'none'; }}
+                />
+              ))}
+            </div>
+          ) : localImageUrl ? (
+            <img
+              src={localImageUrl}
+              alt={meal.name}
+              className="detail-image"
+              style={{ cursor: 'zoom-in' }}
+              onClick={() => openLightboxAt(0)}
+              onError={e => { e.target.style.display = 'none'; }}
+            />
+          ) : (
+            <div className="detail-image-placeholder"><UtensilsCrossed size={32} strokeWidth={1.75} /></div>
+          )}
+          {galleryImages.length > 0 && (
+            <PhotoGallery
+              images={galleryImages}
+              index={lightboxIndex}
+              open={lightboxOpen}
+              onClose={() => setLightboxOpen(false)}
+            />
+          )}
+
+          {/* Carousel arrows — only for multi-photo galleries */}
+          {hasGallery && activeSlide > 0 && (
+            <button className="detail-hero-arrow detail-hero-arrow--left" onClick={goPrev} aria-label="Previous photo">
+              <ChevronLeft size={20} strokeWidth={2.5} />
+            </button>
+          )}
+          {hasGallery && activeSlide < galleryImages.length - 1 && (
+            <button className="detail-hero-arrow detail-hero-arrow--right" onClick={goNext} aria-label="Next photo">
+              <ChevronRight size={20} strokeWidth={2.5} />
+            </button>
+          )}
+
+          {/* Hero gradient + play control */}
+          {videoSource && (
+            <div className="detail-hero-gradient" onClick={() => onPlayVideo(meal)}>
+              <button
+                className="detail-play-btn"
+                aria-label={`Play ${videoSource.label} video in floating player`}
+                title={`Play video (${videoSource.label})`}
+                onClick={(e) => { e.stopPropagation(); onPlayVideo(meal); }}
+              >
+                <Play size={18} fill="#fff" color="#fff" aria-hidden="true" />
+              </button>
+              <span className="detail-hero-video-label">{videoSource.label} video</span>
+            </div>
+          )}
+
+          {/* Dot pagination */}
+          {useDots && (
+            <div className="detail-hero-dots" role="tablist" aria-label={`${galleryImages.length} photos`}>
+              {galleryImages.map((_, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  role="tab"
+                  aria-selected={i === activeSlide}
+                  aria-label={`Photo ${i + 1} of ${galleryImages.length}`}
+                  className="detail-hero-dot"
+                  onClick={() => scrollToSlide(i)}
+                >
+                  <span className={`detail-hero-dot-inner${i === activeSlide ? ' is-active' : ''}`} />
+                </button>
+              ))}
+            </div>
+          )}
+          {hasGallery && !useDots && (
+            <button
+              className="detail-photo-count"
+              onClick={() => openLightboxAt(activeSlide)}
+              aria-label={`View all ${galleryImages.length} photos — swipe to browse`}
+              title="Swipe to view all photos"
+            >
+              <Images size={13} strokeWidth={2} aria-hidden="true" /> {activeSlide + 1}/{galleryImages.length}
+            </button>
+          )}
+        </div>
+
+        {/* ══════════════ TITLE ROW — tighter, name + heart + overflow + close ══════════════ */}
+        <div className="detail-title-row">
+          <h2 className="detail-title-name">{meal.name}</h2>
+          <div className="detail-title-actions">
             {onToggleFavorite && (
               <button
                 className={`btn-icon heart-btn-detail ${meal.isFavorite ? 'favorited' : ''}`}
@@ -355,122 +465,7 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
           </div>
         </div>
 
-        {/* ── Cookbook stamp for shared recipes ── */}
-        {meal._sharedFrom && (
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            padding: '6px 14px', margin: '0 12px 6px',
-            borderRadius: 10,
-            background: 'rgba(var(--primary-rgb, 255,107,53), 0.08)',
-            border: '1px solid rgba(var(--primary-rgb, 255,107,53), 0.18)',
-          }}>
-            <span style={{ fontSize: 14 }} aria-hidden="true">📖</span>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--primary)' }}>
-              From @{meal._sharedFrom}
-            </span>
-            {meal._sharedAt && (
-              <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>
-                {new Date(meal._sharedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* ── Hero media: 16:9 banner, dark gradient + integrated play button
-            when a video source exists, instead of a small corner badge.
-            Re-import's standalone floating copy is gone — see the ⋮ overflow
-            menu above and the Source section below. ── */}
-        <div className={`detail-image-wrap${videoSource ? ' detail-image-wrap-video' : ''}`}>
-          {hasGallery ? (
-            // Multiphoto viewer: the hero itself swipes (scroll-snap, no
-            // extra drag library) instead of hiding every photo behind a
-            // tap into the lightbox. Tapping a slide still opens the full
-            // PhotoGallery/PhotoSwipe lightbox at that index for pinch-zoom.
-            <div className="detail-hero-carousel" ref={heroScrollRef} onScroll={handleHeroScroll}>
-              {galleryImages.map((img, i) => (
-                <img
-                  key={img.src.slice(0, 80) + i}
-                  src={img.src}
-                  alt={i === 0 ? meal.name : `${meal.name} — photo ${i + 1} of ${galleryImages.length}`}
-                  className="detail-hero-slide"
-                  onClick={() => openLightboxAt(i)}
-                  onError={e => { e.target.style.display = 'none'; }}
-                />
-              ))}
-            </div>
-          ) : localImageUrl ? (
-            <img
-              src={localImageUrl}
-              alt={meal.name}
-              className="detail-image"
-              style={{ cursor: 'zoom-in' }}
-              onClick={() => openLightboxAt(0)}
-              onError={e => { e.target.style.display = 'none'; }}
-            />
-          ) : (
-            <div className="detail-image-placeholder"><UtensilsCrossed size={32} strokeWidth={1.75} /></div>
-          )}
-          {galleryImages.length > 0 && (
-            <PhotoGallery
-              images={galleryImages}
-              index={lightboxIndex}
-              open={lightboxOpen}
-              onClose={() => setLightboxOpen(false)}
-            />
-          )}
-
-          {/* Hero gradient + integrated play control — same onPlayVideo/
-              FloatingVideoPlayer wiring as before, just presented as part of
-              the hero banner instead of a small corner badge. */}
-          {videoSource && (
-            <div className="detail-hero-gradient" onClick={() => onPlayVideo(meal)}>
-              <button
-                className="detail-play-btn"
-                aria-label={`Play ${videoSource.label} video in floating player`}
-                title={`Play video (${videoSource.label})`}
-                onClick={(e) => { e.stopPropagation(); onPlayVideo(meal); }}
-              >
-                <Play size={18} fill="#fff" color="#fff" aria-hidden="true" />
-              </button>
-              <span className="detail-hero-video-label">{videoSource.label} video</span>
-            </div>
-          )}
-
-          {/* Dot pagination — echoes Instagram's own carousel-post indicator,
-              a deliberate on-brand callback since these recipes usually came
-              FROM Instagram. Falls back to the compact count pill once the
-              strip would get too cramped to tap reliably (>8 photos). */}
-          {useDots && (
-            <div className="detail-hero-dots" role="tablist" aria-label={`${galleryImages.length} photos`}>
-              {galleryImages.map((_, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  role="tab"
-                  aria-selected={i === activeSlide}
-                  aria-label={`Photo ${i + 1} of ${galleryImages.length}`}
-                  className="detail-hero-dot"
-                  onClick={() => scrollToSlide(i)}
-                >
-                  <span className={`detail-hero-dot-inner${i === activeSlide ? ' is-active' : ''}`} />
-                </button>
-              ))}
-            </div>
-          )}
-          {hasGallery && !useDots && (
-            <button
-              className="detail-photo-count"
-              onClick={() => openLightboxAt(activeSlide)}
-              aria-label={`View all ${galleryImages.length} photos — swipe to browse`}
-              title="Swipe to view all photos"
-            >
-              <Images size={13} strokeWidth={2} aria-hidden="true" /> {activeSlide + 1}/{galleryImages.length}
-            </button>
-          )}
-        </div>
-
-        {/* Rating, Category, Cook Count — Heart moved to the top header,
-            Add to Rotation moved to the sticky bottom bar (see below). */}
+        {/* Rating, Category, Cook Count */}
         <div className="detail-header-bar">
           {onRate && (
             <div className="star-rating">
@@ -502,11 +497,22 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
           </div>
         </div>
 
-        {/* ── Labels: time · cuisine · dietary tags · the user's custom labels.
-            All four are Meal Library filter facets that previously had no
-            representation on the recipe itself. Custom labels carry their own
-            colour from the userTags table; everything else stays neutral so
-            the user's own labels are the ones that read loudest. ── */}
+        {/* ── Cookbook stamp for shared recipes ── */}
+        {meal._sharedFrom && (
+          <div className="detail-shared-stamp">
+            <span style={{ fontSize: 14 }} aria-hidden="true">📖</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--primary)' }}>
+              From @{meal._sharedFrom}
+            </span>
+            {meal._sharedAt && (
+              <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>
+                {new Date(meal._sharedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Labels row */}
         {hasLabels && (
           <div className="detail-labels-row">
             {totalTimeLabel && (
@@ -551,10 +557,6 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
           </div>
         )}
 
-        {/* No labels yet — one quiet prompt instead of a silently empty row,
-            so "this recipe has no labels" is a state you can act on. Meals
-            only: AddEditMeal's Labels picker is gated to meal mode, so
-            offering this on a drink would open a form with nothing to set. */}
         {!hasLabels && onEdit && !isDrink && (
           <div className="detail-labels-row">
             <button
@@ -567,10 +569,7 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
           </div>
         )}
 
-        {/* Drink spec strip — Glass · Method · Garnish, plus a strength chip.
-            1.7: the smallest change with the largest "the import finally
-            works" payoff — these fields already exist on the recipe, they
-            just never rendered anywhere. */}
+        {/* Drink spec strip */}
         {isDrink && (meal.glass || meal.method || meal.garnish || typeof meal.abv === 'number') && (
           <div className="detail-drink-spec-row">
             {[meal.glass, meal.method, meal.garnish].filter(Boolean).length > 0 && (
@@ -587,48 +586,146 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
           </div>
         )}
 
-        {/* Description + Yield — shown when LLM extracted a summary */}
-        {(meal.description || meal.recipeYield) && (
+        {/* Description */}
+        {meal.description && (
           <div className="detail-description-bar" style={{ padding: '0 16px 8px', fontSize: 14, color: 'var(--text-light)' }}>
-            {meal.description && <span>{meal.description}</span>}
-            {meal.description && meal.recipeYield && <span> · </span>}
-            {meal.recipeYield && <span style={{ fontWeight: 500 }}>{meal.recipeYield}</span>}
+            <span>{meal.description}</span>
           </div>
         )}
 
-        {/* Scale selector moved to the sticky bottom bar (see end of file). */}
+        {/* ══════════════ QUICK INFO STRIP ══════════════ */}
+        {hasQuickInfo && (
+          <div className="detail-quick-info">
+            {prepTimeLabel && (
+              <div className="detail-qi-cell">
+                <span className="detail-qi-label">Prep</span>
+                <span className="detail-qi-value">{prepTimeLabel}</span>
+              </div>
+            )}
+            {cookTimeLabel && (
+              <div className="detail-qi-cell">
+                <span className="detail-qi-label">Cook</span>
+                <span className="detail-qi-value">{cookTimeLabel}</span>
+              </div>
+            )}
+            {ease && (
+              <div className="detail-qi-cell">
+                <span className="detail-qi-label">Ease</span>
+                <span className={`detail-qi-value detail-qi-ease ${ease.cls}`}>{ease.label}</span>
+              </div>
+            )}
+            {meal.recipeYield && (
+              <div className="detail-qi-cell">
+                <span className="detail-qi-label">Yield</span>
+                <span className="detail-qi-value">{meal.recipeYield}</span>
+              </div>
+            )}
+          </div>
+        )}
 
-        <div className="detail-section">
-          <h3>{isDrink ? '🍸 Ingredients' : '📝 Ingredients'}</h3>
-          <ul className="ingredient-list">
-            {scaledIngredients.map((ing, i) => {
-              const structName = meal.ingredientsStructured?.[i]?.name || meal.ingredientsStructured?.[i]?.ingredient || '';
-              const isMissing = structName && missingIngredientSet.has(structName.toLowerCase().trim());
-              const isChecked = checkedIngredients.has(i);
-              return (
-                <li
-                  key={i}
-                  className={`ingredient-item${isChecked ? ' checked' : ''}`}
-                  onClick={() => toggleIngredientChecked(i)}
+        {/* ══════════════ TWO-COLUMN RECIPE GRID ══════════════
+            Ingredients and Steps side-by-side on wider screens (> 520px),
+            stacked on phones. Maximizes what's visible above the fold. */}
+        <div className="detail-recipe-grid">
+          {/* ── Ingredients column ── */}
+          <div className="detail-recipe-col detail-recipe-col--ingredients">
+            <h3>{isDrink ? '🍸 Ingredients' : '📝 Ingredients'}</h3>
+            <ul className="ingredient-list ingredient-list--dense">
+              {scaledIngredients.map((ing, i) => {
+                const structName = meal.ingredientsStructured?.[i]?.name || meal.ingredientsStructured?.[i]?.ingredient || '';
+                const isMissing = structName && missingIngredientSet.has(structName.toLowerCase().trim());
+                const isChecked = checkedIngredients.has(i);
+                return (
+                  <li
+                    key={i}
+                    className={`ingredient-item${isChecked ? ' checked' : ''}`}
+                    onClick={() => toggleIngredientChecked(i)}
+                  >
+                    <span className={`ingredient-check${isChecked ? ' ingredient-check--done' : ''}`} aria-hidden="true" />
+                    <span className="ingredient-text">{ing}</span>
+                    {isMissing && !isChecked && <span className="ingredient-missing-chip">Missing</span>}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+
+          {/* ── Directions column ── */}
+          <div className="detail-recipe-col detail-recipe-col--steps">
+            <h3>{isDrink ? '🫗 Instructions' : '👨‍🍳 Directions'}</h3>
+            <ol className="direction-list direction-list--dense">
+              {meal.directions.map((dir, i) => (
+                <li key={i}>{dir}</li>
+              ))}
+            </ol>
+          </div>
+        </div>
+
+        {/* ══════════════ SAUCE / ADD-ON SUB-RECIPES (collapsible) ══════════════ */}
+        {hasSauces && (
+          <div className="detail-section detail-addon-section">
+            <button
+              type="button"
+              className="detail-addon-toggle"
+              onClick={() => setSaucesExpanded(v => !v)}
+              aria-expanded={saucesExpanded}
+            >
+              <Utensils size={15} strokeWidth={2} aria-hidden="true" />
+              <span className="detail-addon-toggle-label">
+                Sauces &amp; Add-ons ({meal.sauces.length})
+              </span>
+              {saucesExpanded
+                ? <ChevronUp size={16} strokeWidth={2} />
+                : <ChevronDown size={16} strokeWidth={2} />}
+            </button>
+            <AnimatePresence initial={false}>
+              {saucesExpanded && (
+                <motion.div
+                  className="detail-addon-body"
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.25, ease: [0.25, 0.46, 0.45, 0.94] }}
+                  style={{ overflow: 'hidden' }}
                 >
-                  <span className="ingredient-text">{ing}</span>
-                  {isMissing && !isChecked && <span className="ingredient-missing-chip">Missing</span>}
-                </li>
-              );
-            })}
-          </ul>
-        </div>
+                  {meal.sauces.map((sauce, si) => (
+                    <div key={si} className="detail-addon-card">
+                      {sauce.name && <h4 className="detail-addon-name">{sauce.name}</h4>}
+                      {Array.isArray(sauce.ingredients) && sauce.ingredients.length > 0 && (
+                        <ul className="detail-addon-list">
+                          {sauce.ingredients.map((ing, ii) => (
+                            <li key={ii}>{ing}</li>
+                          ))}
+                        </ul>
+                      )}
+                      {Array.isArray(sauce.directions) && sauce.directions.length > 0 && (
+                        <ol className="detail-addon-steps">
+                          {sauce.directions.map((step, di) => (
+                            <li key={di}>{step}</li>
+                          ))}
+                        </ol>
+                      )}
+                    </div>
+                  ))}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
 
-        <div className="detail-section">
-          <h3>{isDrink ? '🫗 Instructions' : '👨‍🍳 Directions'}</h3>
-          <ol className="direction-list">
-            {meal.directions.map((dir, i) => (
-              <li key={i}>{dir}</li>
-            ))}
-          </ol>
-        </div>
+        {/* ══════════════ SIDE DISHES ══════════════ */}
+        {hasSides && (
+          <div className="detail-section detail-sides-section">
+            <h3><Salad size={15} strokeWidth={2} style={{ verticalAlign: '-2px' }} /> Side Dishes</h3>
+            <div className="detail-sides-chips">
+              {meal.sideDishes.filter(s => typeof s === 'string' && s.trim()).map((side, i) => (
+                <span key={i} className="detail-sides-chip">{side.trim()}</span>
+              ))}
+            </div>
+          </div>
+        )}
 
-        {/* Notes: support both structured [{title, text}] and legacy flat string */}
+        {/* Notes */}
         {(Array.isArray(meal.notes) ? meal.notes.length > 0 : !!meal.notes) && (
           <div className="detail-section">
             <h3>📌 Notes</h3>
@@ -643,7 +740,7 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
           </div>
         )}
 
-        {/* Nutrition panel — only shown when LLM extracted nutrition data */}
+        {/* Nutrition panel */}
         {meal.nutrition && Object.keys(meal.nutrition).length > 0 && (
           <div className="detail-section">
             <h3>🥗 Nutrition</h3>
@@ -660,7 +757,7 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
           </div>
         )}
 
-        {/* ── Source links: dual (blog + reel) when blog link follower provided both ── */}
+        {/* ── Source links ── */}
         {(meal.link || meal._sources?.blogUrl) && (() => {
           const blogUrl = meal._sources?.blogUrl || null;
           const igUrl = meal._sources?.instagramUrl || meal._sources?.videoUrl || null;
@@ -670,13 +767,10 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
           let primaryDomain = '';
           try { primaryDomain = new URL(primaryUrl).hostname.replace(/^www\./, ''); } catch {}
 
-          // For re-import, always use the IG URL if available (import pipeline entry point)
           const reimportUrl = igUrl || meal.sourceUrl || meal.link;
-          // Secondary reel link: show IG/YT URLs for dual-source recipes
           const reelUrl = hasDualSource ? igUrl : null;
           const isReel = reelUrl && /\/(reel|tv)\//i.test(reelUrl);
 
-          // P2-10: confidence badge for blog extraction quality
           const exSrc = meal._extractionSource || '';
           const blogConfidence = exSrc === 'blog_link_follower' ? 'high'
             : exSrc === 'blog_link_follower+ai' ? 'medium' : null;
@@ -691,14 +785,12 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
                   </span>
                 )}
               </div>
-              {/* Primary link */}
               <div className="detail-source-row">
                 {primaryDomain && <span className="detail-source-domain">{primaryDomain}</span>}
                 <a href={primaryUrl} target="_blank" rel="noopener noreferrer" className="detail-source-link">
                   {hasDualSource ? `Full recipe on ${primaryDomain}` : 'View Original'}
                 </a>
                 <CopyLinkButton url={primaryUrl} />
-                {/* P2-11: dual-source → "Re-extract" from blog; single → normal "Re-import" */}
                 {hasDualSource ? (
                   <button
                     className="detail-source-reimport"
@@ -734,7 +826,6 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
                   </button>
                 )}
               </div>
-              {/* Secondary: Original Reel / Post (dual-source only) */}
               {reelUrl && (() => {
                 let reelDomain = '';
                 try { reelDomain = new URL(reelUrl).hostname.replace(/^www\./, ''); } catch {}
@@ -745,7 +836,6 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
                       {isReel ? 'Original Reel' : 'Original Post'}
                     </a>
                     <CopyLinkButton url={reelUrl} />
-                    {/* P2-11: re-import from Instagram (full pipeline with caption) */}
                     <button
                       className="detail-source-reimport"
                       onClick={() => {
@@ -778,11 +868,7 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
           );
         })()}
 
-        {/* Start Cooking / Start Mixing moved to the sticky bottom bar. */}
-
-        {/* Recovery path for a drink recipe mis-imported into the Meal Library —
-            a rare correction, not a primary action, so it's a small sub-option
-            rather than a full-width launch button. */}
+        {/* Move to Bar recovery path */}
         {onMoveToBar && (
           <div className="detail-section detail-moveto-bar-row" style={{ paddingBottom: 20, textAlign: 'center' }}>
             <button
@@ -795,9 +881,7 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
           </div>
         )}
 
-        {/* ── Sticky bottom action bar: scale, Add to Rotation, Start Cooking/
-            Mixing — the highest-priority actions, kept reachable without
-            scrolling back up, instead of competing for space above the fold. ── */}
+        {/* ── Sticky bottom action bar ── */}
         {(scaleOptions.length > 0 || onToggleRotation || (onStartCook && meal.directions?.length > 0) || (onStartMix && meal.directions?.length > 0)) && (
           <div className="detail-sticky-bar">
             <div className="detail-sticky-scale">

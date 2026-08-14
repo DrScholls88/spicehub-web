@@ -1,5 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import { X, Lock, LockKeyhole, LockKeyholeOpen, Star, BookOpen, UtensilsCrossed, ChevronDown, ChevronRight, MoreVertical, Plus, RefreshCw, CheckSquare, ShoppingCart, CalendarDays, List, GripVertical, Search } from 'lucide-react';
+import { X, Lock, LockKeyhole, LockKeyholeOpen, Star, BookOpen, UtensilsCrossed, ChevronDown, ChevronRight, MoreVertical, Plus, RefreshCw, CheckSquare, ShoppingCart, CalendarDays, List, GripVertical, Search, Share2 } from 'lucide-react';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import MealSpinner from './MealSpinner';
 import useBackHandler from '../hooks/useBackHandler';
@@ -1308,7 +1308,20 @@ export default function WeekView({
     }));
   }, [nextWeekExpanded]);
 
+  // How many planned meals are locked? Used for grocery shortcut + export.
+  const lockedMealCount = useMemo(
+    () => weekPlan.filter(m => m && m._locked).length,
+    [weekPlan],
+  );
+
   const enterGroceryMode = useCallback(() => {
+    // Shortcut: if any meals are locked, build grocery list directly from
+    // locked days — skip the day-picker altogether. If nothing is locked,
+    // fall back to the existing day-picker flow.
+    if (lockedMealCount > 0) {
+      onBuildGrocery(undefined, { lockedOnly: true });
+      return;
+    }
     const autoSelected = new Set();
     thisWeekDates.forEach(d => {
       const { meal } = getMealForDate(d);
@@ -1318,7 +1331,7 @@ export default function WeekView({
     setGrocerySelectMode(true);
     setSelectMode(false);
     setSelectedDates(new Set());
-  }, [thisWeekDates, getMealForDate]);
+  }, [thisWeekDates, getMealForDate, lockedMealCount, onBuildGrocery]);
 
   const handleGroceryToggle = useCallback((key) => {
     setGroceryDays(prev => {
@@ -1347,6 +1360,37 @@ export default function WeekView({
   }, []);
 
   const groceryDayCount = groceryDays.size;
+
+  // ── Export / Share Plan ──────────────────────────────────────────────────────
+  const buildPlanText = useCallback(() => {
+    const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const lines = DAY_NAMES.map((day, i) => {
+      const meal = weekPlan[i];
+      if (!meal) return `${day}: —`;
+      if (meal._special) return `${day}: ${meal.icon || ''} ${meal.name}`.trim();
+      const lock = meal._locked ? ' [locked]' : '';
+      return `${day}: ${meal.name}${lock}`;
+    });
+    return lines.join('\n');
+  }, [weekPlan]);
+
+  const handleSharePlan = useCallback(async () => {
+    const planText = buildPlanText();
+    const title = 'This Week\'s Meal Plan';
+    const shareBody = `${title}\n\n${planText}\n\n— SpiceHub`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title, text: shareBody });
+        return;
+      } catch { /* user cancelled or share failed — fall through to clipboard */ }
+    }
+    try {
+      await navigator.clipboard.writeText(shareBody);
+      onToast?.('Copied meal plan to clipboard!', 'success');
+    } catch {
+      onToast?.('Could not copy to clipboard', 'error');
+    }
+  }, [buildPlanText, onToast]);
 
   return (
     <div
@@ -1528,6 +1572,17 @@ export default function WeekView({
                     ? <><LockKeyholeOpen size={13} strokeWidth={2.5} /> Unlock All</>
                     : <><LockKeyhole size={13} strokeWidth={2.5} /> Lock All</>
                   }
+                </button>
+              )}
+
+              {hasWeek && (
+                <button
+                  type="button"
+                  className="wv-week-toolbar-btn"
+                  onClick={handleSharePlan}
+                  aria-label="Share meal plan"
+                >
+                  <Share2 size={13} strokeWidth={2.5} /> Share
                 </button>
               )}
 
@@ -1938,10 +1993,30 @@ export default function WeekView({
                 </button>
                 {hasWeek && !grocerySelectMode && (
                   <button onClick={enterGroceryMode} style={{ ...SECONDARY_BTN, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}>
-                    <ShoppingCart size={14} strokeWidth={2.5} /> Grocery
+                    <ShoppingCart size={14} strokeWidth={2.5} />
+                    {lockedMealCount > 0 ? `Grocery (${lockedMealCount})` : 'Grocery'}
                   </button>
                 )}
               </div>
+              {/* ── Share Plan — only visible once meals are planned ── */}
+              {hasWeek && (
+                <button
+                  onClick={handleSharePlan}
+                  style={{
+                    ...SECONDARY_BTN,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                    background: allWeekLocked
+                      ? 'linear-gradient(135deg, var(--primary), #c084fc)'
+                      : 'var(--surface)',
+                    color: allWeekLocked ? 'white' : 'var(--text)',
+                    fontWeight: allWeekLocked ? 700 : 600,
+                    boxShadow: allWeekLocked ? '0 2px 8px rgba(0,0,0,0.15)' : undefined,
+                  }}
+                >
+                  <Share2 size={14} strokeWidth={2.5} />
+                  {allWeekLocked ? 'Share Locked Plan' : 'Share Plan'}
+                </button>
+              )}
             </>
           )}
 

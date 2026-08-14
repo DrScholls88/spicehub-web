@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, Reorder, useDragControls } from 'framer-motion';
-import { Tag, GripVertical, X, ArrowRightLeft, AlignLeft, List as ListIcon } from 'lucide-react';
+import { Tag, GripVertical, X, ArrowRightLeft, AlignLeft, List as ListIcon, Plus, ChevronDown, ChevronUp, Utensils, Salad, Trash2 } from 'lucide-react';
 import { parseFromUrl, isSocialMediaUrl, getSocialPlatform } from '../recipeParser';
 import { importRecipeFromPages } from '../lib/photoImportEngine.js';
 import { getUserTags } from '../db';
@@ -63,6 +63,58 @@ export default function AddEditMeal({
   // a multi-line paste lands in a single step textarea.
   const [pasteSplitPrompt, setPasteSplitPrompt] = useState(null); // { index, lines }
   const [notes, setNotes] = useState(meal?.notes || '');
+
+  // ── Sauces / Add-on sub-recipes ──
+  // Each sauce: { name, ingredients: string[], directions: string[] }
+  const [sauces, setSauces] = useState(() => {
+    if (Array.isArray(meal?.sauces) && meal.sauces.length > 0) return meal.sauces.map(s => ({ ...s }));
+    return [];
+  });
+  const [saucesExpanded, setSaucesExpanded] = useState(() => sauces.length > 0);
+  const addSauce = () => {
+    setSauces(prev => [...prev, { name: '', ingredients: [''], directions: [''] }]);
+    setSaucesExpanded(true);
+  };
+  const removeSauce = (idx) => setSauces(prev => prev.filter((_, i) => i !== idx));
+  const updateSauceField = (idx, field, val) => {
+    setSauces(prev => prev.map((s, i) => i === idx ? { ...s, [field]: val } : s));
+  };
+  const updateSauceListItem = (sauceIdx, listKey, itemIdx, val) => {
+    setSauces(prev => prev.map((s, i) => {
+      if (i !== sauceIdx) return s;
+      const list = [...(s[listKey] || [])];
+      list[itemIdx] = val;
+      return { ...s, [listKey]: list };
+    }));
+  };
+  const addSauceListItem = (sauceIdx, listKey) => {
+    setSauces(prev => prev.map((s, i) => {
+      if (i !== sauceIdx) return s;
+      return { ...s, [listKey]: [...(s[listKey] || []), ''] };
+    }));
+  };
+  const removeSauceListItem = (sauceIdx, listKey, itemIdx) => {
+    setSauces(prev => prev.map((s, i) => {
+      if (i !== sauceIdx) return s;
+      const list = (s[listKey] || []).filter((_, j) => j !== itemIdx);
+      return { ...s, [listKey]: list.length ? list : [''] };
+    }));
+  };
+
+  // ── Side dishes — simple text list ──
+  const [sideDishes, setSideDishes] = useState(() => {
+    if (Array.isArray(meal?.sideDishes) && meal.sideDishes.length > 0) return meal.sideDishes;
+    return [];
+  });
+  const [sideDishInput, setSideDishInput] = useState('');
+  const addSideDish = () => {
+    const val = sideDishInput.trim();
+    if (!val) return;
+    setSideDishes(prev => [...prev, val]);
+    setSideDishInput('');
+  };
+  const removeSideDish = (idx) => setSideDishes(prev => prev.filter((_, i) => i !== idx));
+
   // Dual source links (2026-08-12): a recipe can have BOTH an Instagram/social
   // link (the discovery surface — video, PiP) and a blog link (the recipe of
   // record). Previously this form only exposed one "Recipe Link" field, so
@@ -232,6 +284,16 @@ export default function AddEditMeal({
         // doesn't have its own video-detection step.
         videoUrl: meal?._sources?.videoUrl || (igUrl && /\/(reel|tv)\//i.test(igUrl) ? igUrl : ''),
       } : null,
+      // ── Sauce add-ons: strip empties on save ──
+      sauces: sauces
+        .map(s => ({
+          name: (s.name || '').trim(),
+          ingredients: (s.ingredients || []).filter(x => x.trim()),
+          directions: (s.directions || []).filter(x => x.trim()),
+        }))
+        .filter(s => s.name || s.ingredients.length || s.directions.length),
+      // ── Side dishes: simple string array ──
+      sideDishes: sideDishes.filter(s => typeof s === 'string' && s.trim()),
     };
     onSave(data);
   };
@@ -581,6 +643,118 @@ export default function AddEditMeal({
   {!directionsBulkMode && (
     <button className="btn-small" onClick={() => addRow(setDirections, setDirectionIds)}>+ Add Step</button>
   )}
+</div>
+
+{/* ══════════════ SAUCE / ADD-ON SUB-RECIPES ══════════════ */}
+<div className="form-group">
+  <div className="aem-section-header">
+    <label><Utensils size={13} strokeWidth={2.25} style={{ verticalAlign: '-2px' }} /> Sauces &amp; Add-ons</label>
+    {sauces.length > 0 && (
+      <button
+        type="button"
+        className={`aem-mode-btn${saucesExpanded ? ' active' : ''}`}
+        onClick={() => setSaucesExpanded(v => !v)}
+        style={{ marginLeft: 'auto' }}
+      >
+        {saucesExpanded ? <ChevronUp size={13} strokeWidth={2.25} /> : <ChevronDown size={13} strokeWidth={2.25} />}
+        {saucesExpanded ? 'Collapse' : 'Expand'}
+      </button>
+    )}
+  </div>
+
+  {saucesExpanded && sauces.map((sauce, si) => (
+    <div key={si} className="aem-sauce-card">
+      <div className="aem-sauce-header">
+        <input
+          type="text"
+          value={sauce.name}
+          onChange={e => updateSauceField(si, 'name', e.target.value)}
+          placeholder={`Sauce / add-on name (e.g. "Garlic Aioli")`}
+          className="aem-sauce-name-input"
+        />
+        <button
+          type="button"
+          className="aem-row-action aem-row-action-danger"
+          onClick={() => removeSauce(si)}
+          aria-label="Remove sauce"
+          title="Remove this sauce/add-on"
+        >
+          <Trash2 size={15} strokeWidth={2} />
+        </button>
+      </div>
+
+      {/* Sauce ingredients */}
+      <div className="aem-sauce-sub">
+        <span className="aem-sauce-sub-label">Ingredients</span>
+        {(sauce.ingredients || ['']).map((ing, ii) => (
+          <div key={ii} className="aem-sauce-row">
+            <input
+              type="text"
+              value={ing}
+              onChange={e => updateSauceListItem(si, 'ingredients', ii, e.target.value)}
+              placeholder={`Ingredient ${ii + 1}`}
+            />
+            {(sauce.ingredients || []).length > 1 && (
+              <button type="button" className="aem-row-action aem-row-action-danger" onClick={() => removeSauceListItem(si, 'ingredients', ii)} aria-label="Remove">
+                <X size={14} strokeWidth={2.25} />
+              </button>
+            )}
+          </div>
+        ))}
+        <button type="button" className="btn-small" onClick={() => addSauceListItem(si, 'ingredients')}>+ Ingredient</button>
+      </div>
+
+      {/* Sauce directions */}
+      <div className="aem-sauce-sub">
+        <span className="aem-sauce-sub-label">Directions</span>
+        {(sauce.directions || ['']).map((dir, di) => (
+          <div key={di} className="aem-sauce-row">
+            <input
+              type="text"
+              value={dir}
+              onChange={e => updateSauceListItem(si, 'directions', di, e.target.value)}
+              placeholder={`Step ${di + 1}`}
+            />
+            {(sauce.directions || []).length > 1 && (
+              <button type="button" className="aem-row-action aem-row-action-danger" onClick={() => removeSauceListItem(si, 'directions', di)} aria-label="Remove">
+                <X size={14} strokeWidth={2.25} />
+              </button>
+            )}
+          </div>
+        ))}
+        <button type="button" className="btn-small" onClick={() => addSauceListItem(si, 'directions')}>+ Step</button>
+      </div>
+    </div>
+  ))}
+
+  <button type="button" className="btn-small" onClick={addSauce}>
+    <Plus size={13} strokeWidth={2.5} /> Add Sauce / Add-on
+  </button>
+</div>
+
+{/* ══════════════ SIDE DISHES ══════════════ */}
+<div className="form-group">
+  <label><Salad size={13} strokeWidth={2.25} style={{ verticalAlign: '-2px' }} /> Side Dishes</label>
+  <div className="aem-sides-chips">
+    {sideDishes.map((side, i) => (
+      <span key={i} className="aem-sides-chip">
+        {side}
+        <button type="button" className="aem-sides-chip-x" onClick={() => removeSideDish(i)} aria-label={`Remove ${side}`}>
+          <X size={12} strokeWidth={2.5} />
+        </button>
+      </span>
+    ))}
+  </div>
+  <div className="aem-sides-input-row">
+    <input
+      type="text"
+      value={sideDishInput}
+      onChange={e => setSideDishInput(e.target.value)}
+      onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addSideDish(); } }}
+      placeholder="e.g. Garlic bread, Side salad…"
+    />
+    <button type="button" className="btn-small" onClick={addSideDish} disabled={!sideDishInput.trim()}>Add</button>
+  </div>
 </div>
 
 <div className="form-group">

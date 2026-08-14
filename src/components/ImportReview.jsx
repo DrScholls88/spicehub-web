@@ -21,7 +21,7 @@ import {
   Crop,
 } from 'lucide-react';
 import { fuzzyResolveIngredient, normalizeIngredientForMatching, learnableAliasFrom, addLearnedAlias } from '../recipeSchema';
-import { saveLearnedAliases } from '../db';
+import { saveLearnedAliases, invalidateCachedImport } from '../db';
 import { hapticLight } from '../haptics';
 import PhotoGallery from './PhotoGallery';
 import DishPhotoCropper from './DishPhotoCropper';
@@ -802,6 +802,9 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
             hapticLight();
             onChange({ ...recipe, itemType: 'drink', type: 'drink', _type: 'drink' });
             setDest('bar');
+            // Otherwise the cached structure keeps re-serving the wrong kind
+            // on every re-import of this link for the rest of the 7-day TTL.
+            invalidateCachedImport(recipe.link || recipe.sourceUrl);
           }}
         >
           <Wine size={13} strokeWidth={2} />
@@ -827,6 +830,9 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
             hapticLight();
             onChange({ ...recipe, itemType: 'meal', type: 'meal', _type: 'meal' });
             setDest('library');
+            // Otherwise the cached structure keeps re-serving the wrong kind
+            // on every re-import of this link for the rest of the 7-day TTL.
+            invalidateCachedImport(recipe.link || recipe.sourceUrl);
           }}
         >
           <UtensilsCrossed size={13} strokeWidth={2} />

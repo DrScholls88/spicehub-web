@@ -2199,6 +2199,372 @@ body::before {
   background: rgba(217, 119, 6, 0.12);
 }
 
+/* ══════════════════════════════════════════════════════════════════════════════
+   MealDetail Redesign — Two-Column Grid, Quick Info, Sauces, Side Dishes,
+   Carousel Arrows, Dense Ingredient/Step Layout (2026-08-14)
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Carousel arrows (left/right chevrons) ── */
+.detail-hero-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 4;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background 0.15s, transform 0.1s;
+}
+.detail-hero-arrow:active { transform: translateY(-50%) scale(0.9); }
+.detail-hero-arrow--left { left: 8px; }
+.detail-hero-arrow--right { right: 8px; }
+
+/* ── Title row — compact, below the hero ── */
+.detail-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 0 4px;
+}
+.detail-title-name {
+  flex: 1 1 auto;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.25;
+  color: var(--text);
+  margin: 0;
+  /* Prevent very long recipe names from squishing the action buttons */
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+.detail-title-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* ── Shared stamp (moved below title row) ── */
+.detail-shared-stamp {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  margin: 0 0 8px;
+  border-radius: 10px;
+  background: var(--surface);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  border: 1px solid var(--border);
+  border-color: color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+/* ── Quick Info strip (prep / cook / ease / yield) ── */
+.detail-quick-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin: 8px 0 12px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+.detail-qi-cell {
+  flex: 1 1 0;
+  min-width: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 8px 8px;
+  border-right: 1px solid var(--border);
+}
+.detail-qi-cell:last-child { border-right: none; }
+.detail-qi-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+.detail-qi-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
+/* Ease badge colours — warm semantic tokens */
+.detail-qi-ease--easy { color: var(--success, #16a34a); }
+.detail-qi-ease--moderate { color: #b8860b; }
+.detail-qi-ease--involved { color: #c0392b; }
+
+/* ── Two-column recipe grid ── */
+.detail-recipe-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+@media (min-width: 520px) {
+  .detail-recipe-grid {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    gap: 0 20px;
+    align-items: start;
+  }
+}
+.detail-recipe-col {
+  min-width: 0;
+}
+.detail-recipe-col h3 {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--card);
+  padding-top: 4px;
+  padding-bottom: 8px;
+  margin-bottom: 0;
+}
+
+/* Dense ingredient list — tighter padding, round checkbox instead of dot */
+.ingredient-list--dense {
+  padding-left: 0;
+  list-style: none;
+}
+.ingredient-list--dense li {
+  padding: 6px 0;
+  font-size: 14px;
+  line-height: 1.45;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+.ingredient-list--dense li::before { display: none; }
+.ingredient-list--dense li:last-child { border-bottom: none; }
+
+/* Round checkbox indicator */
+.ingredient-check {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+.ingredient-check--done {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.ingredient-list--dense li.checked {
+  opacity: 0.5;
+}
+.ingredient-list--dense li.checked .ingredient-text {
+  text-decoration: line-through;
+}
+
+/* Dense direction list — tighter */
+.direction-list--dense li {
+  padding: 6px 0 6px 32px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+.direction-list--dense li::before {
+  width: 22px;
+  height: 22px;
+  font-size: 11px;
+  top: 6px;
+}
+
+/* ── Sauce / Add-on collapsible section ── */
+.detail-addon-section {
+  margin-bottom: 16px;
+}
+.detail-addon-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background 0.15s;
+}
+.detail-addon-toggle:active { background: var(--surface-2, var(--surface)); }
+.detail-addon-toggle-label { flex: 1; text-align: left; }
+
+.detail-addon-body {
+  padding: 8px 0 0;
+}
+.detail-addon-card {
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.detail-addon-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--primary);
+  margin: 0 0 6px;
+}
+.detail-addon-list {
+  padding-left: 16px;
+  list-style: disc;
+  margin: 0 0 6px;
+}
+.detail-addon-list li {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  padding: 2px 0;
+}
+.detail-addon-steps {
+  padding-left: 20px;
+  margin: 0;
+}
+.detail-addon-steps li {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  padding: 2px 0;
+}
+
+/* ── Side dishes chips ── */
+.detail-sides-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.detail-sides-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.detail-sides-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   AddEditMeal — Sauce editor + Side dishes form styles (2026-08-14)
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* Sauce sub-recipe card inside the edit form */
+.aem-sauce-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+.aem-sauce-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.aem-sauce-name-input {
+  flex: 1;
+  font-weight: 700;
+  font-size: 14px;
+}
+.aem-sauce-sub {
+  margin-bottom: 8px;
+}
+.aem-sauce-sub-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.aem-sauce-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.aem-sauce-row input {
+  flex: 1;
+  font-size: 13px;
+  padding: 6px 10px;
+}
+
+/* Side dishes input in edit form */
+.aem-sides-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.aem-sides-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+.aem-sides-chip-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.1);
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s;
+}
+.aem-sides-chip-x:active { background: rgba(0, 0, 0, 0.2); }
+.aem-sides-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.aem-sides-input-row input {
+  flex: 1;
+}
+
 .recipe-link {
   display: inline-flex;
   align-items: center;

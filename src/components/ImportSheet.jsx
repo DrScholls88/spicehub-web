@@ -146,6 +146,18 @@ export default function ImportSheet({
   // whenever the input source changes so a stale override doesn't leak into
   // an unrelated import (1.2, bar-library-parity-plan-2026-08-07.md).
   const [manualTypeOverride, setManualTypeOverride] = useState(false);
+  // 2026-08-14: draftKey() used to hand out the literal 'pasted-text' or
+  // 'photo-import' for EVERY non-URL session, so all paste-drafts (and
+  // separately all photo-drafts) shared one IndexedDB row. A second paste
+  // session's autosave silently overwrote a first, unsaved one under the
+  // same key with no confirmation, and an abandoned paste/photo draft never
+  // got cleaned up if the user instead completed a different import — it
+  // just sat there forever since only the single newest draft is ever
+  // surfaced for resume. Each paste/photo attempt now gets its own id here
+  // (set at the start of execute*Import, restored on resume) so sessions
+  // can't collide, paired with the mount-time sweep below that clears
+  // anything other than the single resumable draft.
+  const [draftSessionId, setDraftSessionId] = useState(null);
   const [browserAssistSeed, setBrowserAssistSeed] = useState(null);
   const [capturedText, setCapturedText] = useState('');
   // Phase 4 (2026-07-20): Whisper model tier — one persisted global choice
@@ -182,9 +194,13 @@ export default function ImportSheet({
   // Single source of truth for the IndexedDB draft key. Autosave, save-cleanup
   // and discard all derive the key the same way — so a draft can't be written
   // under one key and orphaned because another site computed a different one.
+  // URL imports already have a naturally unique key (the URL itself); paste/
+  // photo imports use the per-session draftSessionId set at the start of
+  // execute*Import (see that state's comment) — the old fixed literal is only
+  // a defensive fallback for the brief window before that id is assigned.
   const draftKey = useCallback(
-    () => importUrl || (activeTab === 'photo' ? 'photo-import' : 'pasted-text'),
-    [importUrl, activeTab],
+    () => importUrl || draftSessionId || (activeTab === 'photo' ? 'photo-import' : 'pasted-text'),
+    [importUrl, draftSessionId, activeTab],
   );
 
   // ── Modals & Banners state ──────────────────────────────────────────────
@@ -335,6 +351,15 @@ export default function ImportSheet({
       if (drafts && drafts.length > 0) {
         const sorted = drafts.sort((a, b) => b.timestamp - a.timestamp);
         setDraftToResume(sorted[0]);
+        // Only the single newest draft is ever offered for resume (above) —
+        // sweep the rest. Before draftSessionId existed, every paste/photo
+        // draft was written under one of two fixed keys, so an abandoned one
+        // just got silently overwritten by the next paste/photo session and
+        // never truly orphaned. Now that each paste/photo session gets its
+        // own key, an abandoned draft has nothing to overwrite it and would
+        // otherwise sit in IndexedDB forever with no UI path to reach it.
+        const stale = sorted.slice(1).map(d => d.url).filter(Boolean);
+        if (stale.length) db.importDrafts.bulkDelete(stale).catch(() => {});
       }
     }).catch(err => console.warn('[ImportSheet] Failed to load drafts:', err));
   }, []);
@@ -565,8 +590,25 @@ export default function ImportSheet({
   const executePasteImport = useCallback(async (text, type, explicitOverride = false) => {
     if (!text || !text.trim()) return;
 
+    // Fresh unique draft key for this session — see draftSessionId's comment.
+    setDraftSessionId(`pasted-text:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+
+    // 2026-08-14: this used to abort any prior controller and then null out
+    // abortRef instead of assigning a fresh one, unlike executeUrlImport/
+    // executePhotoImport/executeTranscribeImport which all keep a live
+    // controller here. That meant the shared Cancel button's `abortRef.current
+    // ?.abort()` was a no-op for a paste import in flight, AND there was no
+    // `controller.signal.aborted` guard before the post-await setState calls
+    // below — so cancelling just flipped the phase back to 'input' while the
+    // captionToRecipe() promise kept running, and its eventual resolution
+    // still pulled the user into a review screen for content they'd already
+    // cancelled (or clobbered a newer import's in-progress state). captionToRecipe
+    // itself has no signal param to truly interrupt the network call, but
+    // guarding every setState after the await is what actually matters here —
+    // it's what stops a cancelled/superseded result from ever reaching the UI.
     if (abortRef.current) abortRef.current.abort();
-    abortRef.current = null;
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     // 1.2: explicit intent outranks the parser's kind guess — see executeUrlImport.
     const userChose = explicitOverride || manualTypeOverride || initialItemType === 'drink';
@@ -584,7 +626,9 @@ export default function ImportSheet({
 
     try {
       const result = await captionToRecipe(text, { type: type || initialItemType, kindLocked: userChose });
+      if (controller.signal.aborted) return;
       const normalized = normalizeRecipeForReview(result, type || initialItemType, { userChose });
+      if (controller.signal.aborted) return;
       if (normalized && (normalized.title || normalized.ingredients.length)) {
         setRecipe(normalized);
         setConfidence(computeReviewConfidence(normalized));
@@ -595,6 +639,7 @@ export default function ImportSheet({
         setPhase('input');
       }
     } catch (err) {
+      if (controller.signal.aborted) return;
       console.error('[ImportSheet] Paste import error:', err);
       hapticError();
       setError(err.message || 'Import failed.');
@@ -620,6 +665,9 @@ export default function ImportSheet({
   // ── Execute Photo Import (multi-page, tiered vision pipeline) ────────────
   const executePhotoImport = useCallback(async (pages, type) => {
     if (!Array.isArray(pages) || pages.length === 0) return;
+
+    // Fresh unique draft key for this session — see draftSessionId's comment.
+    setDraftSessionId(`photo-import:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
 
     if (abortRef.current) abortRef.current.abort();
     const controller = new AbortController();
@@ -927,12 +975,25 @@ export default function ImportSheet({
                     onClick={() => {
                       setRecipe(draftToResume.recipe);
                       setConfidence(draftToResume.confidence);
-                      if (draftToResume.url && draftToResume.url !== 'pasted-text' && draftToResume.url !== 'photo-import') {
-                        setUrl(draftToResume.url);
-                        setImportUrl(draftToResume.url);
-                      } else if (draftToResume.url === 'pasted-text') {
+                      // 2026-08-14: paste/photo drafts are now keyed
+                      // 'pasted-text:<id>' / 'photo-import:<id>' (see
+                      // draftSessionId) rather than the bare literal, so this
+                      // has to match by prefix — an exact-equality check would
+                      // treat the new keyed format as a real URL and try to
+                      // import.exe it as one.
+                      const draftUrl = draftToResume.url || '';
+                      const isPasteDraft = draftUrl === 'pasted-text' || draftUrl.startsWith('pasted-text:');
+                      const isPhotoDraft = draftUrl === 'photo-import' || draftUrl.startsWith('photo-import:');
+                      if (draftUrl && !isPasteDraft && !isPhotoDraft) {
+                        setUrl(draftUrl);
+                        setImportUrl(draftUrl);
+                      } else if (isPasteDraft) {
                         setPasteText(draftToResume.recipe.notes || '');
                       }
+                      // Restore the exact draft key so continued edits in
+                      // review keep autosaving to this same row instead of
+                      // spawning a new one under a fresh session id.
+                      if (isPasteDraft || isPhotoDraft) setDraftSessionId(draftUrl);
                       setPhase('review');
                       setDraftToResume(null);
                     }}

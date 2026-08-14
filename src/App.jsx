@@ -15,7 +15,7 @@ import BatchImportQueue, { BatchQueuePill } from './components/BatchImportQueue'
 import DiscoverRecipes from './components/DiscoverRecipes';
 import { startBatchImportEngine } from './batchImportEngine';
 import { extractMultipleUrls, detectImportType } from './recipeParser';
-import { categorizeIngredient, upgradeRecipeIngredients, setLearnedAliases } from './recipeSchema';
+import { categorizeIngredient, upgradeRecipeIngredients, setLearnedAliases, fuzzyResolveIngredient } from './recipeSchema';
 import { seedEntities } from './utils/ingredientEntities';
 import CookMode from './components/CookMode';
 import MixMode from './components/MixMode';
@@ -1183,14 +1183,51 @@ useEffect(() => {
     return isStaple(foodName);
   }, [fridgeInventoryByCanon]);
 
+  // ── Fuzzy store memory lookup ────────────────────────────────────────────────
+  // When an exact key isn't in storeMemory, try fuzzy-matching against all
+  // remembered ingredient→store pairs. This way "cherry tomatoes" assigned to
+  // Target also routes "roma tomatoes" there on the next grocery build.
+  const fuzzyStoreMemoryLookup = useCallback((ingredientName, storeMemory) => {
+    const key = ingredientName.toLowerCase().trim();
+    // 1) Exact match — fast path
+    if (storeMemory[key]) return storeMemory[key];
+    // 2) Fuzzy: resolve the ingredient to its canonical form, then check if
+    //    any remembered key shares the same canonical.
+    try {
+      const resolved = fuzzyResolveIngredient(ingredientName);
+      if (resolved && resolved.score >= 0.85) {
+        const canonical = resolved.canonical;
+        // Check if canonical itself or any key that resolves to the same
+        // canonical already has a store assignment.
+        if (storeMemory[canonical]) return storeMemory[canonical];
+        for (const memKey of Object.keys(storeMemory)) {
+          try {
+            const memResolved = fuzzyResolveIngredient(memKey);
+            if (memResolved && memResolved.canonical === canonical && storeMemory[memKey]) {
+              return storeMemory[memKey];
+            }
+          } catch { /* skip bad keys */ }
+        }
+      }
+    } catch { /* fuzzy matching is best-effort — never break the build */ }
+    return '';
+  }, []);
+
   const buildGroceryList = useCallback((dayIndices, options = {}) => {
     const planSource = Array.isArray(options.plan) ? options.plan : weekPlan;
     const merge = options.merge !== false;
+    const lockedOnly = !!options.lockedOnly;
     const items = {};
     const storeMemory = window._storeMemory || {};
-    const plansToUse = dayIndices
-      ? dayIndices.map(i => planSource[i]).filter(Boolean)
-      : planSource;
+    let plansToUse;
+    if (lockedOnly) {
+      // Build only from locked meals — skip the day-picker flow entirely.
+      plansToUse = planSource.filter(m => m && m._locked);
+    } else {
+      plansToUse = dayIndices
+        ? dayIndices.map(i => planSource[i]).filter(Boolean)
+        : planSource;
+    }
     plansToUse.forEach(meal => {
       if (!meal || meal._special) return;
       // Batch Cook & Leftover Chaining: a day marked _leftoverOf is eating the
@@ -1213,7 +1250,7 @@ useEffect(() => {
           const name = sec ? `${base} (${sec})` : base;
           const key = name.toLowerCase().trim();
           if (!items[key]) {
-            const rememberedStore = storeMemory[key] || '';
+            const rememberedStore = fuzzyStoreMemoryLookup(si.name || name, storeMemory);
             const category = si.category || categorizeIngredient(si.name || name);
             const covered = resolveIngredientCoverage(si.name || base);
             items[key] = { name, checked: false, store: rememberedStore, category, _struct: si, covered };
@@ -1229,7 +1266,7 @@ useEffect(() => {
       (meal.ingredients || []).forEach(ing => {
         const key = ing.toLowerCase().trim();
         if (!items[key]) {
-          const rememberedStore = storeMemory[key] || '';
+          const rememberedStore = fuzzyStoreMemoryLookup(ing, storeMemory);
           const category = metaMap[key] || categorizeIngredient(ing);
           const covered = resolveIngredientCoverage(ing);
           items[key] = { name: ing, checked: false, store: rememberedStore, category, covered };
@@ -1259,7 +1296,7 @@ useEffect(() => {
 
     setGroceryItems(next);
     setTab('grocery');
-  }, [weekPlan, groceryItems, resolveIngredientCoverage]);
+  }, [weekPlan, groceryItems, resolveIngredientCoverage, fuzzyStoreMemoryLookup]);
 
   // Keep the early-declared ref pointing at the latest buildGroceryList
   // (see handleSpinnerCompleteForDates — avoids use-before-init in deps).

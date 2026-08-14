@@ -80,8 +80,14 @@ function buildRace(url, f) {
     })(),
     ...(shortcode
       ? [(async () => {
+          // 2026-08-14: igJsonDetails and igJson both hit the identical
+          // /api/proxy?mode=instagram-json endpoint through the same
+          // parseInstagramMediaJson() parser, so a falsy det.caption means
+          // the endpoint genuinely had no caption — refetching via igJson
+          // here used to duplicate the paid/rate-limited proxy call for a
+          // result that was guaranteed to come back empty again.
           const det = await f.igJsonDetails(shortcode);
-          const cap = det?.caption || (await f.igJson(shortcode));
+          const cap = det?.caption;
           if (!cap || cap.length <= MIN_CAPTION) throw new Error('json-weak');
           return { src: 'ig-json', caption: cap, images: det?.imageUrl ? [det.imageUrl] : [], title: det?.title || '' };
         })()]

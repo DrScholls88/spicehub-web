@@ -1185,6 +1185,16 @@ const IMPORT_PACK_ONLY =
 // overrides populated LLM values and never throws.
 function _applyCaptionCrossCheck(result, textForAI, type, kindLocked = false) {
   try {
+    const items = result?.ingredientsStructured;
+    if (!Array.isArray(items) || !items.length) return result;
+    // 2026-08-14: crossCheckStructured's fillGaps path can only fill a
+    // quantity/unit that the AI left empty; if every item already has both,
+    // there is nothing to fill, and a disagreement-only pass isn't worth
+    // paying for a full structureDeterministic() reparse (line-by-line
+    // ingredient parsing + kind detection) on every successful AI import —
+    // this used to double parse cost on the common-case success path.
+    const hasGap = items.some(it => !it || !String(it.quantity || '').trim() || !String(it.unit || '').trim());
+    if (!hasGap) return result;
     const det = structureDeterministic(textForAI, { type, kindLocked });
     const detItems = det?.ingredientsStructured;
     if (Array.isArray(detItems) && detItems.length && Array.isArray(result.ingredientsStructured)) {
@@ -2873,8 +2883,7 @@ export async function parseFromUrl(url, onProgress, { type = 'meal', signal, kin
 }
 
 export async function importRecipeFromUrl(url, onProgress, { type = 'meal', signal, kindLocked = false } = {}) {
-  // In-flight dedup: concurrent imports of the same URL share one promise
-  return deduplicateImport(url, () => _importRecipeFromUrlOuter(url, onProgress, { type, signal, kindLocked }));
+  return _importRecipeFromUrlOuter(url, onProgress, { type, signal, kindLocked });
 }
 
 async function _importRecipeFromUrlOuter(url, onProgress, { type = 'meal', signal, kindLocked = false } = {}) {
@@ -2910,8 +2919,19 @@ async function _importRecipeFromUrlOuter(url, onProgress, { type = 'meal', signa
   };
 
   try {
+    // 2026-08-14: dedup used to wrap THIS function (the outer timeout race),
+    // so its in-flight entry got cleared the instant the race settled — which
+    // happens as soon as the timeout stub wins, while the real inner work
+    // (Apify/Gemini calls already in flight) keeps running detached in the
+    // background with nothing tracking it. A retry of the same URL within
+    // that window started a brand-new inner call, paying for the same
+    // scrape/structure twice. Wrapping the INNER call instead means the
+    // dedup entry only clears when the real work actually finishes — a retry
+    // during the orphaned window now reuses the still-running inner promise
+    // instead of duplicating it, regardless of how many outer races come and
+    // go against it.
     return await Promise.race([
-      _importRecipeFromUrlInner(url, onProgress, { type, signal, requestBudget, kindLocked }),
+      deduplicateImport(url, () => _importRecipeFromUrlInner(url, onProgress, { type, signal, requestBudget, kindLocked })),
       timeoutPromise,
     ]);
   } finally {
@@ -5029,10 +5049,16 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   if (!videoRecipe && !capturedCaption) {
     progress(1, 'running', 'Fetching Instagram caption…');
     try {
+      // Clearable so a fast embed response doesn't leave an 8s timer dangling
+      // (minor hygiene — the timer firing later is harmless since it just
+      // resolves an already-settled race, but there's no reason to leave it
+      // ticking once we already have an answer).
+      let embedTimeoutId = null;
       const embedData = await Promise.race([
           extractInstagramEmbed(url),
-          new Promise(resolve => setTimeout(() => resolve(null), 8000)),
+          new Promise(resolve => { embedTimeoutId = setTimeout(() => resolve(null), 8000); }),
         ]);
+      clearTimeout(embedTimeoutId);
       if (embedData?.rawPageText && !embedData?.caption) {
         // No clean caption but we have raw page text — save for Phase 3 Gemini fallback
         capturedRawPageText = embedData.rawPageText;

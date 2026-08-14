@@ -1676,6 +1676,27 @@ export async function clearInstagramCache() {
   }
 }
 
+// 2026-08-14: the cache is keyed by the caller's REQUESTED type (almost
+// always 'meal' — the default), not by whatever kind the parser actually
+// decided the content was. So when the offline heuristic misclassifies a
+// meal as a drink (or vice versa) and the user corrects it in ImportReview's
+// one-tap fix, that correction only lives in the in-session recipe object —
+// the cache entry still holds the original misclassified structure. Every
+// re-import of the same link for the rest of the 7-day TTL silently re-serves
+// the same wrong classification, forcing the user to re-apply the correction
+// every time. Called from ImportReview's correction buttons so a fix actually
+// sticks. Clears both 'meal' and 'drink' keys since we don't reliably know
+// which one the stale entry was cached under — forces a fresh structure pass
+// next time rather than risk re-serving the wrong one.
+export async function invalidateCachedImport(url) {
+  if (!url) return;
+  try {
+    await db.instagramCache.bulkDelete([cacheKey(url, 'meal'), cacheKey(url, 'drink')]);
+  } catch (e) {
+    console.warn('[SpiceHub DB] instagramCache invalidate failed:', e);
+  }
+}
+
 // ── Generic import cache helpers (aliases over instagramCache for unified use) ──
 // Used by importFromInstagram and importFromTikTok in recipeParser.js.
 export const getCachedImport   = getCachedInstagramRecipe;
