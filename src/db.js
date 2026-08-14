@@ -392,6 +392,30 @@ db.version(28).stores({
   if (toAdd.length > 0) await tagsTable.bulkAdd(toAdd);
 });
 
+// v29: Fix "drink import vanishes" bug. saveMealDeduped() (added alongside the
+// sourceHash dedup feature, see the "Save-time duplicate detection" comment
+// below) has always run `targetTable.where('sourceHash').equals(...)` for
+// BOTH tables it's called with — but `sourceHash` was only ever indexed on
+// `meals` (since v9). Any import routed to `db.drinks` (target === 'drinks'/
+// 'bar', or a recipe whose parsed itemType read as 'drink') threw a Dexie
+// SchemaError ("KeyPath sourceHash on object store drinks is not indexed")
+// the instant saveMealDeduped tried the lookup. App.jsx's handleImport
+// swallows that into a console.error with no user-facing failure state, so
+// the import appeared to succeed (toast + UI close) while nothing was ever
+// written — the "parses fine, then disappears" report. Adds the missing
+// index and backfills a real value so existing drinks become dedup-matchable
+// too, instead of just unblocking future writes.
+db.version(29).stores({
+  drinks: '++id, name, profileId, *tags, sourceHash',
+}).upgrade(tx => {
+  return tx.table('drinks').toCollection().modify(drink => {
+    if (!drink.sourceHash) {
+      const sourceUrl = drink.link || drink.sourceUrl || '';
+      drink.sourceHash = normalizeSourceForHash(sourceUrl) || '';
+    }
+  });
+});
+
 // ── Fresh-install seed data (Dexie 'populate' event) ────────────────────────
 // Discovered while building the v28 bar tag seed above: per Dexie's own
 // docs (dexie.org/docs/Tutorial/Design#database-versioning), "If no database
@@ -1190,14 +1214,23 @@ export function mergeRecipeData(existing, incoming) {
     return out;
   };
 
+  // 2026-08-14: `existing._userEdited` (stamped by App.jsx's saveMeal whenever
+  // the user manually saves changes via AddEditMeal) means a human trimmed or
+  // corrected this list on purpose — a re-import of the same source (retry,
+  // re-share, batch queue) must never silently undo that. Without this check,
+  // the plain length comparison below always prefers whichever side has MORE
+  // lines, so a hand-deleted garbage ingredient line comes right back the next
+  // time this recipe's URL gets re-scraped, because the fresh scrape is still
+  // "longer" than the user's cleaned-up version.
+  const keepExistingIngredients = existing._userEdited || (incoming.ingredients?.length || 0) <= (existing.ingredients?.length || 0);
+  const keepExistingDirections = existing._userEdited || (incoming.directions?.length || 0) <= (existing.directions?.length || 0);
   return {
     ...existing,
-    // Prefer the version with more ingredients
-    ingredients: (incoming.ingredients?.length || 0) > (existing.ingredients?.length || 0)
-      ? incoming.ingredients : existing.ingredients,
-    // Prefer the version with more directions
-    directions: (incoming.directions?.length || 0) > (existing.directions?.length || 0)
-      ? incoming.directions : existing.directions,
+    // Prefer the version with more ingredients — unless the user hand-edited
+    // the existing copy, in which case their edit always wins.
+    ingredients: keepExistingIngredients ? existing.ingredients : incoming.ingredients,
+    // Prefer the version with more directions — same user-edit override.
+    directions: keepExistingDirections ? existing.directions : incoming.directions,
     // Fill in missing fields from incoming
     imageUrl: existing.imageUrl || incoming.imageUrl,
     link: existing.link || incoming.link,
@@ -1300,7 +1333,23 @@ export async function saveMealDeduped(recipeData, { table = 'meals' } = {}) {
 
 export async function processImportQueue() {
   try {
-    const queued = await getQueuedRecipes();
+    // Claim every queued item before doing any async work. getQueuedRecipes()
+    // used to just be re-read here with no lock, so two concurrent calls
+    // (two open tabs both reacting to the same 'online' event, or a mount-time
+    // call racing a listener-triggered call in the same tab) would both read
+    // the same pending/failed rows and both process them — e.g. both calling
+    // db.meals.add() for the same queued recipe, producing a duplicate. Dexie's
+    // Collection#modify() runs as one transaction, so this claim (flip status
+    // to 'processing') can't interleave with another caller's read — whichever
+    // call's modify() commits first "owns" these rows; the other sees none left.
+    const claimedIds = [];
+    await db.importQueue.where('status').anyOf(['pending', 'failed']).modify(item => {
+      claimedIds.push(item.id);
+      item.status = 'processing';
+    });
+    const queued = claimedIds.length
+      ? await db.importQueue.where('id').anyOf(claimedIds).toArray()
+      : [];
     let succeeded = 0;
     let failed = 0;
 
@@ -1557,20 +1606,31 @@ export async function deleteWeekFromHistory(id) {
 // old id is dropped) and stamps the type fields so downstream code (CookMode
 // vs MixMode routing, ImportReview's isDrink check) treats it correctly going
 // forward.
+// Both moves used to add() to the destination table and delete() from the
+// source table as two independent awaits. If the tab closed, crashed, or lost
+// power between the two (exactly the kind of interruption these corrections
+// exist to recover from), the record could end up added to the destination
+// but never removed from the source — a permanent duplicate with no guard
+// against the same move being retried later. Wrapping both steps in one Dexie
+// transaction makes them commit or roll back together.
 export async function moveMealToBar(meal) {
   if (!meal || !meal.id) throw new Error('moveMealToBar: meal with id required');
   const { id, ...rest } = meal;
-  const newId = await db.drinks.add({ ...rest, itemType: 'drink', _type: 'drink', type: 'drink' });
-  await db.meals.delete(id);
-  return newId;
+  return db.transaction('rw', db.meals, db.drinks, async () => {
+    const newId = await db.drinks.add({ ...rest, itemType: 'drink', _type: 'drink', type: 'drink' });
+    await db.meals.delete(id);
+    return newId;
+  });
 }
 
 export async function moveDrinkToMeals(drink) {
   if (!drink || !drink.id) throw new Error('moveDrinkToMeals: drink with id required');
   const { id, ...rest } = drink;
-  const newId = await db.meals.add({ ...rest, itemType: 'meal', _type: 'meal', type: 'meal' });
-  await db.drinks.delete(id);
-  return newId;
+  return db.transaction('rw', db.meals, db.drinks, async () => {
+    const newId = await db.meals.add({ ...rest, itemType: 'meal', _type: 'meal', type: 'meal' });
+    await db.drinks.delete(id);
+    return newId;
+  });
 }
 
 // ── Instagram import cache ────────────────────────────────────────────────────

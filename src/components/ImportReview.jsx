@@ -809,6 +809,31 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
         </button>
       )}
 
+      {/* 2026-08-14: symmetric correction for the opposite miss. detectKindHeuristic()
+          (recipeSchema.js) runs unconditionally whenever the user didn't explicitly
+          pick a type (Bar tab / manual chip) — it's meant as a content hint, but a
+          savory recipe that happens to call for wine/bourbon/rum plus an oz
+          measurement or a "glass" mention can score high enough to read as a
+          cocktail. Because there's no explicit user pick to disagree with in that
+          case, _typeDisagreement never fires and the misroute to Bar was previously
+          silent — this button gives the same one-tap fix the meal→drink case
+          already had, so a real meal doesn't have to be re-imported after landing
+          on the wrong shelf. */}
+      {isDrink && !recipe._typeDisagreement && (
+        <button
+          type="button"
+          className="review-type-correction"
+          onClick={() => {
+            hapticLight();
+            onChange({ ...recipe, itemType: 'meal', type: 'meal', _type: 'meal' });
+            setDest('library');
+          }}
+        >
+          <UtensilsCrossed size={13} strokeWidth={2} />
+          Actually, this is a Meal → Library
+        </button>
+      )}
+
       {/* Creator's note — the short friendly intro/story the extraction engine
           preserved from a social caption (see recipeSchema `intro`). Only renders
           when the source actually had one; never fabricated by the model. */}

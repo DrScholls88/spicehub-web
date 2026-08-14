@@ -1119,14 +1119,25 @@ function _detItemFromLine(line, kind = 'meal') {
  * Deterministic, local recipe structuring. Returns a finalized thin recipe
  * (Spec-A-shaped ingredientsStructured) or null when nothing usable was found.
  */
-export function structureDeterministic(caption, { type = 'meal', imageUrl = '', sourceUrl = '', author = '' } = {}) {
+export function structureDeterministic(caption, { type = 'meal', imageUrl = '', sourceUrl = '', author = '', kindLocked = false } = {}) {
   if (!caption || !String(caption).trim()) return null;
   const parsed = parseCaption(caption);
   const ings = Array.isArray(parsed?.ingredients) ? parsed.ingredients : [];
   const dirs = (Array.isArray(parsed?.directions) ? parsed.directions : []).filter(Boolean);
   if (ings.length === 0 && dirs.length === 0) return null;
 
-  const kind = type === 'drink' ? 'drink' : detectKindHeuristic(caption);
+  // 2026-08-14: this used to hard-lock ONLY the 'drink' case (`type === 'drink'
+  // ? 'drink' : detectKindHeuristic(...)`), so an explicit 'meal' lock (user on
+  // the Meal tab, kindLocked=true) was silently ignored — the heuristic still
+  // ran and could flip a real meal (e.g. a savory recipe using wine/bourbon as
+  // an ingredient) to 'drink' whenever this offline fallback ran, which is
+  // exactly what the AI-path's kindLocked flag exists to prevent. This is the
+  // path that ran for the "meal saved as a drink and vanished" incident —
+  // Gemini's /api/structure had failed, so this deterministic fallback was the
+  // ONLY classifier with no AI to catch its mistake. Now kindLocked short-
+  // circuits the heuristic for either explicit type, matching the AI path.
+  const kind = kindLocked ? (type === 'drink' ? 'drink' : 'meal')
+    : type === 'drink' ? 'drink' : detectKindHeuristic(caption);
 
   // Group ingredients by section header.
   const groups = [{ section: '', items: [] }];
@@ -1172,9 +1183,9 @@ const IMPORT_PACK_ONLY =
 // LLM qty/unit split against a deterministic local parse of the same text; fill
 // empty fields, flag disagreements, re-score confidence. Best-effort — never
 // overrides populated LLM values and never throws.
-function _applyCaptionCrossCheck(result, textForAI, type) {
+function _applyCaptionCrossCheck(result, textForAI, type, kindLocked = false) {
   try {
-    const det = structureDeterministic(textForAI, { type });
+    const det = structureDeterministic(textForAI, { type, kindLocked });
     const detItems = det?.ingredientsStructured;
     if (Array.isArray(detItems) && detItems.length && Array.isArray(result.ingredientsStructured)) {
       const xc = crossCheckStructured(result.ingredientsStructured, detItems, { fillGaps: true });
@@ -1219,7 +1230,7 @@ export async function captionToRecipe(captionText, { title = '', imageUrl = '', 
         via: 'gemini-pack:' + (structured._structureMode || 'extract'),
       });
       if (hasRecipeContent(packRecipe)) {
-        const xchecked = _applyCaptionCrossCheck(packRecipe, textForAI || String(transcript || ''), type);
+        const xchecked = _applyCaptionCrossCheck(packRecipe, textForAI || String(transcript || ''), type, kindLocked);
         xchecked._structuredVia = xchecked._structuredVia || 'gemini-pack';
         return xchecked;
       }
@@ -1240,7 +1251,7 @@ export async function captionToRecipe(captionText, { title = '', imageUrl = '', 
       // finalizeAIRecipe — don't clobber it with a generic 'gemini'.
       if (hasRealIngs || hasRealDirs) {
         const result = { ...aiResult, _structuredVia: aiResult._structuredVia || 'gemini' };
-        return _applyCaptionCrossCheck(result, textForAI, type);
+        return _applyCaptionCrossCheck(result, textForAI, type, kindLocked);
       }
     }
   } catch { /* fall through to heuristic */ }
@@ -1256,7 +1267,7 @@ export async function captionToRecipe(captionText, { title = '', imageUrl = '', 
   // Spec C: the offline fallback now runs the deterministic parser, so no-API /
   // offline imports get the SAME Spec-A structured ingredients (kind, sections,
   // qty/unit/name, category) instead of flat strings via the weak splitter.
-  const det = structureDeterministic(textForParse, { type, imageUrl, sourceUrl, author });
+  const det = structureDeterministic(textForParse, { type, imageUrl, sourceUrl, author, kindLocked });
   if (det && ((det.ingredients?.length || 0) > 0 || (det.directions?.length || 0) > 0)) {
     return { ...det, name: det.name || title || '' };
   }

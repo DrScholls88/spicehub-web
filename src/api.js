@@ -823,6 +823,19 @@ export async function fetchInstagramJson(shortcode) {
 }
 
 function parseInstagramMediaJson(text) {
+  // 2026-08-14: the proxy can return HTTP 200 with an HTML block/login page
+  // body instead of JSON (Instagram rate-limiting or challenging the proxy's
+  // IP) — resp.ok alone doesn't catch this since the status is still 200.
+  // JSON.parse on that body used to throw "Unexpected token '<', \"<!DOCTYPE
+  // \"... is not valid JSON" (the literal error seen in production), which
+  // both callers' outer catch swallows into a silent null — correct end
+  // behavior (fall through to the next fetch tier) but a confusing log and no
+  // way to tell "blocked" apart from "genuinely no caption". Sniff for the
+  // HTML case up front so it fails with a clear, honest reason instead.
+  const trimmed = String(text || '').trimStart();
+  if (trimmed.startsWith('<')) {
+    throw new Error('proxy returned HTML instead of JSON (likely blocked/rate-limited)');
+  }
   const data = JSON.parse(text);
   const media =
     data?.graphql?.shortcode_media ||

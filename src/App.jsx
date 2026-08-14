@@ -1022,6 +1022,10 @@ useEffect(() => {
   // ── Meal CRUD ─────────────────────────────────────────────────────────────────
   const saveMeal = useCallback(async (mealData) => {
     mealData = await compressRecipeImage(mealData);
+    // Marks this record as hand-edited so a later re-import of the same
+    // source (retry, re-share, batch queue) can never silently undo the
+    // user's own trim/correction — see mergeRecipeData's _userEdited check.
+    mealData = { ...mealData, _userEdited: true };
     let savedMeal;
     if (mealData.id) {
       await db.meals.update(mealData.id, mealData);
@@ -1354,27 +1358,42 @@ useEffect(() => {
     // ── Week destination ───────────────────────────────────────────────────────
     // Saves the recipe AND places it into the first empty day of the current week.
     if (target === 'week') {
-      try {
-        for (const r of imported) {
-          if (r.id && !r.name && !r.ingredients) continue;
+      const savedItems = [];
+      let saveFailed = false;
+      for (const r of imported) {
+        if (r.id && !r.name && !r.ingredients) continue;
+        try {
           await saveMealDeduped(r, { table: 'meals' });
+          savedItems.push(r);
+        } catch (err) {
+          console.error('[handleImport] DB write failed (week):', err);
+          saveFailed = true;
         }
-        await loadMeals();
-        // Place first real recipe into the first empty slot
-        if (real.length > 0) {
-          setWeekPlan(prev => {
-            const updated = [...prev];
-            const firstEmpty = updated.findIndex(d => !d);
-            if (firstEmpty !== -1) updated[firstEmpty] = real[0];
-            return updated;
-          });
-        }
-      } catch (err) {
-        console.error('[handleImport] DB write failed (week):', err);
+      }
+      await loadMeals();
+      const realSaved = savedItems.filter(r => r.name);
+      // Place first real *saved* recipe into the first empty slot — never a
+      // recipe whose write threw, or the week plan would reference a meal
+      // that doesn't actually exist in the library.
+      if (realSaved.length > 0) {
+        setWeekPlan(prev => {
+          const updated = [...prev];
+          const firstEmpty = updated.findIndex(d => !d);
+          if (firstEmpty !== -1) updated[firstEmpty] = realSaved[0];
+          return updated;
+        });
       }
       markImportTimestamp();
-      const name = real.length === 1 ? (real[0].name || 'Recipe') : `${real.length} recipes`;
-      showToast(`"${name}" saved and added to this week`);
+      if (!realSaved.length) {
+        if (saveFailed) showToast("Couldn't save — try again", 'error');
+        return;
+      }
+      const name = realSaved.length === 1 ? (realSaved[0].name || 'Recipe') : `${realSaved.length} recipes`;
+      if (saveFailed) {
+        showToast(`"${name}" saved, but one item failed to save`, 'error');
+      } else {
+        showToast(`"${name}" saved and added to this week`);
+      }
       setTab('week');
       return;
     }
@@ -1394,36 +1413,54 @@ useEffect(() => {
     // explicit drink override alongside the legacy 'drinks' value.
     let anyDrink = false;
     let anyMeal = false;
-    try {
-      for (const r of imported) {
-        if (r.id && !r.name && !r.ingredients) continue;
-        const isDrinkItem = target === 'drinks' || target === 'bar' ||
-          (target !== 'meals' && (r.itemType === 'drink' || r._type === 'drink' || r.type === 'drink'));
+    // Saved items only — a batch item that throws (e.g. a Dexie SchemaError)
+    // must not be reported to the user as saved. Each item gets its own
+    // try/catch so one bad record doesn't also abort the rest of the batch.
+    const savedItems = [];
+    const failures = [];
+    for (const r of imported) {
+      if (r.id && !r.name && !r.ingredients) continue;
+      const isDrinkItem = target === 'drinks' || target === 'bar' ||
+        (target !== 'meals' && (r.itemType === 'drink' || r._type === 'drink' || r.type === 'drink'));
+      try {
         if (isDrinkItem) { await saveMealDeduped(r, { table: 'drinks' }); anyDrink = true; }
         else { await saveMealDeduped(r, { table: 'meals' }); anyMeal = true; }
+        savedItems.push(r);
+      } catch (err) {
+        console.error('[handleImport] DB write failed:', err);
+        failures.push(r);
       }
-    } catch (err) {
-      console.error('[handleImport] DB write failed:', err);
-    } finally {
-      // A batch could in principle mix types; reload whichever tables we
-      // actually touched instead of assuming target implies a single table.
-      await Promise.all([
-        anyDrink ? loadDrinks() : Promise.resolve(),
-        anyMeal || (!anyDrink && !anyMeal) ? loadMeals() : Promise.resolve(),
-      ]);
     }
+    // A batch could in principle mix types; reload whichever tables we
+    // actually touched instead of assuming target implies a single table.
+    await Promise.all([
+      anyDrink ? loadDrinks() : Promise.resolve(),
+      anyMeal || (!anyDrink && !anyMeal) ? loadMeals() : Promise.resolve(),
+    ]);
 
     markImportTimestamp();
-    if (!real.length) return;
-    const count = real.length;
+
+    if (failures.length) {
+      const failedName = failures.length === 1 ? (failures[0].name || 'Recipe') : `${failures.length} items`;
+      showToast(
+        savedItems.length
+          ? `Saved ${savedItems.length}, but "${failedName}" failed to save — try again`
+          : `Couldn't save "${failedName}" — try again`,
+        'error'
+      );
+    }
+
+    const realSaved = savedItems.filter(r => r.name);
+    if (!realSaved.length) return;
+    const count = realSaved.length;
     const noun = anyDrink && !anyMeal ? (count === 1 ? 'drink' : 'drinks') : (count === 1 ? 'recipe' : 'recipes');
-    const name = count === 1 ? (real[0].name || 'Recipe') : `${count} ${noun}`;
+    const name = count === 1 ? (realSaved[0].name || 'Recipe') : `${count} ${noun}`;
 
     // ── I-2: Post-save quick actions for single-recipe share-target imports ──
     // Show an 8-second action strip with "Add to week" / "Add to grocery" instead
     // of the plain toast, so the clip→plan loop requires zero extra steps.
-    if (wasShareMeal && target === 'meals' && real.length === 1) {
-      setPostImportActions({ message: `"${name}" saved`, recipe: real[0] });
+    if (wasShareMeal && target === 'meals' && realSaved.length === 1) {
+      setPostImportActions({ message: `"${name}" saved`, recipe: realSaved[0] });
       return;
     }
 
