@@ -420,11 +420,42 @@ body::before {
   box-shadow: 0 -1px 12px rgba(0, 0, 0, 0.06);
   border-top: 1px solid var(--border);
   padding-bottom: max(8px, env(safe-area-inset-bottom));
+  /* Rotating to landscape can put the notch/Dynamic Island on the physical
+     left or right edge; on narrow landscape widths where the 600px column
+     gets close to that edge, this keeps tab labels clear of it. No-op
+     (env() resolves to 0) on devices without a side inset. */
+  padding-left: max(0px, env(safe-area-inset-left));
+  padding-right: max(0px, env(safe-area-inset-right));
   max-width: 600px;
   margin: 0 auto;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   background: rgba(255, 255, 255, 0.92);
+}
+
+/* ── Landscape on phone: reclaim vertical space ──────────────────────────
+   Short landscape viewports (phone rotated) are height-starved — the fixed
+   tab bar's usual size eats a proportionally bigger chunk of the screen
+   than in portrait. Shrink it and drop the icon/label stack to a tighter
+   row so more of the actual screen content stays visible. Mirrors the same
+   (max-height: 500px) and (orientation: landscape) convention already used
+   for the Import preview screen. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .tab-bar button {
+    min-height: 36px;
+    padding: 4px 4px;
+  }
+
+  /* Icon glyph is an inline-styled <span> (fontSize:18 set in App.jsx), so an
+     inline style beats a normal rule here — !important is the deliberate,
+     narrow exception, matching existing usage elsewhere in this file. */
+  .tab-bar button span:first-child {
+    font-size: 15px !important;
+  }
+
+  .tab-bar button span:not(:first-child) {
+    font-size: 10px;
+  }
 }
 
 [data-theme="dark"] .tab-bar {

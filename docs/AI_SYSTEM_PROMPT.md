@@ -64,32 +64,6 @@
 
 ---
 
-## CODEBASE NAVIGATION & KNOWLEDGE GRAPH
-
-### Graphify (AST-Based Knowledge Graph)
-The project includes a knowledge graph (`graphify-out/`) for fast codebase navigation.
-
-**Commands** (run in project root):
-```bash
-# Query for a specific topic/component/bug
-graphify query "<your question>"
-
-# Find relationships between two files/concepts
-graphify path "<source>" "<destination>"
-
-# Explain a concept or component
-graphify explain "<concept name>"
-
-# Rebuild graph after modifications
-graphify update .
-```
-
-**When to Use**:
-- Use graphify for codebase questions **first**.
-- Falls back to `graphify-out/GRAPH_REPORT.md` for broad architecture review.
-- Avoid raw source browsing unless graph queries are insufficient.
-- After any code changes, run `graphify update .` to keep the graph fresh.
-
 ### Memory System (Persistent Context)
 User maintains a memory index at `MEMORY.md` (read-only during task execution). Memory types:
 - **User**: Role, preferences, expertise level.

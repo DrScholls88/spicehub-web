@@ -3,12 +3,14 @@ node_modules/
 
 # Production builds
 dist/
+dist-verify*/
 build/
 .out/
 
 # Vite / Development
 .vite/
 vite.config.*.timestamp-*
+vitest.config.*.timestamp-*
 
 # Environment variables
 .env
@@ -59,3 +61,14 @@ coverage/
 # Temporary / Misc
 .tmp/
 temp/
+
+# Local-only cleanup holding pens (see cleanup audit) - never commit archived junk back in
+_archive/
+_to_delete/
+
+# Secrets / local AI-tool state (see 2026-08-21 cleanup audit)
+cookies.json
+.playwright-mcp/
+.codex/
+.cursor/
+.superpowers/
