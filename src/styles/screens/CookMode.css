@@ -1,0 +1,620 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   CookMode — extracted from App.css on 2026-08-24
+   ═══════════════════════════════════════════════════════════════════════════
+   Split out of the 610 KB App.css monolith so this screen's CSS travels in its
+   own async chunk instead of blocking first paint for everyone. PageSpeed
+   mobile 2026-08-23 measured the bundled stylesheet at 1,840 ms render-blocking
+   with 99.9 KiB of its 102.5 KiB unused on the landing screen.
+
+   CONTENTS: every rule whose selector is owned by the .cm-* class
+   namespace. The extraction was mechanical and byte-preserving — rule
+   bodies were sliced out of App.css verbatim, never reparsed or reformatted, so
+   vendor prefixes, `100vh`/`100dvh` fallback pairs, duplicated declarations and
+   authored comments all survive exactly as written.
+
+   WHAT DELIBERATELY DID NOT COME ALONG:
+     * Grouped selectors that mix namespaces. A rule moved only if EVERY
+       comma-part carries a class from this namespace — `.btn-primary,
+       .cm-btn { }` stays in App.css, because moving it would unstyle
+       .btn-primary whenever this chunk is not loaded.
+     * @keyframes. All 147 stay in App.css: they are global by nature, 17 are
+       referenced from more than one namespace, and leaving them put costs 24 KB
+       in the main bundle while removing an entire class of bug.
+
+   @MEDIA HANDLING: media blocks that mixed several namespaces were split by
+   owner, so each file carries its own `@media` wrapper around verbatim inner
+   rules. This matters most for `prefers-reduced-motion` — those overrides set
+   `animation: none` at the SAME specificity as the base rule, so they win by
+   source order alone. Had they stayed behind in App.css while the base rules
+   moved to a later-loading chunk, reduced-motion would have silently stopped
+   working (design.md §12).
+
+   ORDERING CONTRACT: import this file BEFORE any other stylesheet in its
+   component. These rules previously sat in App.css, which loads ahead of every
+   component stylesheet — importing this first is what preserves that relative
+   order for equal-specificity conflicts.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.cm-container {
+  position: fixed;
+  top: 0; right: 0; bottom: 0; left: 0;
+  background: var(--bg);
+  z-index: 600;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Progress bar — thicker with glow */
+.cm-progress-bar {
+  height: 5px;
+  background: var(--surface-2);
+  flex-shrink: 0;
+}
+
+.cm-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary), var(--success));
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 0 3px 3px 0;
+  box-shadow: 0 0 8px rgba(76, 175, 80, 0.3);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--success) 30%, transparent);
+}
+
+/* Top bar */
+.cm-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  flex-shrink: 0;
+}
+
+.cm-close-btn {
+  padding: 8px 14px;
+  background: #f5f5f5;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cm-step-counter {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-light);
+}
+
+.cm-step-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.cm-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  cursor: pointer;
+  transition: background-color 0.25s cubic-bezier(0.4,0,0.2,1), color 0.25s cubic-bezier(0.4,0,0.2,1), border-color 0.25s cubic-bezier(0.4,0,0.2,1), box-shadow 0.25s cubic-bezier(0.4,0,0.2,1), opacity 0.25s cubic-bezier(0.4,0,0.2,1), transform 0.25s cubic-bezier(0.4,0,0.2,1);
+}
+
+.cm-dot.active {
+  background: var(--primary);
+  width: 22px;
+  border-radius: 4px;
+  box-shadow: 0 0 6px rgba(76, 175, 80, 0.3);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--primary) 30%, transparent);
+}
+
+.cm-dot.done {
+  background: var(--success);
+}
+
+.cm-dot.ingredients {
+  background: #ffb74d;
+}
+
+/* Main content */
+.cm-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  -webkit-overflow-scrolling: touch;
+  position: relative;
+}
+
+/* ── Slide animations for step transitions ── */
+.cm-slide-in {
+  animation: cmSlideIn 0.25s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.cm-slide-left {
+  animation: cmSlideOutLeft 0.2s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.cm-slide-right {
+  animation: cmSlideOutRight 0.2s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+/* Ingredients view */
+.cm-ingredients-view {
+  width: 100%;
+  max-width: 500px;
+}
+
+.cm-recipe-name {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--text);
+  text-align: center;
+  margin: 0 0 16px;
+}
+
+.cm-hero-img {
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  border-radius: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+}
+
+.cm-ing-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.cm-ing-header h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+}
+
+.cm-scale-badge {
+  padding: 4px 10px;
+  background: var(--primary);
+  color: white;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cm-ing-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.cm-ing-item {
+  display: flex;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 16px;
+  color: var(--text);
+}
+
+.cm-ing-bullet {
+  color: var(--primary);
+  font-weight: bold;
+}
+
+/* ── Step carousel ── */
+.cm-step-carousel {
+  width: 100%;
+  max-width: 500px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+
+/* Step preview (prev/next) */
+.cm-step-preview {
+  width: 100%;
+  padding: 10px 16px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s, transform 0.2s;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cm-step-preview:hover {
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+
+.cm-step-preview:active {
+  transform: scale(0.98);
+}
+
+.cm-preview-prev {
+  opacity: 0.35;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 14px;
+}
+
+.cm-preview-next {
+  opacity: 0.35;
+  margin-top: 12px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+  animation: cmFadeUpHint 0.4s ease-out 0.15s both;
+}
+
+.cm-preview-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text-light);
+}
+
+.cm-preview-text {
+  font-size: 14px;
+  color: var(--text-light);
+  line-height: 1.4;
+}
+
+/* Current step */
+.cm-step-view {
+  width: 100%;
+  max-width: 500px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 0;
+}
+
+.cm-step-number {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--primary);
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cm-step-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--success);
+  color: white;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.cm-step-text {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.55;
+  color: var(--text);
+  max-width: 90%;
+}
+
+.cm-timer-suggest {
+  margin-top: 20px;
+  padding: 12px 24px;
+  background: #fff3e0;
+  border: 2px solid #ffb74d;
+  border-radius: 14px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #e65100;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cm-timer-suggest:active {
+  transform: scale(0.97);
+}
+
+.cm-timer-icon {
+  font-size: 20px;
+}
+
+/* ── Ingredient sidebar (smart contextual display) ── */
+.cm-ing-sidebar {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  width: 180px;
+  /* Tinted from var(--card)/var(--primary) via color-mix so the "warm
+     glass" look tracks the theme's real surface + accent hue instead of
+     staying a fixed peach card that washes out against a dark background.
+     rgba() line is the pre-color-mix fallback — keep in sync. */
+  background: rgba(255, 243, 224, 0.95);
+  background: color-mix(in srgb, var(--card) 92%, var(--primary) 8%);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border-radius: 14px;
+  padding: 10px 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+  border: 1px solid #ffe0b2;
+  border: 1px solid color-mix(in srgb, var(--primary) 25%, transparent);
+  transition: background-color 0.25s cubic-bezier(0.4,0,0.2,1), color 0.25s cubic-bezier(0.4,0,0.2,1), border-color 0.25s cubic-bezier(0.4,0,0.2,1), box-shadow 0.25s cubic-bezier(0.4,0,0.2,1), opacity 0.25s cubic-bezier(0.4,0,0.2,1), transform 0.25s cubic-bezier(0.4,0,0.2,1);
+  animation: cmSidebarIn 0.3s ease-out both;
+  z-index: 2;
+}
+
+.cm-sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cm-sidebar-icon {
+  font-size: 14px;
+}
+
+.cm-sidebar-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex: 1;
+}
+
+.cm-sidebar-toggle {
+  background: none;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--primary);
+  padding: 2px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cm-sidebar-list {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 0;
+}
+
+.cm-sidebar-item {
+  font-size: 13px;
+  color: var(--text);
+  padding: 4px 0;
+  border-top: 1px solid var(--border);
+  line-height: 1.3;
+  font-weight: 600;
+}
+
+.cm-sidebar-item:first-child {
+  border-top: none;
+}
+
+@media (max-width: 500px) {
+.cm-ing-sidebar {
+    position: relative;
+    right: auto;
+    top: auto;
+    width: 100%;
+    max-width: 500px;
+    margin-top: 12px;
+  }
+}
+
+/* Timer */
+.cm-timer {
+  padding: 12px 20px;
+  background: #e8f5e9;
+  border-radius: 16px;
+  margin: 12px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+  box-shadow: 0 2px 12px rgba(76, 175, 80, 0.1);
+}
+
+.cm-timer.cm-timer-done {
+  background: #ffebee;
+  animation: cmPulse 0.6s ease-in-out infinite;
+  box-shadow: 0 2px 16px rgba(244, 67, 54, 0.15);
+}
+
+.cm-timer-display {
+  display: flex;
+  flex-direction: column;
+}
+
+.cm-timer-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-light);
+}
+
+.cm-timer-time {
+  font-size: 32px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.cm-timer-time.cm-blink {
+  animation: cmBlink 1s step-end infinite;
+  color: var(--danger);
+}
+
+.cm-timer-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.cm-timer-btn {
+  padding: 10px 16px;
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cm-timer-btn:active {
+  transform: scale(0.97);
+}
+
+.cm-timer-clear {
+  color: var(--text-light);
+}
+
+.cm-timer-dismiss {
+  background: var(--success);
+  color: white;
+  border-color: var(--success);
+}
+
+/* Quick timers */
+.cm-quick-timers {
+  display: flex;
+  gap: 8px;
+  padding: 8px 20px;
+  flex-shrink: 0;
+  justify-content: center;
+}
+
+.cm-qt-btn {
+  padding: 8px 14px;
+  background: #f5f5f5;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+}
+
+.cm-qt-btn:active {
+  transform: scale(0.95);
+  background: color-mix(in srgb, var(--text) 10%, var(--surface-2));
+}
+
+/* Bottom nav */
+.cm-bottom-nav {
+  display: flex;
+  gap: 12px;
+  padding: 16px 20px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+}
+
+.cm-nav-btn {
+  flex: 1;
+  padding: 16px;
+  border: none;
+  border-radius: 14px;
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+}
+
+.cm-nav-btn:disabled {
+  opacity: 0.3;
+}
+
+.cm-nav-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.cm-prev {
+  background: #f5f5f5;
+  color: var(--text);
+}
+
+.cm-next {
+  background: var(--primary);
+  color: white;
+}
+
+.cm-start {
+  background: linear-gradient(135deg, #ff9800, #f57c00);
+}
+
+.cm-finish {
+  background: linear-gradient(135deg, #66bb6a, #43a047);
+}
+
+[data-theme="dark"] .cm-close-btn,
+[data-theme="dark"] .cm-qt-btn,
+[data-theme="dark"] .cm-prev {
+  background: #2a2a2a;
+  color: var(--text);
+}
+
+[data-theme="dark"] .cm-timer {
+  background: #1b331b;
+}
+
+/* Dark theme's --success (#66bb6a) is too light to clear 4.5:1 against
+   white text (2.36:1, computed) — darken it for these white-on-success
+   elements specifically rather than touching the shared token. */
+[data-theme="dark"] .cm-step-check,
+[data-theme="dark"] .cm-timer-dismiss {
+  background: color-mix(in srgb, var(--success) 70%, black);
+  border-color: color-mix(in srgb, var(--success) 70%, black);
+}
+
+[data-theme="dark"] .cm-timer.cm-timer-done {
+  background: #3d1515;
+}
+
+[data-theme="dark"] .cm-timer-suggest {
+  background: #3d2600;
+  border-color: #8d6e00;
+  color: #ffcc02;
+}
+
+[data-theme="dark"] .cm-timer-btn {
+  background: #2a2a2a;
+  border-color: #444;
+  color: var(--text);
+}
+
+[data-accent="autumn"] .cm-progress-fill {
+  background: linear-gradient(90deg, #e65100, #ff8f00);
+}
+
+[data-accent="spring"] .cm-progress-fill {
+  background: linear-gradient(90deg, #ec407a, #ab47bc);
+}
+
+[data-accent="summer"] .cm-progress-fill {
+  background: linear-gradient(90deg, #ff8f00, #fdd835);
+}
+
+[data-accent="winter"] .cm-progress-fill {
+  background: linear-gradient(90deg, #42a5f5, #7e57c2);
+}

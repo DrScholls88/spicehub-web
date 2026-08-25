@@ -1,0 +1,982 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   GroceryList — extracted from App.css on 2026-08-24
+   ═══════════════════════════════════════════════════════════════════════════
+   Split out of the 610 KB App.css monolith so this screen's CSS travels in its
+   own async chunk instead of blocking first paint for everyone. PageSpeed
+   mobile 2026-08-23 measured the bundled stylesheet at 1,840 ms render-blocking
+   with 99.9 KiB of its 102.5 KiB unused on the landing screen.
+
+   CONTENTS: every rule whose selector is owned by the .gl-* class
+   namespace. The extraction was mechanical and byte-preserving — rule
+   bodies were sliced out of App.css verbatim, never reparsed or reformatted, so
+   vendor prefixes, `100vh`/`100dvh` fallback pairs, duplicated declarations and
+   authored comments all survive exactly as written.
+
+   WHAT DELIBERATELY DID NOT COME ALONG:
+     * Grouped selectors that mix namespaces. A rule moved only if EVERY
+       comma-part carries a class from this namespace — `.btn-primary,
+       .gl-btn { }` stays in App.css, because moving it would unstyle
+       .btn-primary whenever this chunk is not loaded.
+     * @keyframes. All 147 stay in App.css: they are global by nature, 17 are
+       referenced from more than one namespace, and leaving them put costs 24 KB
+       in the main bundle while removing an entire class of bug.
+
+   @MEDIA HANDLING: media blocks that mixed several namespaces were split by
+   owner, so each file carries its own `@media` wrapper around verbatim inner
+   rules. This matters most for `prefers-reduced-motion` — those overrides set
+   `animation: none` at the SAME specificity as the base rule, so they win by
+   source order alone. Had they stayed behind in App.css while the base rules
+   moved to a later-loading chunk, reduced-motion would have silently stopped
+   working (design.md §12).
+
+   ORDERING CONTRACT: import this file BEFORE any other stylesheet in its
+   component. These rules previously sat in App.css, which loads ahead of every
+   component stylesheet — importing this first is what preserves that relative
+   order for equal-specificity conflicts.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Container & Layout ── */
+.gl-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh; /* accounts for iOS's collapsing URL bar/toolbar */
+  background: #121212;
+  position: relative;
+}
+
+.gl-empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.gl-empty-state p {
+  font-size: 14px;
+  color: rgba(245, 255, 245, 0.6);
+  margin: 0;
+}
+
+.gl-empty-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(245, 255, 245, 0.6);
+  margin-bottom: 8px;
+}
+
+.gl-empty-title {
+  font-size: var(--sh-fs-base, 16px);
+  font-weight: 600;
+  color: rgba(245, 255, 245, 0.92);
+  margin: 0;
+}
+
+.gl-empty-hint {
+  font-size: var(--sh-fs-sm, 13px);
+  color: rgba(245, 255, 245, 0.6);
+  line-height: 1.5;
+  max-width: 280px;
+  margin: 0 0 8px;
+}
+
+/* ── Progress Section ── */
+.gl-progress-section {
+  padding: 12px 16px;
+  background: var(--card);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.gl-progress-bar {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.gl-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #FF6B35, #FF8F5E);
+  border-radius: 2px;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.gl-progress-text {
+  font-size: 11px;
+  color: rgba(245, 255, 245, 0.5);
+  font-weight: 600;
+  text-align: right;
+}
+
+/* ── Top Toolbar (Sticky) ── */
+.gl-top-toolbar {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--card);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  position: sticky;
+  top: 48px;
+  z-index: 9;
+  flex-wrap: wrap;
+}
+
+.gl-btn-batch,
+.gl-btn-auto-sort,
+.gl-btn-rebuild {
+  flex: 1;
+  min-height: 40px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: #F5FFF5;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
+  -webkit-tap-highlight-color: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.gl-btn-batch:active,
+.gl-btn-auto-sort:active,
+.gl-btn-rebuild:active {
+  transform: scale(0.96);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.gl-btn-batch.gl-active {
+  background: #FF6B35;
+  color: white;
+  border-color: #FF6B35;
+}
+
+/* ── Batch Toolbar (Sticky) ── */
+.gl-batch-toolbar {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  background: rgba(255, 107, 53, 0.08);
+  border-bottom: 2px solid #FF6B35;
+  position: sticky;
+  top: 88px;
+  z-index: 9;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.gl-batch-count {
+  font-size: 12px;
+  font-weight: 700;
+  color: #FF6B35;
+  min-width: max-content;
+}
+
+.gl-btn-select-all,
+.gl-btn-assign-store {
+  flex: 1;
+  min-height: 40px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid #FF6B35;
+  background: transparent;
+  color: #FF6B35;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.gl-btn-assign-store:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  border-color: rgba(255, 107, 53, 0.3);
+}
+
+.gl-btn-select-all:active,
+.gl-btn-assign-store:active:not(:disabled) {
+  transform: scale(0.96);
+  background: rgba(255, 107, 53, 0.12);
+}
+
+/* ── Floating Action Buttons (Bottom Bar) ── */
+.gl-floating-actions {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  gap: 10px;
+  padding: 10px 12px 16px;
+  background: linear-gradient(180deg, transparent, rgba(18, 18, 18, 0.95) 20%);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  z-index: 50;
+  max-width: 600px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.gl-btn-keep-primary,
+.gl-btn-keep-secondary {
+  flex: 1;
+  min-height: 44px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.gl-btn-keep-primary {
+  background: #FBBC04;
+  color: #121212;
+  box-shadow: 0 2px 8px rgba(251, 188, 4, 0.3);
+  font-weight: 700;
+}
+
+.gl-btn-keep-primary:active {
+  transform: scale(0.96);
+}
+
+.gl-btn-keep-secondary {
+  background: rgba(255, 255, 255, 0.08);
+  color: #F5FFF5;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.gl-btn-keep-secondary:active {
+  transform: scale(0.96);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* ── Bottom Sheet Overlay (Store Picker) ── */
+.gl-overlay-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 40;
+  animation: fadeIn 0.2s ease;
+}
+
+.gl-overlay-sheet {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #1A1A1A;
+  border-radius: 20px 20px 0 0;
+  z-index: 41;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  max-width: 600px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.gl-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  flex-shrink: 0;
+}
+
+.gl-sheet-header h2 {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+  color: #F5FFF5;
+}
+
+.gl-sheet-close {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
+  -webkit-tap-highlight-color: transparent;
+  flex-shrink: 0;
+  color: #F5FFF5;
+}
+
+.gl-sheet-close:active {
+  transform: scale(0.94);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.gl-sheet-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+.gl-store-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  border: none;
+  background: transparent;
+  border-left: 4px solid transparent;
+  cursor: pointer;
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
+  -webkit-tap-highlight-color: transparent;
+  font-size: 15px;
+  font-weight: 500;
+  color: #F5FFF5;
+  text-align: left;
+}
+
+.gl-store-option:active {
+  transform: scale(0.98);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.gl-store-option-name {
+  flex: 1;
+}
+
+.gl-store-option-arrow {
+  color: rgba(245, 255, 245, 0.4);
+  font-size: 20px;
+  margin-right: 4px;
+}
+
+/* ── Section Headers ── */
+.gl-section {
+  margin-top: 16px;
+}
+
+.gl-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: transparent;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.gl-section-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(245, 255, 245, 0.4);
+  border-left: none;
+  padding-left: 0;
+}
+
+.gl-section-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gl-section-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: rgba(245, 255, 245, 0.5);
+  background: rgba(245, 255, 245, 0.08);
+  border-radius: 100px;
+  padding: 2px 8px;
+  min-width: max-content;
+  text-align: right;
+}
+
+.gl-btn-keep-section {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: #FBBC04;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
+  -webkit-tap-highlight-color: transparent;
+  padding: 0;
+}
+
+.gl-btn-keep-section:active {
+  transform: scale(0.94);
+}
+
+/* ── Grocery Items ── */
+.gl-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 52px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: transparent;
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.gl-item.gl-item-checked {
+  opacity: 0.35;
+  background: rgba(255, 107, 53, 0.04);
+}
+
+.gl-item.gl-item-selected {
+  background: rgba(255, 107, 53, 0.1);
+}
+
+.gl-item-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.gl-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  flex: 1;
+  min-height: 44px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.gl-checkbox-input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  cursor: pointer;
+  border: 1.5px solid rgba(245, 255, 245, 0.25);
+  border-radius: 50%;
+  background: transparent;
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.gl-checkbox-input:hover {
+  border-color: #FF6B35;
+  box-shadow: 0 0 0 2px rgba(255, 107, 53, 0.1);
+}
+
+.gl-checkbox-input:checked {
+  background: #FF6B35;
+  border-color: #FF6B35;
+}
+
+.gl-checkbox-input:checked::after {
+  content: '✓';
+  position: absolute;
+  color: white;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gl-item-text {
+  font-size: 15px;
+  color: #F5FFF5;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.gl-item-text-checked {
+  text-decoration: line-through;
+  color: rgba(245, 255, 245, 0.35);
+}
+
+/* ── Item Actions ── */
+.gl-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.gl-btn-store {
+  width: 44px;
+  height: 44px;
+  border: none;
+  background: transparent;
+  color: rgba(245, 255, 245, 0.35);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.gl-btn-store:active {
+  transform: scale(0.92);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.gl-btn-store.gl-btn-store-assigned {
+  background: transparent;
+  color: #FF6B35;
+}
+
+/* Deep-link "search this item on [Store]" — Phase 3, harmonization plan */
+.gl-btn-search {
+  width: 40px;
+  height: 44px;
+  border: none;
+  background: transparent;
+  color: rgba(245, 255, 245, 0.35);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.gl-btn-search:active {
+  transform: scale(0.92);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ── Pantry & Remove buttons ── */
+.gl-btn-pantry {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 2px solid #4caf50;
+  background: transparent;
+  color: #4caf50;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.gl-btn-pantry:active {
+  background: #4caf50;
+  color: white;
+  transform: scale(0.92);
+}
+
+.gl-btn-remove {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: #F5FFF5;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
+  flex-shrink: 0;
+  opacity: 0.3;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.gl-btn-remove:active {
+  opacity: 1;
+  transform: scale(0.92);
+}
+
+.gl-btn-unpantry {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: transparent;
+  color: #F5FFF5;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.gl-btn-unpantry:active {
+  background: rgba(255, 255, 255, 0.08);
+  transform: scale(0.92);
+}
+
+/* ── Pantry section ── */
+.gl-pantry-section {
+  opacity: 0.5;
+}
+
+.gl-item-pantry {
+  background: rgba(76, 175, 80, 0.08);
+  border-bottom: 1px solid rgba(76, 175, 80, 0.2);
+}
+
+.gl-pantry-check {
+  color: #4caf50;
+  font-weight: 700;
+  font-size: 14px;
+  width: 24px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.gl-item-text-pantry {
+  text-decoration: line-through;
+  color: rgba(245, 255, 245, 0.35);
+}
+
+.gl-pantry-badge {
+  color: #4caf50;
+  font-weight: 600;
+}
+
+.gl-picker-pantry {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
+  font-weight: 600 !important;
+  color: #4caf50 !important;
+}
+
+/* ── Alchemist's Supply (Bar Quest Section) ── */
+.gl-quest-section {
+  border: 1px solid rgba(255, 215, 0, 0.25);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.06) 0%, rgba(255, 165, 0, 0.04) 100%);
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.gl-quest-header {
+  background: linear-gradient(90deg, rgba(255, 215, 0, 0.12) 0%, transparent 100%);
+}
+
+.gl-quest-title {
+  color: #ffd700 !important;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-left-color: #ffd700 !important;
+}
+
+.gl-quest-icon {
+  font-size: 16px;
+  filter: drop-shadow(0 0 4px rgba(255, 215, 0, 0.4));
+  animation: glQuestFloat 3s ease-in-out infinite;
+}
+
+.gl-quest-count {
+  background: rgba(255, 215, 0, 0.2) !important;
+  color: #ffd700 !important;
+  font-weight: 700;
+}
+
+.gl-quest-subtitle {
+  font-size: 11px;
+  color: rgba(255, 215, 0, 0.5);
+  padding: 0 16px 8px;
+  font-style: italic;
+}
+
+.gl-quest-item {
+  border-left: 3px solid rgba(255, 215, 0, 0.3) !important;
+  background: rgba(255, 215, 0, 0.04);
+}
+
+.gl-quest-item-text {
+  color: rgba(255, 215, 0, 0.9);
+  font-weight: 600;
+}
+
+.gl-quest-drink-tag {
+  display: inline-block;
+  font-size: 10px;
+  color: rgba(255, 165, 0, 0.7);
+  background: rgba(255, 165, 0, 0.1);
+  border-radius: 8px;
+  padding: 1px 8px;
+  margin-left: 8px;
+  white-space: nowrap;
+}
+
+.gl-quest-shelf-btn {
+  background: linear-gradient(135deg, #ffd700, #ff8c00);
+  color: #1a1a1a;
+  border: none;
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.gl-quest-shelf-btn:active {
+  transform: scale(0.95);
+  box-shadow: 0 0 8px rgba(255, 215, 0, 0.4);
+}
+
+/* ── Store Picker (Inline) ── */
+.gl-picker-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+}
+
+.gl-item-picker {
+  position: fixed;
+  bottom: 80px;
+  left: 0;
+  right: 0;
+  max-width: 600px;
+  margin: 0 auto;
+  width: 100%;
+  background: #1A1A1A;
+  border-radius: 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 31;
+  overflow: hidden;
+  max-height: 60vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.gl-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  border: none;
+  background: transparent;
+  border-left: 4px solid transparent;
+  cursor: pointer;
+  transition: background-color 150ms cubic-bezier(0.4,0,0.2,1), color 150ms cubic-bezier(0.4,0,0.2,1), border-color 150ms cubic-bezier(0.4,0,0.2,1), box-shadow 150ms cubic-bezier(0.4,0,0.2,1), opacity 150ms cubic-bezier(0.4,0,0.2,1), transform 150ms cubic-bezier(0.4,0,0.2,1);
+  -webkit-tap-highlight-color: transparent;
+  font-size: 14px;
+  font-weight: 500;
+  color: #F5FFF5;
+  text-align: left;
+}
+
+.gl-picker-option:active {
+  transform: scale(0.97);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.gl-picker-unsort {
+  color: rgba(245, 255, 245, 0.5);
+  border-left-color: rgba(255, 255, 255, 0.15) !important;
+}
+
+/* ── Store Logo ── */
+.gl-store-logo-letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: white;
+  font-weight: 700;
+  flex-shrink: 0;
+  font-size: 11px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.gl-store-logo-img {
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+@media (min-width: 640px) {
+.gl-floating-actions {
+    bottom: auto;
+    top: 48px;
+    padding: 12px 16px;
+    background: var(--card);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    border-top: none;
+    position: sticky;
+    z-index: 8;
+    gap: 12px;
+    max-width: none;
+    width: auto;
+    margin: 0;
+  }
+
+.gl-btn-keep-primary,
+  .gl-btn-keep-secondary {
+    font-size: 14px;
+    padding: 10px 16px;
+  }
+
+.gl-overlay-sheet {
+    border-radius: 16px;
+    bottom: auto;
+    max-height: 60vh;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    right: auto;
+    width: 90%;
+    max-width: 500px;
+    transform: translate(-50%, -50%);
+  }
+
+.gl-item-picker {
+    position: absolute;
+    bottom: auto;
+    top: 0;
+    right: 100%;
+    margin: 0;
+    width: 280px;
+    border-radius: 12px;
+    margin-right: -8px;
+  }
+}
+
+@media (hover: hover) {
+.gl-btn-batch:hover,
+  .gl-btn-auto-sort:hover,
+  .gl-btn-rebuild:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+.gl-btn-batch.gl-active:hover {
+    background: #FF5420;
+  }
+
+.gl-btn-keep-primary:hover {
+    box-shadow: 0 4px 12px rgba(251, 188, 4, 0.4);
+  }
+
+.gl-store-option:hover {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+.gl-picker-option:hover {
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+.gl-checkbox-input:hover {
+    border-color: #FF6B35;
+    box-shadow: 0 0 0 2px rgba(255, 107, 53, 0.1);
+  }
+}
+
+/* ── Grocery List Search ── */
+.gl-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: 0 0 var(--space-md);
+}
+
+.gl-search-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.gl-search-input {
+  width: 100%;
+  padding: 10px 36px 10px 36px;
+  border-radius: var(--radius-pill);
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.9rem;
+  outline: none;
+  transition: border-color 0.2s var(--ease-spring);
+  min-height: 44px;
+}
+
+.gl-search-input:focus {
+  border-color: var(--primary);
+}
+
+.gl-search-clear {
+  position: absolute;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: var(--surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s var(--ease-spring);
+}
+
+.gl-search-clear:active { transform: scale(0.92); }

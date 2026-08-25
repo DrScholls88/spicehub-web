@@ -3,28 +3,12 @@ import { AnimatePresence } from 'framer-motion';
 import db, { importSeedMeals, removeStarterKitMeals, logCook, logMix, saveGroceryList, loadGroceryList, getStoreMemory, getCookingLog, toggleRotation, addBatchQueueItems, getBatchQueueItems, updateBatchQueueItem, getLearnedAliases, moveMealToBar, moveDrinkToMeals, getCustomDayTags, addCustomDayTag, deleteCustomDayTag, saveMealDeduped } from './db';
 import { buildStarterKitMeals, STARTER_KIT_SEED_FLAG } from './data/starterKitMeals';
 import { checkStorageQuota, requestPersistentStorage, isPersistentStorageGranted } from './storageManager';
-import WeekView from './components/WeekView';
 import LandingPage from './components/LandingPage';
-import MealLibrary from './components/MealLibrary';
-import BarLibrary from './components/BarLibrary';
-import GroceryList from './components/GroceryList';
-import MealDetail from './components/MealDetail';
-import AddEditMeal from './components/AddEditMeal';
-import ImportSheet from './components/ImportSheet';
-import BatchImportQueue, { BatchQueuePill } from './components/BatchImportQueue';
-import DiscoverRecipes from './components/DiscoverRecipes';
 import { startBatchImportEngine } from './batchImportEngine';
 import { extractMultipleUrls, detectImportType } from './recipeParser';
 import { categorizeIngredient, upgradeRecipeIngredients, setLearnedAliases, fuzzyResolveIngredient } from './recipeSchema';
 import { seedEntities } from './utils/ingredientEntities';
-import CookMode from './components/CookMode';
-import MixMode from './components/MixMode';
-import FloatingVideoPlayer from './components/FloatingVideoPlayer';
 import { getMealVideoSource } from './lib/videoSource';
-import BarShelf from './components/BarShelf';
-import RoomTransition from './components/RoomTransition';
-import MealSpinner from './components/MealSpinner';
-import SyncQueue from './components/SyncQueue';
 import OfflineIndicator from './components/OfflineIndicator';
 import { isIOS, isAndroid } from './isMobile';
 import useOnlineStatus, { onOnlineStatusChange } from './hooks/useOnlineStatus';
@@ -45,20 +29,73 @@ import LegalFooter from './components/LegalFooter';
 import useProfile from './hooks/useProfile';
 import useHomeGroup from './hooks/useHomeGroup';
 import useFriendsRealtime from './hooks/useFriendsRealtime';
-import SettingsSheet from './components/SettingsSheet';
-import FriendsSheet from './components/FriendsSheet';
 import { isHomeGroupEnabled, isFriendsEnabled } from './lib/supabaseClient';
 import { setCurrentStatus } from './lib/cloudProfile';
 import { getPendingShareCount } from './lib/recipeShare';
 import { getPendingInboundCount, getLocalFriends } from './lib/friends';
-import SharePickerSheet from './components/SharePickerSheet';
+import AppSkeleton, { ScreenSkeleton } from './components/AppSkeleton';
 import './App.css';
 
-// Code-split screens that aren't needed on first paint. Each is a modal/
-// overlay gated behind its own boolean state, so a brief Suspense fallback
-// (null — these all render as slide-up sheets/overlays, so a one-frame gap
-// before the sheet appears is unnoticeable) is a safe tradeoff for keeping
-// them out of the main bundle. InstagramZipImport in particular pulls in
+// ─────────────────────────────────────────────────────────────────────────────
+// Code-split screens that aren't needed on first paint.
+//
+// 2026-08-24: this list used to hold six overlays while every tab screen and
+// modal below it was a STATIC import, so booting the landing page pulled in
+// BarShelf, WeekView, MealLibrary, BarLibrary, CookMode, MixMode and friends
+// whether or not the user ever left Home. PageSpeed mobile 2026-08-23:
+// 484 KiB main bundle, 300.5 KiB of it unused on first load, with BarShelf.jsx
+// (24.7 KiB unused), recipeParser.js (23.4) and WeekView.jsx (16.5) named as
+// the largest single contributors.
+//
+// Offline note (Offline Sovereignty, CLAUDE.md §2): splitting these does NOT
+// weaken offline behavior. vite.config.js's injectManifest.globPatterns
+// precaches `**/*.js`, so every chunk below lands in the service worker
+// precache at install time exactly like the main bundle did — an installed PWA
+// still has all of it on disk before it ever goes offline. What changed is
+// only what the browser must PARSE before first paint.
+//
+// Fallback policy:
+//   * Full-screen tab bodies → <ScreenSkeleton />, matching the boot skeleton
+//     so a slow chunk reads as "loading", not as a broken empty tab.
+//   * Sheets / modals / overlays → null. They animate in over existing content;
+//     a skeleton sheet would flash a second card behind the real one.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Tab bodies — one of these is on screen whenever `tab !== 'home'`.
+const WeekView = lazy(() => import('./components/WeekView'));
+const MealLibrary = lazy(() => import('./components/MealLibrary'));
+const BarLibrary = lazy(() => import('./components/BarLibrary'));
+const GroceryList = lazy(() => import('./components/GroceryList'));
+
+// Modals and sheets — each gated behind its own boolean/nullable state.
+const MealDetail = lazy(() => import('./components/MealDetail'));
+const AddEditMeal = lazy(() => import('./components/AddEditMeal'));
+const ImportSheet = lazy(() => import('./components/ImportSheet'));
+const DiscoverRecipes = lazy(() => import('./components/DiscoverRecipes'));
+const SettingsSheet = lazy(() => import('./components/SettingsSheet'));
+const FriendsSheet = lazy(() => import('./components/FriendsSheet'));
+const SharePickerSheet = lazy(() => import('./components/SharePickerSheet'));
+const SyncQueue = lazy(() => import('./components/SyncQueue'));
+const FloatingVideoPlayer = lazy(() => import('./components/FloatingVideoPlayer'));
+const CookMode = lazy(() => import('./components/CookMode'));
+const MixMode = lazy(() => import('./components/MixMode'));
+
+// BatchImportQueue exports the panel as default and the floating re-entry pill
+// as a named export. React.lazy only understands a default export, so the pill
+// gets its own thunk that re-maps the named one. Both resolve the SAME module,
+// so this is one chunk, fetched once, not two.
+const BatchImportQueue = lazy(() => import('./components/BatchImportQueue'));
+const BatchQueuePill = lazy(() =>
+  import('./components/BatchImportQueue').then((m) => ({ default: m.BatchQueuePill }))
+);
+
+// Bar rooms. BarShelf is the single biggest component in the app (~3,700 lines
+// of Saloon scene + drag physics) and is unreachable until the user taps into
+// the Bar tab and then opens the Saloon, so it has no business in the boot path.
+const BarShelf = lazy(() => import('./components/BarShelf'));
+const RoomTransition = lazy(() => import('./components/RoomTransition'));
+
+// Pre-existing splits (unchanged). InstagramZipImport in particular pulls in
 // jszip, which has no reason to load until a user actually opens ZIP import.
 const InstagramZipImport = lazy(() => import('./components/InstagramZipImport'));
 // P5: PantryMode (persistent Kitchen Pantry) supersedes the old ephemeral
@@ -217,6 +254,37 @@ export default function App() {
 
   useFriendsRealtime({ showToast, enabled: realtimeGrace });
 
+  // ── Lazy-mount latches for the two always-rendered sheets (2026-08-24) ──────
+  // FriendsSheet and SharePickerSheet are rendered unconditionally at the
+  // bottom of this component and take an `open` prop, which they use to drive
+  // their own enter/exit animation. That means the naive `{open && <Sheet/>}`
+  // gate would break their close animation — but leaving them unconditional
+  // would make React.lazy pointless, since the chunk would be requested on
+  // mount whether or not the sheet is ever opened.
+  //
+  // These latches flip true the first time each sheet opens and never flip
+  // back, so: no chunk on boot, and from the first open onward the component
+  // stays mounted and its `open`-driven animation behaves exactly as before.
+  //
+  // The latch is set in the OPEN HANDLER, not in an effect watching the open
+  // flag. The effect version tripped react-hooks/set-state-in-effect (plugin
+  // v7's React-Compiler ruleset) and the rule was right: it rendered once with
+  // the sheet still unmounted, then re-rendered after the effect, costing a
+  // wasted frame before the chunk request even started. Setting both pieces of
+  // state inside one handler batches them into a single render, so the sheet
+  // begins mounting on the very frame the user taps.
+  const [friendsSheetMounted, setFriendsSheetMounted] = useState(false);
+  const [sharePickerMounted, setSharePickerMounted] = useState(false);
+
+  // Use this instead of setShowFriendsSheet(true) at EVERY entry point —
+  // header button, landing tile, settings row. Closing still goes through
+  // setShowFriendsSheet(false) directly; the mount latch is deliberately
+  // one-way and never resets.
+  const openFriendsSheet = useCallback(() => {
+    setFriendsSheetMounted(true);
+    setShowFriendsSheet(true);
+  }, []);
+
   // Handle Supabase auth callback (OAuth redirect / magic link)
   useEffect(() => {
     if (!isHomeGroupEnabled()) return;
@@ -307,6 +375,13 @@ export default function App() {
   const [pendingRequestCount, setPendingRequestCount] = useState(0);
   const [friendCount, setFriendCount] = useState(0);
   const [detailShareMeal, setDetailShareMeal] = useState(null); // meal for SharePickerSheet from MealDetail
+  // Companion to openFriendsSheet above — same one-way latch, same reason for
+  // living in the handler rather than an effect. Closing goes through
+  // setDetailShareMeal(null) directly.
+  const openSharePicker = useCallback((meal) => {
+    setSharePickerMounted(true);
+    setDetailShareMeal(meal);
+  }, []);
   const [showBarShelf, setShowBarShelf] = useState(false);
   const [showBarFridge, setShowBarFridge] = useState(false);
   // ── Room trip: animated "walk through the doorway" between My Bar & Saloon ──
@@ -1595,7 +1670,12 @@ useEffect(() => {
   }, []);
 
 
-  if (loading) return <div className="loading-screen"><div className="spinner" /><p>Loading SpiceHub…</p></div>;
+  // 2026-08-24: was `<div className="loading-screen"><div className="spinner" />`.
+  // index.html now paints a full shell skeleton from static HTML before this
+  // bundle even parses, so a spinner here made the app visibly go BACKWARDS at
+  // the moment React took over — drawn shell → bare spinner → shell again.
+  // AppSkeleton renders that same shell, so the handover is invisible.
+  if (loading) return <AppSkeleton />;
 
   // Hard clickwrap gate — nothing else renders until the current
   // LEGAL_VERSION has been accepted on this device (see ConsentGate.jsx).
@@ -1650,7 +1730,7 @@ useEffect(() => {
         <div className="header-actions">
           <button className="hdr-btn" onClick={() => setShowFridge(true)} title="The Pantry — what can I cook?" aria-label="Open the pantry">🧺</button>
           {isFriendsEnabled() && (
-            <button className="hdr-btn" onClick={() => setShowFriendsSheet(true)} title="Friends" aria-label="Friends" style={{ position: 'relative' }}>
+            <button className="hdr-btn" onClick={openFriendsSheet} title="Friends" aria-label="Friends" style={{ position: 'relative' }}>
               👤
               {(pendingRequestCount + pendingShareCount) > 0 && (
                 <span style={{
@@ -1716,6 +1796,11 @@ useEffect(() => {
       )}
 
       <main className="main-content">
+        {/* One Suspense boundary for the whole tab area (2026-08-24): exactly
+            one tab body is mounted at a time, so a shared boundary is the same
+            thing as four separate ones, minus three copies of the fallback.
+            Home is a static import and never suspends. */}
+        <Suspense fallback={<ScreenSkeleton />}>
         {tab === 'home' && (
           <LandingPage
             cookingStats={cookingStats}
@@ -1733,7 +1818,7 @@ useEffect(() => {
             onOpenPantry={() => { setPantryStartOnMatches(false); setShowFridge(true); }}
             onOpenStats={() => setShowStats(true)}
             onOpenDiscover={() => setShowDiscover(true)}
-            onOpenFriends={isFriendsEnabled() ? () => setShowFriendsSheet(true) : null}
+            onOpenFriends={isFriendsEnabled() ? openFriendsSheet : null}
             friendsBadgeCount={pendingRequestCount + pendingShareCount}
             friendCount={friendCount}
             canInstall={!!deferredPrompt}
@@ -1841,6 +1926,7 @@ useEffect(() => {
             onSyncGrocery={syncGroceryAction}
           />
         )}
+        </Suspense>
       </main>
 
       {/* ── Bottom Tab Bar (mobile-first) ── */}
@@ -1875,7 +1961,15 @@ useEffect(() => {
         </button>
       </nav>
 
-      {/* ── Modals ── */}
+      {/* ── Modals ──
+          Each lazy modal's <Suspense> wraps its <AnimatePresence>, never the
+          other way round. AnimatePresence tracks its DIRECT children by key to
+          decide what is exiting; a Suspense boundary sitting between them would
+          hide the keyed child and silently kill every exit={{ y: '100%' }}
+          slide-down in this section. Wrapping outside keeps AnimatePresence's
+          child list exactly as it was, and its default `initial` still plays the
+          enter animation on the frame the chunk resolves. */}
+      <Suspense fallback={null}>
       <AnimatePresence>
         {detailItem && (
           <MealDetail
@@ -1891,7 +1985,7 @@ useEffect(() => {
             onStartMix={isDrink(detailItem) ? startMixMode : null}
             onMoveToBar={isDrink(detailItem) ? null : handleMoveMealToBar}
             onPlayVideo={openPipForMeal}
-            onSendToFriend={isFriendsEnabled() ? () => setDetailShareMeal(detailItem) : null}
+            onSendToFriend={isFriendsEnabled() ? () => openSharePicker(detailItem) : null}
             onEdit={() => {
               const item = detailItem;
               setDetailItem(null);
@@ -1902,11 +1996,14 @@ useEffect(() => {
           />
         )}
       </AnimatePresence>
+      </Suspense>
+      <Suspense fallback={null}>
       <AnimatePresence>
         {editMeal !== null && (
           <AddEditMeal key="edit-meal" meal={editMeal} onSave={saveMeal} onClose={() => setEditMeal(null)} />
         )}
       </AnimatePresence>
+      </Suspense>
       {exportSheet && (
         <Suspense fallback={null}>
           <ExportSheet
@@ -1918,6 +2015,7 @@ useEffect(() => {
           />
         </Suspense>
       )}
+      <Suspense fallback={null}>
       <AnimatePresence>
         {editDrink !== null && (
           <AddEditMeal
@@ -1932,16 +2030,19 @@ useEffect(() => {
           />
         )}
       </AnimatePresence>
+      </Suspense>
       {/* Note: onClose() must set state to null/false to unmount — AnimatePresence then plays each modal's exit={{ y: '100%' }} slide-down before removal */}
       {showImportFor && (
-        <ImportSheet
-          key={importModalKey}
-          onImport={batchReviewItem ? handleBatchReviewSave : handleImport}
-          onClose={() => { setShowImportFor(null); setSharedContent(null); }}
-          title={showImportFor === 'drinks' ? 'Import Drink' : 'Import Recipe'}
-          sharedContent={sharedContent}
-          initialItemType={showImportFor === 'drinks' ? 'drink' : 'meal'}
-        />
+        <Suspense fallback={null}>
+          <ImportSheet
+            key={importModalKey}
+            onImport={batchReviewItem ? handleBatchReviewSave : handleImport}
+            onClose={() => { setShowImportFor(null); setSharedContent(null); }}
+            title={showImportFor === 'drinks' ? 'Import Drink' : 'Import Recipe'}
+            sharedContent={sharedContent}
+            initialItemType={showImportFor === 'drinks' ? 'drink' : 'meal'}
+          />
+        </Suspense>
       )}
 
       {/* ── New feature overlays ── */}
@@ -1960,15 +2061,17 @@ useEffect(() => {
         )}
       </AnimatePresence>
       {showBarShelf && (
-        <BarShelf
-          drinks={drinks}
-          onViewDetail={(drink) => { setShowBarShelf(false); setDetailItem(drink); }}
-          onClose={() => setShowBarShelf(false)}
-          onImport={() => { setImportModalKey(k => k + 1); setShowImportFor('drinks'); }}
-          onAddToGrocery={handleAddToGrocery}
-          onExitToMyBar={() => tripBetweenRooms('toMyBar')}
-          onOpenPantry={() => { setShowBarShelf(false); setPantryStartOnMatches(false); setShowFridge(true); }}
-        />
+        <Suspense fallback={null}>
+          <BarShelf
+            drinks={drinks}
+            onViewDetail={(drink) => { setShowBarShelf(false); setDetailItem(drink); }}
+            onClose={() => setShowBarShelf(false)}
+            onImport={() => { setImportModalKey(k => k + 1); setShowImportFor('drinks'); }}
+            onAddToGrocery={handleAddToGrocery}
+            onExitToMyBar={() => tripBetweenRooms('toMyBar')}
+            onOpenPantry={() => { setShowBarShelf(false); setPantryStartOnMatches(false); setShowFridge(true); }}
+          />
+        </Suspense>
       )}
       <AnimatePresence>
         {showBarFridge && (
@@ -1984,10 +2087,13 @@ useEffect(() => {
           </Suspense>
         )}
       </AnimatePresence>
+      <Suspense fallback={null}>
       <AnimatePresence>
         {roomTrip && <RoomTransition key="room-trip" trip={roomTrip} />}
       </AnimatePresence>
+      </Suspense>
       {/* ── Discover Recipes (blog aggregator) — Landing entry point ── */}
+      <Suspense fallback={null}>
       <AnimatePresence>
         {showDiscover && (
           <DiscoverRecipes
@@ -2000,6 +2106,8 @@ useEffect(() => {
           />
         )}
       </AnimatePresence>
+      </Suspense>
+      <Suspense fallback={null}>
       <AnimatePresence>
         {cookModeMeal && (
           <CookMode
@@ -2011,6 +2119,8 @@ useEffect(() => {
           />
         )}
       </AnimatePresence>
+      </Suspense>
+      <Suspense fallback={null}>
       <AnimatePresence>
         {mixModeDrink && (
           <MixMode
@@ -2021,6 +2131,7 @@ useEffect(() => {
           />
         )}
       </AnimatePresence>
+      </Suspense>
 
       {showStats && (
         <Suspense fallback={null}>
@@ -2053,24 +2164,33 @@ useEffect(() => {
         </div>
       )}
 
-      <FriendsSheet
-        open={showFriendsSheet}
-        onClose={() => setShowFriendsSheet(false)}
-        isOnline={isOnline}
-        showToast={showToast}
-      />
+      {friendsSheetMounted && (
+        <Suspense fallback={null}>
+          <FriendsSheet
+            open={showFriendsSheet}
+            onClose={() => setShowFriendsSheet(false)}
+            isOnline={isOnline}
+            showToast={showToast}
+          />
+        </Suspense>
+      )}
 
       {/* Share to friend picker — opened from MealDetail header action */}
-      <SharePickerSheet
-        open={!!detailShareMeal}
-        onClose={() => setDetailShareMeal(null)}
-        meal={detailShareMeal}
-        itemType={isDrink(detailShareMeal) ? 'drink' : 'meal'}
-        showToast={showToast}
-        isOnline={isOnline}
-      />
+      {sharePickerMounted && (
+        <Suspense fallback={null}>
+          <SharePickerSheet
+            open={!!detailShareMeal}
+            onClose={() => setDetailShareMeal(null)}
+            meal={detailShareMeal}
+            itemType={isDrink(detailShareMeal) ? 'drink' : 'meal'}
+            showToast={showToast}
+            isOnline={isOnline}
+          />
+        </Suspense>
+      )}
 
       {showSettings && (
+        <Suspense fallback={null}>
         <SettingsSheet
           onClose={() => setShowSettings(false)}
           profile={profile}
@@ -2081,7 +2201,7 @@ useEffect(() => {
           meals={meals}
           pendingRequestCount={pendingRequestCount}
           pendingShareCount={pendingShareCount}
-          onOpenFriends={() => { setShowSettings(false); setShowFriendsSheet(true); }}
+          onOpenFriends={() => { setShowSettings(false); openFriendsSheet(); }}
           isStandalone={isStandalone}
           deferredPrompt={deferredPrompt}
           isAndroid={isAndroid}
@@ -2092,6 +2212,7 @@ useEffect(() => {
           onAddStarterKit={handleAddStarterKit}
           onRemoveStarterKit={handleRemoveStarterKit}
         />
+        </Suspense>
       )}
 
       {/* ── Drink Responsibly age gate — blocks first entry to Bar/Saloon ── */}
@@ -2104,32 +2225,40 @@ useEffect(() => {
 
       {/* ── Batch Import Queue ── */}
       {showBatchQueue && (
-        <BatchImportQueue
-          onReview={(item) => {
-            setShowBatchQueue(false);
-            setBatchReviewItem(item);
-            setShowImportFor('meals');
-          }}
-          onRetry={(item) => {
-            addBatchQueueItems([item.url]).then(() => {
-              window.dispatchEvent(new CustomEvent('spicehub:batch-queue-updated'));
-            });
-          }}
-          onClose={() => setShowBatchQueue(false)}
-        />
+        <Suspense fallback={null}>
+          <BatchImportQueue
+            onReview={(item) => {
+              setShowBatchQueue(false);
+              setBatchReviewItem(item);
+              setShowImportFor('meals');
+            }}
+            onRetry={(item) => {
+              addBatchQueueItems([item.url]).then(() => {
+                window.dispatchEvent(new CustomEvent('spicehub:batch-queue-updated'));
+              });
+            }}
+            onClose={() => setShowBatchQueue(false)}
+          />
+        </Suspense>
       )}
 
       {/* BatchQueuePill — floating re-entry when queue is running but panel is closed */}
       {!showBatchQueue && (batchQueueCount > 0 || batchReadyCount > 0) && (
-        <BatchQueuePill
-          pendingCount={batchQueueCount}
-          readyCount={batchReadyCount}
-          onClick={() => setShowBatchQueue(true)}
-        />
+        <Suspense fallback={null}>
+          <BatchQueuePill
+            pendingCount={batchQueueCount}
+            readyCount={batchReadyCount}
+            onClick={() => setShowBatchQueue(true)}
+          />
+        </Suspense>
       )}
 
       {/* SyncQueue — background sync status indicator */}
-      {isSyncing && <SyncQueue />}
+      {isSyncing && (
+        <Suspense fallback={null}>
+          <SyncQueue />
+        </Suspense>
+      )}
 
       {/* ── I-2 Post-share quick actions strip ── */}
       {postImportActions && (
@@ -2155,6 +2284,7 @@ useEffect(() => {
       )}
 
       {/* ── Floating Picture-in-Picture video player (persists across views) ── */}
+      <Suspense fallback={null}>
       <AnimatePresence>
         {pipVideo && (
           <FloatingVideoPlayer
@@ -2166,6 +2296,7 @@ useEffect(() => {
           />
         )}
       </AnimatePresence>
+      </Suspense>
     </div>
   );
 }

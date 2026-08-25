@@ -2089,6 +2089,196 @@ function extractImageUrlsFromHtml(html) {
   return urls.slice(0, 8);
 }
 
+/* ════════════════════════════════════════════════════════════════════════════
+   LIVE-DOCUMENT EXTRACTION (restored 2026-08-24)
+   ════════════════════════════════════════════════════════════════════════════
+   handleExtraction() calls extractVisibleTextFromDoc(doc) and
+   extractImageUrlsFromDoc(doc) against the assist iframe's contentDocument.
+   Both were being CALLED but existed nowhere in src/ — every Browser Assist
+   extraction threw `ReferenceError: extractVisibleTextFromDoc is not defined`
+   on the first line of its try block. Surfaced by `no-undef` in the 2026-08-24
+   lint run (BrowserAssist.jsx:871-872).
+
+   These are the live-Document counterparts of the string helpers above
+   (stripHtmlToText / extractImageUrlsFromHtml) and deliberately reuse them
+   rather than reimplementing the filters. Working from a real Document beats
+   regexing markup: innerText gives RENDERED text (hidden elements excluded,
+   block boundaries become newlines) and img.currentSrc gives the
+   browser-resolved ABSOLUTE url, including whichever srcset candidate actually
+   loaded.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Collapse runs of spaces/tabs without destroying line breaks, then squash
+ * runs of blank lines.
+ *
+ * The distinction matters and is easy to get wrong: stripHtmlToText() ends with
+ * `.replace(/\s+/g, ' ')`, flattening the whole document to ONE line. That is
+ * right for its caller at line 362 (structureWithAI wants prose) but would
+ * break this one — handleExtraction feeds the result to extractRecipeFromDOM(),
+ * which splits on '\n' to classify each line as an ingredient or a direction.
+ * Flattened text yields one unclassifiable line and a recipe with no
+ * ingredients.
+ */
+function collapseKeepingLines(text) {
+  return String(text || '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[^\S\n]+/g, ' ')      // spaces/tabs only — \n survives
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/**
+ * Visible, rendered text of a live same-origin Document, line structure intact.
+ *
+ * @param {Document} doc  iframe contentDocument (caller has already null-checked)
+ * @returns {string}      newline-separated visible text, or '' if unreadable
+ */
+function extractVisibleTextFromDoc(doc) {
+  if (!doc) return '';
+
+  // 1. innerText — the reason this takes a Document at all. It honours
+  //    display:none / visibility:hidden, skips <script> and <style> because they
+  //    are not rendered, and inserts newlines at block boundaries. Recipe blogs
+  //    bury real content among hidden SEO blocks and offscreen menus; this drops
+  //    all of it for free.
+  try {
+    const rendered = collapseKeepingLines(doc.body?.innerText || '');
+    if (rendered.length >= 50) return rendered;
+  } catch {
+    // innerText can throw on a detached or torn-down document — fall through.
+  }
+
+  // 2. Fallback: no layout yet (innerText degrades to textContent or '').
+  //    Rebuild line structure from markup using the same block-element rules as
+  //    stripHtmlToText, minus its final whitespace flattening.
+  try {
+    const html = doc.body?.innerHTML || doc.documentElement?.outerHTML || '';
+    if (html) {
+      const text = collapseKeepingLines(
+        html
+          .replace(/<script[\s\S]*?<\/script>/gi, '')
+          .replace(/<style[\s\S]*?<\/style>/gi, '')
+          .replace(/<noscript[\s\S]*?<\/noscript>/gi, '')
+          .replace(/<br\s*\/?>/gi, '\n')
+          .replace(/<\/(?:p|div|h[1-6]|li|tr|section|article)>/gi, '\n')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
+      );
+      if (text) return text;
+    }
+  } catch {
+    // Cross-origin or torn-down document — nothing readable.
+  }
+
+  // 3. Last resort: raw text, no structure. Better than nothing —
+  //    extractRecipeFromDOM treats it as a single directions blob.
+  try {
+    return collapseKeepingLines(doc.body?.textContent || '');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Image URLs from a live same-origin Document, best hero candidate first.
+ *
+ * Order is load-bearing: callers fall back to imageUrls[0] when
+ * selectBestImage() cannot decide, so declared hero images are emitted before
+ * body images.
+ *
+ * @param {Document} doc
+ * @returns {string[]}  deduped, filtered through isUsableImageUrl, capped at 12
+ */
+function extractImageUrlsFromDoc(doc) {
+  const urls = [];
+  const seen = new Set();
+  const base = (() => {
+    try { return doc?.baseURI || doc?.location?.href || ''; } catch { return ''; }
+  })();
+
+  function addUrl(u) {
+    if (!u) return;
+    let clean = String(u).replace(/&amp;/g, '&').replace(/\\u0026/g, '&').trim();
+    // Resolve protocol-relative and relative paths against the page itself —
+    // the whole advantage of holding a Document instead of a markup string.
+    try {
+      if (base && !/^https?:/i.test(clean)) clean = new URL(clean, base).href;
+    } catch {
+      return;
+    }
+    if (isUsableImageUrl(clean) && !seen.has(clean)) { urls.push(clean); seen.add(clean); }
+  }
+
+  function largestFromSrcset(srcset) {
+    if (!srcset) return '';
+    let bestW = 0, bestUrl = '';
+    for (const part of srcset.split(',')) {
+      const [u, w] = part.trim().split(/\s+/);
+      if (!u) continue;
+      const width = parseInt(w, 10) || 0;
+      if (width >= bestW) { bestW = width; bestUrl = u; }
+    }
+    return bestUrl;
+  }
+
+  try {
+    // 1. Declared hero images.
+    for (const sel of ['meta[property="og:image"]', 'meta[property="og:image:secure_url"]',
+                       'meta[name="twitter:image"]', 'meta[name="twitter:image:src"]',
+                       'link[rel="image_src"]']) {
+      for (const el of doc.querySelectorAll(sel)) {
+        addUrl(el.getAttribute('content') || el.getAttribute('href'));
+      }
+    }
+
+    // 2. Rendered <img>. currentSrc is what the browser ACTUALLY loaded for this
+    //    viewport and srcset — more accurate than re-picking ourselves. Skip
+    //    anything laid out smaller than a thumbnail: recipe heroes are large, and
+    //    this drops icons, spacers and tracking pixels before the url filter even
+    //    runs. naturalWidth 0 means "not loaded yet", not "tiny", so those stay.
+    for (const img of doc.querySelectorAll('img')) {
+      const w = img.naturalWidth || img.width || 0;
+      const h = img.naturalHeight || img.height || 0;
+      if (w && h && (w < 120 || h < 120)) continue;
+      addUrl(img.currentSrc || img.src);
+      addUrl(largestFromSrcset(img.getAttribute('srcset')));
+      for (const attr of ['data-src', 'data-lazy-src', 'data-lazy', 'data-original']) {
+        addUrl(img.getAttribute(attr));
+      }
+    }
+
+    // 3. <picture><source srcset>.
+    for (const source of doc.querySelectorAll('picture source, source[srcset]')) {
+      addUrl(largestFromSrcset(source.getAttribute('srcset')));
+    }
+
+    // 4. Inline CSS background images (hero blocks on many recipe blogs).
+    for (const el of doc.querySelectorAll('[style*="background"]')) {
+      const m = /url\(\s*['"]?([^'")]+)['"]?\s*\)/i.exec(el.getAttribute('style') || '');
+      if (m) addUrl(m[1]);
+    }
+  } catch {
+    // Document went away mid-walk — keep whatever was collected.
+  }
+
+  // 5. Top up from raw markup. JSON-LD and embedded JSON blobs (display_url,
+  //    thumbnail_src, media_url — the Instagram/TikTok payloads this app leans
+  //    on) never appear in the DOM as elements, so the string extractor still
+  //    finds things the walk above cannot. Appended last so rendered images keep
+  //    priority.
+  try {
+    const html = doc?.documentElement?.outerHTML || '';
+    if (html) for (const u of extractImageUrlsFromHtml(html)) addUrl(u);
+  } catch {
+    // ignore
+  }
+
+  return urls.slice(0, 12);
+}
+
 function extractFromRawHtml(html, sourceUrl) {
   let caption = '';
   const captionPatterns = [

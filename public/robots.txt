@@ -1,0 +1,25 @@
+# SpiceHub — https://spicehub-web.vercel.app
+#
+# Why this file exists (2026-08-24): it did not, and vercel.json's catch-all
+# rewrite { "source": "/(.*)", "destination": "/index.html" } therefore served
+# the SPA's HTML for /robots.txt. Lighthouse fetched it, got a <!doctype html>,
+# and reported all 37 lines as parse errors — which is the whole reason the SEO
+# score sat at 82.
+#
+# No vercel.json change was needed to fix it. Vercel evaluates `rewrites` only
+# AFTER the filesystem check, so a real file in public/ is served directly and
+# the catch-all never sees the request. (That is NOT true of the legacy
+# `routes` key, which needs an explicit { "handle": "filesystem" } step — if
+# this project is ever migrated to `routes`, this file will silently start
+# returning HTML again.)
+
+User-agent: *
+Allow: /
+
+# Nothing here is private, but these paths are either machine endpoints or
+# build output — there is no reason to spend crawl budget on them.
+Disallow: /api/
+Disallow: /assets/
+Disallow: /auth/callback
+
+Sitemap: https://spicehub-web.vercel.app/sitemap.xml

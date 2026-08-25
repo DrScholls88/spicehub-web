@@ -39,7 +39,31 @@ export default defineConfig([
       },
     },
     rules: {
-      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      // 2026-08-24: argsIgnorePattern + caughtErrorsIgnorePattern added.
+      //
+      // varsIgnorePattern was already here, but it only covers VARIABLES —
+      // unused function ARGUMENTS and unused CAUGHT ERRORS were still hard
+      // errors, and 37 of the 106 no-unused-vars failures in the 2026-08-24
+      // lint run were exactly those. The codebase already writes them with a
+      // leading underscore (`_options` in this very file's proxy configure,
+      // `_` in utils/exportRenderer.js), which is the universal convention for
+      // "deliberately unused, kept for signature/positional reasons" — so the
+      // intent was there, the config just never honoured it.
+      //
+      // This is the ONLY change of the three that is config-level noise
+      // reduction rather than a code fix. It does not silence a single unused
+      // *variable*: an argument still has to be renamed with a leading `_`
+      // before the rule stops complaining, which keeps the choice explicit and
+      // reviewable in the diff.
+      //
+      // caughtErrors defaults to 'all' in ESLint 9+, which is why bare
+      // `catch (err) { /* ignore */ }` blocks error; `catch (_err)` or the
+      // optional-binding form `catch {}` both satisfy it.
+      'no-unused-vars': ['error', {
+        varsIgnorePattern: '^[A-Z_]',
+        argsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_',
+      }],
       // Historical encoding corruption (mojibake — UTF-8 punctuation like em
       // dashes/arrows/bullets re-encoded through the wrong codepage at some
       // point) left irregular Unicode whitespace scattered through JSDoc

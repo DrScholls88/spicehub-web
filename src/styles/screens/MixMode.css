@@ -1,0 +1,654 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   MixMode — extracted from App.css on 2026-08-24
+   ═══════════════════════════════════════════════════════════════════════════
+   Split out of the 610 KB App.css monolith so this screen's CSS travels in its
+   own async chunk instead of blocking first paint for everyone. PageSpeed
+   mobile 2026-08-23 measured the bundled stylesheet at 1,840 ms render-blocking
+   with 99.9 KiB of its 102.5 KiB unused on the landing screen.
+
+   CONTENTS: every rule whose selector is owned by the .mm-* class
+   namespace. The extraction was mechanical and byte-preserving — rule
+   bodies were sliced out of App.css verbatim, never reparsed or reformatted, so
+   vendor prefixes, `100vh`/`100dvh` fallback pairs, duplicated declarations and
+   authored comments all survive exactly as written.
+
+   WHAT DELIBERATELY DID NOT COME ALONG:
+     * Grouped selectors that mix namespaces. A rule moved only if EVERY
+       comma-part carries a class from this namespace — `.btn-primary,
+       .mm-btn { }` stays in App.css, because moving it would unstyle
+       .btn-primary whenever this chunk is not loaded.
+     * @keyframes. All 147 stay in App.css: they are global by nature, 17 are
+       referenced from more than one namespace, and leaving them put costs 24 KB
+       in the main bundle while removing an entire class of bug.
+
+   @MEDIA HANDLING: media blocks that mixed several namespaces were split by
+   owner, so each file carries its own `@media` wrapper around verbatim inner
+   rules. This matters most for `prefers-reduced-motion` — those overrides set
+   `animation: none` at the SAME specificity as the base rule, so they win by
+   source order alone. Had they stayed behind in App.css while the base rules
+   moved to a later-loading chunk, reduced-motion would have silently stopped
+   working (design.md §12).
+
+   ORDERING CONTRACT: import this file BEFORE any other stylesheet in its
+   component. These rules previously sat in App.css, which loads ahead of every
+   component stylesheet — importing this first is what preserves that relative
+   order for equal-specificity conflicts.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.mm-container {
+  position: fixed;
+  top: 0; right: 0; bottom: 0; left: 0;
+  z-index: 600;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: linear-gradient(180deg, #1a0a2e 0%, #2d1b4e 100%);
+  color: #f3e5f5;
+}
+
+/* Progress bar — purple glow */
+.mm-progress-bar {
+  height: 5px;
+  background: rgba(255, 255, 255, 0.1);
+  flex-shrink: 0;
+}
+
+.mm-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ce93d8, #ab47bc);
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 0 3px 3px 0;
+  box-shadow: 0 0 10px rgba(171, 71, 188, 0.5);
+}
+
+/* Top bar */
+.mm-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  flex-shrink: 0;
+}
+
+.mm-close-btn {
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  color: #e1bee7;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mm-step-counter {
+  font-size: 14px;
+  font-weight: 700;
+  color: #ce93d8;
+}
+
+.mm-step-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.mm-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+  transition: background-color 0.25s cubic-bezier(0.4,0,0.2,1), color 0.25s cubic-bezier(0.4,0,0.2,1), border-color 0.25s cubic-bezier(0.4,0,0.2,1), box-shadow 0.25s cubic-bezier(0.4,0,0.2,1), opacity 0.25s cubic-bezier(0.4,0,0.2,1), transform 0.25s cubic-bezier(0.4,0,0.2,1);
+}
+
+.mm-dot.active {
+  background: #ce93d8;
+  width: 22px;
+  border-radius: 4px;
+  box-shadow: 0 0 8px rgba(206, 147, 216, 0.5);
+}
+
+.mm-dot.done {
+  background: #ab47bc;
+}
+
+.mm-dot.ingredients {
+  background: #ffb74d;
+}
+
+/* Main content */
+.mm-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  -webkit-overflow-scrolling: touch;
+  position: relative;
+}
+
+/* Slide animations (reuse cook mode keyframes) */
+.mm-slide-in {
+  animation: cmSlideIn 0.25s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.mm-slide-left {
+  animation: cmSlideOutLeft 0.2s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.mm-slide-right {
+  animation: cmSlideOutRight 0.2s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+/* ── Gather screen (ingredients with checkboxes) ── */
+.mm-gather {
+  width: 100%;
+  max-width: 500px;
+}
+
+.mm-drink-name {
+  font-size: 24px;
+  font-weight: 800;
+  color: #f3e5f5;
+  text-align: center;
+  margin: 0 0 16px;
+}
+
+.mm-hero-img {
+  width: 100%;
+  max-height: 200px;
+  object-fit: cover;
+  border-radius: 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+}
+
+.mm-gather-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.mm-gather-header h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: #e1bee7;
+  margin: 0;
+  flex: 1;
+}
+
+.mm-scale-badge {
+  padding: 4px 10px;
+  background: #ab47bc;
+  color: white;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mm-check-count {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ce93d8;
+}
+
+/* Phase 3.3: live spec strip — ABV (static) + volume/calories/units (scale
+   with scaleFactor). Matches MixMode's existing dark-purple local palette
+   rather than introducing the Bar's Phase 2 tokens into a different surface. */
+.mm-spec-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: -4px 0 14px;
+}
+
+.mm-spec-chip {
+  padding: 3px 9px;
+  background: rgba(171, 71, 188, 0.18);
+  border: 1px solid rgba(171, 71, 188, 0.35);
+  color: #e1bee7;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.mm-spec-strength-virgin { background: rgba(76, 175, 80, 0.18); border-color: rgba(76, 175, 80, 0.4); color: #a5d6a7; }
+
+.mm-spec-strength-light { background: rgba(76, 175, 80, 0.14); border-color: rgba(76, 175, 80, 0.3); color: #c5e1a5; }
+
+.mm-spec-strength-medium { background: rgba(255, 179, 0, 0.16); border-color: rgba(255, 179, 0, 0.35); color: #ffe082; }
+
+.mm-spec-strength-strong { background: rgba(251, 140, 0, 0.18); border-color: rgba(251, 140, 0, 0.4); color: #ffcc80; }
+
+.mm-spec-strength-very-strong { background: rgba(229, 57, 53, 0.2); border-color: rgba(229, 57, 53, 0.45); color: #ef9a9a; }
+
+/* Ingredient checklist */
+.mm-checklist {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.mm-check-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-size: 16px;
+  color: #e1bee7;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mm-check-item:active {
+  transform: scale(0.98);
+}
+
+.mm-check-item.checked {
+  opacity: 0.5;
+}
+
+.mm-check-item.checked .mm-check-text {
+  text-decoration: line-through;
+}
+
+.mm-checkbox {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  border: 2px solid #7b1fa2;
+  background: rgba(255, 255, 255, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 800;
+  color: #ce93d8;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+}
+
+.mm-check-item.checked .mm-checkbox {
+  background: #7b1fa2;
+  border-color: #ab47bc;
+  color: white;
+}
+
+/* ── Step carousel ── */
+.mm-step-carousel {
+  width: 100%;
+  max-width: 500px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Step preview */
+.mm-step-preview {
+  width: 100%;
+  padding: 10px 16px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s, transform 0.2s;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mm-step-preview:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.mm-step-preview:active {
+  transform: scale(0.98);
+}
+
+.mm-preview-prev {
+  opacity: 0.3;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 14px;
+}
+
+.mm-preview-next {
+  opacity: 0.3;
+  margin-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 14px;
+  animation: mmFadeUpHint 0.4s ease-out 0.15s both;
+}
+
+.mm-preview-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: rgba(206, 147, 216, 0.5);
+}
+
+.mm-preview-text {
+  font-size: 14px;
+  color: rgba(225, 190, 231, 0.4);
+  line-height: 1.4;
+}
+
+/* Current step */
+.mm-step-view {
+  width: 100%;
+  max-width: 500px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 0;
+}
+
+.mm-step-number {
+  font-size: 13px;
+  font-weight: 700;
+  color: #ce93d8;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mm-step-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ab47bc;
+  color: white;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.mm-step-text {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.55;
+  color: #f3e5f5;
+  max-width: 90%;
+}
+
+/* ── Technique badge ── */
+.mm-technique-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  border-radius: 20px;
+  margin-bottom: 12px;
+  background: rgba(171, 71, 188, 0.2);
+  border: 1px solid rgba(206, 147, 216, 0.3);
+  animation: mmBadgePop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.mm-technique-icon {
+  font-size: 18px;
+}
+
+.mm-technique-label {
+  font-size: 13px;
+  font-weight: 800;
+  color: #ce93d8;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
+/* Garnish callout */
+.mm-garnish-callout {
+  margin-top: 16px;
+  padding: 10px 20px;
+  background: rgba(255, 183, 77, 0.15);
+  border: 1px solid rgba(255, 183, 77, 0.3);
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffcc80;
+  animation: mmBadgePop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s both;
+}
+
+/* Timer suggest */
+.mm-timer-suggest {
+  margin-top: 20px;
+  padding: 12px 24px;
+  background: rgba(171, 71, 188, 0.15);
+  border: 2px solid #ab47bc;
+  border-radius: 14px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #ce93d8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mm-timer-suggest:active {
+  transform: scale(0.97);
+}
+
+/* ── Pour list (ingredient amounts needed for current step) ── */
+.mm-pour-list {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  width: 175px;
+  background: rgba(74, 20, 140, 0.85);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border-radius: 14px;
+  padding: 10px 12px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(206, 147, 216, 0.2);
+  animation: mmSidebarIn 0.3s ease-out both;
+  z-index: 2;
+}
+
+.mm-pour-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mm-pour-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ce93d8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mm-pour-items {
+  list-style: none;
+  padding: 0;
+  margin: 6px 0 0;
+}
+
+.mm-pour-item {
+  font-size: 13px;
+  color: #f3e5f5;
+  padding: 4px 0;
+  border-top: 1px solid rgba(206, 147, 216, 0.15);
+  line-height: 1.3;
+  font-weight: 600;
+}
+
+.mm-pour-item:first-child {
+  border-top: none;
+}
+
+@media (max-width: 500px) {
+.mm-pour-list {
+    position: relative;
+    right: auto;
+    top: auto;
+    width: 100%;
+    max-width: 500px;
+    margin-top: 12px;
+  }
+}
+
+/* Timer */
+.mm-timer {
+  padding: 12px 20px;
+  background: rgba(74, 20, 140, 0.6);
+  border-radius: 16px;
+  margin: 12px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+  border: 1px solid rgba(206, 147, 216, 0.2);
+  box-shadow: 0 2px 16px rgba(171, 71, 188, 0.15);
+}
+
+.mm-timer.mm-timer-done {
+  background: rgba(244, 67, 54, 0.15);
+  border-color: rgba(244, 67, 54, 0.3);
+  animation: cmPulse 0.6s ease-in-out infinite;
+}
+
+.mm-timer-display {
+  display: flex;
+  flex-direction: column;
+}
+
+.mm-timer-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #ce93d8;
+}
+
+.mm-timer-time {
+  font-size: 32px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #f3e5f5;
+}
+
+.mm-timer-time.mm-blink {
+  animation: cmBlink 1s step-end infinite;
+  color: #ef5350;
+}
+
+.mm-timer-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.mm-timer-btn {
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  color: #e1bee7;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mm-timer-btn:active {
+  transform: scale(0.97);
+}
+
+.mm-timer-clear {
+  color: rgba(225, 190, 231, 0.5);
+}
+
+.mm-timer-dismiss {
+  background: #ab47bc;
+  color: white;
+  border-color: #ab47bc;
+}
+
+/* Quick timers — seconds-focused presets */
+.mm-quick-timers {
+  display: flex;
+  gap: 8px;
+  padding: 8px 20px;
+  flex-shrink: 0;
+  justify-content: center;
+}
+
+.mm-qt-btn {
+  padding: 8px 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  color: #ce93d8;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mm-qt-btn:active {
+  transform: scale(0.95);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Bottom nav */
+.mm-bottom-nav {
+  display: flex;
+  gap: 12px;
+  padding: 16px 20px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  flex-shrink: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mm-nav-btn {
+  flex: 1;
+  padding: 16px;
+  border: none;
+  border-radius: 14px;
+  font-size: 17px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+}
+
+.mm-nav-btn:disabled {
+  opacity: 0.3;
+}
+
+.mm-nav-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.mm-prev {
+  background: rgba(255, 255, 255, 0.08);
+  color: #e1bee7;
+}
+
+.mm-next {
+  background: #7b1fa2;
+  color: white;
+}
+
+.mm-start {
+  background: linear-gradient(135deg, #ab47bc, #7b1fa2);
+}
+
+.mm-finish {
+  background: linear-gradient(135deg, #ce93d8, #9c27b0);
+}

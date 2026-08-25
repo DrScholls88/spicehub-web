@@ -5,6 +5,12 @@ import { parseFromUrl, isSocialMediaUrl, getSocialPlatform } from '../recipePars
 import { importRecipeFromPages } from '../lib/photoImportEngine.js';
 import { getUserTags } from '../db';
 
+// Extracted from App.css 2026-08-24 (see the header in that file for the
+// move rules). MUST stay the first stylesheet imported here: these rules
+// used to live in App.css, which loads ahead of every component sheet, and
+// importing it first is what preserves that order for equal-specificity ties.
+import '../styles/screens/AddEditMeal.css';
+
 // Auto-expand a textarea to fit its content (call on mount + onChange).
 // field-sizing:content (CSS) already does this on modern Chrome/Safari; this
 // stays as the universal fallback for browsers that don't support it yet.

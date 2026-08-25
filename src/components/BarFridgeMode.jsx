@@ -6,6 +6,14 @@ import { QTY_LEVELS, QTY_FILL, QTY_LABEL, getDomainFlags } from '../lib/pantryDo
 import { IngredientSprite } from '../lib/barSprites.jsx';
 import IngredientCatalog from './IngredientCatalog';
 
+// Extracted from App.css 2026-08-24 (see the header in that file for the
+// move rules). MUST stay the first stylesheet imported here: these rules
+// used to live in App.css, which loads ahead of every component sheet, and
+// importing it first is what preserves that order for equal-specificity ties.
+import '../styles/screens/BarFridgeMode.css';
+// BarFridgeMode reuses PantryMode's undo toast (.pm-undo-toast/-text/-btn).
+import '../styles/screens/PantryMode.css';
+
 /**
  * "My Bar" — retro pixel-art bar inventory (formerly the "What's on My Shelf?"
  * sheet). Your stocked bottles/mixers appear as procedural pixel sprites on

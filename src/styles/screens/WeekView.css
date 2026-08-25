@@ -1,0 +1,1242 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   WeekView — extracted from App.css on 2026-08-24
+   ═══════════════════════════════════════════════════════════════════════════
+   Split out of the 610 KB App.css monolith so this screen's CSS travels in its
+   own async chunk instead of blocking first paint for everyone. PageSpeed
+   mobile 2026-08-23 measured the bundled stylesheet at 1,840 ms render-blocking
+   with 99.9 KiB of its 102.5 KiB unused on the landing screen.
+
+   CONTENTS: every rule whose selector is owned by the .wv-*, .wv2-*, .pk-* class
+   namespaces. The extraction was mechanical and byte-preserving — rule
+   bodies were sliced out of App.css verbatim, never reparsed or reformatted, so
+   vendor prefixes, `100vh`/`100dvh` fallback pairs, duplicated declarations and
+   authored comments all survive exactly as written.
+
+   WHAT DELIBERATELY DID NOT COME ALONG:
+     * Grouped selectors that mix namespaces. A rule moved only if EVERY
+       comma-part carries a class from this namespace — `.btn-primary,
+       .wv-btn { }` stays in App.css, because moving it would unstyle
+       .btn-primary whenever this chunk is not loaded.
+     * @keyframes. All 147 stay in App.css: they are global by nature, 17 are
+       referenced from more than one namespace, and leaving them put costs 24 KB
+       in the main bundle while removing an entire class of bug.
+
+   @MEDIA HANDLING: media blocks that mixed several namespaces were split by
+   owner, so each file carries its own `@media` wrapper around verbatim inner
+   rules. This matters most for `prefers-reduced-motion` — those overrides set
+   `animation: none` at the SAME specificity as the base rule, so they win by
+   source order alone. Had they stayed behind in App.css while the base rules
+   moved to a later-loading chunk, reduced-motion would have silently stopped
+   working (design.md §12).
+
+   ORDERING CONTRACT: import this file BEFORE any other stylesheet in its
+   component. These rules previously sat in App.css, which loads ahead of every
+   component stylesheet — importing this first is what preserves that relative
+   order for equal-specificity conflicts.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.wv {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding-bottom: 80px;
+}
+
+/* ── Top bar: month + week arrows ── */
+.wv-topbar {
+  display: flex;
+  align-items: center;
+  padding: 4px 0 8px;
+}
+
+.wv-nav-btn {
+  width: 44px;
+  height: 44px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 28px;
+  font-weight: 300;
+  color: var(--text-light);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.wv-nav-btn:active {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.wv-month-area {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.wv-month {
+  font-weight: 700;
+  font-size: 17px;
+  color: var(--text);
+}
+
+.wv-today-btn {
+  border: none;
+  background: var(--primary);
+  color: white;
+  padding: 5px 14px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.wv-today-btn:active {
+  opacity: 0.8;
+}
+
+/* ── Horizontal day strip (iOS Calendar style) ── */
+.wv-day-strip {
+  display: flex;
+  justify-content: space-around;
+  padding: 6px 0 14px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 16px;
+}
+
+.wv-day-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  min-width: 44px;
+  position: relative;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1), background 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 0.7;
+}
+
+.wv-day-pill:hover {
+  opacity: 1;
+  background: rgba(245, 255, 245, 0.06);
+  border-radius: 8px;
+}
+
+.wv-day-pill:active {
+  transform: scale(0.93);
+}
+
+/* ── Today's pill: scale up + opaque + mint tinted bg ── */
+.wv-day-pill.today {
+  opacity: 1;
+  transform: scale(1.08);
+  background: rgba(255, 107, 53, 0.08);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 107, 53, 0.2);
+}
+
+.wv-day-lbl {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-light);
+  transition: font-size 0.15s cubic-bezier(0.4, 0, 0.2, 1), font-weight 0.15s cubic-bezier(0.4, 0, 0.2, 1), color 0.15s cubic-bezier(0.4, 0, 0.2, 1), letter-spacing 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── Today's day label: bigger, bolder, zesty orange ── */
+.wv-day-pill.today .wv-day-lbl {
+  font-size: 13px;
+  font-weight: 800;
+  color: #FF6B35;
+  letter-spacing: 0.1em;
+}
+
+.wv-day-num {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  transition: background-color 0.15s cubic-bezier(0.4,0,0.2,1), color 0.15s cubic-bezier(0.4,0,0.2,1), border-color 0.15s cubic-bezier(0.4,0,0.2,1), box-shadow 0.15s cubic-bezier(0.4,0,0.2,1), opacity 0.15s cubic-bezier(0.4,0,0.2,1), transform 0.15s cubic-bezier(0.4,0,0.2,1);
+}
+
+/* ── Today's day number: scale up + bold weight + glow + orange bg ── */
+.wv-day-num.today-ring {
+  width: 40px;
+  height: 40px;
+  font-size: 20px;
+  font-weight: 900;
+  background: #FF6B35;
+  color: #121212;
+  box-shadow: 0 0 0 3px #FF6B35, 0 4px 16px rgba(255, 107, 53, 0.4);
+}
+
+/* ── Selected non-today day ── */
+.wv-day-pill.selected .wv-day-num {
+  background: var(--primary);
+  color: white;
+  box-shadow: 0 2px 8px rgba(230, 81, 0, 0.35);
+  opacity: 1;
+}
+
+.wv-day-pill.selected {
+  opacity: 1;
+  background: rgba(245, 255, 245, 0.08);
+}
+
+/* ── Today + selected: priority to today styling ── */
+.wv-day-pill.today.selected .wv-day-num {
+  background: #FF6B35;
+  color: #121212;
+  box-shadow: 0 0 0 3px #FF6B35, 0 4px 16px rgba(255, 107, 53, 0.4);
+}
+
+/* ── Meal indicator dot ── */
+.wv-day-dot {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--primary-light);
+  opacity: 0.5;
+  transition: width 0.15s cubic-bezier(0.4, 0, 0.2, 1), height 0.15s cubic-bezier(0.4, 0, 0.2, 1), background 0.15s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ── Today's meal indicator: larger + orange + opaque ── */
+.wv-day-pill.today .wv-day-dot {
+  width: 8px;
+  height: 8px;
+  background: #FF6B35;
+  opacity: 1;
+}
+
+.wv-day-pill.selected .wv-day-dot {
+  background: white;
+  opacity: 1;
+}
+
+/* ── Hero card (selected day) ── */
+.wv-hero {
+  background: var(--card);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  margin-bottom: 16px;
+}
+
+.wv-hero-hdr {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 16px 16px 0;
+}
+
+.wv-hero-day {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wv-today-chip {
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--primary);
+  color: white;
+  padding: 3px 10px;
+  border-radius: 12px;
+  letter-spacing: 0.3px;
+}
+
+.wv-hero-date {
+  font-size: 14px;
+  color: var(--text-light);
+  font-weight: 500;
+}
+
+/* Hero: meal assigned */
+.wv-hero-meal {
+  padding: 16px;
+}
+
+.wv-hero-img-wrap {
+  margin-bottom: 12px;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.wv-hero-img {
+  width: 100%;
+  height: 200px;
+  object-fit: cover;
+  display: block;
+}
+
+.wv-hero-img-ph {
+  width: 100%;
+  height: 120px;
+  background: #f5f5f5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  border-radius: 12px;
+}
+
+.wv-hero-info {
+  margin-bottom: 16px;
+}
+
+.wv-hero-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.wv-hero-meta {
+  font-size: 13px;
+  color: var(--text-light);
+}
+
+/* Hero: action buttons (2x2 or row) */
+.wv-hero-actions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.wv-action {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 4px;
+  border: none;
+  background: #f8f5f0;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.wv-action:active {
+  transform: scale(0.95);
+  background: #fff3e0;
+}
+
+.wv-action-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.wv-action span:last-child {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.wv-action.danger span:last-child {
+  color: var(--danger);
+}
+
+/* Hero: special day */
+.wv-hero-special {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 24px 16px;
+}
+
+.wv-hero-special-icon {
+  font-size: 40px;
+}
+
+.wv-hero-special-name {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+  flex: 1;
+}
+
+.wv-clear-btn {
+  border: 1px solid var(--border);
+  background: white;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--danger);
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+}
+
+.wv-clear-btn:active {
+  background: #fde8e8;
+}
+
+/* Hero: empty */
+.wv-hero-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 44px 20px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.15s;
+}
+
+.wv-empty-circle {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 2px dashed #d0c8be;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fdf8f2;
+  transition: background-color 0.22s var(--ease-spring), color 0.22s var(--ease-spring), box-shadow 0.22s var(--ease-spring), opacity 0.22s var(--ease-spring), transform 0.22s var(--ease-spring);
+}
+
+.wv-empty-circle span {
+  font-size: 30px;
+  color: #c4b8ac;
+  font-weight: 300;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s, transform 0.2s;
+}
+
+.wv-hero-empty:active .wv-empty-circle {
+  border-color: var(--primary);
+  background: rgba(230, 81, 0, 0.07);
+  transform: scale(1.06);
+}
+
+.wv-hero-empty:active .wv-empty-circle span {
+  color: var(--primary);
+}
+
+.wv-empty-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-light);
+  letter-spacing: -0.1px;
+}
+
+.wv-empty-hint {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: -6px;
+}
+
+.wv-hero-empty p {
+  font-size: 14px;
+  color: var(--text-light);
+}
+
+/* ── Day-detail empty state (no meal planned) — stagger-reveal pattern ── */
+.wv-empty-state {
+  text-align: center;
+  padding: var(--space-xl) var(--space-md);
+}
+
+.wv-empty-icon-wrap {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto var(--space-md);
+}
+
+.wv-empty-title {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 var(--space-xs);
+}
+
+.wv-empty-hint-text {
+  color: var(--text-muted);
+  font-size: 13px;
+  margin: 0 0 var(--space-md);
+}
+
+.wv-empty-cta {
+  min-height: 44px;
+}
+
+/* ── Rest of week (mini cards) ── */
+.wv-rest {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.wv-rest-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 0 2px 4px;
+}
+
+.wv-mini {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--card);
+  border-radius: 12px;
+  padding: 12px 14px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  border: 1.5px solid transparent;
+}
+
+.wv-mini:active {
+  transform: scale(0.98);
+}
+
+.wv-mini.today {
+  border-color: var(--primary-light);
+}
+
+.wv-mini.empty {
+  opacity: 0.7;
+}
+
+.wv-mini-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 36px;
+}
+
+.wv-mini-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--text-light);
+  letter-spacing: 0.3px;
+}
+
+.wv-mini.today .wv-mini-label {
+  color: var(--primary);
+}
+
+.wv-mini-date {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.wv-mini.today .wv-mini-date {
+  color: var(--primary);
+}
+
+.wv-mini-content {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.wv-mini-img {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.wv-mini-img-ph {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: #f5f5f5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.wv-mini-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wv-mini-name.empty {
+  color: var(--text-light);
+  font-weight: 400;
+}
+
+.wv-mini-plus {
+  font-size: 16px;
+  color: #ccc;
+}
+
+.wv-mini-arrow {
+  font-size: 18px;
+  color: #ccc;
+  flex-shrink: 0;
+}
+
+/* ── Bottom action bar (fixed, above tab bar) ── */
+.wv-bottom-bar {
+  position: fixed;
+  bottom: 60px;
+  left: 0;
+  right: 0;
+  z-index: 90;
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  background: rgba(255, 248, 240, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.wv-bottom-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: none;
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  padding: 14px 12px;
+}
+
+.wv-bottom-btn:active {
+  transform: scale(0.97);
+}
+
+.wv-bottom-btn.primary {
+  background: var(--primary);
+  color: white;
+  box-shadow: 0 3px 12px rgba(230, 81, 0, 0.3);
+}
+
+.wv-bottom-btn.secondary {
+  background: white;
+  color: var(--primary);
+  border: 2px solid var(--primary);
+}
+
+/* ── Meal Picker (bottom sheet) ── */
+.pk-overlay {
+  position: fixed;
+  top: 0; right: 0; bottom: 0; left: 0;
+  z-index: 500;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.pk-sheet {
+  width: 100%;
+  max-width: 500px;
+  max-height: 85vh;
+  background: var(--card);
+  border-radius: 20px 20px 0 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideUp 0.25s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.pk-handle {
+  width: 40px;
+  height: 5px;
+  border-radius: 100px;
+  background: #d0ccc5;
+  margin: 12px auto 2px;
+  flex-shrink: 0;
+}
+
+.pk-hdr {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 20px 12px;
+}
+
+.pk-hdr h3 {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text);
+}
+
+.pk-close {
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: #f0f0f0;
+  border-radius: 50%;
+  font-size: 16px;
+  cursor: pointer;
+  color: var(--text-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pk-close:active {
+  background: #ddd;
+}
+
+.pk-specials {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 20px 10px;
+}
+
+.pk-specials-pinned {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+}
+
+.pk-specials-food {
+  padding-top: 4px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.pk-expand-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 20px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.15s;
+}
+
+.pk-expand-toggle:active { color: var(--primary); }
+
+.pk-expand-count {
+  font-size: 10px;
+  background: var(--surface-2, #f0f0f0);
+  border-radius: 8px;
+  padding: 1px 6px;
+  font-weight: 700;
+}
+
+.pk-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid #ffe0b2;
+  border-radius: 20px;
+  background: white;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pk-chip:active {
+  background: #fff3e0;
+}
+
+.pk-chip.clear {
+  color: var(--danger);
+  border-color: #ffcdd2;
+}
+
+.pk-chip.clear:active {
+  background: #fde8e8;
+}
+
+.pk-list {
+  overflow-y: auto;
+  flex: 1;
+  -webkit-overflow-scrolling: touch;
+}
+
+.pk-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  cursor: pointer;
+  transition: background 0.1s;
+  border-bottom: 1px solid #f5f5f5;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pk-item:active {
+  background: #fef5ee;
+}
+
+.pk-item:last-child {
+  border-bottom: none;
+}
+
+.pk-item.current {
+  background: #fff3e0;
+}
+
+.pk-img {
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.pk-img-ph {
+  width: 52px;
+  height: 52px;
+  border-radius: 10px;
+  background: #f5f5f5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.pk-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pk-name {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pk-meta {
+  font-size: 12px;
+  color: var(--text-light);
+}
+
+.pk-badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--primary);
+  background: rgba(230, 81, 0, 0.1);
+  padding: 3px 8px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+@media (min-width: 640px) {
+.pk-overlay {
+    align-items: center;
+  }
+
+.pk-sheet {
+    border-radius: 20px;
+    max-height: 70vh;
+  }
+
+.wv-hero-img {
+    height: 260px;
+  }
+
+.wv-bottom-bar {
+    border-radius: 16px 16px 0 0;
+  }
+}
+
+/* ── Header ── */
+/* ── Day strip ── */
+.wv2-pill.sel {
+  background: var(--primary);
+  color: white;
+}
+
+.wv2-pill.today:not(.sel) {
+  background: var(--primary-light, rgba(255, 107, 53, 0.08));
+}
+
+.wv2-pill.sel .wv2-pill-lbl {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.wv2-pill.sel .wv2-pill-num {
+  color: white;
+}
+
+.wv2-pill.today:not(.sel) .wv2-pill-num {
+  color: var(--primary);
+  font-weight: 800;
+}
+
+.wv2-pill.sel .wv2-pill-dot {
+  background: rgba(255, 255, 255, 0.7);
+}
+
+/* ── Progress bar ── */
+/* ── Hero card (selected day) ── */
+.wv2-hero.locked {
+  background: var(--surface);
+  border: 1.5px solid transparent;
+  box-shadow: var(--shadow-lg);
+}
+
+/* Hero: special day */
+/* Hero: meal */
+/* Hero: action buttons */
+.wv2-act.danger {
+  color: #d32f2f;
+}
+
+/* Hero: empty state */
+/* ── Week list (remaining days) ── */
+.wv2-row.today {
+  border-left: 3px solid var(--primary);
+}
+
+.wv2-row-content.empty {
+  opacity: 0.5;
+}
+
+.wv2-row-name.empty {
+  color: var(--text-light);
+  font-weight: 400;
+}
+
+/* ── Actions bar ── */
+.wv2-btn.primary {
+  background: var(--primary);
+  color: white;
+}
+
+.wv2-btn.secondary {
+  background: var(--surface-2, #f0f0f0);
+  color: var(--text);
+}
+
+.wv2-btn.tertiary {
+  background: transparent;
+  color: var(--text-light);
+  padding: 10px 20px;
+  font-size: 13px;
+}
+
+.wv2-btn.compact {
+  padding: 10px 14px;
+  font-size: 13px;
+  border-radius: 10px;
+}
+
+/* ── Split view mode (Past Weeks side-by-side) ── */
+.wv2-split-toggle-btn.active {
+  background: var(--primary);
+  color: white;
+}
+
+/* ── Mini week card (compact 7-day view) ── */
+.wv2-mini-week.current {
+  border-color: var(--primary);
+  border-width: 2px;
+}
+
+.wv2-mini-day.filled {
+  background: var(--surface-2, rgba(255, 107, 53, 0.05));
+}
+
+/* ── Past weeks panel (legacy, kept for fallback) ── */
+.wv2-history-chip.more {
+  background: var(--primary-light, #fff3e0);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+/* ── Stats strip ── */
+.wv2-stat.fire {
+  border-color: #ff9800;
+}
+
+.wv2-stat.fav {
+  border-color: var(--primary);
+}
+
+.wv2-stat.fire .wv2-stat-n {
+  color: #ff9800;
+}
+
+/* ── Week View v2 dark ── */
+[data-theme="dark"] .wv2-pill.today:not(.sel) {
+  background: rgba(102, 187, 106, 0.12);
+}
+
+[data-theme="dark"] .wv2-pill.sel {
+  background: var(--primary);
+  color: #111;
+}
+
+[data-theme="dark"] .wv2-pill.sel .wv2-pill-lbl {
+  color: rgba(0, 0, 0, 0.7);
+}
+
+[data-theme="dark"] .wv2-pill.sel .wv2-pill-num {
+  color: #111;
+}
+
+[data-theme="dark"] .wv2-act.danger {
+  color: var(--danger);
+}
+
+[data-theme="dark"] .wv2-row.today {
+  border-color: var(--primary);
+}
+
+[data-theme="dark"] .wv2-btn.secondary {
+  background: #2a2a2a;
+  color: var(--text);
+}
+
+[data-theme="dark"] .wv2-btn.tertiary {
+  color: var(--text-light);
+}
+
+/* ── Split view (Past Weeks) dark ── */
+[data-theme="dark"] .wv2-split-toggle-btn.active {
+  background: var(--primary);
+  color: #111;
+}
+
+[data-theme="dark"] .wv2-mini-week.current {
+  border-color: var(--primary);
+}
+
+[data-theme="dark"] .wv2-mini-day.filled {
+  background: rgba(102, 187, 106, 0.08);
+}
+
+/* ── Meal picker dark ── */
+[data-theme="dark"] .pk-sheet {
+  background: var(--card);
+}
+
+[data-theme="dark"] .pk-handle {
+  background: #555;
+}
+
+[data-theme="dark"] .pk-close {
+  background: #333;
+  color: var(--text);
+}
+
+[data-theme="dark"] .pk-close:active {
+  background: #444;
+}
+
+[data-theme="dark"] .pk-chip {
+  background: #2a2a2a;
+  border-color: #555;
+  color: var(--text);
+}
+
+[data-theme="dark"] .pk-chip:active {
+  background: #333;
+}
+
+[data-theme="dark"] .pk-chip.clear {
+  color: var(--danger);
+  border-color: #5c2020;
+}
+
+[data-theme="dark"] .pk-expand-count {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="dark"] .pk-item {
+  border-bottom-color: #333;
+}
+
+[data-theme="dark"] .pk-item:active {
+  background: #2a2a2a;
+}
+
+[data-theme="dark"] .pk-item.current {
+  background: #1b331b;
+}
+
+[data-theme="dark"] .pk-img-ph {
+  background: #2a2a2a;
+}
+
+[data-theme="dark"] .pk-badge {
+  background: rgba(102, 187, 106, 0.15);
+  color: var(--primary);
+}
+
+/* ── WeekView v1 remnants dark ── */
+[data-theme="dark"] .wv-hero {
+  background: var(--card);
+}
+
+[data-theme="dark"] .wv-hero-img-ph {
+  background: #2a2a2a;
+}
+
+[data-theme="dark"] .wv-action {
+  background: #2a2a2a;
+}
+
+[data-theme="dark"] .wv-action:active {
+  background: #333;
+}
+
+[data-theme="dark"] .wv-mini {
+  background: var(--card);
+}
+
+[data-theme="dark"] .wv-mini-img-ph {
+  background: #2a2a2a;
+}
+
+[data-theme="dark"] .wv-bottom-bar {
+  background: rgba(18, 18, 18, 0.95);
+  border-top-color: #333;
+}
+
+[data-theme="dark"] .wv-bottom-btn.secondary {
+  background: #2a2a2a;
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+[data-theme="dark"] .wv-empty-circle {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: #4a4038;
+}
+
+[data-theme="dark"] .wv-empty-circle span {
+  color: #605850;
+}
+
+[data-theme="dark"] .wv-hero-empty:active .wv-empty-circle {
+  background: rgba(102, 187, 106, 0.08);
+  border-color: var(--primary);
+}
+
+[data-theme="dark"] .wv-hero-empty:active .wv-empty-circle span {
+  color: var(--primary);
+}
+
+/* ── wv2 stats dark ── */
+.wv-stats-strip {
+  display: flex;
+  gap: 8px;
+  padding: 0 16px 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.wv-stats-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.wv-stat-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  min-width: 64px;
+  flex-shrink: 0;
+}
+
+.wv-stat-chip.fire {
+  background: linear-gradient(135deg, #fff3e0, #ffe0b2);
+  border-color: #ffcc80;
+}
+
+.wv-stat-chip.fire .wv-stat-num::before {
+  content: '\1F525 ';
+}
+
+.wv-stat-chip.fav {
+  background: linear-gradient(135deg, #fce4ec, #f8bbd0);
+  border-color: #f48fb1;
+}
+
+.wv-stat-chip.fav .wv-stat-num::before {
+  content: '\2B50 ';
+}
+
+.wv-stat-num {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.wv-stat-label {
+  font-size: 10px;
+  color: var(--text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+  margin-top: 2px;
+}

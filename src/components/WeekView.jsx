@@ -5,6 +5,12 @@ import MealSpinner from './MealSpinner';
 import useBackHandler from '../hooks/useBackHandler';
 import { filterMealsByConstraints, fridgeMatchRatio, mealTotalMinutes } from '../lib/weekPlanner';
 
+// Extracted from App.css 2026-08-24 (see the header in that file for the
+// move rules). MUST stay the first stylesheet imported here: these rules
+// used to live in App.css, which loads ahead of every component sheet, and
+// importing it first is what preserves that order for equal-specificity ties.
+import '../styles/screens/WeekView.css';
+
 // ── MealImage helper ──────────────────────────────────────────────────────────
 function MealImage({ src, alt, className, style, fallbackEmoji = '🍽️', fallbackClass }) {
   const [status, setStatus] = useState(src ? 'loading' : 'fallback');

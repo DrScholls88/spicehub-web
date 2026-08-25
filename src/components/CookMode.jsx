@@ -3,6 +3,12 @@ import { motion, useDragControls } from 'framer-motion';
 import { X, CheckCircle2, Pause, Play, Timer, ChevronDown, ChevronRight, Salad, PartyPopper, Video } from 'lucide-react';
 import { getMealVideoSource, parseStepTimestamps, mapStepsToTimestamps } from '../lib/videoSource';
 import PhotoGallery from './PhotoGallery';
+
+// Extracted from App.css 2026-08-24 (see the header in that file for the
+// move rules). MUST stay the first stylesheet imported here: these rules
+// used to live in App.css, which loads ahead of every component sheet, and
+// importing it first is what preserves that order for equal-specificity ties.
+import '../styles/screens/CookMode.css';
 import './CookMode.css';
 
 /**

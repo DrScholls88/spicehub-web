@@ -1,0 +1,382 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   AddEditMeal — extracted from App.css on 2026-08-24
+   ═══════════════════════════════════════════════════════════════════════════
+   Split out of the 610 KB App.css monolith so this screen's CSS travels in its
+   own async chunk instead of blocking first paint for everyone. PageSpeed
+   mobile 2026-08-23 measured the bundled stylesheet at 1,840 ms render-blocking
+   with 99.9 KiB of its 102.5 KiB unused on the landing screen.
+
+   CONTENTS: every rule whose selector is owned by the .aem-* class
+   namespace. The extraction was mechanical and byte-preserving — rule
+   bodies were sliced out of App.css verbatim, never reparsed or reformatted, so
+   vendor prefixes, `100vh`/`100dvh` fallback pairs, duplicated declarations and
+   authored comments all survive exactly as written.
+
+   WHAT DELIBERATELY DID NOT COME ALONG:
+     * Grouped selectors that mix namespaces. A rule moved only if EVERY
+       comma-part carries a class from this namespace — `.btn-primary,
+       .aem-btn { }` stays in App.css, because moving it would unstyle
+       .btn-primary whenever this chunk is not loaded.
+     * @keyframes. All 147 stay in App.css: they are global by nature, 17 are
+       referenced from more than one namespace, and leaving them put costs 24 KB
+       in the main bundle while removing an entire class of bug.
+
+   @MEDIA HANDLING: media blocks that mixed several namespaces were split by
+   owner, so each file carries its own `@media` wrapper around verbatim inner
+   rules. This matters most for `prefers-reduced-motion` — those overrides set
+   `animation: none` at the SAME specificity as the base rule, so they win by
+   source order alone. Had they stayed behind in App.css while the base rules
+   moved to a later-loading chunk, reduced-motion would have silently stopped
+   working (design.md §12).
+
+   ORDERING CONTRACT: import this file BEFORE any other stylesheet in its
+   component. These rules previously sat in App.css, which loads ahead of every
+   component stylesheet — importing this first is what preserves that relative
+   order for equal-specificity conflicts.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Sauce sub-recipe card inside the edit form */
+.aem-sauce-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.aem-sauce-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+/* 2026-08-24: was 14px. iOS Safari auto-zooms the page whenever a focused
+   text field is under 16px (design.md §9a) — the 2026-07-26 sweep normalized
+   ~18 inputs but missed both fields in this sauce sub-recipe card, because
+   they sit inside a nested card rather than the main form. Found by the
+   App.css split audit. Bumping the floor here does not change the visual
+   weight much: this is a bold title field, so 14 -> 16 reads as intentional. */
+.aem-sauce-name-input {
+  flex: 1;
+  font-weight: 700;
+  font-size: 16px;
+}
+
+.aem-sauce-sub {
+  margin-bottom: 8px;
+}
+
+.aem-sauce-sub-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.aem-sauce-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+/* 2026-08-24: was 13px — same iOS focus-zoom bug as .aem-sauce-name-input
+   above (design.md §9a). These are the ingredient amount/name fields of a
+   sauce row, so they are the ones a user actually types into repeatedly;
+   the zoom fired on every tap. Padding trimmed 6px -> 5px vertically so the
+   larger text does not grow the row height and reflow the card. */
+.aem-sauce-row input {
+  flex: 1;
+  font-size: 16px;
+  padding: 5px 10px;
+}
+
+/* Side dishes input in edit form */
+.aem-sides-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.aem-sides-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.aem-sides-chip-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.1);
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s;
+}
+
+.aem-sides-chip-x:active { background: rgba(0, 0, 0, 0.2); }
+
+.aem-sides-input-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.aem-sides-input-row input {
+  flex: 1;
+}
+
+.aem-field-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.aem-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 8px;
+}
+
+.aem-row {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  scroll-margin-bottom: 25vh;
+}
+
+/* Ingredient row — one inline line: handle · input · move · delete. No
+   header row here; ingredients are short enough that a header per row
+   would just add vertical bulk to a list that can run 15+ items deep. */
+.aem-row-inline {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px 4px 2px;
+}
+
+.aem-row-inline input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  padding: 8px 4px;
+  font-size: 16px; /* 16px stops iOS Safari zooming the page on focus */
+  color: var(--text);
+  outline: none;
+}
+
+/* Step row — controls in a header bar above the textarea instead of a
+   right-hand button column, so the textarea gets the row's full width.
+   That right column (two 30px buttons) was eating ~70px on a 360px-wide
+   phone — exactly the pinch that made pasted steps wrap unreadably. */
+.aem-row-step {
+  padding: 6px 10px 10px;
+}
+
+.aem-step-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  margin-bottom: 2px;
+}
+
+.aem-step-num {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+.aem-step-spacer {
+  flex: 1;
+}
+
+.aem-step-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: none;
+  background: transparent;
+  padding: 6px 4px;
+  font-size: 16px;
+  font-family: inherit;
+  color: var(--text);
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.5;
+  scroll-margin-bottom: 25vh;
+  /* Progressive enhancement: modern Chrome/Safari grow the box to fit
+     pasted text immediately with no JS round-trip. autoExpand() (JS,
+     called from onChange/mount) remains the universal fallback for
+     browsers without field-sizing support yet. */
+  field-sizing: content;
+}
+
+.aem-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  cursor: grab;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.aem-drag-handle:active {
+  cursor: grabbing;
+  color: var(--text);
+}
+
+.aem-row-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s, color 0.15s, transform 0.15s;
+}
+
+.aem-row-action:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.aem-row-action:active {
+  transform: scale(0.9);
+}
+
+.aem-row-action-danger:hover {
+  background: #ffebee;
+  color: var(--danger);
+}
+
+[data-theme="dark"] .aem-row-action-danger:hover,
+[data-theme="auto"][data-system-dark="true"] .aem-row-action-danger:hover {
+  background: #2a1515;
+  color: var(--danger);
+}
+
+/* ── Individual Steps / Raw Text Mode toggle ── */
+.aem-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.aem-section-header label {
+  margin-bottom: 0;
+}
+
+.aem-mode-toggle {
+  display: inline-flex;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  padding: 2px;
+  gap: 2px;
+}
+
+.aem-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.aem-mode-btn.active {
+  background: var(--card);
+  color: var(--primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+/* ── Smart Paste Splitting prompt ── */
+.aem-paste-prompt {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent);
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  color: var(--text);
+  animation: aemPasteIn 0.18s ease-out;
+}
+
+.aem-paste-prompt-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.aem-paste-prompt .btn-small {
+  min-height: 30px;
+  padding: 5px 10px;
+  font-size: 12px;
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+.aem-paste-prompt .btn-small:hover {
+  background: var(--primary-dark);
+}
+
+.aem-paste-prompt .btn-small.ghost {
+  background: transparent;
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+
+.aem-paste-prompt .btn-small.ghost:hover {
+  background: var(--surface);
+  color: var(--text);
+}

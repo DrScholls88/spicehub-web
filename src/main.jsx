@@ -1,3 +1,7 @@
+// MUST stay the first import in this file — see src/polyfills.js for why.
+// It installs AbortSignal.timeout on iOS 15, without which the entire import
+// pipeline throws TypeError at its first fetch.
+import './polyfills.js'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
@@ -5,6 +9,31 @@ import App from './App.jsx'
 import ThemeProvider from './components/ThemeProvider.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { registerBackgroundSync } from './backgroundSync.js'
+
+// ── Adopt the deferred main stylesheet (2026-08-24) ──────────────────────────
+// The production build ships the bundled CSS as `media="print"` so it does not
+// block the first paint of the boot skeleton in index.html (the swap is done by
+// the `spicehub-defer-main-stylesheet` plugin in vite.config.js, build only —
+// in dev, Vite injects CSS through JS and there is nothing to flip). Flipping
+// it back to `all` here is what actually applies the app's styles.
+//
+// Why here and not an onload handler on the <link>: the CSP is
+// `script-src 'self'` with no 'unsafe-inline', so an `onload="…"` attribute in
+// index.html would be blocked outright.
+//
+// Why this is safe:
+//   * It runs before createRoot().render(), so React never commits a frame
+//     against unstyled CSS.
+//   * The stylesheet (~102 KiB) starts downloading during HTML parse and is a
+//     fifth the size of this bundle, so by the time this module executes it has
+//     effectively always arrived. In the pathological case where it has not,
+//     the browser simply blocks the NEXT paint until it does — the skeleton is
+//     already on screen, so FCP/LCP are banked either way.
+//   * If this module never runs at all, the user is left on the boot skeleton
+//     rather than the blank page they used to get, so it fails no worse.
+for (const link of document.querySelectorAll('link[data-sh-deferred-css]')) {
+  link.media = 'all';
+}
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

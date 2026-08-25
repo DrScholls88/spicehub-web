@@ -23,6 +23,16 @@ import { getOneAwayDrinks, buildShoppingList, exportShoppingListText } from '../
 import { getStrengthTier } from '../lib/abvCalculator';
 import canonData from '../data/bar/barCanon.json';
 
+// Extracted from App.css 2026-08-24 (see the header in that file for the
+// move rules). MUST stay the first stylesheet imported here: these rules
+// used to live in App.css, which loads ahead of every component sheet, and
+// importing it first is what preserves that order for equal-specificity ties.
+import '../styles/screens/BarLibrary.css';
+// BarLibrary reuses three MealLibrary classes (.ml-filter-btn, .ml-grid-layout,
+// .ml-grid-toggle) for its shared list controls, so it needs that sheet too.
+// Vite hoists the shared stylesheet into one chunk — it is not duplicated.
+import '../styles/screens/MealLibrary.css';
+
 // ── Assignable drink categories ──────────────────────────────────────────────
 const DRINK_CATEGORY_OPTIONS = [
   'Cocktail', 'Mocktail', 'Beer & Wine', 'Spirits', 'Shots', 'Non-Alcoholic',

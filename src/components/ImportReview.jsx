@@ -563,47 +563,6 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
     onSave(finalRecipe);
   }, [recipe, destValue, onSave]);
 
-  if (!recipe) return null;
-
-  const confLevel = hasFlags ? 'review'
-    : confidence >= 0.7 ? 'high' : confidence >= 0.4 ? 'medium' : 'low';
-
-  // ── Engine metadata chip (read-only; renders nothing on older recipes) ───
-  const engineName = engineLabel(recipe._structuredVia);
-  const audit = recipe._postProcessAudit;
-  const correctionCount =
-    (typeof audit?.movedCount === 'number' ? audit.movedCount : 0)
-    + (typeof audit?.filteredCount === 'number' ? audit.filteredCount : 0);
-
-  // ── Extraction source + image-status chip (Instagram import diagnostics) ──
-  // Plain-language source labels — no scraper/brand jargon (Apify, oEmbed, IG JSON…).
-  const SOURCE_LABELS = {
-    apify: 'Instagram', oembed: 'Instagram', 'ig-json': 'Instagram', embed: 'Instagram',
-    browser: 'Web page', video: 'Video', photo: 'Photo',
-    blog_link_follower: 'Blog + Instagram', 'blog_link_follower+ai': 'Blog + AI',
-  };
-  const VISION_LABELS = { gemini: 'read in the cloud', mistral: 'read in the cloud', tesseract: 'read on your device' };
-  let sourceLabel = recipe._extractionSource ? (SOURCE_LABELS[recipe._extractionSource] || null) : null;
-  // Blog link follower: show the blog host for attribution
-  if (sourceLabel && recipe._extractionSource?.startsWith('blog_link_follower') && recipe._discoveredDomain) {
-    sourceLabel = `${sourceLabel} · ${recipe._discoveredDomain}`;
-  }
-  if (recipe._extractionSource === 'photo' && VISION_LABELS[recipe._visionEngine]) {
-    sourceLabel = `${sourceLabel} · ${VISION_LABELS[recipe._visionEngine]}`;
-  }
-  const imageStatusLabel =
-    recipe._imageStatus === 'data-url' ? 'photo saved'
-    : recipe._imageStatus === 'proxied' ? 'photo saved'
-    : recipe._imageStatus === 'raw' ? 'photo not saved yet'
-    : recipe._imageStatus === 'none' ? 'no photo'
-    : null;
-  // Cloud vision failed before this fell back to on-device OCR (Component 3,
-  // 2026-07-07-photo-import-csp-fix-design.md) — say why in the same
-  // plain-language diagnostics line, no HTTP codes or engine names.
-  const visionErrorLabel = recipe._visionError
-    ? (recipe._visionError.status === 429 ? 'cloud reading was busy' : 'cloud reading failed')
-    : null;
-
   // ── Normalization hints (read-only) ─────────────────────────────────────
   // For each imported ingredient string, surface how its messy name maps to a
   // cleaner canonical form. Only kept when the resolution is confident AND the
@@ -666,6 +625,70 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
     () => (recipe?.ingredients || []).reduce((n, line) => n + hintsForLine(line).length, 0),
     [recipe?.ingredients, hintsForLine],
   );
+
+  // 2026-08-24: `if (!recipe) return null;` used to sit HERE, above the four
+  // hooks that now precede it (normalizationHints, confByLine, hintsForLine,
+  // lowFieldCount) — a rules-of-hooks violation, flagged four times in the
+  // 2026-08-24 lint run. If `recipe` ever went null on a re-render, React would
+  // run four fewer hooks than the previous render and throw "Rendered fewer
+  // hooks than expected", tearing down the import sheet mid-review.
+  //
+  // Checked before assuming the worst: it is currently NOT reachable. The only
+  // mount site is ImportSheet.jsx:1218, gated `phase === 'review' && recipe`,
+  // and the discard path calls setRecipe(null) and setPhase('input') in the
+  // same handler, so React batches them and this component unmounts instead of
+  // re-rendering with a null recipe. Latent, not a live crash — the same shape
+  // as the FriendsSection fix. Worth repairing regardless: the guard exists to
+  // be defensive against a future caller that is less careful, and as written
+  // that defence was the thing that would break.
+  //
+  // The hooks moved ABOVE the guard rather than the guard below them, because
+  // everything from here to the render dereferences `recipe` unguarded
+  // (recipe._structuredVia, recipe._extractionSource, recipe._transcriptSource
+  // …). The hooks were already null-safe — each reads through `recipe?.` — so
+  // they run harmlessly on a null recipe and return empty results. Their order
+  // relative to one another is preserved and load-bearing: hintsForLine closes
+  // over confByLine, and lowFieldCount over hintsForLine.
+  if (!recipe) return null;
+
+  const confLevel = hasFlags ? 'review'
+    : confidence >= 0.7 ? 'high' : confidence >= 0.4 ? 'medium' : 'low';
+
+  // ── Engine metadata chip (read-only; renders nothing on older recipes) ───
+  const engineName = engineLabel(recipe._structuredVia);
+  const audit = recipe._postProcessAudit;
+  const correctionCount =
+    (typeof audit?.movedCount === 'number' ? audit.movedCount : 0)
+    + (typeof audit?.filteredCount === 'number' ? audit.filteredCount : 0);
+
+  // ── Extraction source + image-status chip (Instagram import diagnostics) ──
+  // Plain-language source labels — no scraper/brand jargon (Apify, oEmbed, IG JSON…).
+  const SOURCE_LABELS = {
+    apify: 'Instagram', oembed: 'Instagram', 'ig-json': 'Instagram', embed: 'Instagram',
+    browser: 'Web page', video: 'Video', photo: 'Photo',
+    blog_link_follower: 'Blog + Instagram', 'blog_link_follower+ai': 'Blog + AI',
+  };
+  const VISION_LABELS = { gemini: 'read in the cloud', mistral: 'read in the cloud', tesseract: 'read on your device' };
+  let sourceLabel = recipe._extractionSource ? (SOURCE_LABELS[recipe._extractionSource] || null) : null;
+  // Blog link follower: show the blog host for attribution
+  if (sourceLabel && recipe._extractionSource?.startsWith('blog_link_follower') && recipe._discoveredDomain) {
+    sourceLabel = `${sourceLabel} · ${recipe._discoveredDomain}`;
+  }
+  if (recipe._extractionSource === 'photo' && VISION_LABELS[recipe._visionEngine]) {
+    sourceLabel = `${sourceLabel} · ${VISION_LABELS[recipe._visionEngine]}`;
+  }
+  const imageStatusLabel =
+    recipe._imageStatus === 'data-url' ? 'photo saved'
+    : recipe._imageStatus === 'proxied' ? 'photo saved'
+    : recipe._imageStatus === 'raw' ? 'photo not saved yet'
+    : recipe._imageStatus === 'none' ? 'no photo'
+    : null;
+  // Cloud vision failed before this fell back to on-device OCR (Component 3,
+  // 2026-07-07-photo-import-csp-fix-design.md) — say why in the same
+  // plain-language diagnostics line, no HTTP codes or engine names.
+  const visionErrorLabel = recipe._visionError
+    ? (recipe._visionError.status === 429 ? 'cloud reading was busy' : 'cloud reading failed')
+    : null;
 
   // ── Import details — one plain-language line, replacing the old stack of
   //    engine / source / image / normalization strips. Still visible, but no

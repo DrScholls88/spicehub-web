@@ -15,6 +15,31 @@
       drift between two copies, and supports frame-ancestors (which browsers
       silently ignore when set via <meta>, so the old copy here was legally
       inert for that directive). No directive values changed.
+
+      NOTE for the boot skeleton below: the CSP is `script-src 'self'` with no
+      'unsafe-inline', so this file must never grow an inline <script> or an
+      inline event-handler attribute (onload="…" on a <link>, etc.) — both are
+      blocked. Anything the boot path needs to *do* happens in src/main.jsx.
+      `style-src` does allow 'unsafe-inline', which is what makes the inline
+      critical <style> block legal.
+
+      2026-08-24 header changes (vercel.json is JSON and cannot hold comments,
+      so the reasoning lives here):
+
+      * Dropped `https://fonts.googleapis.com` from style-src and
+        `https://fonts.gstatic.com` from font-src. Both were there only for the
+        Google Fonts @import that used to sit on line 1 of App.css; Press Start
+        2P is now self-hosted in public/fonts/, so nothing in the app loads from
+        either origin. Verified by grep before removing — if a Google-hosted
+        face is ever reintroduced, these come back with it.
+
+      * Added `Cross-Origin-Opener-Policy: same-origin-allow-popups` — the
+        WEAKER of the two options, on purpose. Plain `same-origin` severs the
+        opener relationship, and src/utils/exportRenderer.js opens a print
+        window with `window.open('', '_blank')` and then writes the rendered
+        recipe into `printWindow.document`. That flow needs the handle to stay
+        live. Supabase's Google sign-in is not a factor either way: it uses
+        `redirectTo` (a full-page redirect), not a popup.
     -->
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -26,9 +51,259 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon-180.png" />
     <link rel="manifest" href="/manifest.json" />
     <title>SpiceHub - Meal Spinner</title>
+
+    <!-- ════════════════════════════════════════════════════════════════════
+         DISCOVERY + SHARING METADATA (2026-08-24)
+         ════════════════════════════════════════════════════════════════════
+         This file had a <title> and nothing else, which is what held the SEO
+         score at 82 alongside the missing robots.txt. The description below is
+         kept in sync by hand with `description` in public/manifest.json —
+         they are two separate consumers (search engines vs the install
+         prompt) and there is no build step wiring them together.
+
+         The og:* tags matter more than usual for this app specifically: it is
+         a social-import product, so its own links get pasted into exactly the
+         places that render link previews. Without them, sharing
+         spicehub-web.vercel.app produced a bare URL.
+
+         og:image is a purpose-built 1200x630 (the ratio Facebook, LinkedIn,
+         Slack and iMessage crop to). The PWA icons are square and would have
+         been letterboxed or centre-cropped into an unreadable tile.
+         ════════════════════════════════════════════════════════════════════ -->
+    <meta name="description" content="Plan your week's meals and import recipes straight from Instagram, TikTok, Pinterest and recipe blogs. SpiceHub stores everything on your device and works completely offline." />
+    <link rel="canonical" href="https://spicehub-web.vercel.app/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="SpiceHub" />
+    <meta property="og:url" content="https://spicehub-web.vercel.app/" />
+    <meta property="og:title" content="SpiceHub — Meal Planner with Instagram Recipe Import" />
+    <meta property="og:description" content="Plan the week, import recipes from a shared link, cook offline. Everything stays on your device." />
+    <meta property="og:image" content="https://spicehub-web.vercel.app/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="SpiceHub — plan the week, import the recipe, cook offline." />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="SpiceHub — Meal Planner with Instagram Recipe Import" />
+    <meta name="twitter:description" content="Plan the week, import recipes from a shared link, cook offline. Everything stays on your device." />
+    <meta name="twitter:image" content="https://spicehub-web.vercel.app/og-image.png" />
+
+    <!-- ════════════════════════════════════════════════════════════════════
+         BOOT SKELETON — critical CSS (2026-08-24)
+         ════════════════════════════════════════════════════════════════════
+         Why this exists: PageSpeed mobile 2026-08-23 measured FCP 4.8 s /
+         LCP 5.0 s with a 0 ms TTFB and 2,510 ms of "element render delay".
+         Nothing at all painted until ~484 KiB of JS booted React — the DOM
+         contained 20 elements at load. This block plus the markup in #root
+         paints a real header and a skeleton shell from the HTML itself, so
+         first paint no longer waits on the bundle.
+
+         Rules this block plays by:
+
+         1. It is the SINGLE definition of the `.sh-*` skeleton styles. The
+            React component that reuses these class names
+            (src/components/AppSkeleton.jsx) deliberately ships no CSS file of
+            its own — a second copy in App.css would be exactly the kind of
+            two-copies-drift the CSP comment above records as a past bug. If
+            you restyle the skeleton, you restyle it here.
+
+         2. It cannot use var(--token): it runs before the main stylesheet is
+            applied. The literal values below are copied from App.css's :root
+            and [data-theme="dark"] blocks — keep them in sync by hand if
+            those tokens ever change (they are: --bg, --card, --surface,
+            --surface-2, --border, --primary, --primary-light).
+
+         3. Theme resolution mirrors App.css's own selector pair
+            (`[data-theme="dark"], [data-theme="auto"][data-system-dark="true"]`)
+            but must additionally cover the window BEFORE ThemeProvider has
+            written data-theme at all, so it leads with prefers-color-scheme.
+            Known limitation: a user whose stored theme is an explicit
+            override of their OS setting sees the boot skeleton in the OS
+            colors for ~1 frame before ThemeProvider resolves localStorage.
+            Fixing that would need an inline <script>, which the CSP forbids
+            (see above) — judged not worth an extra blocking request.
+
+         4. Design.md §10 puts loading cycles at 600–800 ms. The shimmer here
+            runs at 1200 ms deliberately: an 800 ms sweep across a full-width
+            bar reads as frantic and fights "calm appetite" (§10 philosophy).
+            Flagged rather than silently ignored, per design.md's preamble.
+         ════════════════════════════════════════════════════════════════════ -->
+    <style>
+      :root {
+        --sh-boot-bg: #fff8f0;
+        --sh-boot-card: #ffffff;
+        --sh-boot-skel: #f5f0e8;
+        --sh-boot-shine: #fffdfa;
+        --sh-boot-border: #e8e2d8;
+        --sh-boot-header-from: #e65100;
+        --sh-boot-header-to: #ff833a;
+        --sh-boot-text: #2c2c2c;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) {
+          --sh-boot-bg: #1f1a16;
+          --sh-boot-card: #2c2722;
+          --sh-boot-skel: #2a2520;
+          --sh-boot-shine: #332e29;
+          --sh-boot-border: #3e3730;
+          --sh-boot-header-from: #1b5e20;
+          --sh-boot-header-to: #2e7d32;
+          --sh-boot-text: #f5f0e8;
+        }
+      }
+      :root[data-theme="dark"] {
+        --sh-boot-bg: #1f1a16;
+        --sh-boot-card: #2c2722;
+        --sh-boot-skel: #2a2520;
+        --sh-boot-shine: #332e29;
+        --sh-boot-border: #3e3730;
+        --sh-boot-header-from: #1b5e20;
+        --sh-boot-header-to: #2e7d32;
+        --sh-boot-text: #f5f0e8;
+      }
+
+      html, body { margin: 0; padding: 0; height: 100%; }
+      body {
+        background: var(--sh-boot-bg);
+        color: var(--sh-boot-text);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+        overscroll-behavior-y: none;
+      }
+
+      /* ── Shell ───────────────────────────────────────────────────────────
+         Geometry mirrors .app / .app-header / .main-content / .tab-bar in
+         App.css so the swap to the real UI is not a visible jump. */
+      .sh-shell {
+        max-width: 600px;
+        margin: 0 auto;
+        min-height: 100vh;
+        min-height: 100dvh;
+        display: flex;
+        flex-direction: column;
+      }
+      .sh-shell-header {
+        background: linear-gradient(135deg, var(--sh-boot-header-from), var(--sh-boot-header-to));
+        color: #ffffff;
+        padding: 10px 16px;
+        padding-top: calc(10px + env(safe-area-inset-top));
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      /* The one piece of real text on the boot screen, and deliberately so:
+         a skeleton block is not "contentful", so a shell made only of grey
+         bars would move FCP without moving LCP. This is now the LCP element.
+         Colours and weight match .app-header h1 / .app-brand-mark exactly
+         (white on the same gradient — 3.79:1 light / 5.13:1 dark, which
+         clears design.md §3's 3:1 floor for large bold text). */
+      .sh-shell-brand {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-height: 32px;
+        font-size: 20px;
+        font-weight: 800;
+        letter-spacing: -0.5px;
+        line-height: 1.1;
+      }
+      .sh-shell-brand-mark { font-size: 20px; line-height: 1; }
+      .sh-shell-actions { display: flex; align-items: center; gap: 8px; }
+      .sh-shell-main { flex: 1; padding: 16px; padding-bottom: 80px; }
+      .sh-shell-tabs {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        max-width: 600px;
+        margin: 0 auto;
+        display: flex;
+        background: var(--sh-boot-card);
+        border-top: 1px solid var(--sh-boot-border);
+        padding: 10px 0;
+        padding-bottom: max(8px, env(safe-area-inset-bottom));
+        padding-left: max(0px, env(safe-area-inset-left));
+        padding-right: max(0px, env(safe-area-inset-right));
+      }
+      .sh-shell-tabs > span { flex: 1; display: flex; justify-content: center; }
+
+      /* ── Skeleton primitives ─────────────────────────────────────────────
+         .sh-skel is the only thing that shimmers. Everything else is layout. */
+      .sh-skel {
+        background: var(--sh-boot-skel);
+        border-radius: 8px;
+        background-image: linear-gradient(
+          100deg,
+          var(--sh-boot-skel) 30%,
+          var(--sh-boot-shine) 48%,
+          var(--sh-boot-skel) 66%
+        );
+        background-size: 300% 100%;
+        animation: sh-skel-sweep 1200ms linear infinite;
+      }
+      @keyframes sh-skel-sweep {
+        from { background-position: 150% 0; }
+        to   { background-position: -150% 0; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .sh-skel { animation: none; background-image: none; }
+      }
+
+      .sh-skel-pill   { border-radius: 100px; }
+      .sh-skel-badge  { width: 34px; height: 18px; border-radius: 100px; opacity: 0.35; background: #ffffff; background-image: none; animation: none; }
+      .sh-skel-icon   { width: 26px; height: 26px; border-radius: 8px; opacity: 0.35; background: #ffffff; background-image: none; animation: none; }
+      .sh-skel-tabmark { width: 30px; height: 22px; border-radius: 6px; }
+      .sh-skel-title  { width: 52%; height: 22px; margin-bottom: 16px; }
+      .sh-skel-hero   { width: 100%; height: 132px; border-radius: 14px; margin-bottom: 20px; }
+      .sh-skel-grid   { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+      .sh-skel-tile   { height: 88px; border-radius: 14px; }
+      .sh-skel-row    { height: 56px; border-radius: 14px; margin-bottom: 10px; }
+      /* Content-only variant, used as the Suspense fallback for lazily-loaded
+         tabs. It renders INSIDE the real .main-content, which already supplies
+         the 16px padding, so this adds none of its own. */
+      .sh-skel-screen { padding: 0; }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- The skeleton below is markup, not a screenshot: React's first commit
+         replaces the whole of #root in a single atomic step, and App.jsx's own
+         loading state renders the identical structure (AppSkeleton), so there
+         is no blank frame between "HTML painted" and "React mounted". Keep the
+         two in sync — the React copy lives in src/components/AppSkeleton.jsx. -->
+    <div id="root">
+      <div class="sh-shell" role="status" aria-live="polite" aria-label="Loading SpiceHub">
+        <header class="sh-shell-header">
+          <span class="sh-shell-brand">
+            <span class="sh-shell-brand-mark" aria-hidden="true">🌶️</span>
+            <span>SpiceHub</span>
+          </span>
+          <span class="sh-shell-actions" aria-hidden="true">
+            <span class="sh-skel sh-skel-badge"></span>
+            <span class="sh-skel sh-skel-icon"></span>
+            <span class="sh-skel sh-skel-icon"></span>
+          </span>
+        </header>
+        <main class="sh-shell-main" aria-hidden="true">
+          <div class="sh-skel sh-skel-title"></div>
+          <div class="sh-skel sh-skel-hero"></div>
+          <div class="sh-skel-grid">
+            <div class="sh-skel sh-skel-tile"></div>
+            <div class="sh-skel sh-skel-tile"></div>
+            <div class="sh-skel sh-skel-tile"></div>
+            <div class="sh-skel sh-skel-tile"></div>
+          </div>
+          <div class="sh-skel sh-skel-row"></div>
+          <div class="sh-skel sh-skel-row"></div>
+        </main>
+        <nav class="sh-shell-tabs" aria-hidden="true">
+          <span><span class="sh-skel sh-skel-tabmark"></span></span>
+          <span><span class="sh-skel sh-skel-tabmark"></span></span>
+          <span><span class="sh-skel sh-skel-tabmark"></span></span>
+          <span><span class="sh-skel sh-skel-tabmark"></span></span>
+          <span><span class="sh-skel sh-skel-tabmark"></span></span>
+        </nav>
+      </div>
+    </div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

@@ -1,0 +1,938 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   MealDetail — extracted from App.css on 2026-08-24
+   ═══════════════════════════════════════════════════════════════════════════
+   Split out of the 610 KB App.css monolith so this screen's CSS travels in its
+   own async chunk instead of blocking first paint for everyone. PageSpeed
+   mobile 2026-08-23 measured the bundled stylesheet at 1,840 ms render-blocking
+   with 99.9 KiB of its 102.5 KiB unused on the landing screen.
+
+   CONTENTS: every rule whose selector is owned by the .detail-* class
+   namespace. The extraction was mechanical and byte-preserving — rule
+   bodies were sliced out of App.css verbatim, never reparsed or reformatted, so
+   vendor prefixes, `100vh`/`100dvh` fallback pairs, duplicated declarations and
+   authored comments all survive exactly as written.
+
+   WHAT DELIBERATELY DID NOT COME ALONG:
+     * Grouped selectors that mix namespaces. A rule moved only if EVERY
+       comma-part carries a class from this namespace — `.btn-primary,
+       .detail-btn { }` stays in App.css, because moving it would unstyle
+       .btn-primary whenever this chunk is not loaded.
+     * @keyframes. All 147 stay in App.css: they are global by nature, 17 are
+       referenced from more than one namespace, and leaving them put costs 24 KB
+       in the main bundle while removing an entire class of bug.
+
+   @MEDIA HANDLING: media blocks that mixed several namespaces were split by
+   owner, so each file carries its own `@media` wrapper around verbatim inner
+   rules. This matters most for `prefers-reduced-motion` — those overrides set
+   `animation: none` at the SAME specificity as the base rule, so they win by
+   source order alone. Had they stayed behind in App.css while the base rules
+   moved to a later-loading chunk, reduced-motion would have silently stopped
+   working (design.md §12).
+
+   ORDERING CONTRACT: import this file BEFORE any other stylesheet in its
+   component. These rules previously sat in App.css, which loads ahead of every
+   component stylesheet — importing this first is what preserves that relative
+   order for equal-specificity conflicts.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Meal Detail header overflow (⋮) menu — Edit/Share/Send to Friend/
+   Export/Re-import collapsed out of the header into here, so the header
+   itself stays Heart + ⋮ + Close. ── */
+.detail-overflow-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 520;
+  background: transparent;
+}
+
+.detail-overflow-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 521;
+  min-width: 190px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.detail-overflow-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: none;
+  background: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  min-height: 40px;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s;
+}
+
+.detail-overflow-item:hover,
+.detail-overflow-item:active {
+  background: var(--surface);
+}
+
+/* ── Detail Modal ── */
+.detail-image-wrap {
+  position: relative;
+  margin: 0 -20px 20px;
+}
+
+/* Hero banner: fixed 16:9 aspect ratio when a video source exists, so the
+   play control + gradient have a real "hero" frame instead of floating over
+   whatever height the source photo happened to be. Photo-only recipes keep
+   the plain cover-fit image (no forced aspect ratio, no gradient). */
+.detail-image-wrap-video {
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+}
+
+.detail-image-wrap-video .detail-image {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+}
+
+.detail-image {
+  width: calc(100% + 40px);
+  max-height: 300px;
+  object-fit: cover;
+  margin: 0;
+  border-radius: 0;
+  background: var(--surface);
+  display: block;
+}
+
+.detail-image-placeholder {
+  width: 100%;
+  height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+/* Hero gradient + integrated play control — replaces the old small corner
+   play badge. Spans the bottom third of the hero, tap anywhere in it (or
+   the button itself) to open the floating player. */
+.detail-hero-gradient {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 45%;
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 0 14px 12px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0));
+  cursor: pointer;
+}
+
+.detail-play-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.9);
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  transition: background 0.15s, transform 0.1s;
+}
+
+.detail-play-btn:active { transform: scale(0.9); }
+
+.detail-hero-video-label {
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  padding-bottom: 9px;
+}
+
+/* Swipe-to-view photo count pill — shown only when the import captured more
+   than one photo (multi-page photo/PDF scan, or an Instagram/Reddit
+   carousel). Tapping opens the same PhotoGallery lightbox, which already
+   supports swipe/pinch across every captured photo. */
+.detail-photo-count {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 20px;
+  border: none;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  z-index: 3;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  transition: background 0.15s, transform 0.1s;
+}
+
+.detail-photo-count:active { transform: scale(0.94); }
+
+.detail-hero-carousel {
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.detail-hero-carousel::-webkit-scrollbar { display: none; }
+
+.detail-hero-slide {
+  flex: 0 0 100%;
+  width: calc(100% + 40px);
+  max-height: 300px;
+  object-fit: cover;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  cursor: zoom-in;
+  -webkit-user-drag: none;
+  background: var(--surface);
+}
+
+.detail-image-wrap-video .detail-hero-carousel { height: 100%; }
+
+.detail-image-wrap-video .detail-hero-slide {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+}
+
+/* Dot pagination — echoes Instagram's own carousel-post indicator, which is
+   exactly where most of these photos came from. Active dot uses --primary
+   (the brand's actual accent, not a generic white/blue) so it reads as
+   "this app," not a borrowed carousel widget. */
+.detail-hero-dots {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  border-radius: 20px;
+  background: rgba(0, 0, 0, 0.35);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  z-index: 3;
+}
+
+.detail-hero-dot {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.detail-hero-dot-inner {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.55);
+  transition: background 0.2s ease, width 0.2s ease, border-radius 0.2s ease;
+  display: block;
+}
+
+.detail-hero-dot-inner.is-active {
+  width: 16px;
+  border-radius: 3px;
+  background: var(--primary);
+}
+
+.detail-section {
+  margin-bottom: var(--space-lg);
+}
+
+.detail-section h3 {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  color: var(--primary);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Carousel arrows (left/right chevrons) ── */
+.detail-hero-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 4;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.detail-hero-arrow:active { transform: translateY(-50%) scale(0.9); }
+
+.detail-hero-arrow--left { left: 8px; }
+
+.detail-hero-arrow--right { right: 8px; }
+
+/* ── Title row — compact, below the hero ── */
+.detail-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 0 4px;
+}
+
+.detail-title-name {
+  flex: 1 1 auto;
+  font-size: 20px;
+  font-weight: 800;
+  line-height: 1.25;
+  color: var(--text);
+  margin: 0;
+  /* Prevent very long recipe names from squishing the action buttons */
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.detail-title-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* ── Shared stamp (moved below title row) ── */
+.detail-shared-stamp {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  margin: 0 0 8px;
+  border-radius: 10px;
+  background: var(--surface);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  border: 1px solid var(--border);
+  border-color: color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+/* ── Quick Info strip (prep / cook / ease / yield) ── */
+.detail-quick-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin: 8px 0 12px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.detail-qi-cell {
+  flex: 1 1 0;
+  min-width: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 8px 8px;
+  border-right: 1px solid var(--border);
+}
+
+.detail-qi-cell:last-child { border-right: none; }
+
+.detail-qi-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.detail-qi-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* Ease badge colours — warm semantic tokens */
+.detail-qi-ease--easy { color: var(--success, #16a34a); }
+
+.detail-qi-ease--moderate { color: #b8860b; }
+
+.detail-qi-ease--involved { color: #c0392b; }
+
+/* ── Two-column recipe grid ── */
+.detail-recipe-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+}
+
+@media (min-width: 520px) {
+.detail-recipe-grid {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    gap: 0 20px;
+    align-items: start;
+  }
+}
+
+.detail-recipe-col {
+  min-width: 0;
+}
+
+.detail-recipe-col h3 {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--card);
+  padding-top: 4px;
+  padding-bottom: 8px;
+  margin-bottom: 0;
+}
+
+/* ── Sauce / Add-on collapsible section ── */
+.detail-addon-section {
+  margin-bottom: 16px;
+}
+
+.detail-addon-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background 0.15s;
+}
+
+.detail-addon-toggle:active { background: var(--surface-2, var(--surface)); }
+
+.detail-addon-toggle-label { flex: 1; text-align: left; }
+
+.detail-addon-body {
+  padding: 8px 0 0;
+}
+
+.detail-addon-card {
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.detail-addon-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--primary);
+  margin: 0 0 6px;
+}
+
+.detail-addon-list {
+  padding-left: 16px;
+  list-style: disc;
+  margin: 0 0 6px;
+}
+
+.detail-addon-list li {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  padding: 2px 0;
+}
+
+.detail-addon-steps {
+  padding-left: 20px;
+  margin: 0;
+}
+
+.detail-addon-steps li {
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text);
+  padding: 2px 0;
+}
+
+/* ── Side dishes chips ── */
+.detail-sides-section h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.detail-sides-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.detail-sides-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+/* ── Swipe-to-dismiss handle (pill indicator on bottom sheets) ── */
+.detail-swipe-handle {
+  width: 44px;
+  height: 5px;
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 100px;
+  margin: 8px auto 16px;
+  flex-shrink: 0;
+  cursor: grab;
+  transition: background 0.15s, width 0.2s var(--ease-spring);
+  touch-action: none;
+}
+
+.detail-swipe-handle:hover {
+  width: 60px;
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.detail-swipe-handle:active {
+  width: 60px;
+  background: rgba(0, 0, 0, 0.38);
+  cursor: grabbing;
+}
+
+.modal-content.detail-modal {
+  padding-bottom: calc(128px + env(safe-area-inset-bottom));
+}
+
+/* ── Sticky bottom action bar (Meal Detail) — Scale + Add to Rotation +
+   Start Cooking/Mixing, kept reachable without scrolling. Token-based (not
+   the old hardcoded cream #fff3e0/#ffe0b2 .servings-scaler box) so it reads
+   correctly in both themes. ── */
+.detail-sticky-bar {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  margin: 20px -20px calc(-32px - env(safe-area-inset-bottom));
+  padding: 12px 20px calc(14px + env(safe-area-inset-bottom));
+  background: var(--card);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 4;
+}
+
+.detail-sticky-scale {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.detail-sticky-scale-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.detail-sticky-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.detail-sticky-actions .rotation-toggle-btn {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+
+.detail-sticky-actions .cook-mode-launch-btn {
+  width: auto;
+  flex: 1 1 auto;
+  padding: 10px 16px;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+@media (max-height: 500px) and (orientation: landscape) {
+.detail-sticky-bar {
+    padding: 8px 20px calc(8px + env(safe-area-inset-bottom));
+    gap: 6px;
+  }
+
+.detail-sticky-scale-label {
+    font-size: 11px;
+  }
+
+.detail-sticky-bar .btn-scale {
+    min-height: 30px;
+    padding: 3px 10px;
+    font-size: 13px;
+  }
+
+.detail-sticky-actions .rotation-toggle-btn {
+    min-height: 34px;
+    padding: 6px 14px;
+    font-size: 13px;
+  }
+
+.detail-sticky-actions .cook-mode-launch-btn {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+}
+
+/* ── Detail header bar styling ── */
+.detail-header-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── Detail meta styling ── */
+.detail-meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+/* Was background:#fff3e0 / border:#ffe0b2 — hardcoded cream that stayed cream
+   in dark mode, printing a bright block against the dark sheet. Derived from
+   --primary now so it tints correctly in both themes. */
+.detail-category-chip {
+  display: inline-block;
+  /* Solid token first as the fallback for engines without color-mix
+     (iOS Safari < 16.2) — those simply drop the line below. */
+  background: var(--surface);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid var(--border);
+  border-color: color-mix(in srgb, var(--primary) 28%, transparent);
+}
+
+/* Was background:#f5f5f5 — same hardcoded-light problem as the chip above. */
+.detail-cook-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-light);
+  background: var(--surface);
+  padding: 4px 10px;
+  border-radius: 8px;
+}
+
+.detail-labels-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 0 0 14px;
+  margin-top: -8px;
+}
+
+.detail-label-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-light);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Each pair below is a solid-token fallback followed by the tinted color-mix
+   version — engines without color-mix (iOS Safari < 16.2) keep the first. */
+.detail-label-chip--diet {
+  color: var(--success);
+  border-color: var(--border);
+  border-color: color-mix(in srgb, var(--success) 30%, transparent);
+  background: var(--surface);
+  background: color-mix(in srgb, var(--success) 10%, transparent);
+}
+
+/* Custom labels get their tag colour inline from JSX; this is the fallback for
+   a label whose tag record was deleted out from under it. */
+.detail-label-chip--custom {
+  color: var(--primary);
+  border-color: var(--border);
+  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
+  background: var(--surface);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  font-weight: 700;
+}
+
+/* 1.7: drink spec strip — Glass · Method · Garnish text, plus a strength
+   chip. Mirrors detail-description-bar's plain-text treatment so it reads as
+   part of the same header block, not a competing UI element. */
+.detail-drink-spec-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px 8px;
+}
+
+.detail-drink-spec-text {
+  font-size: 14px;
+  color: var(--text-light);
+}
+
+.detail-strength-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border-radius: var(--sh-pill, 999px);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-light);
+}
+
+/* Each pair is a solid-token fallback followed by the tinted color-mix
+   version — see .detail-label-chip--diet above for the same iOS-4 pattern. */
+.detail-strength-chip--virgin {
+  color: var(--success);
+  border-color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 30%, transparent);
+  background: var(--surface);
+  background: color-mix(in srgb, var(--success) 10%, transparent);
+}
+
+.detail-strength-chip--light {
+  color: var(--primary);
+  border-color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 25%, transparent);
+  background: var(--surface);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.detail-strength-chip--medium {
+  color: #b8860b;
+  border-color: #b8860b;
+  border-color: color-mix(in srgb, #b8860b 30%, transparent);
+  background: var(--surface);
+  background: color-mix(in srgb, #b8860b 10%, transparent);
+}
+
+.detail-strength-chip--strong,
+.detail-strength-chip--very-strong {
+  color: #c0392b;
+  border-color: #c0392b;
+  border-color: color-mix(in srgb, #c0392b 30%, transparent);
+  background: var(--surface);
+  background: color-mix(in srgb, #c0392b 10%, transparent);
+}
+
+.detail-label-edit,
+.detail-label-empty {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  border: 1px dashed var(--border);
+  background: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  line-height: 1.2;
+  cursor: pointer;
+  /* 44px hit area without a 44px-tall chip — the padding box stays small, the
+     touch target grows outward. */
+  min-height: 32px;
+  position: relative;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.detail-label-edit::after,
+.detail-label-empty::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+}
+
+.detail-label-edit:active,
+.detail-label-empty:active {
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+/* ── Detail notes styling ── */
+.detail-note-entry { margin-bottom: 8px; }
+
+.detail-note-entry:last-child { margin-bottom: 0; }
+
+.detail-note-title {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--primary);
+  margin-bottom: 2px;
+}
+
+.detail-notes {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text);
+  background: #fef9f4;
+  padding: 12px;
+  border-radius: 8px;
+  border-left: 3px solid var(--primary);
+  margin: 0;
+}
+
+/* ── Nutrition grid ── */
+.detail-nutrition-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px 12px;
+  background: var(--surface-2);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.detail-nutrition-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+}
+
+.detail-nutrition-item:last-child,
+.detail-nutrition-item:nth-last-child(2):nth-child(odd) {
+  border-bottom: none;
+}
+
+.detail-nutrition-label {
+  font-size: 12px;
+  /* --text-secondary was never defined anywhere — this always used the
+     #666 fallback, which fails contrast in dark mode (2.57:1 against
+     --card). Same bug as detail-description-bar's inline style. */
+  color: var(--text-light);
+  font-weight: 500;
+}
+
+.detail-nutrition-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Move to Bar — recovery path for a drink mis-imported into the Meal
+   Library. Rare correction, not a primary action, so it's a small pill
+   sub-option instead of the full-width Start Cooking/Mixing CTA style. */
+.detail-moveto-bar-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid rgba(123, 31, 162, 0.25);
+  border-radius: 20px;
+  background: rgba(123, 31, 162, 0.06);
+  color: #7b1fa2;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s, transform 0.1s;
+}
+
+.detail-moveto-bar-link:hover { background: rgba(123, 31, 162, 0.12); }
+
+.detail-moveto-bar-link:active { transform: scale(0.96); }

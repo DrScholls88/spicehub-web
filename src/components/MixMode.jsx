@@ -3,6 +3,12 @@ import { motion, useDragControls } from 'framer-motion';
 import { X, CheckCircle2, Check, Pause, Play, Timer, Martini } from 'lucide-react';
 import { calculateVolumeMl, calculateCalories, calculateAlcoholUnits, getStrengthTier } from '../lib/abvCalculator';
 
+// Extracted from App.css 2026-08-24 (see the header in that file for the
+// move rules). MUST stay the first stylesheet imported here: these rules
+// used to live in App.css, which loads ahead of every component sheet, and
+// importing it first is what preserves that order for equal-specificity ties.
+import '../styles/screens/MixMode.css';
+
 // Phase 3.3 (bar-library-parity-plan-2026-08-07.md §3.3): abvCalculator was
 // built and tested but consumed by nothing. Wiring it here needs a volume in
 // ml, which means parsing the amount+unit off whatever ingredient data this

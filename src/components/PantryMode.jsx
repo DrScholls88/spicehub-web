@@ -12,6 +12,12 @@ import { IngredientSprite } from '../lib/barSprites.jsx';
 import PantryIngredientCatalog from './PantryIngredientCatalog.jsx';
 import { ALL_CATALOG_ITEMS } from '../data/pantry/ingredientCatalog';
 
+// Extracted from App.css 2026-08-24 (see the header in that file for the
+// move rules). MUST stay the first stylesheet imported here: these rules
+// used to live in App.css, which loads ahead of every component sheet, and
+// importing it first is what preserves that order for equal-specificity ties.
+import '../styles/screens/PantryMode.css';
+
 /**
  * PantryMode — the Kitchen Pantry (P5). The "daytime" counterpart to the
  * Saloon: a clean, upscale, morning-lit pantry over the SAME master inventory

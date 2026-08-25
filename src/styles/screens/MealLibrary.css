@@ -1,0 +1,1679 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   MealLibrary — extracted from App.css on 2026-08-24
+   ═══════════════════════════════════════════════════════════════════════════
+   Split out of the 610 KB App.css monolith so this screen's CSS travels in its
+   own async chunk instead of blocking first paint for everyone. PageSpeed
+   mobile 2026-08-23 measured the bundled stylesheet at 1,840 ms render-blocking
+   with 99.9 KiB of its 102.5 KiB unused on the landing screen.
+
+   CONTENTS: every rule whose selector is owned by the .ml-* class
+   namespace. The extraction was mechanical and byte-preserving — rule
+   bodies were sliced out of App.css verbatim, never reparsed or reformatted, so
+   vendor prefixes, `100vh`/`100dvh` fallback pairs, duplicated declarations and
+   authored comments all survive exactly as written.
+
+   WHAT DELIBERATELY DID NOT COME ALONG:
+     * Grouped selectors that mix namespaces. A rule moved only if EVERY
+       comma-part carries a class from this namespace — `.btn-primary,
+       .ml-btn { }` stays in App.css, because moving it would unstyle
+       .btn-primary whenever this chunk is not loaded.
+     * @keyframes. All 147 stay in App.css: they are global by nature, 17 are
+       referenced from more than one namespace, and leaving them put costs 24 KB
+       in the main bundle while removing an entire class of bug.
+
+   @MEDIA HANDLING: media blocks that mixed several namespaces were split by
+   owner, so each file carries its own `@media` wrapper around verbatim inner
+   rules. This matters most for `prefers-reduced-motion` — those overrides set
+   `animation: none` at the SAME specificity as the base rule, so they win by
+   source order alone. Had they stayed behind in App.css while the base rules
+   moved to a later-loading chunk, reduced-motion would have silently stopped
+   working (design.md §12).
+
+   ORDERING CONTRACT: import this file BEFORE any other stylesheet in its
+   component. These rules previously sat in App.css, which loads ahead of every
+   component stylesheet — importing this first is what preserves that relative
+   order for equal-specificity conflicts.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Rotation badge in meal tiles ── */
+.ml-tile-rotation {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  font-size: 14px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+}
+
+.ml {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  /* .tab-bar is min-height 52px + max(8px, safe-area-inset-bottom) of padding,
+     so a flat 80px left the last tile row tucked under the bar on iPhones with
+     a home indicator (34px inset). */
+  padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+  position: relative;
+}
+
+/* ── Search bar (pill-style, 44px height) ── */
+.ml-search-zone {
+  padding: 12px 16px 0;
+}
+
+.ml-search-input {
+  width: 100%;
+  height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  font-size: 16px;
+  outline: none;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s, transform 0.2s;
+  background: var(--card);
+  color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ml-search-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(230, 81, 0, 0.1);
+}
+
+.ml-search-input::placeholder {
+  color: var(--text-light);
+}
+
+/* ── Category chips (horizontal scroll, no wrapping) ── */
+/* ── View filter segmented control — smart views (All, Rotation, Quick, 5 or Less) ── */
+.ml-view-filters {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 10px 16px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.ml-view-tab {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.18s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.ml-view-tab.ml-view-active {
+  color: var(--primary);
+}
+
+.ml-view-underline {
+  position: absolute;
+  bottom: 0;
+  left: 8px;
+  right: 8px;
+  height: 2.5px;
+  border-radius: 2px;
+  background: var(--primary);
+}
+
+.ml-labels-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding: 10px 0 0;
+  margin-bottom: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.ml-labels-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.ml-labels-track {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px 12px;
+  flex-wrap: nowrap;
+}
+
+.ml-label-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: center;
+  height: 36px;
+  padding: 0 16px;
+  border: 1.5px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ml-label-chip:active {
+  transform: scale(0.97);
+}
+
+.ml-label-chip.ml-active {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+  box-shadow: 0 2px 8px rgba(230, 81, 0, 0.3);
+}
+
+/* Custom tag chips — smaller/lighter than the fixed-category chips so the
+   two families stay visually distinguishable even sharing one row. */
+.ml-label-chip--tag {
+  height: 30px;
+  padding: 0 11px;
+  font-size: 12px;
+  color: var(--text-light);
+}
+
+/* "+" add-label trigger — first in the bar, ahead of "All" */
+.ml-label-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border: 1.5px dashed var(--border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--primary);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s, transform 0.1s;
+}
+
+.ml-label-add-btn:active { transform: scale(0.9); }
+
+.ml-label-manage-btn,
+.ml-label-done-btn {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: transparent;
+}
+
+.ml-label-done-btn {
+  background: var(--primary);
+  color: #fff;
+}
+
+.ml-label-count {
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  padding: 1px 5px;
+  min-width: 16px;
+  text-align: center;
+}
+
+[data-theme="dark"] .ml-label-count { background: rgba(255, 255, 255, 0.1); }
+
+.ml-tag-active .ml-label-count { background: rgba(255, 255, 255, 0.25); }
+
+/* Rearrange/delete mode (long-press a custom tag chip) */
+.ml-labels-reorder-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ml-label-chip--editing {
+  position: relative;
+  padding-right: 26px;
+  border-color: var(--primary);
+  cursor: grab;
+}
+
+.ml-label-chip--editing:active { cursor: grabbing; }
+
+.ml-label-chip-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: var(--danger, #ef5350);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ml-label-chip-remove:active { transform: scale(0.85); }
+
+/* ── Notion-style Gallery Grid ── */
+.ml-gallery {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  padding: 12px 12px 0;
+  flex: 1;
+}
+
+@media (min-width: 500px) {
+.ml-gallery {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    padding: 14px 16px 0;
+  }
+}
+
+@media (min-width: 768px) {
+.ml-gallery {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* ── Grid layout overrides ── */
+.ml-layout-3x { grid-template-columns: repeat(3, 1fr) !important; }
+
+.ml-layout-3x .ml-tile-name { font-size: 12px; }
+
+.ml-layout-3x .ml-tile-meta { font-size: 10px; }
+
+.ml-layout-list {
+  grid-template-columns: 1fr !important;
+  gap: 6px !important;
+}
+
+.ml-layout-list .ml-tile {
+  flex-direction: row;
+  border-radius: 10px;
+  height: auto;
+}
+
+.ml-layout-list .ml-tile-image {
+  width: 72px;
+  min-width: 72px;
+  height: 72px;
+  aspect-ratio: unset;
+  border-radius: 10px 0 0 10px;
+}
+
+.ml-layout-list .ml-tile-img {
+  border-radius: 10px 0 0 10px;
+}
+
+.ml-layout-list .ml-tile-info {
+  padding: 8px 12px;
+  justify-content: center;
+  min-width: 0;
+}
+
+.ml-layout-list .ml-tile-name { font-size: 14px; }
+
+.ml-layout-list .ml-tile-fav { top: 4px; left: 4px; }
+
+.ml-layout-list .ml-tile-rotation { top: auto; bottom: 4px; left: 4px; }
+
+.ml-layout-list .ml-tile-cat { display: none; }
+
+.ml-layout-list .ml-tile-improve { display: none; }
+
+.ml-layout-list .ml-tile-menu-btn { top: 50%; right: 6px; transform: translateY(-50%); }
+
+@media (min-width: 500px) {
+.ml-layout-3x { grid-template-columns: repeat(3, 1fr) !important; }
+}
+
+@media (min-width: 768px) {
+.ml-layout-3x { grid-template-columns: repeat(4, 1fr) !important; }
+
+.ml-layout-list { grid-template-columns: 1fr !important; }
+}
+
+/* ── Individual gallery tile ── */
+.ml-tile {
+  position: relative;
+  background: var(--card);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.07);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+  animation: tileIn 0.3s ease-out backwards;
+  -webkit-tap-highlight-color: transparent;
+  display: flex;
+  flex-direction: column;
+}
+
+.ml-tile:active {
+  transform: scale(0.97);
+}
+
+.ml-tile:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  transform: translateY(-2px);
+}
+
+/* ── Tile image area ── */
+.ml-tile-image {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.ml-tile-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.ml-tile-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  background: linear-gradient(135deg, #f5f0ea, #e8e0d8);
+}
+
+/* Favorite badge on tile */
+.ml-tile-fav {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-size: 16px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+}
+
+/* I-5: "Improve" badge — low-confidence imports with a cached caption */
+.ml-tile-improve {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: none;
+  cursor: pointer;
+  background: linear-gradient(135deg, #7b1fa2, #9c27b0);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(123, 31, 162, 0.4);
+  -webkit-tap-highlight-color: transparent;
+  z-index: 2;
+}
+
+.ml-tile-improve:active { transform: scale(0.92); }
+
+/* Starter Kit badge — small muted chip in the tile meta row */
+.ml-tile-starter {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  background: var(--surface-2, #f0f0f0);
+  color: var(--text-light, #888);
+  border: 1px solid var(--border, #e0e0e0);
+  vertical-align: middle;
+}
+
+[data-theme="dark"] .ml-tile-starter {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.6);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* Category badge on tile */
+.ml-tile-cat {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* Save-time dedup "×N" badge — top-center so it never collides with the
+   favorite/rotation/category/play/menu badges anchored to the four corners. */
+.ml-tile-import-count {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.65);
+  color: white;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 20px;
+  letter-spacing: 0.2px;
+}
+
+/* ── Tile info row ── */
+.ml-tile-info {
+  padding: 8px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ml-tile-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.25;
+}
+
+.ml-tile-meta {
+  font-size: 11px;
+  color: var(--text-light);
+}
+
+.ml-tile-added {
+  font-size: 10px;
+  color: var(--text-muted, #aaa);
+  opacity: 0.8;
+  letter-spacing: 0.2px;
+  display: block;
+  margin-top: 1px;
+}
+
+.ml-tile-notes {
+  font-size: 11px;
+  color: var(--text-light);
+  opacity: 0.75;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-style: italic;
+  margin-top: 1px;
+}
+
+/* ── Tile ⋯ action menu button (bottom-right of image) ── */
+/* Category color as a small dot on the name row — replaces the old
+   3px card side-stripe (an AI-slop tell). */
+.ml-tile-cat-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+/* Expand small overlay controls to a ~44px touch target without enlarging
+   the visible glyph — invisible hit area via ::before. Mobile-first floor. */
+.ml-tile-menu-btn::before,
+.ml-tile-play::before,
+.ml-tile-improve::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
+
+.ml-tile-menu-btn {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  border: none;
+  font-size: 15px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 3;
+  padding: 0 0 2px 1px; /* visual centering for ⋯ */
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.ml-tile-menu-btn:active {
+  background: rgba(0, 0, 0, 0.8);
+  transform: scale(0.9);
+}
+
+/* ── PiP: play-video affordance on cards with a video source (bottom-left) ──
+   Softened from a solid-color circular play button (magenta/red, high-contrast
+   against food photography) to a small translucent "Video" chip — informational
+   tag rather than a video-player-style CTA competing with the thumbnail. ── */
+.ml-tile-play {
+  position: absolute;
+  bottom: 6px;
+  left: 6px;
+  height: 22px;
+  padding: 0 8px 0 6px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(0, 0, 0, 0.45);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  z-index: 3;
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.ml-tile-play:active { transform: scale(0.92); background: rgba(0, 0, 0, 0.65); }
+
+/* Failed tile visual state */
+.ml-tile-failed {
+  opacity: 0.7;
+}
+
+.ml-tile-failed .ml-tile-image {
+  filter: grayscale(50%);
+}
+
+.ml-tile-failed .ml-tile-meta {
+  color: var(--danger, #d32f2f);
+}
+
+/* ── Category picker subtitle ── */
+.ml-sheet-subtitle {
+  font-size: 13px;
+  color: var(--text-light);
+  margin: -8px 16px 12px;
+}
+
+/* ── Empty state CTA button ── */
+.ml-empty-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.ml-empty-cta {
+  margin-top: 0;
+  padding: 12px 24px;
+  background: var(--primary, #e65100);
+  color: #fff;
+  border: none;
+  border-radius: 24px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ml-empty-cta-secondary {
+  background: transparent;
+  color: var(--primary, #e65100);
+  border: 1.5px solid var(--primary, #e65100);
+}
+
+.ml-empty-cta:active {
+  opacity: 0.85;
+}
+
+/* ── Quick Preview popup (long press / right-click) ── */
+.ml-qp-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* Same iOS large-vs-dynamic viewport issue as .modal-overlay: without an
+     explicit dvh height the centred card sits low enough that its bottom
+     actions fall under the Safari toolbar. */
+  height: 100dvh;
+  background: rgba(0, 0, 0, 0.55);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  padding-top: calc(16px + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+}
+
+/* Expandable card: centered modal that the tile morphs into */
+.ml-qp-sheet {
+  background: var(--card);
+  border-radius: 20px;
+  width: 100%;
+  max-width: 460px;
+  max-height: 88vh;
+  /* dvh so the expandable card never exceeds the visible viewport on iOS.
+     The overlay's own safe-area padding already carves out the notch and
+     home indicator, so 100% here is the remaining usable box. */
+  max-height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.45),
+              0 0 0 1px rgba(0, 0, 0, 0.04);
+  will-change: transform, opacity;
+}
+
+.ml-qp-handle {
+  width: 40px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.18);
+  margin: 8px auto 4px;
+}
+
+/* Shared-element hero — matches the tile image box (1:1) so the morph is seamless */
+.ml-qp-hero {
+  position: relative;
+  width: 100%;
+  height: 240px;
+  background: var(--surface-2);
+  overflow: hidden;
+  border-radius: 16px 16px 0 0;
+}
+
+.ml-qp-hero-empty {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Floating close button (Aceternity-faithful) */
+.ml-qp-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1010;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: var(--card, #fff);
+  color: var(--text, #222);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+.ml-qp-body {
+  padding: 12px 16px 8px;
+}
+
+.ml-qp-title {
+  font-size: 18px;
+  font-weight: 800;
+  margin: 0 0 8px;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ml-qp-section {
+  margin-bottom: 10px;
+}
+
+.ml-qp-section h4 {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--primary);
+  margin: 0 0 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.ml-qp-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.ml-qp-list li {
+  margin-bottom: 2px;
+}
+
+.ml-qp-steps li {
+  margin-bottom: 4px;
+}
+
+.ml-qp-more {
+  color: var(--text-light);
+  font-style: italic;
+  list-style: none;
+  margin-left: -18px;
+}
+
+.ml-qp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px 20px;
+  border-top: 1px solid var(--border);
+}
+
+.ml-qp-actions button {
+  flex: 1;
+  min-width: 80px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+}
+
+.ml-qp-actions button:active {
+  transform: scale(0.96);
+}
+
+.ml-qp-actions button:hover {
+  background: var(--surface-2);
+}
+
+.ml-qp-danger {
+  color: #d32f2f !important;
+  border-color: #ffcdd2 !important;
+}
+
+.ml-qp-danger:hover {
+  background: #ffebee !important;
+}
+
+/* Keep old classes referenced elsewhere (action buttons not used in gallery but kept for compat) */
+.ml-card-rating {
+  display: inline-flex;
+  gap: 1px;
+  font-size: 13px;
+  white-space: nowrap;
+  align-items: center;
+  padding: 0 2px;
+}
+
+/* ── Empty state ── */
+.ml-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+  gap: 6px;
+}
+
+.ml-empty-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  color: var(--sh-text-muted, var(--text-light));
+  margin-bottom: 8px;
+}
+
+.ml-empty-text {
+  font-size: var(--sh-fs-base, 15px);
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.ml-empty-hint {
+  font-size: var(--sh-fs-sm, 13px);
+  color: var(--sh-text-muted, var(--text-light));
+  line-height: 1.5;
+  margin: 0 0 8px;
+  max-width: 280px;
+}
+
+/* ── Tag filter chips ── */
+/* .ml-tag-active is still used as a modifier on the unified .ml-label-chip
+   (see .ml-labels-track in MealLibrary.jsx) — the rest of the old two-row
+   tag bar (.ml-tags-scroll/track, .ml-tag-chip, .ml-tag-manage,
+   .ml-tag-count) was replaced by .ml-labels-* above. */
+.ml-tag-active { color: #fff; font-weight: 700; }
+
+/* ── Collapsible sections ── */
+.ml-section {
+  grid-column: 1 / -1;
+}
+
+.ml-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 4px 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ml-section-header:active { opacity: 0.7; }
+
+.ml-section-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ml-section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.ml-section-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-light, #888);
+  background: var(--surface-2, #f0f0f0);
+  border-radius: 8px;
+  padding: 1px 7px;
+  min-width: 18px;
+  text-align: center;
+}
+
+.ml-section-chevron {
+  margin-left: auto;
+  font-size: 14px;
+  color: var(--text-light, #888);
+  transition: transform 0.2s;
+}
+
+.ml-section-chevron-collapsed {
+  transform: rotate(-90deg);
+}
+
+.ml-section-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+@media (min-width: 500px) {
+.ml-section-grid { grid-template-columns: repeat(3, 1fr); gap: 12px; }
+}
+
+@media (min-width: 768px) {
+.ml-section-grid { grid-template-columns: repeat(4, 1fr); }
+}
+
+/* ── Tag manager sheet ── */
+.ml-tag-create-row {
+  display: flex;
+  gap: 8px;
+  padding: 0 16px 12px;
+}
+
+.ml-tag-create-input {
+  flex: 1;
+  height: 40px;
+  padding: 0 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2, #f5f5f5);
+  color: var(--text);
+  font-size: 16px; /* was 14px — stops iOS Safari zooming the page on focus */
+  outline: none;
+}
+
+.ml-tag-create-input:focus { border-color: var(--primary); }
+
+.ml-tag-create-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  border: none;
+  background: var(--primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.ml-tag-create-btn:disabled { opacity: 0.4; }
+
+.ml-tag-list { padding: 0 8px !important; }
+
+.ml-tag-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px;
+  border-radius: 8px;
+}
+
+.ml-tag-row:hover { background: var(--surface-2, #f5f5f5); }
+
+.ml-tag-row-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.ml-tag-row-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+}
+
+.ml-tag-row-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-light, #888);
+  background: var(--surface-2, #f0f0f0);
+  border-radius: 8px;
+  padding: 1px 7px;
+}
+
+.ml-tag-row-action {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-light, #888);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.ml-tag-row-action:hover { background: var(--surface-2, #f0f0f0); }
+
+.ml-tag-row-delete:hover { color: #d32f2f; background: #ffebee; }
+
+.ml-tag-edit-row {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+}
+
+.ml-tag-save-btn {
+  width: 32px;
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  background: var(--primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.ml-tag-cancel-btn {
+  width: 32px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 14px;
+}
+
+/* ── Quick-preview type picker row ── */
+.ml-qp-type-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+
+.ml-qp-type-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 10px;
+  border: 1.5px solid var(--border);
+  border-radius: 13px;
+  background: var(--surface-2, #f5f5f5);
+  color: var(--text-light, #888);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s cubic-bezier(0.32, 0.72, 0, 1);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ml-qp-type-chip:active { transform: scale(0.93); }
+
+.ml-qp-type-active { font-weight: 700; }
+
+/* ── Quick-preview tag chips ── */
+.ml-qp-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.ml-qp-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-2, #f5f5f5);
+  color: var(--text-light, #888);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ml-qp-tag:active { transform: scale(0.95); }
+
+.ml-qp-tag-active { color: #fff; font-weight: 700; }
+
+/* ── Dark mode additions ── */
+/* .ml-label-chip (the unified category+tag bar) needs no dark override —
+   it reads var(--surface-2)/var(--border)/var(--text), which the
+   [data-theme="dark"] root block already redefines. */
+[data-theme="dark"] .ml-label-manage-btn,
+[data-theme="dark"] .ml-label-done-btn {
+  border-color: var(--primary);
+}
+
+[data-theme="dark"] .ml-section-count {
+  background: rgba(255,255,255,0.08);
+}
+
+[data-theme="dark"] .ml-tag-create-input {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.12);
+}
+
+[data-theme="dark"] .ml-tag-row:hover {
+  background: rgba(255,255,255,0.06);
+}
+
+[data-theme="dark"] .ml-tag-row-count {
+  background: rgba(255,255,255,0.08);
+}
+
+[data-theme="dark"] .ml-tag-row-action:hover {
+  background: rgba(255,255,255,0.08);
+}
+
+[data-theme="dark"] .ml-tag-row-delete:hover {
+  color: #ef5350;
+  background: rgba(211,47,47,0.1);
+}
+
+[data-theme="dark"] .ml-qp-tag {
+  background: rgba(255,255,255,0.06);
+  border-color: rgba(255,255,255,0.12);
+}
+
+/* ── Floating Action Buttons (FAB group) ── */
+.ml-fab-group {
+  position: fixed;
+  /* Clear the fixed .tab-bar (min-height 52px + safe-area inset) so the Import
+     speed-dial is never hidden behind the bottom nav. */
+  bottom: calc(52px + env(safe-area-inset-bottom) + 16px);
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  z-index: 95;
+}
+
+.ml-fab {
+  background: var(--primary);
+  color: white;
+  border: none;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 12px rgba(230, 81, 0, 0.4);
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s, transform 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ml-fab-import {
+  padding: 12px 20px;
+  border-radius: 28px;
+  font-size: 15px;
+  gap: 6px;
+  background: linear-gradient(135deg, #1565c0, #1976d2);
+  box-shadow: 0 4px 12px rgba(21, 101, 192, 0.4);
+}
+
+.ml-fab-import:hover {
+  background: linear-gradient(135deg, #0d47a1, #1565c0);
+  box-shadow: 0 6px 16px rgba(21, 101, 192, 0.5);
+}
+
+.ml-fab-label {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+.ml-fab-add {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  font-size: 28px;
+}
+
+.ml-fab:active {
+  transform: scale(0.93);
+}
+
+.ml-fab-add:hover {
+  background: var(--primary-dark);
+  box-shadow: 0 6px 16px rgba(230, 81, 0, 0.5);
+}
+
+/* ── Speed-dial FAB (consolidated add + import) ── */
+.ml-fab-main {
+  z-index: 97;
+}
+
+.ml-fab-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 15, 10, 0.32);
+  backdrop-filter: blur(1.5px);
+  -webkit-backdrop-filter: blur(1.5px);
+  z-index: 94;
+}
+
+.ml-fab-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 2px;
+}
+
+.ml-fab-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ml-fab-action-label {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--text, #1c140d);
+  background: var(--card, #fff);
+  padding: 9px 14px;
+  border-radius: 10px;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.16);
+  white-space: nowrap;
+}
+
+.ml-fab-action-icon {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.ml-fab-action-icon--import {
+  background: linear-gradient(135deg, #1565c0, #1976d2);
+}
+
+.ml-fab-action-icon--add {
+  background: linear-gradient(135deg, var(--primary), var(--primary-light, #ff8a4c));
+}
+
+.ml-fab-action-icon--discover {
+  background: linear-gradient(135deg, #388e3c, #66bb6a);
+}
+
+.ml-fab-action-icon--zip {
+  background: linear-gradient(135deg, #6d4c2b, #8d6e42);
+}
+
+[data-theme="dark"] .ml-fab-action-label {
+  color: var(--text, #f5efe7);
+  background: var(--card, #2a2018);
+}
+
+/* ── Menu button (top right) ── */
+.ml-menu-btn {
+  position: fixed;
+  top: 8px;
+  right: 16px;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: none;
+  border-radius: 50%;
+  font-size: 20px;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-light);
+  z-index: 96;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ml-menu-btn:active {
+  background: rgba(0, 0, 0, 0.06);
+  transform: scale(0.93);
+}
+
+/* ── Multi-select mode ── */
+.ml-select-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin: 0 -12px 8px;
+  background: var(--primary);
+  color: white;
+  border-radius: 10px;
+  flex-wrap: wrap;
+  position: sticky;
+  top: 0;
+  z-index: 95;
+}
+
+.ml-select-toolbar-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ml-select-toolbar-btn:active {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.ml-select-toolbar-btn:disabled {
+  opacity: 0.4;
+}
+
+.ml-select-delete {
+  background: rgba(255, 60, 60, 0.6);
+}
+
+.ml-select-delete:active {
+  background: rgba(255, 60, 60, 0.8);
+}
+
+.ml-select-count {
+  font-size: 13px;
+  font-weight: 700;
+  flex: 1;
+  text-align: center;
+}
+
+.ml-tile-selected {
+  outline: 3px solid var(--primary);
+  outline-offset: -3px;
+  border-radius: 12px;
+}
+
+.ml-tile-selected .ml-tile-image::after {
+  content: '';
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0;
+  background: rgba(230, 81, 0, 0.12);
+  border-radius: 12px 12px 0 0;
+  pointer-events: none;
+}
+
+.ml-tile-check {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 5;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  border: 2px solid white;
+}
+
+.ml-tile-check:empty {
+  background: rgba(255, 255, 255, 0.7);
+  border: 2px solid rgba(0, 0, 0, 0.25);
+}
+
+/* ── Bottom sheet overlay (shared for both dialogs) ── */
+.ml-overlay {
+  position: fixed;
+  top: 0; right: 0; bottom: 0; left: 0;
+  z-index: 500;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: fadeIn 0.15s ease-out;
+}
+
+/* ── Bottom sheet (shared styles) ── */
+.ml-sheet {
+  width: 100%;
+  max-width: 500px;
+  max-height: 85vh;
+  background: var(--card);
+  border-radius: 20px 20px 0 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideUp 0.25s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* ── Sheet handle (drag indicator) ── */
+.ml-sheet-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--text-muted);
+  margin: 10px auto 0;
+  flex-shrink: 0;
+}
+
+/* ── Sheet header ── */
+.ml-sheet-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 20px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ml-sheet-header h3 {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text);
+  margin: 0;
+}
+
+.ml-sheet-close {
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: var(--surface-2);
+  border-radius: 50%;
+  font-size: 16px;
+  cursor: pointer;
+  color: var(--text-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ml-sheet-close:active {
+  background: var(--border);
+}
+
+/* ── Options sheet (backup/restore/import) ── */
+.ml-sheet-options {
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  flex: 1;
+}
+
+.ml-sheet-option {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  border: none;
+  background: var(--card);
+  cursor: pointer;
+  transition: background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-size: 15px;
+  color: var(--text);
+}
+
+.ml-sheet-option:last-child {
+  border-bottom: none;
+}
+
+.ml-sheet-option:active {
+  background: var(--surface-2);
+}
+
+.ml-option-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+/* ── Delete confirmation sheet ── */
+.ml-delete-sheet {
+  border-radius: 20px 20px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ml-delete-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.ml-delete-icon {
+  font-size: 48px;
+  line-height: 1;
+}
+
+.ml-delete-title {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text);
+  text-align: center;
+  margin: 0 20px 8px;
+}
+
+.ml-delete-message {
+  font-size: 14px;
+  color: var(--text-light);
+  text-align: center;
+  margin: 0 20px 20px;
+  line-height: 1.5;
+}
+
+.ml-delete-actions {
+  display: flex;
+  gap: 8px;
+  padding: 0 20px 20px;
+  flex-direction: column;
+}
+
+.ml-delete-btn {
+  height: 44px;
+  border: none;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ml-delete-btn:active {
+  transform: scale(0.97);
+}
+
+.ml-delete-cancel {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.ml-delete-cancel:active {
+  background: var(--border);
+}
+
+.ml-delete-confirm {
+  background: var(--danger);
+  color: white;
+  box-shadow: 0 2px 8px rgba(211, 47, 47, 0.3);
+}
+
+.ml-delete-confirm:active {
+  background: #c62828;
+}
+
+@media (min-width: 640px) {
+.ml-overlay {
+    align-items: center;
+  }
+
+.ml-sheet {
+    border-radius: 20px;
+    max-height: 70vh;
+  }
+
+.ml-fab-group {
+    /* Keep clearance above the bottom tab-bar on wider viewports too. */
+    bottom: calc(52px + env(safe-area-inset-bottom) + 20px);
+    right: 24px;
+  }
+
+.ml-menu-btn {
+    top: 12px;
+    right: 20px;
+  }
+}
+
+/* ── Rotation badge dark ── */
+[data-theme="dark"] .ml-tile-rotation {
+  background: rgba(102, 187, 106, 0.15);
+  color: var(--primary);
+}

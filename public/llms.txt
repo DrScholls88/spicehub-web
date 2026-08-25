@@ -1,0 +1,43 @@
+# SpiceHub
+
+> A zero-cost, offline-first meal and recipe planner (PWA). Its distinguishing
+> feature is social-media recipe import: paste or share an Instagram, TikTok,
+> Pinterest or recipe-blog link and it extracts a structured recipe —
+> ingredients, steps, timings, photo — without manual retyping.
+
+SpiceHub runs entirely on the device. Recipes, the weekly plan, the grocery
+list and the bar/pantry inventory live in IndexedDB (Dexie), and the app is
+fully usable with no network. Import is the only feature that needs one, and
+requests made while offline are queued and drained when connectivity returns.
+
+## What it does
+
+- **Weekly planner** — assign meals to days, spin for suggestions, respin a
+  single day, lock the ones you have decided on, generate a grocery list from
+  the week.
+- **Recipe import** — from a URL, a shared link, pasted text, or photos of a
+  cookbook page. Structured extraction with a confidence signal and a review
+  step before anything is saved.
+- **Meal and drink libraries** — tags, favourites, ratings, cook history.
+- **Pantry and bar** — track what is in stock and see which recipes are
+  already cookable.
+- **Cook Mode / Mix Mode** — step-by-step, screen-awake walkthroughs with
+  scaling and timers.
+
+## Privacy
+
+Recipe and plan data is stored locally and is not uploaded anywhere by
+default. Import sends the shared URL or text to third-party structuring
+services (Google Gemini among them) purely to turn prose into fields; the
+current terms are shown in-app before first use and are the authoritative
+statement. Optional account features (friends, shared household plans) are
+opt-in and off unless configured.
+
+## Notes for automated agents
+
+- Single-route SPA. Every screen is client-side state under `/`; there are no
+  server-rendered sub-pages to crawl. See `/sitemap.xml`.
+- `/api/*` are the app's own serverless endpoints, not a public API. They are
+  not documented, not versioned, and not intended for third-party use.
+- There is no public data set here to index — content is whatever an
+  individual user has saved on their own device.

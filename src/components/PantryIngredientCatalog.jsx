@@ -4,6 +4,14 @@ import { IngredientSprite } from '../lib/barSprites.jsx';
 import { INGREDIENT_CATALOG } from '../data/pantry/ingredientCatalog';
 import { getDomainFlags } from '../lib/pantryDomain';
 
+// Extracted from App.css 2026-08-24 (see the header in that file for the
+// move rules). MUST stay the first stylesheet imported here: these rules
+// used to live in App.css, which loads ahead of every component sheet, and
+// importing it first is what preserves that order for equal-specificity ties.
+// This catalog's .pcat-* rules were extracted into PantryMode.css alongside the
+// screen that hosts it; imported here so the sheet stands alone if reused.
+import '../styles/screens/PantryMode.css';
+
 /**
  * PantryIngredientCatalog — the Pantry's own "browse everything" sheet,
  * mirroring components/IngredientCatalog.jsx (the Bar's apothecary rack)

@@ -1,0 +1,609 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   BatchImportQueue — extracted from App.css on 2026-08-24
+   ═══════════════════════════════════════════════════════════════════════════
+   Split out of the 610 KB App.css monolith so this screen's CSS travels in its
+   own async chunk instead of blocking first paint for everyone. PageSpeed
+   mobile 2026-08-23 measured the bundled stylesheet at 1,840 ms render-blocking
+   with 99.9 KiB of its 102.5 KiB unused on the landing screen.
+
+   CONTENTS: every rule whose selector is owned by the .biq-* class
+   namespace. The extraction was mechanical and byte-preserving — rule
+   bodies were sliced out of App.css verbatim, never reparsed or reformatted, so
+   vendor prefixes, `100vh`/`100dvh` fallback pairs, duplicated declarations and
+   authored comments all survive exactly as written.
+
+   WHAT DELIBERATELY DID NOT COME ALONG:
+     * Grouped selectors that mix namespaces. A rule moved only if EVERY
+       comma-part carries a class from this namespace — `.btn-primary,
+       .biq-btn { }` stays in App.css, because moving it would unstyle
+       .btn-primary whenever this chunk is not loaded.
+     * @keyframes. All 147 stay in App.css: they are global by nature, 17 are
+       referenced from more than one namespace, and leaving them put costs 24 KB
+       in the main bundle while removing an entire class of bug.
+
+   @MEDIA HANDLING: media blocks that mixed several namespaces were split by
+   owner, so each file carries its own `@media` wrapper around verbatim inner
+   rules. This matters most for `prefers-reduced-motion` — those overrides set
+   `animation: none` at the SAME specificity as the base rule, so they win by
+   source order alone. Had they stayed behind in App.css while the base rules
+   moved to a later-loading chunk, reduced-motion would have silently stopped
+   working (design.md §12).
+
+   ORDERING CONTRACT: import this file BEFORE any other stylesheet in its
+   component. These rules previously sat in App.css, which loads ahead of every
+   component stylesheet — importing this first is what preserves that relative
+   order for equal-specificity conflicts.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Z-index fortification overrides ─────────────────────────────────────── */
+.biq-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+}
+
+.biq-sheet {
+  width: 100%;
+  max-height: 85vh;
+  background: var(--card);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+}
+
+.biq-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  margin: 10px auto 4px;
+  cursor: grab;
+}
+
+.biq-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-lg) var(--space-md);
+}
+
+.biq-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.biq-subtitle {
+  margin-top: 2px;
+  font-size: 0.85rem;
+  color: var(--text-light);
+}
+
+.biq-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: var(--surface);
+  color: var(--text-light);
+  cursor: pointer;
+  transition: background 0.2s var(--ease-spring), transform 0.2s var(--ease-spring);
+}
+
+.biq-close:active { transform: scale(0.95); }
+
+.biq-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 var(--space-lg) var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.biq-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-2xl) 0;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.biq-empty-icon { color: var(--text-muted); }
+
+.biq-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  min-height: 56px;
+}
+
+.biq-row-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+  flex: 1;
+}
+
+.biq-row-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.biq-row-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60vw;
+}
+
+.biq-row-status {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.biq-row-error {
+  font-size: 0.78rem;
+  color: var(--danger);
+}
+
+.biq-row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+}
+
+.biq-icon-ready { color: var(--success); }
+
+.biq-icon-failed { color: var(--danger); }
+
+.biq-icon-saved { color: var(--text-muted); }
+
+.biq-spin {
+  animation: biq-spin 1s linear infinite;
+  color: var(--primary);
+}
+
+.biq-type-pill {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text-light);
+  cursor: pointer;
+  min-height: 32px;
+  transition: background 0.2s var(--ease-spring), transform 0.2s var(--ease-spring);
+}
+
+.biq-type-pill.biq-type-drink {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.biq-type-pill:active { transform: scale(0.96); }
+
+.biq-confidence {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: var(--radius-pill);
+}
+
+.biq-confidence-high { background: rgba(46, 125, 50, 0.12); color: var(--success); }
+
+.biq-confidence-medium { background: rgba(245, 158, 11, 0.14); color: var(--warning); }
+
+.biq-confidence-low { background: rgba(211, 47, 47, 0.12); color: var(--danger); }
+
+.biq-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 8px 14px;
+  min-height: 36px;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: var(--primary);
+  color: #fff;
+  cursor: pointer;
+  transition: transform 0.2s var(--ease-spring), background 0.2s var(--ease-spring);
+}
+
+.biq-action-btn:active { transform: scale(0.96); }
+
+.biq-retry-btn {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.biq-dismiss-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.2s var(--ease-spring), transform 0.2s var(--ease-spring);
+}
+
+.biq-dismiss-btn:active { transform: scale(0.95); }
+
+.biq-footer {
+  padding: var(--space-sm) var(--space-lg) var(--space-lg);
+  display: flex;
+  justify-content: center;
+}
+
+.biq-clear-btn {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-light);
+  background: transparent;
+  border: none;
+  padding: 10px 16px;
+  min-height: 40px;
+  cursor: pointer;
+}
+
+/* ── Floating re-entry pill ── */
+.biq-pill {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 84px);
+  right: var(--space-md);
+  z-index: 55;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 10px 18px;
+  min-height: 44px;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: var(--primary);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  box-shadow: var(--shadow-lg);
+  cursor: pointer;
+}
+
+.biq-pill:active { transform: scale(0.96); }
+
+.biq-pill-ready {
+  background: var(--success, #22c55e);
+  color: #fff;
+}
+
+.biq-pill-ready:hover {
+  background: var(--success, #22c55e);
+  filter: brightness(1.08);
+}
+
+@media (max-width: 768px) {
+.biq-row {
+    flex-wrap: wrap;
+  }
+
+.biq-row-title {
+    max-width: 50vw;
+  }
+}
+
+.biq-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+}
+
+.biq-sheet {
+  width: 100%;
+  max-height: 85vh;
+  background: var(--card);
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: var(--shadow-lg);
+}
+
+.biq-handle {
+  width: 36px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  margin: 10px auto 4px;
+  cursor: grab;
+}
+
+.biq-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-sm) var(--space-lg) var(--space-md);
+}
+
+.biq-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.biq-subtitle {
+  margin-top: 2px;
+  font-size: 0.85rem;
+  color: var(--text-light);
+}
+
+.biq-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: var(--surface);
+  color: var(--text-light);
+  cursor: pointer;
+  transition: background 0.2s var(--ease-spring), transform 0.2s var(--ease-spring);
+}
+
+.biq-close:active { transform: scale(0.95); }
+
+.biq-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 var(--space-lg) var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.biq-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-2xl) 0;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.biq-empty-icon { color: var(--text-muted); }
+
+.biq-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  min-height: 56px;
+}
+
+.biq-row-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-width: 0;
+  flex: 1;
+}
+
+.biq-row-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.biq-row-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60vw;
+}
+
+.biq-row-status {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.biq-row-error {
+  font-size: 0.78rem;
+  color: var(--danger);
+}
+
+.biq-row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-shrink: 0;
+}
+
+.biq-icon-ready { color: var(--success); }
+
+.biq-icon-failed { color: var(--danger); }
+
+.biq-icon-saved { color: var(--text-muted); }
+
+.biq-spin {
+  animation: biq-spin 1s linear infinite;
+  color: var(--primary);
+}
+
+.biq-type-pill {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--text-light);
+  cursor: pointer;
+  min-height: 32px;
+  transition: background 0.2s var(--ease-spring), transform 0.2s var(--ease-spring);
+}
+
+.biq-type-pill.biq-type-drink {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.biq-type-pill:active { transform: scale(0.96); }
+
+.biq-confidence {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 4px 8px;
+  border-radius: var(--radius-pill);
+}
+
+.biq-confidence-high { background: rgba(46, 125, 50, 0.12); color: var(--success); }
+
+.biq-confidence-medium { background: rgba(245, 158, 11, 0.14); color: var(--warning); }
+
+.biq-confidence-low { background: rgba(211, 47, 47, 0.12); color: var(--danger); }
+
+.biq-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 8px 14px;
+  min-height: 36px;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: var(--primary);
+  color: #fff;
+  cursor: pointer;
+  transition: transform 0.2s var(--ease-spring), background 0.2s var(--ease-spring);
+}
+
+.biq-action-btn:active { transform: scale(0.96); }
+
+.biq-retry-btn {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.biq-dismiss-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.2s var(--ease-spring), transform 0.2s var(--ease-spring);
+}
+
+.biq-dismiss-btn:active { transform: scale(0.95); }
+
+.biq-footer {
+  padding: var(--space-sm) var(--space-lg) var(--space-lg);
+  display: flex;
+  justify-content: center;
+}
+
+.biq-clear-btn {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-light);
+  background: transparent;
+  border: none;
+  padding: 10px 16px;
+  min-height: 40px;
+  cursor: pointer;
+}
+
+/* ── Floating re-entry pill ── */
+.biq-pill {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 84px);
+  right: var(--space-md);
+  z-index: 55;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 10px 18px;
+  min-height: 44px;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: var(--primary);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  box-shadow: var(--shadow-lg);
+  cursor: pointer;
+}
+
+.biq-pill:active { transform: scale(0.96); }
+
+.biq-pill-ready {
+  background: var(--success, #22c55e);
+  color: #fff;
+}
+
+.biq-pill-ready:hover {
+  background: var(--success, #22c55e);
+  filter: brightness(1.08);
+}
+
+@media (max-width: 768px) {
+.biq-row {
+    flex-wrap: wrap;
+  }
+
+.biq-row-title {
+    max-width: 50vw;
+  }
+}

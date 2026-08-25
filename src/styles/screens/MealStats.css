@@ -1,0 +1,459 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   MealStats — extracted from App.css on 2026-08-24
+   ═══════════════════════════════════════════════════════════════════════════
+   Split out of the 610 KB App.css monolith so this screen's CSS travels in its
+   own async chunk instead of blocking first paint for everyone. PageSpeed
+   mobile 2026-08-23 measured the bundled stylesheet at 1,840 ms render-blocking
+   with 99.9 KiB of its 102.5 KiB unused on the landing screen.
+
+   CONTENTS: every rule whose selector is owned by the .ms-* class
+   namespace. The extraction was mechanical and byte-preserving — rule
+   bodies were sliced out of App.css verbatim, never reparsed or reformatted, so
+   vendor prefixes, `100vh`/`100dvh` fallback pairs, duplicated declarations and
+   authored comments all survive exactly as written.
+
+   WHAT DELIBERATELY DID NOT COME ALONG:
+     * Grouped selectors that mix namespaces. A rule moved only if EVERY
+       comma-part carries a class from this namespace — `.btn-primary,
+       .ms-btn { }` stays in App.css, because moving it would unstyle
+       .btn-primary whenever this chunk is not loaded.
+     * @keyframes. All 147 stay in App.css: they are global by nature, 17 are
+       referenced from more than one namespace, and leaving them put costs 24 KB
+       in the main bundle while removing an entire class of bug.
+
+   @MEDIA HANDLING: media blocks that mixed several namespaces were split by
+   owner, so each file carries its own `@media` wrapper around verbatim inner
+   rules. This matters most for `prefers-reduced-motion` — those overrides set
+   `animation: none` at the SAME specificity as the base rule, so they win by
+   source order alone. Had they stayed behind in App.css while the base rules
+   moved to a later-loading chunk, reduced-motion would have silently stopped
+   working (design.md §12).
+
+   ORDERING CONTRACT: import this file BEFORE any other stylesheet in its
+   component. These rules previously sat in App.css, which loads ahead of every
+   component stylesheet — importing this first is what preserves that relative
+   order for equal-specificity conflicts.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ms-overlay {
+  position: fixed;
+  top: 0; right: 0; bottom: 0; left: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 500;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.ms-sheet {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  top: 5vh;
+  background: var(--bg);
+  border-radius: 20px 20px 0 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slideUp 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.ms-handle {
+  width: 36px;
+  height: 4px;
+  background: #ccc;
+  border-radius: 2px;
+  margin: 10px auto 0;
+  flex-shrink: 0;
+}
+
+.ms-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px 8px;
+  flex-shrink: 0;
+}
+
+.ms-title {
+  font-size: 22px;
+  font-weight: 800;
+  margin: 0;
+  color: var(--text);
+}
+
+.ms-close-btn {
+  width: 34px;
+  height: 34px;
+  border: none;
+  background: #f0f0f0;
+  border-radius: 50%;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ms-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 20px 80px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.ms-section-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 20px 0 10px;
+}
+
+/* Streak */
+.ms-streak-container {
+  display: flex;
+  gap: 12px;
+}
+
+.ms-streak-card {
+  flex: 1;
+  padding: 16px;
+  border-radius: 14px;
+  text-align: center;
+  border: 1px solid var(--border);
+}
+
+.ms-streak-card.current {
+  background: linear-gradient(135deg, #fff3e0, #ffe0b2);
+}
+
+.ms-streak-card.best {
+  background: linear-gradient(135deg, #e8f5e9, #c8e6c9);
+}
+
+.ms-streak-number {
+  font-size: 36px;
+  font-weight: 900;
+  color: var(--text);
+}
+
+.ms-streak-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-light);
+  margin-top: 4px;
+}
+
+.ms-streak-subtext {
+  font-size: 11px;
+  color: var(--text-light);
+}
+
+/* Empty state */
+.ms-empty-state,
+.ms-empty-state-full {
+  text-align: center;
+  padding: 24px;
+  color: var(--text-light);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.ms-empty-state-anim {
+  animation: ms-empty-rise 0.4s var(--sh-spring, cubic-bezier(0.32, 0.72, 0, 1)) both;
+}
+
+.ms-empty-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  color: var(--sh-text-muted, var(--text-light));
+  margin-bottom: 8px;
+}
+
+.ms-empty-text {
+  font-size: var(--sh-fs-base, 14px);
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+
+.ms-empty-hint {
+  font-size: var(--sh-fs-sm, 13px);
+  color: var(--sh-text-muted, var(--text-light));
+  line-height: 1.5;
+  max-width: 280px;
+  margin: 0;
+}
+
+/* Stats row */
+.ms-stats-scroll {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 4px 0 8px;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x mandatory;
+}
+
+.ms-stats-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.ms-stat-card {
+  flex-shrink: 0;
+  width: 120px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  text-align: center;
+  scroll-snap-align: start;
+}
+
+.ms-stat-icon {
+  font-size: 24px;
+  margin-bottom: 4px;
+}
+
+.ms-stat-value {
+  font-size: 24px;
+  font-weight: 900;
+  color: var(--text);
+}
+
+.ms-stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-light);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Category bars */
+.ms-category-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ms-category-label-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.ms-category-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ms-category-count {
+  font-size: 12px;
+  color: var(--text-light);
+  font-weight: 700;
+}
+
+.ms-category-bar-bg {
+  height: 8px;
+  background: #f0f0f0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.ms-category-bar-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.6s ease-out;
+  background: linear-gradient(90deg, var(--primary), #66bb6a);
+}
+
+/* Calendar heatmap */
+.ms-calendar-grid {
+  display: flex;
+  gap: 3px;
+  overflow-x: auto;
+  padding: 8px 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+.ms-calendar-week {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ms-cal-cell {
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s, transform 0.2s;
+}
+
+.ms-cal-cell.level-0 {
+  background: #ebedf0;
+}
+
+.ms-cal-cell.level-1 {
+  background: #9be9a8;
+}
+
+.ms-cal-cell.level-2 {
+  background: #40c463;
+}
+
+.ms-cal-cell.level-3 {
+  background: #216e39;
+}
+
+.ms-calendar-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  justify-content: flex-end;
+}
+
+.ms-legend-label {
+  font-size: 10px;
+  color: var(--text-light);
+}
+
+.ms-calendar-tooltip {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-light);
+  text-align: center;
+}
+
+/* Top recipes */
+.ms-top-recipes-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ms-recipe-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--card);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.ms-recipe-item:active {
+  transform: scale(0.98);
+}
+
+.ms-recipe-rank {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.ms-recipe-name {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ms-recipe-count-badge {
+  padding: 4px 10px;
+  background: #e8f5e9;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #2e7d32;
+}
+
+/* Diversity ring */
+.ms-diversity-container {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 12px 0;
+}
+
+.ms-diversity-ring {
+  flex-shrink: 0;
+}
+
+.ms-diversity-fill {
+  transform: rotate(-90deg);
+  transform-origin: center;
+  stroke: var(--primary);
+  transition: stroke-dasharray 1s ease-out;
+}
+
+.ms-diversity-info {
+  flex: 1;
+}
+
+.ms-diversity-text {
+  font-size: 14px;
+  color: var(--text-light);
+  line-height: 1.5;
+}
+
+[data-theme="dark"] .ms-close-btn {
+  background: #2a2a2a;
+  color: var(--text);
+}
+
+[data-theme="dark"] .ms-streak-card.current {
+  background: linear-gradient(135deg, #332200, #3d2600);
+}
+
+[data-theme="dark"] .ms-streak-card.best {
+  background: linear-gradient(135deg, #1b3d1b, #234d23);
+}
+
+[data-theme="dark"] .ms-category-bar-bg {
+  background: #333;
+}
+
+[data-theme="dark"] .ms-cal-cell.level-0 {
+  background: #2a2a2a;
+}
+
+[data-accent="autumn"] .ms-category-bar-fill {
+  background: linear-gradient(90deg, #e65100, #ff8f00);
+}
+
+[data-accent="spring"] .ms-category-bar-fill {
+  background: linear-gradient(90deg, #ec407a, #ab47bc);
+}
+
+[data-accent="summer"] .ms-category-bar-fill {
+  background: linear-gradient(90deg, #ff8f00, #fdd835);
+}
+
+[data-accent="winter"] .ms-category-bar-fill {
+  background: linear-gradient(90deg, #42a5f5, #7e57c2);
+}

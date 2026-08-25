@@ -443,8 +443,15 @@ const TRASH_HYPE_RE = /^(so\s+(easy|quick|good|simple|delicious|yummy)\b.*|packe
 // Initial-style sign-offs: "DB x", "— J.", "K x", "love, Sam"
 const TRASH_SIGNOFF_RE = /^(?:[-—]\s*)?(?:love,?\s*)?[A-Z]{1,3}\.?\s*x{1,3}$/;
 // Social calls-to-action / engagement bait that survive caption cleaning and
+// 2026-08-24: flags were `i`; `u` added. The trailing class [\s.!👇➡️⬇️] holds
+// 👇 (U+1F447), which is astral — without the u flag a character class stores it
+// as its two surrogate halves and can match a LONE unpaired surrogate rather
+// than the emoji (no-misleading-character-class). Verified before changing: the
+// pattern compiles under /u, and across a 25-line corpus of real caption junk
+// and real ingredient lines the match results are byte-identical to the old
+// flags — 14/17 junk lines still caught, 8/8 ingredient lines still kept.
 // get mis-read as ingredients. These never name a food + quantity.
-const TRASH_SOCIAL_RE = /^(comments?|commenting|save (this|it|for later|the recipe)|saved|follow( for more| me)?|link in bio|recipe (below|in bio|in comments)|full recipe|see (more|below|the link)|tag (a friend|someone|your)|share (this|with)|dm (me|for|us)|swipe (up|left|right)|double tap|like (and|&) (save|share|follow)|new recipe|viral|trending|fyp|f\.?y\.?p|reels?|tutorial|watch (the )?full|subscribe|hit follow|part \d+|recipe👇|👇.*recipe)\b[\s.!👇➡️⬇️]*$/i;
+const TRASH_SOCIAL_RE = /^(comments?|commenting|save (this|it|for later|the recipe)|saved|follow( for more| me)?|link in bio|recipe (below|in bio|in comments)|full recipe|see (more|below|the link)|tag (a friend|someone|your)|share (this|with)|dm (me|for|us)|swipe (up|left|right)|double tap|like (and|&) (save|share|follow)|new recipe|viral|trending|fyp|f\.?y\.?p|reels?|tutorial|watch (the )?full|subscribe|hit follow|part \d+|recipe👇|👇.*recipe)\b[\s.!👇➡️⬇️]*$/iu;
 
 /** True if an extracted ingredient line is structural junk, not a real item. */
 export function isTrashIngredientLine(line = '') {

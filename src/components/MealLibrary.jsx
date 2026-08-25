@@ -17,6 +17,12 @@ import { isFriendsEnabled } from '../lib/supabaseClient';
 import { MEAL_TYPE_CATEGORIES, DIETARY_TAGS, CUISINE } from '../recipeSchema';
 import { getTotalMinutes } from '../lib/recipeTime.js';
 
+// Extracted from App.css 2026-08-24 (see the header in that file for the
+// move rules). MUST stay the first stylesheet imported here: these rules
+// used to live in App.css, which loads ahead of every component sheet, and
+// importing it first is what preserves that order for equal-specificity ties.
+import '../styles/screens/MealLibrary.css';
+
 // I-5: a recipe is "improvable" when it was imported with a low-confidence /
 // needs-review flag AND we kept its source caption (so we can re-run extraction
 // on the cached text — no re-scrape). Recipes without a caption can't be re-run.

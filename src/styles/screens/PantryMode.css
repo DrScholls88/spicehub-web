@@ -1,0 +1,1140 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   PantryMode — extracted from App.css on 2026-08-24
+   ═══════════════════════════════════════════════════════════════════════════
+   Split out of the 610 KB App.css monolith so this screen's CSS travels in its
+   own async chunk instead of blocking first paint for everyone. PageSpeed
+   mobile 2026-08-23 measured the bundled stylesheet at 1,840 ms render-blocking
+   with 99.9 KiB of its 102.5 KiB unused on the landing screen.
+
+   CONTENTS: every rule whose selector is owned by the .pm-*, .pcat-* class
+   namespaces. The extraction was mechanical and byte-preserving — rule
+   bodies were sliced out of App.css verbatim, never reparsed or reformatted, so
+   vendor prefixes, `100vh`/`100dvh` fallback pairs, duplicated declarations and
+   authored comments all survive exactly as written.
+
+   WHAT DELIBERATELY DID NOT COME ALONG:
+     * Grouped selectors that mix namespaces. A rule moved only if EVERY
+       comma-part carries a class from this namespace — `.btn-primary,
+       .pm-btn { }` stays in App.css, because moving it would unstyle
+       .btn-primary whenever this chunk is not loaded.
+     * @keyframes. All 147 stay in App.css: they are global by nature, 17 are
+       referenced from more than one namespace, and leaving them put costs 24 KB
+       in the main bundle while removing an entire class of bug.
+
+   @MEDIA HANDLING: media blocks that mixed several namespaces were split by
+   owner, so each file carries its own `@media` wrapper around verbatim inner
+   rules. This matters most for `prefers-reduced-motion` — those overrides set
+   `animation: none` at the SAME specificity as the base rule, so they win by
+   source order alone. Had they stayed behind in App.css while the base rules
+   moved to a later-loading chunk, reduced-motion would have silently stopped
+   working (design.md §12).
+
+   ORDERING CONTRACT: import this file BEFORE any other stylesheet in its
+   component. These rules previously sat in App.css, which loads ahead of every
+   component stylesheet — importing this first is what preserves that relative
+   order for equal-specificity conflicts.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.pm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(30, 24, 14, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.pm-room {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  top: 4vh;
+  max-width: 600px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 18px 18px 0 0;
+  color: #3d3226;
+  /* Morning light: cream marble wash with a soft sun gradient from the top */
+  background:
+    radial-gradient(ellipse 120% 50% at 50% 0%, rgba(255, 236, 200, 0.85) 0%, transparent 60%),
+    repeating-linear-gradient(90deg, rgba(160, 140, 110, 0.05) 0 1px, transparent 1px 90px),
+    linear-gradient(180deg, #fbf6ec 0%, #f4ecdd 55%, #ebe0cb 100%);
+  box-shadow: 0 -10px 40px rgba(60, 45, 20, 0.35);
+}
+
+.pm-handle {
+  width: 44px;
+  height: 5px;
+  margin: 8px auto 2px;
+  border-radius: 3px;
+  background: rgba(120, 100, 70, 0.35);
+  flex-shrink: 0;
+  cursor: grab;
+}
+
+.pm-topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 8px 18px 6px;
+  flex-shrink: 0;
+}
+
+.pm-title {
+  margin: 0;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 15px;
+  letter-spacing: 2px;
+  color: #5a4632;
+  text-shadow: 0 1px 0 rgba(255,255,255,0.8);
+}
+
+.pm-sub {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #8a7355;
+}
+
+.pm-close {
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(120, 100, 70, 0.3);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.7);
+  color: #5a4632;
+  font-size: 14px;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(60, 45, 20, 0.15);
+  transition: transform 0.12s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.pm-close:active { transform: scale(0.92); }
+
+.pm-add-row {
+  display: flex;
+  gap: 8px;
+  padding: 6px 18px 0;
+  flex-shrink: 0;
+}
+
+.pm-input {
+  flex: 1;
+  min-width: 0;
+  padding: 11px 14px;
+  border: 1px solid rgba(120, 100, 70, 0.35);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.85);
+  color: #3d3226;
+  font-size: 16px; /* was 14px — stops iOS Safari zooming the page on focus */
+  box-shadow: inset 0 1px 3px rgba(60, 45, 20, 0.08);
+}
+
+.pm-input:focus { outline: 2px solid #b08d4f; outline-offset: 1px; }
+
+.pm-add-btn {
+  padding: 11px 16px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #8a6d43 0%, #6e5430 100%);
+  color: #fbf3e0;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(60, 45, 20, 0.25), inset 0 1px 0 rgba(255,255,255,0.25);
+  transition: transform 0.12s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.pm-add-btn:active:not(:disabled) { transform: translateY(1px); }
+
+.pm-add-btn:disabled { opacity: 0.45; cursor: default; }
+
+.pm-quick {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 8px 18px 4px;
+  flex-shrink: 0;
+  scrollbar-width: none;
+}
+
+.pm-quick::-webkit-scrollbar { display: none; }
+
+.pm-quick-chip {
+  flex-shrink: 0;
+  padding: 6px 11px;
+  border: 1px solid rgba(120, 100, 70, 0.35);
+  border-radius: 8px;
+  background: rgba(255, 252, 245, 0.9);
+  color: #6e5430;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(60, 45, 20, 0.12);
+  transition: transform 0.12s cubic-bezier(0.32, 0.72, 0, 1), background 0.15s ease;
+}
+
+.pm-quick-chip:active { transform: scale(0.95); }
+
+/* Quick Add header row — label + link out to the full 400+ browse sheet,
+   pinned outside the scrolling chip strip so it never gets buried as more
+   suggestions are revealed (see .pm-quick--wrap below). */
+.pm-quick-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 18px 0;
+  flex-shrink: 0;
+}
+
+.pm-quick-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: rgba(74, 58, 34, 0.55);
+}
+
+.pm-quick-browse-link {
+  border: none;
+  background: transparent;
+  color: #8a6a2f;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.pm-quick-browse-link:active { opacity: 0.7; }
+
+/* 2-row wrap + vertical scroll (was single-row horizontal scroll) — more
+   suggestions reveal via IntersectionObserver on .pm-quick-sentinel as the
+   user scrolls, instead of a virtualization library (see PantryMode.jsx). */
+.pm-quick--wrap {
+  flex-wrap: wrap;
+  align-content: flex-start;
+  overflow-x: hidden;
+  overflow-y: auto;
+  max-height: 76px;
+}
+
+.pm-quick-sentinel {
+  flex-basis: 100%;
+  height: 1px;
+}
+
+/* Scene: zones on oak shelf lines */
+.pm-scene {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 18px 90px;
+  /* Reads as content sliding under a pinned toolbar (add-row/quick-adds sit
+     outside this scroll region, so this inset line is the only visual cue
+     that they're fixed rather than just "first in the list"). */
+  box-shadow: inset 0 6px 6px -6px rgba(60, 45, 20, 0.28);
+}
+
+.pm-zone { margin-top: 14px; }
+
+.pm-zone-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding-bottom: 6px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  color: #6e5430;
+  border-bottom: 3px solid #c9ae7c; /* light oak shelf line */
+  box-shadow: 0 3px 0 -1px rgba(120, 100, 70, 0.18);
+}
+
+.pm-zone-hint {
+  font-family: inherit;
+  font-size: 6px;
+  color: #a08c66;
+  letter-spacing: 0.5px;
+}
+
+.pm-zone-empty {
+  margin: 8px 2px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #8a7355;
+}
+
+.pm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  grid-auto-rows: 1fr; /* every slot in a row matches height — no ragged shelf */
+  gap: 8px;
+}
+
+.pm-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 100%;
+  padding: 10px 4px 8px;
+  border: 1px solid rgba(120, 100, 70, 0.14);
+  border-radius: 12px;
+  background: #fbf6ec;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(60, 45, 20, 0.05);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pm-tile:hover { box-shadow: 0 2px 6px rgba(60, 45, 20, 0.12); }
+
+/* Category accent — a colored stripe (not a border, so corners stay round)
+   telling FRESH and STAPLES apart at a glance instead of relying on a
+   per-item background frame. This is the ONLY category color cue now —
+   see the 2026-07-12 declutter pass below. */
+.pm-tile--fresh {
+  box-shadow: inset 3px 0 0 #5aa361, 0 1px 2px rgba(60, 45, 20, 0.05);
+}
+
+.pm-tile--fresh:hover {
+  box-shadow: inset 3px 0 0 #5aa361, 0 2px 6px rgba(60, 45, 20, 0.12);
+}
+
+.pm-tile--staple {
+  box-shadow: inset 3px 0 0 #b08d4f, 0 1px 2px rgba(60, 45, 20, 0.05);
+}
+
+.pm-tile--staple:hover {
+  box-shadow: inset 3px 0 0 #b08d4f, 0 2px 6px rgba(60, 45, 20, 0.12);
+}
+
+.pm-tile-dish {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 40px;
+}
+
+.pm-tile-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 600;
+  color: #5a4632;
+}
+
+.pm-tile--out { opacity: 0.55; }
+
+.pm-tile--out .bar-sprite-svg { filter: grayscale(1) brightness(0.9); }
+
+.pm-tile--new { animation: pmTileGlow 1.2s ease-out; }
+
+.pm-out-tag {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 1px 5px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 5px;
+  color: #a33c2a;
+  border: 1px solid #c96a55;
+  border-radius: 2px;
+  background: rgba(255, 240, 235, 0.9);
+  letter-spacing: 0.5px;
+}
+
+/* ── Inline qty dots on tiles (3-cell mini stock bar) ── */
+.pm-tile-qty {
+  display: flex;
+  gap: 2px;
+  justify-content: center;
+  margin-top: 1px;
+}
+
+.pm-tile-qty-dot {
+  width: 6px;
+  height: 3px;
+  border-radius: 1.5px;
+  background: rgba(120, 100, 70, 0.15);
+  transition: background 0.2s;
+}
+
+.pm-tile-qty-dot--on {
+  background: #5aa361;
+}
+
+/* LOW = only 1 dot lit → amber */
+.pm-tile-qty-dot--on:first-child:last-of-type,
+.pm-tile-qty .pm-tile-qty-dot--on ~ .pm-tile-qty-dot:not(.pm-tile-qty-dot--on) {
+  /* handled by count below */
+}
+
+/* Color the dots by fill level via adjacent sibling count:
+   1 dot on (LOW) = amber, 2 (MEDIUM) = goldenrod, 3 (FULL) = green */
+.pm-tile-qty-dot--on + .pm-tile-qty-dot:not(.pm-tile-qty-dot--on) ~ .pm-tile-qty-dot {
+  /* no filled dots after the first gap — already handled */
+}
+
+/* ── Collapsed staple group header ── */
+.pm-staple-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 4px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  border-bottom: 1px solid rgba(120, 100, 70, 0.18);
+}
+
+.pm-staple-group-header .pm-staple-group-title {
+  margin: 0;
+  border-bottom: none;
+  padding-bottom: 0;
+  flex: 0 0 auto;
+}
+
+.pm-staple-group-summary {
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+  color: var(--text-muted);
+  flex: 1;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.pm-staple-chevron {
+  font-size: 10px;
+  color: #8a7355;
+  transition: transform 0.2s ease;
+  flex: 0 0 auto;
+}
+
+.pm-staple-chevron--open {
+  transform: rotate(90deg);
+}
+
+/* ── Undo toast (shared between Pantry and Bar) ── */
+.pm-undo-toast {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #3a2f20;
+  color: #f5eed6;
+  border-radius: 10px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+  z-index: 90;
+  font-size: 13px;
+}
+
+.pm-undo-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pm-undo-btn {
+  flex: 0 0 auto;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  background: #c88f4a;
+  color: #2a1f10;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pm-undo-btn:active {
+  transform: scale(0.95);
+  background: #d9a55c;
+}
+
+.pm-fresh-dot {
+  position: absolute;
+  top: 7px;
+  left: 7px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(255,255,255,0.85);
+}
+
+/* Margin-gauge — a slim status underline instead of a corner dot, per the
+   mockup. Always rendered (even neutral) so tile heights never jump. */
+.pm-status-bar {
+  width: 26px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(120, 100, 70, 0.15);
+  margin-top: 1px;
+}
+
+.pm-status-bar--fresh { background: #5aa361; }
+
+.pm-status-bar--aging { background: #d9a53c; }
+
+.pm-status-bar--old   { background: #c9503c; animation: pmDotPulse 1.6s ease-in-out infinite; }
+
+/* ── Staples sub-shelves: "Essentials Base" / "Baking & Sweets" /
+   "Oils, Sauces & Fats" — staggered mini-grids instead of one flat wall. ── */
+.pm-staple-group { margin-top: 12px; }
+
+.pm-staple-group:first-of-type { margin-top: 6px; }
+
+.pm-staple-group-title {
+  margin: 0;
+  padding-bottom: 0;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  letter-spacing: 1px;
+  color: #8a7355;
+  border-bottom: none;
+}
+
+.pm-grid--staple {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.pm-fresh-dot--fresh { background: #5aa361; }
+
+.pm-fresh-dot--aging { background: #d9a53c; }
+
+.pm-fresh-dot--old   { background: #c9503c; animation: pmDotPulse 1.6s ease-in-out infinite; }
+
+/* Counter + cook button */
+.pm-counter {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  padding: 12px 18px calc(14px + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(180deg, transparent 0%, rgba(235, 224, 203, 0.95) 30%, #e2d4b8 100%);
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.pm-cook-btn {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 26px;
+  border: none;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #5f8a52 0%, #47703c 100%);
+  color: #f4fbef;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(50, 80, 40, 0.4), inset 0 1px 0 rgba(255,255,255,0.3);
+  transition: transform 0.15s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.pm-cook-btn:active { transform: scale(0.97); }
+
+.pm-cook-badge {
+  min-width: 22px;
+  padding: 4px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.22);
+  font-size: 9px;
+  text-align: center;
+}
+
+/* Matches panel */
+.pm-matches-panel {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  top: 16%;
+  display: flex;
+  flex-direction: column;
+  border-radius: 18px 18px 0 0;
+  background: linear-gradient(180deg, #fffdf8 0%, #f4ecdd 100%);
+  box-shadow: 0 -8px 30px rgba(60, 45, 20, 0.3);
+  z-index: 5;
+}
+
+.pm-matches-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px 18px 8px;
+  flex-shrink: 0;
+}
+
+.pm-matches-stats { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.pm-stat {
+  padding: 5px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #6e5430;
+  background: rgba(120, 100, 70, 0.1);
+}
+
+.pm-stat--ready  { color: #2f5c28; background: rgba(95, 138, 82, 0.18); }
+
+.pm-stat--almost { color: #8a5a12; background: rgba(217, 165, 60, 0.2); }
+
+.pm-panel-close {
+  padding: 7px 14px;
+  border: 1px solid rgba(120, 100, 70, 0.3);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.8);
+  color: #5a4632;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pm-filter-row { padding: 0 18px 6px; flex-shrink: 0; }
+
+.pm-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid #b08d4f;
+  border-radius: 999px;
+  background: rgba(176, 141, 79, 0.12);
+  color: #6e5430;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pm-matches-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 14px calc(16px + env(safe-area-inset-bottom, 0px));
+}
+
+.pm-matches-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 40px 20px;
+  font-size: 14px;
+  color: #8a7355;
+  text-align: center;
+}
+
+.pm-matches-empty span { font-size: 34px; }
+
+.pm-meal-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  margin-bottom: 8px;
+  border: 1px solid rgba(120, 100, 70, 0.18);
+  border-radius: 14px;
+  background: #fffdf8;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(60, 45, 20, 0.08);
+  transition: box-shadow 0.18s ease, transform 0.18s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.pm-meal-card:active { transform: scale(0.99); }
+
+.pm-meal-card--ready { border-color: rgba(95, 138, 82, 0.55); box-shadow: 0 1px 6px rgba(95, 138, 82, 0.22); }
+
+.pm-meal-imgzone { position: relative; flex-shrink: 0; }
+
+.pm-meal-img,
+.pm-meal-img-ph {
+  width: 58px;
+  height: 58px;
+  border-radius: 10px;
+  object-fit: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  background: #f0e6d2;
+}
+
+.pm-meal-score {
+  position: absolute;
+  bottom: -5px;
+  right: -5px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 800;
+  color: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+}
+
+.pm-meal-score--ready  { background: #47703c; }
+
+.pm-meal-score--almost { background: #c98a1e; }
+
+.pm-meal-score--far    { background: #a08c66; }
+
+.pm-meal-info { flex: 1; min-width: 0; }
+
+.pm-meal-name {
+  margin: 0 0 3px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #3d3226;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pm-meal-line { margin: 0; font-size: 12px; color: #8a7355; }
+
+.pm-meal-line--ready { color: #2f5c28; font-weight: 600; }
+
+.pm-missing-hl { color: #b3402c; font-weight: 700; }
+
+.pm-meal-grab {
+  flex-shrink: 0;
+  padding: 9px 11px;
+  border: 1px solid rgba(176, 141, 79, 0.6);
+  border-radius: 10px;
+  background: rgba(176, 141, 79, 0.12);
+  font-size: 13px;
+  cursor: pointer;
+  transition: transform 0.12s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.pm-meal-grab:active { transform: scale(0.9); }
+
+/* Gourmet ledger card */
+.pm-ledger-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(50, 40, 25, 0.4);
+  padding: 20px;
+}
+
+.pm-ledger {
+  width: min(340px, 92vw);
+  padding: 18px;
+  border: 1px solid rgba(120, 100, 70, 0.3);
+  border-radius: 16px;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 26px, rgba(120, 100, 70, 0.07) 26px 27px),
+    linear-gradient(180deg, #fffdf8 0%, #faf3e3 100%);
+  box-shadow: 0 12px 40px rgba(60, 45, 20, 0.35), inset 0 1px 0 rgba(255,255,255,0.9);
+}
+
+.pm-ledger-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.pm-ledger-sprite {
+  flex-shrink: 0;
+  filter: drop-shadow(0 3px 4px rgba(60, 45, 20, 0.3));
+}
+
+.pm-ledger-titles { flex: 1; min-width: 0; }
+
+.pm-ledger-name {
+  margin: 2px 0 6px;
+  font-size: 18px;
+  font-weight: 800;
+  color: #3d3226;
+  text-transform: capitalize;
+}
+
+.pm-ledger-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+
+.pm-ledger-cat {
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #6e5430;
+  background: rgba(120, 100, 70, 0.12);
+}
+
+.pm-ledger-cat--staple { color: #2f5c28; background: rgba(95, 138, 82, 0.16); }
+
+.pm-ledger-close {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(120, 100, 70, 0.12);
+  color: #5a4632;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.pm-stock-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.pm-stock-step {
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border: 1px solid rgba(120, 100, 70, 0.35);
+  border-radius: 10px;
+  background: linear-gradient(180deg, #fffdf8 0%, #efe4cc 100%);
+  color: #5a4632;
+  font-size: 18px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(60, 45, 20, 0.15);
+  transition: transform 0.12s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.pm-stock-step:active:not(:disabled) { transform: translateY(1px); }
+
+.pm-stock-step:disabled { opacity: 0.35; cursor: default; }
+
+.pm-stock-bar {
+  flex: 1;
+  display: flex;
+  gap: 5px;
+  padding: 6px;
+  border: 1px solid rgba(120, 100, 70, 0.3);
+  border-radius: 10px;
+  background: rgba(120, 100, 70, 0.08);
+  box-shadow: inset 0 1px 3px rgba(60, 45, 20, 0.12);
+}
+
+.pm-stock-cell {
+  flex: 1;
+  height: 16px;
+  border-radius: 5px;
+  background: rgba(120, 100, 70, 0.12);
+  transition: background 0.25s cubic-bezier(0.32, 0.72, 0, 1), box-shadow 0.25s ease;
+}
+
+.pm-stock-cell--on {
+  background: linear-gradient(180deg, #7fae6d 0%, #5f8a52 100%);
+  box-shadow: 0 0 6px rgba(95, 138, 82, 0.4);
+}
+
+.pm-stock-label {
+  margin: 8px 2px 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #8a7355;
+}
+
+.pm-ledger-tip {
+  margin: 14px 2px 0;
+  padding: 10px 12px;
+  border-left: 3px solid #b08d4f;
+  border-radius: 0 8px 8px 0;
+  background: rgba(176, 141, 79, 0.08);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: #6e5430;
+}
+
+.pm-ledger-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.pm-ledger-remove {
+  padding: 11px 14px;
+  border: 1px solid rgba(201, 80, 60, 0.5);
+  border-radius: 10px;
+  background: transparent;
+  color: #b3402c;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pm-ledger-rundry {
+  padding: 11px 14px;
+  border: 1px solid rgba(217, 119, 6, 0.5);
+  border-radius: 10px;
+  background: transparent;
+  color: #b06a05;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pm-ledger-rundry:active { transform: scale(0.98); }
+
+.pm-ledger-cook {
+  flex: 1;
+  padding: 11px 14px;
+  border: none;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #5f8a52 0%, #47703c 100%);
+  color: #f4fbef;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(50, 80, 40, 0.3), inset 0 1px 0 rgba(255,255,255,0.25);
+  transition: transform 0.12s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.pm-ledger-cook:active { transform: scale(0.98); }
+
+@media (prefers-reduced-motion: reduce) {
+.pm-tile--new,
+.pm-fresh-dot--old {
+    animation: none !important;
+  }
+}
+
+.pcat-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1600;
+  background: rgba(30, 22, 10, 0.5);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.pcat-sheet {
+  position: relative;
+  width: 100%;
+  max-width: 600px;
+  height: 88vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: linear-gradient(180deg, #fbf6ec 0%, #f3ead9 100%);
+  color: #4a3a22;
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.18);
+}
+
+.pcat-handle { width: 36px; height: 4px; border-radius: 2px; background: #d8c8a8; margin: 8px auto 4px; flex-shrink: 0; }
+
+.pcat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 18px 8px;
+  flex-shrink: 0;
+}
+
+.pcat-title { margin: 0; font-size: 18px; font-weight: 800; color: #4a3a22; }
+
+.pcat-sub { margin: 2px 0 0; font-size: 12px; color: rgba(74, 58, 34, 0.6); }
+
+.pcat-done {
+  border: 1px solid rgba(120, 100, 70, 0.35);
+  background: transparent;
+  color: #4a3a22;
+  border-radius: 8px;
+  padding: 6px 14px;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.pcat-search-row { position: relative; padding: 0 18px 8px; flex-shrink: 0; }
+
+.pcat-search {
+  width: 100%;
+  padding: 10px 34px 10px 12px;
+  border: 1px solid rgba(120, 100, 70, 0.25);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.7);
+  color: #4a3a22;
+  font-size: 14px;
+}
+
+.pcat-search::placeholder { color: rgba(74, 58, 34, 0.35); }
+
+.pcat-search-clear {
+  position: absolute;
+  right: 26px;
+  top: 8px;
+  border: none;
+  background: transparent;
+  color: rgba(74, 58, 34, 0.5);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.pcat-jumpdock {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+  padding: 6px 14px 8px;
+  background: inherit;
+  scrollbar-width: none;
+}
+
+.pcat-jumpdock::-webkit-scrollbar { display: none; }
+
+.pcat-jump-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding: 5px 10px;
+  background: rgba(176, 141, 79, 0.1);
+  border: 1px solid rgba(176, 141, 79, 0.3);
+  border-radius: 12px;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: #8a6a2f;
+  cursor: pointer;
+  box-shadow: none;
+  transition: transform 0.1s cubic-bezier(0.32, 0.72, 0, 1), filter 0.12s ease;
+}
+
+.pcat-jump-tag:active { transform: translateY(2px); box-shadow: none; }
+
+.pcat-jump-abbr { letter-spacing: 1px; }
+
+.pcat-scroll {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 4px 14px calc(20px + env(safe-area-inset-bottom));
+}
+
+.pcat-section { margin-bottom: 14px; }
+
+.pcat-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  margin: 8px 0;
+  background: linear-gradient(90deg, rgba(176, 141, 79, 0.12) 0%, rgba(176, 141, 79, 0.03) 80%, transparent 100%);
+  border: none;
+  border-left: 3px solid #b08d4f;
+  padding: 7px 10px;
+  cursor: pointer;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.pcat-section-count {
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 11px;
+  color: rgba(74, 58, 34, 0.5);
+  opacity: 0.8;
+}
+
+.pcat-section-caret {
+  margin-left: auto;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 12px;
+  color: #8a6a2f;
+}
+
+.pcat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+  gap: 8px;
+}
+
+.pcat-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px 6px;
+  border: 1px solid rgba(120, 100, 70, 0.14);
+  border-radius: 12px;
+  background: #fefcf6;
+  color: #4a3a22;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pcat-tile-sprite { height: 44px; display: flex; align-items: flex-end; }
+
+.pcat-tile-name {
+  font-size: 9px;
+  line-height: 1.15;
+  text-align: center;
+  text-transform: capitalize;
+  color: rgba(74, 58, 34, 0.8);
+  max-width: 72px;
+}
+
+.pcat-empty { text-align: center; padding: 40px 20px; color: rgba(74, 58, 34, 0.5); }
+
+.pcat-empty-icon { font-size: 40px; display: block; margin-bottom: 10px; }
+
+/* Silhouette-wake selection — same idea as .cat-tile--ghost/.cat-tile--on */
+.pcat-tile--ghost .bar-sprite-svg {
+  filter: grayscale(1) brightness(0.65);
+  opacity: 0.65;
+  transition: filter 0.25s cubic-bezier(0.32, 0.72, 0, 1), opacity 0.25s ease;
+}
+
+.pcat-tile--ghost:hover .bar-sprite-svg { opacity: 0.85; }
+
+.pcat-tile--on {
+  border-color: #b08d4f !important;
+  background: rgba(176, 141, 79, 0.1);
+  box-shadow: 0 0 6px rgba(176, 141, 79, 0.25);
+}
+
+.pcat-tile--on .bar-sprite-svg { filter: none; opacity: 1; }
+
+.pcat-tile-stamp {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%) rotate(-10deg);
+  padding: 1px 6px;
+  font-family: system-ui, -apple-system, sans-serif;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #5aa361;
+  border: 1px solid rgba(90, 163, 97, 0.35);
+  background: rgba(90, 163, 97, 0.1);
+  border-radius: 4px;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+.pcat-tile--ghost .bar-sprite-svg { animation: none !important; transition: none !important; }
+}

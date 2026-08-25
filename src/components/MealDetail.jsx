@@ -10,6 +10,12 @@ import { getTotalMinutes, formatMinutes } from '../lib/recipeTime.js';
 import { getUserTags } from '../db';
 import { getStrengthTier } from '../lib/abvCalculator.js';
 
+// Extracted from App.css 2026-08-24 (see the header in that file for the
+// move rules). MUST stay the first stylesheet imported here: these rules
+// used to live in App.css, which loads ahead of every component sheet, and
+// importing it first is what preserves that order for equal-specificity ties.
+import '../styles/screens/MealDetail.css';
+
 const STRENGTH_LABELS = {
   virgin: 'Zero-proof',
   light: 'Light',

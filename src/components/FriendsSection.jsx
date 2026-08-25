@@ -85,10 +85,28 @@ export default function FriendsSection({ isOnline, showToast }) {
   // Share History sheet (Tier 1: tap a friend to see exchange history)
   const [historyFriend, setHistoryFriend] = useState(null);
 
-  if (!isFriendsEnabled()) return null;
+  // 2026-08-24: this was `if (!isFriendsEnabled()) return null;` — an early
+  // return sitting BETWEEN the useState block above and the five hooks below
+  // (two effects, the outside-tap effect, handleSearch's useCallback and the
+  // sortedFriends useMemo). That is the classic rules-of-hooks violation and
+  // eslint flagged all five (react-hooks/rules-of-hooks).
+  //
+  // It has not crashed in practice only because isFriendsEnabled() reads
+  // import.meta.env values, which Vite inlines at build time — the branch is
+  // effectively constant for the life of the bundle, so hook order never
+  // actually changed. That is luck, not correctness: the moment the flag
+  // becomes dynamic, or this component is reached through a path where it
+  // flips, React throws "Rendered fewer hooks than expected" and unmounts the
+  // whole Settings tree.
+  //
+  // Fix: every hook now runs unconditionally. The flag is captured once here,
+  // the two network-touching effects no-op on it, and the actual `return null`
+  // moved down to the render section where an early return is legal.
+  const friendsEnabled = isFriendsEnabled();
 
   // ── Bootstrap ──────────────────────────────────────────────────────────────
   useEffect(() => {
+    if (!friendsEnabled) return;
     let cancelled = false;
     (async () => {
       try {
@@ -113,14 +131,19 @@ export default function FriendsSection({ isOnline, showToast }) {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+    // friendsEnabled is a build-time constant (see the comment above), so this
+    // dependency never changes and the effect still runs exactly once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [friendsEnabled]);
 
   // Listen for Realtime friend updates
   useEffect(() => {
+    if (!friendsEnabled) return;
     const handler = () => refreshLocal();
     window.addEventListener('spicehub:friends-updated', handler);
     return () => window.removeEventListener('spicehub:friends-updated', handler);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [friendsEnabled]);
 
   // Close overflow menu on outside tap
   useEffect(() => {
@@ -346,6 +369,10 @@ export default function FriendsSection({ isOnline, showToast }) {
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────
+
+  // Feature flag gate — moved here from above the hooks (see the comment at
+  // friendsEnabled). An early return is legal once every hook has already run.
+  if (!friendsEnabled) return null;
 
   if (loading) {
     return (

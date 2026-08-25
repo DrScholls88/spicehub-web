@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SpiceHub is a single-route PWA: every screen (Plan, Meals, Bar, Shop, the
+  Saloon, Cook Mode) is client-side state inside "/", not a crawlable URL.
+  So this sitemap has exactly one entry, and that is correct rather than
+  incomplete. It exists because robots.txt references it, and a Sitemap: line
+  pointing at a 404 is worse than no line at all.
+
+  If real routes are ever added (a shared-recipe permalink is the obvious
+  candidate), add them here.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://spicehub-web.vercel.app/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>

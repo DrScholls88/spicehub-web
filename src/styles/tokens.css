@@ -121,3 +121,39 @@
   descent-override: 36.3%;
   line-gap-override: 0%;
 }
+
+/* ==========================================================================
+   Pixel display face (Saloon / My Bar / arcade chrome) — self-hosted 2026-08-24
+   ==========================================================================
+   Was `@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P')`
+   on line 1 of App.css. That contradicted the comment above ("the project
+   loads zero web fonts otherwise... a Google Fonts <link> would break
+   offline-first") and cost more than a <link> would have: a CSS @import can't
+   begin downloading until its PARENT stylesheet has downloaded AND parsed, so
+   it serialized two render-blocking requests. PageSpeed 2026-08-23 measured
+   the 1.2 KiB Google stylesheet at 750 ms of blocking, chained behind the
+   102 KiB App.css at 1,840 ms.
+
+   Self-hosted here for the same reasons Gloock is: it is precached by the SW
+   woff2 glob (vite.config.js injectManifest.globPatterns), so a freshly
+   installed offline PWA renders the real pixel face instead of falling back to
+   system monospace — which the Google-hosted version could never do.
+
+   Latin subset, single 400 weight, 12.5 KB, from @fontsource/press-start-2p
+   (the same Google Fonts binary, redistributed under the OFL). font-display
+   and the family name are unchanged from the @import, so every existing
+   `font-family: 'Press Start 2P', monospace` call site keeps its current
+   behavior — including the swap-in reflow, which is left as-is deliberately:
+   this face is used only for short decorative labels (see the `font-size: 8px`
+   legibility floors in App.css), not for flowing copy like Gloock's drink
+   names, so it does not warrant Gloock's metrics-override stand-in. */
+@font-face {
+  font-family: 'Press Start 2P';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/press-start-2p-latin-400.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191,
+    U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}

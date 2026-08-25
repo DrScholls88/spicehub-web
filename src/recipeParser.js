@@ -275,11 +275,24 @@ const FOOD_RE = /\b(chicken|beef|pork|salmon|shrimp|tofu|rice|pasta|noodles|brea
 function looksLikeIngredient(line) {
   if (BULLET_RE.test(line)) return true;
   if (NUM_UNIT_RE.test(line)) return true;
-  if (line.length < 100 && UNITS_RE.test(line) && FRACTION_RE.test(line)) return true;
-  if (line.length < 80 && UNITS_RE.test(line)) return true;
+  // UNITS_RE and FOOD_RE also match cooking-state adjectives ("melted",
+  // "chopped", "divided") and food nouns that show up naturally inside full
+  // direction sentences, not just ingredient descriptors — e.g. "Air fry or
+  // broil on high until cheese is melted." was being misfiled as an
+  // ingredient purely because it contains "melted". A line that OPENS with
+  // an imperative cooking verb is a direction regardless of what words
+  // appear later in it, so gate the weaker signals below on that.
+  // (Deliberately NOT also checking STEP_NUM_RE here: its char class
+  // includes \s, so it matches any "<number> <word>" line, e.g. "3 eggs" —
+  // exactly the kind of pure quantity+food line these weaker signals exist
+  // to catch, so folding it in here would cancel them out for real
+  // ingredients too.)
+  const clearlyADirection = COOKING_VERBS_RE.test(line);
+  if (line.length < 100 && UNITS_RE.test(line) && FRACTION_RE.test(line) && !clearlyADirection) return true;
+  if (line.length < 80 && UNITS_RE.test(line) && !clearlyADirection) return true;
   // Short lines with food words are likely ingredients
-  if (line.length < 60 && FOOD_RE.test(line) && FRACTION_RE.test(line)) return true;
-  if (line.length < 40 && FOOD_RE.test(line)) return true;
+  if (line.length < 60 && FOOD_RE.test(line) && FRACTION_RE.test(line) && !clearlyADirection) return true;
+  if (line.length < 40 && FOOD_RE.test(line) && !clearlyADirection) return true;
   // "X for garnish" / "X to taste" / "X (optional)" patterns
   if (line.length < 60 && /\b(for garnish|to taste|optional|as needed|to rim|for serving)\b/i.test(line)) return true;
   return false;
@@ -317,11 +330,31 @@ const DIRECTIONS_HEADERS = [
 
 function isIngredientsHeader(lower) {
   // Strip emoji and common Instagram punctuation for matching
-  const cleaned = lower.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{1FA00}-\u{1FA9F}\u{200D}Ã°Å¸â€˜â€¡Ã¢Â¬â€¡Ã¯Â¸ÂÃ¢â€ â€œÃ°Å¸â€œÂÃ¢Å“Â¨Ã°Å¸â€™Â«Ã°Å¸ÂÂ½Ã¯Â¸ÂÃ°Å¸Â¥ËœÃ°Å¸ÂÂ²]/gu, '').trim();
+  // 2026-08-24: this character class was CORRUPTED. Alongside the emoji ranges
+  // it held ~80 loose literal characters — Ã ° Å ¸ â € ˜ ¡ ¢ Â ¬ ¯ œ “ ¨ ™ « ½ ² ¥ Ë —
+  // which are the mojibake remains of the punctuation it was written to strip
+  // (• – — → ═ ·), double-encoded through the wrong codepage at some point. See
+  // the same corruption documented for comments in eslint.config.js.
+  //
+  // The effect was the exact inverse of the intent: it no longer stripped any
+  // of the bullets and dashes Instagram captions decorate headers with, while
+  // stripping ° € ½ ² ¥ « from the text instead. Measured against realistic
+  // caption headers, 8 of 12 failed to match — "• Ingredients", "— Directions",
+  // "→ Instructions", "═══ Ingredients ═══", "· Method", "⭐ Directions" and
+  // friends all fell through, so those captions had no ingredients section
+  // detected at all. Only the ones led by a true emoji (✨ 🧾 ➡️) worked.
+  //
+  // Rewritten as explicit \u{...} escapes with NO literal characters, so it
+  // cannot be corrupted this way again and can be edited by tools that cannot
+  // round-trip the raw bytes. Ranges: emoji pictographs, enclosed/mahjong,
+  // misc symbols + dingbats, arrows/stars, variation selectors, ZWJ, bullets,
+  // en/em dashes + box-drawing rules, arrows, and invisible spacing.
+  // Same corrected class as isIngredientsHeader above — see the note there.
+  const cleaned = lower.replace(/[\u{1F300}-\u{1FAFF}\u{1F000}-\u{1F2FF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE00}-\u{FE0F}\u{200D}\u{2022}\u{2023}\u{2043}\u{00B7}\u{2219}\u{25AA}-\u{25FF}\u{2013}-\u{2015}\u{2500}-\u{257F}\u{2190}-\u{21FF}\u{00A0}\u{200B}\u{FEFF}]/gu, '').trim();
   return INGREDIENTS_HEADERS.some(h => cleaned === h || cleaned.startsWith(h + ':') || cleaned.startsWith(h + ' -') || lower === h || lower.startsWith(h + ':') || lower.startsWith(h + ' -'));
 }
 function isDirectionsHeader(lower) {
-  const cleaned = lower.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}\u{FE00}-\u{FE0F}\u{1FA00}-\u{1FA9F}\u{200D}Ã°Å¸â€˜â€¡Ã¢Â¬â€¡Ã¯Â¸ÂÃ¢â€ â€œÃ°Å¸â€œÂÃ¢Å“Â¨Ã°Å¸â€™Â«Ã°Å¸ÂÂ½Ã¯Â¸ÂÃ°Å¸Â¥ËœÃ°Å¸ÂÂ²]/gu, '').trim();
+  const cleaned = lower.replace(/[\u{1F300}-\u{1FAFF}\u{1F000}-\u{1F2FF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE00}-\u{FE0F}\u{200D}\u{2022}\u{2023}\u{2043}\u{00B7}\u{2219}\u{25AA}-\u{25FF}\u{2013}-\u{2015}\u{2500}-\u{257F}\u{2190}-\u{21FF}\u{00A0}\u{200B}\u{FEFF}]/gu, '').trim();
   return DIRECTIONS_HEADERS.some(h => cleaned === h || cleaned.startsWith(h + ':') || cleaned.startsWith(h + ' -') || lower === h || lower.startsWith(h + ':') || lower.startsWith(h + ' -'));
 }
 
@@ -4699,10 +4732,15 @@ export function parseVisualJSON(visualJson, url) {
   const confidence = Math.min(classified / Math.min(total, 15), 1);
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Debug logging (development only) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-  // eslint-disable-next-line no-undef -- isomorphic guard: `process` only
-  // exists under Node/SSR contexts, guarded by `typeof` before use, but the
-  // browser-globals ESLint config for this file has no `process` global to
-  // check the second operand against.
+  // `process` only exists under Node/SSR contexts and is guarded by `typeof`
+  // before use, but this file lints against browser globals so there is no
+  // `process` to check the second operand against.
+  //
+  // 2026-08-24: the directive used to be the FIRST line of this comment block,
+  // so "next line" resolved to another comment rather than the code three lines
+  // down — which is why lint reported BOTH an unused-disable warning here and
+  // the no-undef error it was meant to suppress. It has to be the last line.
+  // eslint-disable-next-line no-undef
   const isDev = (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development')
     || (typeof import.meta !== 'undefined' && import.meta.env?.DEV);
   if (isDev) {

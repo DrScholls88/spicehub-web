@@ -1,0 +1,337 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   _orphaned — extracted from App.css on 2026-08-24
+   ═══════════════════════════════════════════════════════════════════════════
+   Split out of the 610 KB App.css monolith so this screen's CSS travels in its
+   own async chunk instead of blocking first paint for everyone. PageSpeed
+   mobile 2026-08-23 measured the bundled stylesheet at 1,840 ms render-blocking
+   with 99.9 KiB of its 102.5 KiB unused on the landing screen.
+
+   CONTENTS: every rule whose selector is owned by the .fm-* class
+   namespace. The extraction was mechanical and byte-preserving — rule
+   bodies were sliced out of App.css verbatim, never reparsed or reformatted, so
+   vendor prefixes, `100vh`/`100dvh` fallback pairs, duplicated declarations and
+   authored comments all survive exactly as written.
+
+   WHAT DELIBERATELY DID NOT COME ALONG:
+     * Grouped selectors that mix namespaces. A rule moved only if EVERY
+       comma-part carries a class from this namespace — `.btn-primary,
+       .fm-btn { }` stays in App.css, because moving it would unstyle
+       .btn-primary whenever this chunk is not loaded.
+     * @keyframes. All 147 stay in App.css: they are global by nature, 17 are
+       referenced from more than one namespace, and leaving them put costs 24 KB
+       in the main bundle while removing an entire class of bug.
+
+   @MEDIA HANDLING: media blocks that mixed several namespaces were split by
+   owner, so each file carries its own `@media` wrapper around verbatim inner
+   rules. This matters most for `prefers-reduced-motion` — those overrides set
+   `animation: none` at the SAME specificity as the base rule, so they win by
+   source order alone. Had they stayed behind in App.css while the base rules
+   moved to a later-loading chunk, reduced-motion would have silently stopped
+   working (design.md §12).
+
+   ORDERING CONTRACT: import this file BEFORE any other stylesheet in its
+   component. These rules previously sat in App.css, which loads ahead of every
+   component stylesheet — importing this first is what preserves that relative
+   order for equal-specificity conflicts.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.fm-overlay {
+  position: fixed;
+  top: 0; right: 0; bottom: 0; left: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 500;
+}.fm-sheet {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  top: 5vh;
+  background: var(--card);
+  border-radius: 20px 20px 0 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  max-width: 600px;
+  margin: 0 auto;
+}.fm-handle {
+  width: 36px;
+  height: 4px;
+  background: #ccc;
+  border-radius: 2px;
+  margin: 10px auto 0;
+  flex-shrink: 0;
+}.fm-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 16px 20px 12px;
+  flex-shrink: 0;
+}.fm-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}.fm-icon {
+  font-size: 32px;
+}.fm-title {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text);
+  margin: 0;
+}.fm-subtitle {
+  font-size: 13px;
+  color: var(--text-light);
+  margin: 2px 0 0;
+}.fm-close {
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: #f0f0f0;
+  border-radius: 50%;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Input */
+.fm-input-zone {
+  padding: 0 20px 12px;
+  flex-shrink: 0;
+}.fm-input-row {
+  display: flex;
+  gap: 8px;
+}.fm-input {
+  flex: 1;
+  padding: 12px 16px;
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  font-size: 16px;
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s;
+}.fm-input:focus {
+  border-color: var(--primary);
+}.fm-add-btn {
+  padding: 12px 18px;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}.fm-add-btn:disabled {
+  opacity: 0.4;
+}
+
+/* Quick-add */
+.fm-quick-section {
+  padding: 0 20px 12px;
+  flex-shrink: 0;
+}.fm-quick-label {
+  font-size: 12px;
+  color: var(--text-light);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}.fm-quick-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}.fm-quick-chip {
+  padding: 6px 14px;
+  background: #f0f0f0;
+  border: none;
+  border-radius: 20px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}.fm-quick-chip:active {
+  transform: scale(0.95);
+}.fm-quick-chip.added {
+  background: var(--primary);
+  color: white;
+}
+
+/* Pantry chips */
+.fm-pantry {
+  padding: 0 20px 12px;
+  flex-shrink: 0;
+}.fm-pantry-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}.fm-pantry-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #e3f2fd;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1565c0;
+}.fm-chip-remove {
+  background: none;
+  border: none;
+  font-size: 12px;
+  cursor: pointer;
+  color: #1565c0;
+  opacity: 0.6;
+  padding: 0 2px;
+}.fm-clear-all {
+  margin-top: 6px;
+  background: none;
+  border: none;
+  font-size: 12px;
+  color: var(--danger);
+  cursor: pointer;
+  font-weight: 600;
+}
+
+/* Results summary */
+.fm-results-summary {
+  padding: 10px 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}.fm-summary-stats {
+  display: flex;
+  gap: 12px;
+}.fm-stat {
+  font-size: 12px;
+  font-weight: 700;
+}.fm-stat-perfect {
+  color: #2e7d32;
+}.fm-stat-close {
+  color: #f57c00;
+}.fm-mode-toggle {
+  display: flex;
+  gap: 4px;
+}.fm-mode-btn {
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}.fm-mode-btn.active {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+/* Results list */
+.fm-results {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 20px 80px;
+  -webkit-overflow-scrolling: touch;
+}.fm-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--text-light);
+}.fm-empty-icon {
+  font-size: 48px;
+  display: block;
+  margin-bottom: 12px;
+}.fm-result-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--card);
+  border-radius: 14px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+  animation: mealCardEnter 0.3s ease-out both;
+  -webkit-tap-highlight-color: transparent;
+}.fm-result-card:active {
+  transform: scale(0.98);
+}.fm-result-card.fm-perfect {
+  border-color: #4caf50;
+  background: #f1f8e9;
+}.fm-result-img-zone {
+  position: relative;
+  flex-shrink: 0;
+}.fm-result-img {
+  width: 60px;
+  height: 60px;
+  border-radius: 10px;
+  object-fit: cover;
+}.fm-result-img-ph {
+  width: 60px;
+  height: 60px;
+  border-radius: 10px;
+  background: #f0f0f0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+}.fm-score-badge {
+  position: absolute;
+  bottom: -4px;
+  right: -4px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 800;
+  color: white;
+}.fm-score-badge.perfect {
+  background: #4caf50;
+}.fm-score-badge.close {
+  background: #ff9800;
+}.fm-score-badge.partial {
+  background: #9e9e9e;
+}.fm-result-info {
+  flex: 1;
+  min-width: 0;
+}.fm-result-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0;
+}.fm-result-match {
+  font-size: 12px;
+  color: var(--text-light);
+  margin: 2px 0 0;
+}.fm-match-good {
+  color: #2e7d32;
+  font-weight: 600;
+}.fm-match-missing {
+  color: #f57c00;
+}.fm-missing-list {
+  font-size: 11px;
+  color: var(--text-light);
+  margin: 2px 0 0;
+}.fm-perfect-badge {
+  padding: 4px 10px;
+  background: #4caf50;
+  color: white;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}[data-theme="dark"] .fm-close,
+[data-theme="dark"] .fm-quick-chip:not(.added) {
+  background: #2a2a2a;
+  color: var(--text);
+}[data-theme="dark"] .fm-pantry-chip {
+  background: #1a3d5c;
+  color: #64b5f6;
+}[data-theme="dark"] .fm-result-card.fm-perfect {
+  background: #1b331b;
+  border-color: #4caf50;
+}

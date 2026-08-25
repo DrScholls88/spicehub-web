@@ -1,0 +1,3697 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   BarShelf — extracted from App.css on 2026-08-24
+   ═══════════════════════════════════════════════════════════════════════════
+   Split out of the 610 KB App.css monolith so this screen's CSS travels in its
+   own async chunk instead of blocking first paint for everyone. PageSpeed
+   mobile 2026-08-23 measured the bundled stylesheet at 1,840 ms render-blocking
+   with 99.9 KiB of its 102.5 KiB unused on the landing screen.
+
+   CONTENTS: every rule whose selector is owned by the .bs-*, .saloon-*, .wanted-*, .bounty-*, .lantern-*, .secret-*, .steam-* class
+   namespaces. The extraction was mechanical and byte-preserving — rule
+   bodies were sliced out of App.css verbatim, never reparsed or reformatted, so
+   vendor prefixes, `100vh`/`100dvh` fallback pairs, duplicated declarations and
+   authored comments all survive exactly as written.
+
+   WHAT DELIBERATELY DID NOT COME ALONG:
+     * Grouped selectors that mix namespaces. A rule moved only if EVERY
+       comma-part carries a class from this namespace — `.btn-primary,
+       .bs-btn { }` stays in App.css, because moving it would unstyle
+       .btn-primary whenever this chunk is not loaded.
+     * @keyframes. All 147 stay in App.css: they are global by nature, 17 are
+       referenced from more than one namespace, and leaving them put costs 24 KB
+       in the main bundle while removing an entire class of bug.
+
+   @MEDIA HANDLING: media blocks that mixed several namespaces were split by
+   owner, so each file carries its own `@media` wrapper around verbatim inner
+   rules. This matters most for `prefers-reduced-motion` — those overrides set
+   `animation: none` at the SAME specificity as the base rule, so they win by
+   source order alone. Had they stayed behind in App.css while the base rules
+   moved to a later-loading chunk, reduced-motion would have silently stopped
+   working (design.md §12).
+
+   ORDERING CONTRACT: import this file BEFORE any other stylesheet in its
+   component. These rules previously sat in App.css, which loads ahead of every
+   component stylesheet — importing this first is what preserves that relative
+   order for equal-specificity conflicts.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Overlay + container ── */
+.bs-overlay {
+  position: fixed;
+  top: 0; right: 0; bottom: 0; left: 0;
+  background: rgba(0, 0, 0, 0.92);
+  z-index: 550;
+  animation: fadeIn 0.2s ease-out;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bs-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  max-width: 600px;
+  max-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* CRT scanline overlay + cyberpunk night sky */
+  background:
+    /* CRT scanline overlay */
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0px, transparent 2px,
+      rgba(0, 0, 0, 0.03) 2px, rgba(0, 0, 0, 0.03) 4px
+    ),
+    /* Deep purple-black night */
+    linear-gradient(180deg,
+      #0a0015 0%,
+      #120025 15%,
+      #0d001a 40%,
+      #100808 75%,
+      #0a0005 100%
+    );
+}
+
+/* Pixel font for retro vibe */
+.bs-container * {
+  font-family: 'Press Start 2P', monospace;
+}
+
+/* ── Top bar ── */
+.bs-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 14px;
+  padding: 10px 16px;
+  padding-top: env(safe-area-inset-top);
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  border-bottom: 2px solid #3a1f5e;
+  background: linear-gradient(180deg, rgba(10, 4, 20, 0.95) 0%, rgba(10, 4, 20, 0.7) 100%);
+  /* Horizontal scroll on 320px Android — hides overflow without wrapping */
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.bs-topbar::-webkit-scrollbar { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+.bs-container .saloon-bg *,
+  .bs-container .lantern-glow,
+  .bs-container [class*="bs-shelf-wobble"],
+  .bs-container .bs-backbar-glow,
+  .bs-container .bs-ambient-left,
+  .bs-container .bs-ambient-right,
+  .bs-container .bs-glow,
+  .bs-container .bs-secret-flash,
+  .bs-happy-hour,
+  .bs-tipsy,
+  .bs-cabinet-shake {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* First-run hint strip — teaches the saloon's hidden interactions */
+.bs-tips-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 10px 0;
+  padding: 8px 10px;
+  border: 2px solid #ffd700;
+  background: rgba(10, 4, 20, 0.85);
+  color: #ffe9a8;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  line-height: 1.7;
+}
+
+.bs-tips-banner p { margin: 0; flex: 1; }
+
+.bs-tips-dismiss {
+  flex-shrink: 0;
+  min-width: 44px;
+  min-height: 44px;
+  background: none;
+  border: 2px solid #ffd700;
+  color: #ffd700;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+/* Prevent buttons from collapsing on narrow viewports */
+.bs-topbar .hdr-btn,
+.bs-topbar button {
+  flex-shrink: 0;
+}
+
+.bs-back-btn {
+  background: none;
+  border: 2px solid #4caf50;
+  padding: 8px 14px;
+  color: #4caf50;
+  font-size: 10px;
+  cursor: pointer;
+  border-radius: 0;
+  font-family: 'Press Start 2P', monospace;
+  -webkit-tap-highlight-color: transparent;
+  /* Bigger touch target */
+  min-height: 44px;
+  min-width: 72px;
+}
+
+.bs-back-btn:active {
+  background: #4caf5020;
+  transform: scale(0.96);
+}
+
+.bs-pixel-arrow { font-size: 12px; }
+
+.bs-import-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: none;
+  border: 2px solid #ff4081;
+  padding: 6px 10px;
+  color: #ff4081;
+  font-size: 14px;
+  cursor: pointer;
+  font-family: 'Press Start 2P', monospace;
+  min-height: 44px;
+  min-width: 52px;
+  border-radius: 0;
+  transition: background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bs-import-btn:active {
+  background: rgba(255, 64, 129, 0.15);
+  transform: scale(0.96);
+}
+
+.bs-import-label {
+  font-size: 8px; /* Press Start 2P floor for legibility (was 6px) */
+  color: #ff4081;
+  letter-spacing: 0.5px;
+}
+
+.bs-chiptune-btn,
+.bs-fillshelf-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: none;
+  border: 2px solid #80deea;
+  padding: 6px 10px;
+  color: #80deea;
+  font-size: 14px;
+  cursor: pointer;
+  font-family: 'Press Start 2P', monospace;
+  min-height: 44px;
+  min-width: 52px;
+  border-radius: 0;
+  transition: background 0.15s, transform 0.15s, box-shadow 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bs-fillshelf-btn {
+  border-color: #d4a574;
+  color: #f5e6c8;
+}
+
+.bs-chiptune-btn:active,
+.bs-fillshelf-btn:active {
+  transform: scale(0.96);
+}
+
+.bs-chiptune-on {
+  background: rgba(128, 222, 234, 0.12);
+  box-shadow: inset 0 0 0 2px rgba(128, 222, 234, 0.12);
+}
+
+.bs-chiptune-label,
+.bs-fillshelf-label {
+  font-size: 8px; /* Press Start 2P floor for legibility (was 5px) */
+  letter-spacing: 0.5px;
+}
+
+/* ── Surprise Me button ── */
+.bs-surprise-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: none;
+  border: 2px solid #ffd700;
+  padding: 6px 10px;
+  color: #ffd700;
+  font-size: 14px;
+  cursor: pointer;
+  font-family: 'Press Start 2P', monospace;
+  min-height: 44px;
+  min-width: 52px;
+  border-radius: 0;
+  transition: background 0.15s, box-shadow 0.3s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bs-surprise-btn:active {
+  background: rgba(255, 215, 0, 0.15);
+  transform: scale(0.96);
+}
+
+.bs-surprise-label {
+  font-size: 8px; /* Press Start 2P floor for legibility (was 5px) */
+  color: #ffd700;
+  letter-spacing: 0.5px;
+}
+
+.bs-pixel-icon {
+  position: relative;
+  display: block;
+  width: 18px;
+  height: 18px;
+  image-rendering: pixelated;
+  flex-shrink: 0;
+}
+
+.bs-pixel-icon-die {
+  background: #f5e6c8;
+  border: 2px solid #ffd700;
+  box-shadow: inset -3px -3px 0 rgba(0, 0, 0, 0.22);
+}
+
+.bs-pixel-icon-die::before,
+.bs-pixel-icon-die::after {
+  content: '';
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  background: #2a1400;
+  box-shadow: 8px 8px 0 #2a1400;
+}
+
+.bs-pixel-icon-die::before { top: 3px; left: 3px; }
+
+.bs-pixel-icon-die::after  { right: 3px; bottom: 3px; }
+
+.bs-pixel-icon-note::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 2px;
+  width: 4px;
+  height: 13px;
+  background: #80deea;
+  box-shadow: 7px -2px 0 #80deea;
+}
+
+.bs-pixel-icon-note::after {
+  content: '';
+  position: absolute;
+  left: 1px;
+  bottom: 1px;
+  width: 7px;
+  height: 5px;
+  background: #80deea;
+  box-shadow: 7px -2px 0 #80deea;
+}
+
+.bs-pixel-icon-speaker {
+  border-left: 7px solid #80deea;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  margin-top: 3px;
+}
+
+.bs-pixel-icon-speaker::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 1px;
+  width: 5px;
+  height: 10px;
+  border-right: 2px solid #80deea;
+  border-top: 2px solid #80deea;
+  border-bottom: 2px solid #80deea;
+}
+
+.bs-pixel-icon-scroll::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 2px;
+  width: 11px;
+  height: 14px;
+  background: #f5e6c8;
+  border: 2px solid #d4a574;
+  box-shadow: inset 0 4px 0 rgba(139, 105, 20, 0.22);
+}
+
+/* ── Surprise Me speech bubble extras ── */
+.bs-bt-speech-surprise {
+  background: linear-gradient(135deg, #1a0a2e, #3a1f5e) !important;
+  border-color: #ffd700 !important;
+  color: #ffd700 !important;
+  min-width: 140px;
+  text-align: center;
+}
+
+.bs-surprise-view-btn {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 4px 12px;
+  border: 1px solid #ffd700;
+  background: rgba(255, 215, 0, 0.15);
+  color: #ffd700;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bs-surprise-view-btn:active {
+  background: rgba(255, 215, 0, 0.3);
+}
+
+/* ── Joke easter egg speech bubble ── */
+.bs-bt-speech-joke {
+  background: linear-gradient(135deg, #2e1a0a, #5e3a1f) !important;
+  border-color: #ff8a65 !important;
+  color: #ffe0b2 !important;
+  max-width: 220px;
+  font-size: 7px !important;
+  line-height: 1.4;
+}
+
+/* ── Happy Hour neon mode ── */
+.bs-happy-hour {
+  animation: bsHappyHourPulse 3s ease-in-out infinite;
+}
+
+.bs-happy-hour .saloon-stage {
+  box-shadow: inset 0 0 40px rgba(255, 215, 0, 0.08), inset 0 0 80px rgba(255, 64, 129, 0.05);
+}
+
+.bs-happy-hour .bs-neon-text {
+  animation: bsNeonFlickerGold 2s ease-in-out infinite;
+}
+
+.bs-happy-hour .bs-bar-surface {
+  box-shadow: 0 0 15px rgba(255, 215, 0, 0.15);
+}
+
+/* Happy Hour — bar rail glow */
+.bs-happy-hour .bs-bar-rail {
+  box-shadow: 0 0 8px rgba(255, 215, 0, 0.25), 0 -2px 12px rgba(255, 64, 129, 0.15);
+}
+
+/* Happy Hour — stool seat glow */
+.bs-happy-hour .saloon-stool rect:first-child {
+  filter: drop-shadow(0 0 3px rgba(255, 215, 0, 0.3));
+}
+
+/* Happy Hour — bottle label shimmer */
+.bs-happy-hour .bs-bottle-label {
+  animation: bsHHLabelShimmer 4s ease-in-out infinite;
+}
+
+/* Happy Hour — coaster glow */
+.bs-happy-hour .bs-bar-coaster {
+  box-shadow: 0 0 6px rgba(255, 215, 0, 0.2);
+}
+
+/* ── Bottle entrance animation on page change ── */
+.bs-page-left .bs-bottle-slot,
+.bs-page-right .bs-bottle-slot {
+  animation: bsBottleEntrance 0.4s cubic-bezier(0.25, 1, 0.5, 1) both;
+}
+
+.bs-page-left .bs-bottle-slot:nth-child(1) { animation-delay: 0.02s; }
+
+.bs-page-left .bs-bottle-slot:nth-child(2) { animation-delay: 0.06s; }
+
+.bs-page-left .bs-bottle-slot:nth-child(3) { animation-delay: 0.10s; }
+
+.bs-page-left .bs-bottle-slot:nth-child(4) { animation-delay: 0.14s; }
+
+.bs-page-left .bs-bottle-slot:nth-child(5) { animation-delay: 0.18s; }
+
+.bs-page-right .bs-bottle-slot:nth-child(1) { animation-delay: 0.18s; }
+
+.bs-page-right .bs-bottle-slot:nth-child(2) { animation-delay: 0.14s; }
+
+.bs-page-right .bs-bottle-slot:nth-child(3) { animation-delay: 0.10s; }
+
+.bs-page-right .bs-bottle-slot:nth-child(4) { animation-delay: 0.06s; }
+
+.bs-page-right .bs-bottle-slot:nth-child(5) { animation-delay: 0.02s; }
+
+/* ── Legendary bottle ambient glow pulse ── */
+.bs-bottle-legendary .bs-bottle-idle {
+  animation: bsBottleIdleWobble 4s ease-in-out infinite, bsLegendaryGlow 2.5s ease-in-out infinite;
+}
+
+/* ── Rare bottle subtle blue shimmer ── */
+.bs-bottle-rare .bs-bottle-idle {
+  animation: bsBottleIdleWobble 4s ease-in-out infinite, bsRareShimmer 3s ease-in-out infinite;
+}
+
+.bs-title {
+  font-size: 14px;
+  margin: 0;
+  flex-shrink: 0;
+  min-width: 92px;
+}
+
+.bs-neon-text {
+  font-family: 'Press Start 2P', monospace;
+  animation: bsNeonFlicker 4s ease-in-out infinite;
+}
+
+.bs-bottle-count {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  min-width: 52px;
+}
+
+.bs-count-num {
+  font-size: 16px;
+  color: #ffcc02;
+}
+
+.bs-count-label {
+  font-size: 7px;
+  color: #888;
+  margin-top: 2px;
+}
+
+.bs-backbar {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Radial glow at top (ceiling wash) */
+.bs-backbar-glow {
+  position: absolute;
+  top: 0;
+  left: 5%;
+  right: 5%;
+  height: 60%;
+  background: radial-gradient(ellipse at center top,
+    rgba(156, 39, 176, 0.12) 0%,
+    rgba(255, 64, 129, 0.04) 40%,
+    transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Warm amber light wash from left (as if a lamp) */
+.bs-ambient-left {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 35%;
+  height: 100%;
+  background: radial-gradient(ellipse at left center,
+    rgba(255, 150, 30, 0.06) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Cool blue light wash from right (neon effect) */
+.bs-ambient-right {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 35%;
+  height: 100%;
+  background: radial-gradient(ellipse at right center,
+    rgba(64, 130, 255, 0.05) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* City skyline drawn purely in CSS pixel art */
+.bs-city-skyline {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 45%;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.18;
+  background:
+    /* Building silhouettes using gradients */
+    linear-gradient(to top, #6a0dad 0%, #6a0dad 60%, transparent 60%) 0 0 / 40px 80px no-repeat,
+    linear-gradient(to top, #4a0080 0%, #4a0080 45%, transparent 45%) 42px 0 / 25px 55px no-repeat,
+    linear-gradient(to top, #5a0090 0%, #5a0090 70%, transparent 70%) 69px 0 / 35px 90px no-repeat,
+    linear-gradient(to top, #3a0060 0%, #3a0060 35%, transparent 35%) 106px 0 / 30px 45px no-repeat,
+    linear-gradient(to top, #6a0dad 0%, #6a0dad 55%, transparent 55%) 138px 0 / 45px 70px no-repeat,
+    linear-gradient(to top, #4a0080 0%, #4a0080 80%, transparent 80%) 185px 0 / 20px 100px no-repeat,
+    linear-gradient(to top, #5a0090 0%, #5a0090 40%, transparent 40%) 207px 0 / 50px 50px no-repeat,
+    linear-gradient(to top, #3a0060 0%, #3a0060 65%, transparent 65%) 259px 0 / 38px 82px no-repeat,
+    linear-gradient(to top, #6a0dad 0%, #6a0dad 48%, transparent 48%) 299px 0 / 28px 60px no-repeat,
+    linear-gradient(to top, #4a0080 0%, #4a0080 72%, transparent 72%) 329px 0 / 42px 92px no-repeat,
+    /* Ground glow */
+    linear-gradient(to top, rgba(106, 13, 173, 0.4) 0%, transparent 20%);
+}
+
+/* ── Barback LED Menu Display ── */
+.bs-barback-display {
+  flex-shrink: 0;
+  padding: 6px 12px 4px;
+  position: relative;
+  z-index: 2;
+}
+
+.bs-display-inner {
+  position: relative;
+  background: #080808;
+  border: 2px solid #2a2a2a;
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow:
+    0 0 0 1px #111,
+    0 0 12px rgba(0, 0, 0, 0.8),
+    inset 0 0 20px rgba(0, 0, 0, 0.6);
+}
+
+/* CRT scanline overlay */
+.bs-display-scanline {
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    transparent 0px, transparent 1px,
+    rgba(0, 0, 0, 0.25) 1px, rgba(0, 0, 0, 0.25) 2px
+  );
+  pointer-events: none;
+  z-index: 3;
+}
+
+.bs-display-toprow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 4px 12px 2px;
+  border-bottom: 1px solid #1a1a1a;
+}
+
+.bs-display-title-text {
+  font-size: 7px;
+  color: #ffcc02;
+  letter-spacing: 1px;
+  opacity: 0.85;
+}
+
+/* LED indicator dots */
+.bs-display-led {
+  font-size: 8px;
+  animation: bsLedBlink 2s ease-in-out infinite;
+}
+
+.bs-led-grn { color: #4caf50; }
+
+.bs-led-red { color: #f44336; animation-delay: 1s; }
+
+.bs-display-body {
+  padding: 5px 10px 6px;
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+}
+
+/* Recipe view on the display */
+.bs-display-recipe {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  animation: bsDisplaySlideIn 0.3s ease-out;
+}
+
+.bs-display-drink-name {
+  font-size: 9px;
+  color: #ffcc02;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bs-display-recipe-ings {
+  font-size: 6px;
+  color: #888;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Scrolling marquee when idle */
+.bs-display-marquee-wrap {
+  overflow: hidden;
+  width: 100%;
+}
+
+.bs-display-marquee {
+  display: inline-block;
+  font-size: 7px;
+  color: #ff4081;
+  white-space: nowrap;
+  animation: bsMarqueeScroll 20s linear infinite;
+  opacity: 0.8;
+}
+
+/* Glass display case frame */
+.bs-display-case {
+  position: relative;
+  flex: 1;
+  margin: 0 8px 4px;
+  border: 3px solid #3a1f6e;
+  border-radius: 4px;
+  overflow: hidden;
+  background: linear-gradient(180deg,
+    rgba(20, 5, 40, 0.85) 0%,
+    rgba(10, 2, 25, 0.92) 100%
+  );
+  box-shadow:
+    0 0 0 1px #1a0a30,
+    0 0 20px rgba(100, 0, 200, 0.2),
+    inset 0 0 30px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(180, 100, 255, 0.15);
+}
+
+/* Glass sheen top-left highlight */
+.bs-display-case::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 40%; height: 100%;
+  background: linear-gradient(135deg,
+    rgba(255,255,255,0.04) 0%,
+    transparent 50%
+  );
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Glass bottom light strip */
+.bs-display-case::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 5%; right: 5%;
+  height: 2px;
+  background: linear-gradient(to right, transparent, rgba(150, 80, 255, 0.6), transparent);
+  z-index: 10;
+}
+
+/* ── Bottle shelves container ── */
+.bs-backbar-shelves {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 4px;
+  position: relative;
+  z-index: 1;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.bs-backbar-shelves.bs-page-left  { animation: bsPageSlideLeft  0.35s ease-out; }
+
+.bs-backbar-shelves.bs-page-right { animation: bsPageSlideRight 0.35s ease-out; }
+
+/* Individual shelf row */
+.bs-shelf-row {
+  margin-bottom: 2px;
+  position: relative;
+  animation: bsShelfSlideIn 0.4s ease-out both;
+}
+
+.bs-shelf-row:nth-child(1) { animation-delay: 0.05s; }
+
+.bs-shelf-row:nth-child(2) { animation-delay: 0.15s; }
+
+.bs-shelf-row:nth-child(3) { animation-delay: 0.25s; }
+
+.bs-bottles-row {
+  display: flex;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px 4px 0;
+  min-height: 66px;
+  align-items: flex-end;
+}
+
+/* Wooden shelf plank with neon glow */
+.bs-shelf-plank {
+  height: 6px;
+  background: linear-gradient(to bottom, #8B4513 0%, #5D2E0C 50%, #3d1a08 100%);
+  border-top: 2px solid #CD853F;
+  box-shadow:
+    0 2px 6px rgba(0,0,0,0.6),
+    0 -1px 3px rgba(255, 180, 80, 0.15),
+    inset 0 1px 0 rgba(255,200,100,0.2);
+  position: relative;
+}
+
+/* Neon under-shelf glow (like LED strip lighting) */
+.bs-shelf-plank::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: 10%;
+  right: 10%;
+  height: 4px;
+  background: rgba(180, 80, 255, 0.35);
+  filter: blur(3px);
+  border-radius: 50%;
+}
+
+/* Page navigation */
+.bs-page-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 6px 0 4px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.bs-page-btn {
+  background: none;
+  border: 2px solid #7c3aed;
+  color: #a855f7;
+  font-size: 18px;
+  padding: 8px 16px;
+  cursor: pointer;
+  min-height: 48px;
+  min-width: 48px;
+  border-radius: 2px;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+  font-family: inherit;
+}
+
+.bs-page-btn:not(:disabled):hover,
+.bs-page-btn:not(:disabled):active {
+  background: rgba(124, 58, 237, 0.25);
+  border-color: #a855f7;
+  color: #c084fc;
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.4);
+  transform: scale(1.08);
+}
+
+.bs-page-btn:disabled {
+  opacity: 0.2;
+  cursor: default;
+}
+
+.bs-page-dots { display: flex; gap: 6px; align-items: center; }
+
+.bs-page-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid #555;
+  background: none;
+  cursor: pointer;
+  padding: 0;
+  transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s, opacity 0.2s, transform 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bs-page-dot.active {
+  background: #ff4081;
+  border-color: #ff4081;
+  box-shadow: 0 0 6px #ff408180;
+}
+
+/* ── Bottle slot ── */
+.bs-bottle-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  min-width: 48px;
+  min-height: 60px;
+  position: relative;
+}
+
+.bs-bottle-slot:active { transform: scale(0.92); }
+
+.bs-bottle-slot.bs-selected { filter: brightness(1.2); }
+
+.bs-bottle-slot.bs-selected::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 6px; height: 6px;
+  background: #ff4081;
+  border-radius: 50%;
+  box-shadow: 0 0 6px #ff4081, 0 0 12px #ff408180;
+}
+
+.bs-glow {
+  filter: drop-shadow(0 0 4px currentColor) drop-shadow(0 0 8px currentColor);
+}
+
+.bs-bottle-slot.bs-selected .bs-bottle-svg {
+  filter: drop-shadow(0 0 6px #ff4081) drop-shadow(0 0 12px #ff408166);
+}
+
+.bs-empty-slot {
+  cursor: pointer;
+  opacity: 0.25;
+  transition: opacity 0.3s, transform 0.2s;
+}
+
+.bs-empty-slot:hover, .bs-empty-slot:active {
+  opacity: 0.5;
+  transform: scale(1.08);
+}
+
+.bs-empty-bottle-svg {
+  animation: bsEmptyPulse 3s ease-in-out infinite;
+}
+
+.bs-empty-bottle {
+  width: 20px; height: 48px;
+  border: 1px dashed #555;
+  border-radius: 2px;
+  opacity: 0.3;
+}
+
+/* Bottle idle wobble animation */
+.bs-bottle-idle {
+  transition: opacity 0.3s;
+  animation: bsBottleIdleWobble 4s ease-in-out infinite;
+}
+
+.bs-shelf-wobble-0 .bs-bottle-idle { animation-delay: 0s; }
+
+.bs-shelf-wobble-1 .bs-bottle-idle { animation-delay: 1.3s; }
+
+.bs-shelf-wobble-2 .bs-bottle-idle { animation-delay: 2.6s; }
+
+/* Bottle SVG */
+.bs-bottle-svg {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
+  transition: filter 0.2s, transform 0.2s;
+  image-rendering: pixelated;
+}
+
+.bs-bottle-svg.bs-glow {
+  filter: drop-shadow(0 0 6px rgba(255, 64, 129, 0.6)) drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
+  transform: translateY(-3px);
+}
+
+.bs-bottle-label {
+  font-size: 5.5px;
+  color: #aaa;
+  margin-top: 2px;
+  max-width: 56px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bs-bar-top {
+  position: relative;
+  height: 190px;
+  z-index: 10;
+  /* overflow: hidden; -- removed to allow bartender quips to show above */
+}
+
+/* ── Bartender sprite — z-index: 2 ─────────────────────────────────────────
+   Layer contract:  [back-shelf: 1] → [BARTENDER: 2] → [bar-surface: 5]
+   The bartender stands BETWEEN the back shelf and the bar countertop.
+   His lower body clips behind .bs-bar-surface (height 78px from bottom),
+   giving the illusion he's standing physically behind the mahogany counter. */
+.bs-bartender-wrap {
+  position: absolute;
+  bottom: 0;    /* feet flush with stage floor; counter (110px) hides lower body */
+  left: 0;
+  z-index: 2;   /* above back-shelf (1), below bar-surface (5) */
+  pointer-events: none;
+  will-change: transform;
+}
+
+.bs-bartender-svg {
+  image-rendering: pixelated;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
+}
+
+/* ── Bar counter surface — z-index:5 overlaps bartender (z-index:2) ─────── */
+/* Layering contract: [back-shelf z:1] → [bartender z:2] → [bar-surface z:5] */
+.bs-bar-surface {
+  position: absolute;
+  /* Rich mahogany: warm mid-brown lip fades to deep espresso at bottom */
+  background: linear-gradient(
+    to bottom,
+    #6d4c41 0%,
+    #5d4037 30%,
+    #4e342e 70%,
+    #3e2723 100%
+  );
+  border-top: 6px solid #a1887f;   /* polished edge highlight */
+  box-shadow:
+    inset 0 8px 24px rgba(0, 0, 0, 0.5),
+    inset 0 -2px 8px rgba(0, 0, 0, 0.3),
+    0 -2px 12px rgba(0, 0, 0, 0.4); /* shadow cast upward by bar */
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 110px; /* chest-high counter lip clips bartender's lower body */
+  z-index: 5;
+  overflow: hidden;
+}
+
+/* Polished top edge highlight */
+.bs-bar-surface::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 4px;
+  background: linear-gradient(90deg,
+    rgba(255, 255, 255, 0.04),
+    rgba(255, 255, 255, 0.15),
+    rgba(255, 255, 255, 0.04));
+}
+
+/* Rich wood grain — two overlapping repeating gradients for depth */
+.bs-bar-surface::after {
+  content: '';
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      transparent         0px,  transparent         14px,
+      rgba(0,0,0,0.06)    14px, rgba(0,0,0,0.06)    15px,
+      transparent         15px, transparent          28px,
+      rgba(0,0,0,0.03)    28px, rgba(0,0,0,0.03)    29px
+    ),
+    repeating-linear-gradient(
+      88deg,
+      transparent         0px,  transparent          40px,
+      rgba(255,255,255,0.025) 40px, rgba(255,255,255,0.025) 41px
+    );
+}
+
+/* Bar top coasters — sit on top of the counter surface */
+.bs-bar-coaster {
+  position: absolute;
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: radial-gradient(circle, rgba(130, 95, 55, 0.8) 0%, rgba(80, 50, 30, 0.5) 100%);
+  top: 6px; /* near the top edge of the bar surface */
+}
+
+.bs-bar-coaster-1 { left: 14%; }
+
+.bs-bar-coaster-2 { right: 18%; }
+
+.bs-bar-napkin {
+  position: absolute;
+  width: 18px; height: 12px;
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 1px;
+  top: 12px;
+  right: 10%;
+}
+
+.bs-tip-jar {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  width: 48px;
+  height: 58px;
+  transform: translateX(-50%);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  z-index: 12;
+  pointer-events: auto;
+  image-rendering: pixelated;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.bs-tip-jar:focus-visible {
+  outline: 2px solid #ffd700;
+  outline-offset: 3px;
+}
+
+.bs-tip-jar:active {
+  transform: translateX(-50%) translateY(1px) scale(0.96);
+}
+
+.bs-tip-jar-svg {
+  position: absolute;
+  left: 3px;
+  bottom: 0;
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.45));
+}
+
+.bs-tip-coin-slot {
+  position: absolute;
+  left: 17px;
+  top: 3px;
+  width: 14px;
+  height: 3px;
+  background: #2a1400;
+  z-index: 2;
+}
+
+.bs-tip-coin {
+  position: absolute;
+  left: 20px;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+  background: #ffd166;
+  border: 2px solid #b8860b;
+  z-index: 4;
+  animation: bsTipCoinDrop 0.58s steps(5) both;
+}
+
+.bs-tip-count {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  min-width: 13px;
+  height: 10px;
+  padding: 2px 3px;
+  background: #2a1400;
+  color: #ffd166;
+  border: 1px solid #8b6914;
+  font-size: 5px;
+  line-height: 1;
+}
+
+/* Brass foot rail — inside bs-bar-top, below the counter */
+.bs-bar-rail {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 8px;
+  background: linear-gradient(90deg, #8d6e0a, #b8860b, #8d6e0a);
+  box-shadow: 0 -1px 4px rgba(0,0,0,0.4), 0 2px 6px rgba(0,0,0,0.5);
+  z-index: 6; /* above bar surface so it reads as a front edge */
+}
+
+/* Walk bob */
+.bs-bt-walk {
+  animation: bsBtBob 0.2s ease-in-out infinite alternate;
+}
+
+/* Present bounce */
+.bs-bt-present {
+  animation: bsBtBounce 0.6s ease-out;
+}
+
+/* Swig celebratory bounce (full body) */
+.bs-bt-swig-bounce {
+  animation: bsBtSwigBounce 0.5s ease-out;
+}
+
+/* Swig arm raise */
+.bs-bt-swig-arm {
+  transform-origin: 30px 22px;
+  animation: bsBtSwigArm 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Head tilt back when swigging */
+.bs-bt-head-tilt {
+  transform-origin: 20px 15px;
+  animation: bsBtHeadTilt 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Swig bottle liquid drip */
+.bs-bt-drip {
+  animation: bsBtDrip 0.6s ease-in-out infinite alternate;
+}
+
+/* Swig bottle appear */
+.bs-bt-swig-bottle {
+  animation: bsBtSwigBottleIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Blink (eyes) */
+.bs-bt-blink {
+  animation: bsBtBlink 4s ease-in-out infinite;
+}
+
+/* Wipe arm */
+.bs-bt-wipe-arm {
+  animation: bsBtWipe 1.2s ease-in-out infinite;
+  transform-origin: 8px 26px;
+}
+
+/* Held bottle wobble */
+.bs-bt-held-bottle {
+  animation: bsBtBottleWobble 0.5s ease-out;
+}
+
+/* Container moves with the bartender via translateX */
+.bs-quips-layer {
+  position: absolute;
+  bottom: 238px; /* floats well above the bartender's hat — clears sprite + door */
+  left: 0;
+  width: 120px;  /* mirrors bartender SVG width */
+  z-index: 100;
+  pointer-events: none;
+  /* No flex centering — children use absolute positioning */
+}
+
+/* ── BASE SPEECH BUBBLE ─────────────────────────────────────── */
+/* --bubble-x custom prop controls horizontal anchor.
+   Overridden by --left / --right modifier classes.            */
+.bs-bt-speech {
+  --bubble-x: -50%;     /* default: centered (fallback only) */
+  position: absolute;
+  bottom: 0;
+  left: 50%;            /* anchor at horizontal center of layer */
+  transform: translateX(var(--bubble-x));
+  background: #fffef0;
+  color: #1a1200;
+  font-size: 8px;
+  padding: 8px 13px;
+  border-radius: 10px;
+  border: 2px solid rgba(0, 0, 0, 0.12);
+  white-space: nowrap;
+  max-width: min(240px, 60vw); /* keeps bubble beside bartender, not over it */
+  white-space: normal;         /* allow wrap within max-width */
+  box-shadow:
+    0 4px 18px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  animation: bsBtSpeechIn 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+  font-family: 'Press Start 2P', monospace;
+  pointer-events: none;
+  line-height: 1.6;
+  z-index: 200; /* ensure bubble above all bar layers */
+}
+
+/* Down-pointing triangle tail — positioned by modifier classes */
+.bs-bt-speech::after {
+  content: '';
+  position: absolute;
+  bottom: -10px;
+  width: 0;
+  height: 0;
+  border: 6px solid transparent;
+  border-top-color: #fffef0;
+}
+
+.bs-bt-speech--left  { --bubble-x: calc(-100% - 12px); }
+
+/* clear left of sprite */
+.bs-bt-speech--right { --bubble-x: calc(  0% + 12px); }
+
+/* clear right of sprite */
+/* Tail aligns toward the bartender's face area */
+.bs-bt-speech--left::after  { right: 18px; left: auto;   }
+
+/* tail points right */
+.bs-bt-speech--right::after { left: 18px;  right: auto;  }
+
+/* tail points left  */
+/* ── VARIANT FLAVOURS ── */
+/* Idle quip — slow fade in/out */
+.bs-bt-speech-idle {
+  animation: bsBtSpeechPulse 5s ease-in-out infinite;
+}
+
+/* Swig quip — golden, festive */
+.bs-bt-speech-swig {
+  background: #ffcc02;
+  color: #2a1400;
+  font-size: 9px;
+  border-color: #b8860b;
+  box-shadow:
+    0 4px 20px rgba(255, 204, 2, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  animation: bsBtSwigSpeech 1.9s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+.bs-bt-speech-swig::after { border-top-color: #ffcc02; }
+
+/* Hat-tip quip */
+.bs-bt-speech-tip {
+  background: #e8f5e9;
+  color: #1a3520;
+  border-color: #a5d6a7;
+}
+
+.bs-bt-speech-tip::after { border-top-color: #e8f5e9; }
+
+.bs-detail-card {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  border: 2px solid #3a1f5e;
+  border-bottom: none;
+  border-radius: 12px 12px 0 0;
+  padding: 16px;
+  max-width: 600px;
+  margin: 0 auto;
+  z-index: 555;
+  animation: slideUp 0.25s cubic-bezier(0.32, 0.72, 0, 1);
+  box-shadow: 0 -4px 24px rgba(156, 39, 176, 0.25);
+}
+
+.bs-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.bs-detail-bottle-preview {
+  flex-shrink: 0;
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+}
+
+.bs-detail-info { flex: 1; min-width: 0; }
+
+.bs-detail-name {
+  font-size: 11px;
+  font-weight: 700;
+  color: #e0e0e0;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.bs-detail-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+.bs-detail-cat {
+  font-size: 7px;
+  background: #7b1fa2;
+  color: white;
+  padding: 3px 8px;
+}
+
+.bs-detail-ing-count { font-size: 7px; color: #999; }
+
+.bs-detail-close {
+  width: 36px;
+  height: 36px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid #555;
+  color: #aaa;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+  border-radius: 4px;
+}
+
+.bs-detail-ingredients {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.bs-ing-chip {
+  font-size: 7px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid #444;
+  padding: 5px 9px;
+  color: #ccc;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.bs-ing-owned {
+  background: rgba(76, 175, 80, 0.15);
+  border-color: #4caf50;
+  color: #a5d6a7;
+}
+
+.bs-ing-missing {
+  background: rgba(255, 152, 0, 0.1);
+  border-color: #ff9800;
+  color: #ffcc80;
+}
+
+.bs-ing-check { color: #4caf50; font-size: 8px; }
+
+.bs-ing-more { font-size: 7px; color: #888; padding: 4px; }
+
+/* ── Ingredient progress bar ── */
+.bs-progress-section {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 4px;
+}
+
+.bs-progress-bar-wrap {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.bs-progress-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.5s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.bs-progress-label {
+  font-size: 6px;
+  color: #aaa;
+  white-space: nowrap;
+  font-family: 'Press Start 2P', monospace;
+}
+
+/* ── Quest scroll button ── */
+.bs-quest-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: rgba(255, 215, 0, 0.08);
+  border: 2px solid #ffd700;
+  color: #ffd700;
+  font-size: 7px;
+  font-family: 'Press Start 2P', monospace;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s;
+}
+
+.bs-quest-btn:active {
+  background: rgba(255, 215, 0, 0.2);
+  transform: scale(0.97);
+}
+
+/* ── Rarity system ── */
+.bs-rarity-badge {
+  margin-left: 4px;
+  font-size: 10px;
+}
+
+.bs-rarity-legendary {
+  color: #ffd700;
+  text-shadow: 0 0 6px rgba(255, 215, 0, 0.5);
+  animation: bsRarityPulse 2s ease-in-out infinite;
+}
+
+.bs-rarity-rare {
+  color: #42a5f5;
+  text-shadow: 0 0 4px rgba(66, 165, 245, 0.4);
+}
+
+/* Rarity glow on bottle slots */
+.bs-bottle-legendary .bs-bottle-svg {
+  filter: drop-shadow(0 0 4px rgba(255, 215, 0, 0.4));
+}
+
+.bs-bottle-rare .bs-bottle-svg {
+  filter: drop-shadow(0 0 3px rgba(66, 165, 245, 0.3));
+}
+
+/* Detail card rarity borders */
+.bs-rarity-legendary {
+  box-shadow: 0 -4px 24px rgba(255, 215, 0, 0.2);
+}
+
+.bs-rarity-rare {
+  box-shadow: 0 -4px 24px rgba(66, 165, 245, 0.2);
+}
+
+/* ── "I HAVE THESE" pantry button ── */
+.bs-action-pantry {
+  border-color: #4caf50;
+  color: #4caf50;
+  background: rgba(76, 175, 80, 0.1);
+}
+
+.bs-action-pantry:active { background: rgba(76, 175, 80, 0.25); }
+
+/* ── Empty state import button ── */
+.bs-empty-import-btn {
+  margin-top: 16px;
+  padding: 16px 20px;
+  min-height: 44px;
+  border: 2px solid #ff4081;
+  background: rgba(255, 64, 129, 0.1);
+  color: #ff4081;
+  font-size: 8px;
+  font-family: 'Press Start 2P', monospace;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bs-empty-import-btn:active { background: rgba(255, 64, 129, 0.25); }
+
+.bs-detail-actions {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+}
+
+.bs-action-btn {
+  flex: 1;
+  padding: 12px 10px;
+  border: 2px solid;
+  font-size: 9px;
+  cursor: pointer;
+  text-align: center;
+  font-family: 'Press Start 2P', monospace;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+}
+
+.bs-action-btn:active { transform: scale(0.96); }
+
+.bs-action-view {
+  border-color: #ff4081;
+  color: #ff4081;
+  background: rgba(255, 64, 129, 0.1);
+}
+
+.bs-action-view:active { background: rgba(255, 64, 129, 0.25); }
+
+.bs-action-madeit {
+  border-color: #ffd166;
+  color: #ffd166;
+  background: rgba(255, 209, 102, 0.1);
+}
+
+.bs-action-madeit:active {
+  background: rgba(255, 209, 102, 0.24);
+}
+
+.bs-tipsy-notice {
+  margin-top: 10px;
+  color: #ffd166;
+  font-size: 7px;
+  line-height: 1.5;
+  text-align: center;
+  opacity: 0.85;
+}
+
+.bs-tipsy .saloon-stage {
+  filter: saturate(1.08);
+}
+
+/* Swipe hint */
+.bs-detail-swipe-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 0 8px;
+}
+
+.bs-detail-swipe-bar {
+  width: 36px; height: 4px;
+  background: #555;
+  border-radius: 2px;
+}
+
+.bs-detail-swipe-text {
+  font-size: 7px;
+  color: #555;
+  font-family: 'Press Start 2P', monospace;
+}
+
+/* ── Empty state ── */
+.bs-empty-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+}
+
+.bs-empty-neon  { font-size: 24px; margin-bottom: 16px; }
+
+.bs-empty-msg   { font-size: 8px; color: #888; line-height: 1.8; }
+
+/* ── Dark theme ── */
+[data-theme="dark"] .bs-container {
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0px, transparent 15px,
+      rgba(0, 0, 0, 0.22) 15px, rgba(0, 0, 0, 0.22) 17px
+    ),
+    repeating-linear-gradient(
+      to right,
+      transparent 0px, transparent 32px,
+      rgba(0, 0, 0, 0.12) 32px, rgba(0, 0, 0, 0.12) 34px
+    ),
+    linear-gradient(180deg, #050108 0%, #08041a 20%, #050508 55%, #0a0603 100%);
+}
+
+[data-theme="dark"] .bs-bt-speech {
+  background: #2a2a2a;
+  color: #e0e0e0;
+}
+
+[data-theme="dark"] .bs-bt-speech::after { border-top-color: #2a2a2a; }
+
+[data-theme="dark"] .bs-bt-speech-swig {
+  background: #cc9900;
+  color: #fff;
+}
+
+[data-theme="dark"] .bs-bt-speech-swig::after { border-top-color: #cc9900; }
+
+@media (min-width: 640px) {
+.bs-bottle-slot:hover .bs-bottle-svg { transform: translateY(-4px); }
+
+.bs-action-btn:hover                 { opacity: 0.85; }
+
+.bs-page-btn:hover:not(:disabled)    { border-color: #aaa; color: #fff; }
+
+.bs-back-btn:hover                   { background: #4caf5018; }
+}
+
+/* ── Saloon return door → My Bar: a full-height door on the back wall whose
+   base is hidden behind the bar counter (saloon-fg), so it reads as a real
+   doorway you'd walk through. z-index handled by `.saloon-mid .saloon-exit-door`. */
+.saloon-exit-door {
+  position: absolute;
+  left: 9%;                 /* left side of the back wall, clear of the bartender */
+  bottom: 54px;             /* lower part sits behind the bar counter */
+  width: 84px;
+  height: 198px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0;
+  border: 4px solid #160c04;
+  border-radius: 12px 12px 0 0;
+  background:
+    repeating-linear-gradient(90deg, rgba(0,0,0,0.22) 0 1px, transparent 1px 11px),
+    linear-gradient(180deg, #6b4a26 0%, #4e3419 60%, #3a2510 100%);
+  box-shadow: 4px 0 12px rgba(0,0,0,0.5), inset 0 0 18px rgba(0,0,0,0.55);
+  cursor: pointer;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.saloon-exit-lintel {
+  width: 100%;
+  padding: 5px 2px 4px;
+  background: #160c04;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  color: #ffe082;
+  letter-spacing: 0.5px;
+  text-align: center;
+  text-shadow: 0 1px 0 #000;
+}
+
+.saloon-exit-panel {
+  position: relative;
+  flex: 1;
+  width: 80%;
+  margin-top: 9px;
+  border: 2px solid #2a1a0a;
+  border-radius: 8px 8px 0 0;
+  background: radial-gradient(circle at 50% 24%, #5a4a86 0%, #2a1846 46%, #14081f 100%);
+  overflow: hidden;
+}
+
+.saloon-exit-glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 34%, rgba(255, 224, 130, 0.42) 0%, transparent 62%);
+  animation: saloonDoorGlow 2.6s ease-in-out infinite;
+}
+
+.saloon-exit-knob {
+  position: absolute;
+  right: 6px;
+  top: 48%;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #ffd54f;
+  box-shadow: 0 0 5px #ffca28;
+}
+
+@media (prefers-reduced-motion: reduce) {
+.saloon-exit-glow { animation: none !important; }
+}
+
+/* ── Stage container ──────────────────────────────────────────────────────── */
+.saloon-stage {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  min-height: 430px;
+  background: #1a0f0a;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+/* ── Layer 1: Background ─────────────────────────────────────────────────── */
+.saloon-bg {
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.saloon-brick-wall {
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 12px,
+      rgba(0,0,0,0.18) 12px,
+      rgba(0,0,0,0.18) 13px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 28px,
+      rgba(0,0,0,0.14) 28px,
+      rgba(0,0,0,0.14) 29px
+    ),
+    linear-gradient(180deg, #3d1a0a 0%, #2a1108 60%, #1a0c06 100%);
+  background-size: 58px 13px, 58px 13px, 100% 100%;
+}
+
+/* Amber radial vignette for warmth */
+.saloon-brick-wall::after {
+  content: '';
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0;
+  background: radial-gradient(ellipse 80% 60% at 50% 30%,
+    rgba(180,90,20,0.18) 0%,
+    transparent 70%
+  );
+}
+
+/* Decorative wall frames */
+.saloon-frames {
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0;
+}
+
+.saloon-frame {
+  position: absolute;
+  border: 3px solid #6b4220;
+  box-shadow: inset 0 0 0 2px #3d1f08, 0 0 0 1px #8b5a2b;
+}
+
+.saloon-frame-1 { top: 8%;  left: 6%;  width: 40px; height: 32px; }
+
+.saloon-frame-2 { top: 8%;  right: 6%; width: 40px; height: 32px; }
+
+.saloon-frame-3 { top: 10%; left: 50%; transform: translateX(-50%); width: 48px; height: 28px; }
+
+/* ── Hanging lanterns ────────────────────────────────────────────────────── */
+.saloon-lantern {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  animation: lanternSway 6s ease-in-out infinite;
+  transform-origin: top center;
+}
+
+.saloon-lantern--flicker rect:nth-child(3),
+.saloon-lantern--flicker rect:nth-child(4) {
+  animation: lanternFlicker 2.3s steps(2) infinite;
+}
+
+/* ── Steam particles ─────────────────────────────────────────────────────── */
+.saloon-steam-wrap {
+  position: absolute;
+  bottom: 40%;
+  right: 12%;
+  width: 32px;
+  height: 40px;
+}
+
+.steam-particle {
+  position: absolute;
+  bottom: 0;
+  left: calc(var(--i, 0) * 5px);
+  width: 4px;
+  height: 4px;
+  background: rgba(200,168,130,0.55);
+  border-radius: 50%;
+  animation: steamRise 2.4s cubic-bezier(0.4,0,0.6,1) infinite;
+  animation-delay: calc(var(--i, 0) * 0.4s);
+}
+
+/* ── Layer 2: Mid-ground ─────────────────────────────────────────────────── */
+.saloon-mid {
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0;
+  z-index: 2;
+}
+
+/* Lantern warm glow that follows the bartender */
+.lantern-glow {
+  position: absolute;
+  top: 0;
+  width: 120px;
+  height: 200px;
+  background: radial-gradient(ellipse 60% 80% at 50% 10%,
+    rgba(255,160,40,0.18) 0%,
+    transparent 70%
+  );
+  pointer-events: none;
+  transform: translateX(-50%);
+  /* transition handled inline for spring cubic-bezier */
+}
+
+/* Bartender and shelves inside mid layer keep their existing styles;
+   override positioning for saloon context */
+.saloon-mid .bs-backbar {
+  position: absolute;
+  top: 64px; right: 0; bottom: 0; left: 0; /* push below SwingingShingle (~60px) */
+  background: transparent;
+}
+
+.saloon-mid .bs-bartender-wrap {
+  position: absolute;
+  bottom: 14px; /* raised 14px so arm top sits flush with bar counter top (110px) */
+  z-index: 2; /* aligned with layering contract */
+}
+
+/* Quips layer — nested inside the bartender wrap component */
+.saloon-mid .bs-quips-layer {
+  position: absolute;
+  bottom: 172px; /* positioned above the bartender sprite (height 168px) */
+  z-index: 100;
+}
+
+/* ── Layer 3: Foreground ─────────────────────────────────────────────────── */
+.saloon-fg {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 212px;
+  z-index: 3;
+  pointer-events: none;
+}
+
+/* bar-surface/bar-rail rules consolidated into the ── Ensure bs-bar-surface block below */
+/* ── Pixel stools ────────────────────────────────────────────────────────── */
+/*
+  Layering contract within .saloon-fg:
+    z:1  saloon-bg (behind everything)
+    z:5  .bs-bar-surface  — bar counter top, clips bartender lower body
+    z:7  .bs-bar-rail     — brass foot rail at the counter edge
+    z:8  .saloon-stools   — stools sit on CUSTOMER SIDE, in front of counter
+*/
+.saloon-stools {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 100%;
+  z-index: 8; /* in front of bar surface so stools appear on customer side */
+}
+
+/* The SVG itself — flows naturally inside the flex button */
+.saloon-stool {
+  display: block;
+  flex-shrink: 0;
+  width: 34px;
+  height: 78px;
+  image-rendering: pixelated;
+}
+
+.saloon-stool-btn {
+  position: absolute;
+  bottom: 28px; /* raised so stool seats visually rest against the counter front edge (bar-surface top ~110px; stool height 78px → seat at 28+78=106px ≈ counter top) */
+  width: 42px;
+  height: auto;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  /* label above, stool below */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
+  -webkit-tap-highlight-color: transparent;
+  pointer-events: auto; /* override parent none */
+  outline: none;
+}
+
+.saloon-stool-btn:hover,
+.saloon-stool-btn:focus-visible {
+  transform: translateY(-6px) scale(1.07);
+}
+
+.saloon-stool-active {
+  transform: translateY(-4px) scale(1.07);
+}
+
+/* Label floats above the stool seat */
+.saloon-stool-label {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  color: #c8a882;
+  opacity: 0.72;
+  white-space: nowrap;
+  pointer-events: none;
+  letter-spacing: 0.5px;
+  line-height: 1;
+  /* Ensure label is visible above bar counter */
+  position: relative;
+  z-index: 2;
+  text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.8);
+}
+
+.saloon-stool-active .saloon-stool-label {
+  opacity: 1;
+  color: #ffd700;
+  text-shadow: 0 0 6px rgba(255, 215, 0, 0.5);
+}
+
+/* ── Saloon door ─────────────────────────────────────────────────────────── */
+.saloon-door-wrap {
+  position: absolute;
+  bottom: 52px;
+  right: 16px;
+  display: flex;
+  gap: 0;
+  z-index: 5;
+}
+
+.saloon-door {
+  display: block;
+  transition: transform 0.4s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.saloon-door--left  { transform: perspective(80px) rotateY(0deg); transform-origin: left center; }
+
+.saloon-door--right { transform: perspective(80px) rotateY(0deg); transform-origin: right center; }
+
+.saloon-door-wrap--open .saloon-door--left  { transform: perspective(80px) rotateY(-55deg); }
+
+.saloon-door-wrap--open .saloon-door--right { transform: perspective(80px) rotateY( 55deg); }
+
+/* ── Sleeping pixel dog ──────────────────────────────────────────────────── */
+.saloon-dog-wrap {
+  position: absolute;
+  bottom: 48px;
+  left: 12px;
+  z-index: 4;
+}
+
+.saloon-dog-wag svg rect:last-child {
+  animation: dogTailWag 0.3s ease-in-out 4;
+}
+
+/* ── Secret pour easter egg ──────────────────────────────────────────────── */
+.secret-pour-wrap {
+  position: absolute;
+  bottom: 54px;
+  left: 0;
+  right: 0;
+  height: 24px;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.secret-pour-glass {
+  position: absolute;
+  left: -20px;
+  width: 14px;
+  height: 20px;
+  background: rgba(200,220,255,0.7);
+  border: 2px solid rgba(150,180,220,0.9);
+  border-radius: 2px;
+  animation: secretPourSlide 2s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+.secret-pour-trail {
+  position: absolute;
+  left: -20px;
+  top: 10px;
+  width: 60px;
+  height: 4px;
+  background: linear-gradient(90deg, transparent, rgba(200,220,255,0.4), transparent);
+  animation: secretPourSlide 2s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+}
+
+/* ── Ensure bs-bar-surface / bs-bar-rail sit at top of fg layer ─────────── */
+.saloon-fg .bs-bar-surface {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 5; /* aligned with layering contract */
+  pointer-events: auto;
+}
+
+.saloon-fg .bs-bar-rail {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 7;
+  pointer-events: auto;
+}
+
+/* ── ZZZ floating particles (bartender doze state) ─────────────────────── */
+.bs-zzzz-wrap {
+  position: absolute;
+  top: -8px;
+  right: -4px;
+  width: 40px;
+  height: 64px;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.bs-zzzz-z {
+  position: absolute;
+  right: 0;
+  bottom: calc(var(--idx, 0) * 16px);
+  font-family: 'Press Start 2P', monospace;
+  font-size: calc(5px + var(--idx, 0) * 2px);
+  color: rgba(180, 210, 255, 0.9);
+  text-shadow: 0 0 4px rgba(100, 160, 255, 0.5);
+  animation: bsZzzFloat 2.4s ease-in-out var(--delay, 0s) infinite;
+  opacity: 0;
+  image-rendering: pixelated;
+}
+
+/* ── Wake "!" exclamation (surprised state without joke/surprise) ───────── */
+.bs-bt-speech-wake {
+  padding: 4px 6px !important;
+}
+
+.bs-wake-exclaim {
+  display: block;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 18px;
+  color: #ffd700;
+  text-shadow: 0 0 6px rgba(255, 215, 0, 0.7), 2px 2px 0 #000;
+  animation: bsWakeExclaim 0.25s steps(2) 3;
+  line-height: 1;
+}
+
+/* ── Secret pour combination — flash effect on bartender ───────────────── */
+.bs-bt-speech-secret {
+  background: linear-gradient(135deg, #2a0a3e, #1a0025) !important;
+  border-color: #ffd700 !important;
+  box-shadow: 0 0 12px rgba(255, 215, 0, 0.5), inset 0 0 8px rgba(255, 215, 0, 0.1) !important;
+  animation: bsSecretPulse 0.8s ease-in-out infinite alternate !important;
+}
+
+.bs-secret-sub {
+  display: block;
+  margin-top: 4px;
+  font-size: 5px !important;
+  color: #ffd700;
+  opacity: 0.8;
+  letter-spacing: 0.5px;
+}
+
+/* Flash the bartender wrap gold on secret unlock */
+.bs-bartender-wrap.bs-secret-flash {
+  animation: bsSecretFlash 0.5s steps(2) 3;
+}
+
+/* ── Polishing speed-up on rapid user activity ───────────────────────────── */
+/* Normal wipe: 1.2s. Fast mode: 0.4s (3× faster = overwhelmed) */
+.bs-polishing-fast .bs-bt-wipe-arm {
+  animation-duration: 0.38s !important;
+}
+
+/* ── Bottle flip easter egg ───────────────────────────────────────────────── */
+.bs-flip-wrap {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 50;
+}
+
+.bs-flip-bottle {
+  position: absolute;
+  width: 8px;
+  height: 22px;
+  background: linear-gradient(180deg, #c8a882 0%, #8b6914 100%);
+  border: 2px solid #5d4037;
+  border-radius: 1px 1px 3px 3px;
+  left: var(--flip-x, 50%);
+  top: 50px;
+  transform-origin: center bottom;
+  image-rendering: pixelated;
+}
+
+.bs-flip-bottle.bs-flip-up {
+  animation: bsBottleFlipUp 0.8s cubic-bezier(0.2, 0.8, 0.6, 1) forwards;
+}
+
+.bs-flip-bottle.bs-flip-catch {
+  animation: bsBottleFlipCatch 0.7s cubic-bezier(0.5, 1.4, 0.6, 1) 0.75s forwards;
+  opacity: 0;
+}
+
+.bs-flip-bottle.bs-flip-crash {
+  animation: bsBottleFlipCrash 0.6s ease-in 0.75s forwards;
+  opacity: 0;
+}
+
+/* Pixel shard burst on crash */
+.bs-flip-shards {
+  position: absolute;
+  left: var(--flip-x, 50%);
+  top: 60px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  opacity: 0;
+  animation: bsFlipShards 0.6s steps(3) 1.3s forwards;
+}
+
+.bs-flip-shards::before {
+  content: '✦  ✦  ✦';
+  font-size: 9px;
+  color: rgba(220, 240, 255, 0.9);
+  letter-spacing: 5px;
+  text-shadow: 0 0 4px rgba(200, 220, 255, 0.7);
+}
+
+/* Guilty look / catch grin badge */
+.bs-flip-badge {
+  position: absolute;
+  left: var(--flip-x, 50%);
+  top: 24px;
+  transform: translateX(-50%);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  opacity: 0;
+  animation: bsFlipBadge 1.2s ease-out 1.3s forwards;
+  text-shadow: 2px 2px 0 rgba(0,0,0,0.8);
+  white-space: nowrap;
+}
+
+.bs-flip-badge--catch { color: #4caf50; }
+
+.bs-flip-badge--crash { color: #ff5722; }
+
+/* ── Swig bottle overflow fix — let the tilted bottle render outside viewBox */
+.bs-bartender-wrap { overflow: visible; }
+
+.bs-bartender-svg  { overflow: visible; }
+
+/* ── Pointer-events architecture fix — saloon-mid passes clicks to boards ── */
+/* Note: saloon-mid children that need clicks get pointer-events: auto below  */
+.saloon-mid .bs-bartender-wrap {
+  pointer-events: auto; /* bartender must be tappable */
+}
+
+.saloon-mid button,
+.saloon-mid [role="button"] {
+  pointer-events: auto;
+}
+
+/* ── saloon-boards — new layer between bg (z:1) and mid (z:2) ─────────────── */
+.saloon-boards {
+  position: absolute;
+  top: 0; right: 0; bottom: 0; left: 0;
+  z-index: 1;            /* sits above saloon-bg, below saloon-mid */
+  pointer-events: none;  /* transparent by default */
+}
+
+/* Children of saloon-boards are individually clickable */
+.saloon-boards > * {
+  pointer-events: auto;
+}
+
+.bs-shingle-wrap {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  /* Pivot from the chain attachment point */
+  transform-origin: top center;
+  animation: bsShingleSway 3.4s ease-in-out infinite;
+  -webkit-tap-highlight-color: transparent;
+  outline: none;
+}
+
+.bs-shingle-wrap:focus-visible .bs-shingle-board {
+  box-shadow: 0 0 0 2px #ffd700, 0 4px 14px rgba(0,0,0,0.55);
+}
+
+/* Chain row — positions the two chain SVGs on left and right */
+.bs-shingle-chains {
+  display: flex;
+  justify-content: space-between;
+  width: 160px;
+  /* Align chains just above the wooden board */
+  padding: 0 14px;
+  margin-bottom: -2px;
+}
+
+/* Wooden hanging board */
+.bs-shingle-board {
+  background: linear-gradient(180deg,
+    #a0714f 0%,
+    #7d4b28 35%,
+    #6b3a1f 70%,
+    #5a3018 100%
+  );
+  border: 3px solid #4e2f1a;
+  border-radius: 2px;
+  padding: 7px 18px 8px;
+  min-width: 160px;
+  max-width: 240px;
+  text-align: center;
+  position: relative;
+  box-shadow:
+    0 4px 16px rgba(0,0,0,0.6),
+    inset 0 1px 0 rgba(255,255,255,0.12),
+    inset 0 -2px 0 rgba(0,0,0,0.3);
+  /* Wood-grain lines */
+  background-image:
+    linear-gradient(180deg, #a0714f 0%, #7d4b28 35%, #6b3a1f 70%, #5a3018 100%),
+    repeating-linear-gradient(0deg,
+      transparent 0, transparent 6px,
+      rgba(0,0,0,0.06) 6px, rgba(0,0,0,0.06) 7px
+    );
+}
+
+/* Metal nail/screw at each corner of the shingle */
+.bs-shingle-board::before,
+.bs-shingle-board::after {
+  content: '●';
+  position: absolute;
+  top: 5px;
+  font-size: 6px;
+  color: #c8a882;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.7);
+}
+
+.bs-shingle-board::before { left: 7px; }
+
+.bs-shingle-board::after  { right: 7px; }
+
+.bs-shingle-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.bs-shingle-text {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  color: #f5e6c8;
+  text-shadow:
+    0 1px 3px rgba(0,0,0,0.9),
+    0 0 10px rgba(255,200,100,0.35);
+  letter-spacing: 1px;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.bs-shingle-star {
+  font-size: 8px;
+  color: #ffd700;
+  text-shadow: 0 0 6px rgba(255,215,0,0.6);
+  flex-shrink: 0;
+}
+
+.bs-shingle-sub {
+  display: block;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 5px;
+  color: #c8a882;
+  margin-top: 5px;
+  letter-spacing: 0.8px;
+  white-space: nowrap;
+  opacity: 0.85;
+}
+
+.bs-shingle-edit-hint {
+  display: block;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 4px;
+  color: #8b6914;
+  margin-top: 3px;
+  letter-spacing: 0.5px;
+  opacity: 0.7;
+}
+
+/* Hover state — subtle brightness lift and quicker sway */
+.bs-shingle-wrap:hover .bs-shingle-board {
+  box-shadow:
+    0 4px 16px rgba(0,0,0,0.6),
+    0 0 12px rgba(255,200,100,0.2),
+    inset 0 1px 0 rgba(255,255,255,0.18);
+}
+
+.bs-shingle-wrap:hover {
+  animation-duration: 1.6s;
+}
+
+.bounty-board-header {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  color: #ffd700;
+  text-align: center;
+  background: #1a0800; /* near-black so text blazes */
+  padding: 4px 4px;
+  border: 2px solid #7a4515;
+  letter-spacing: 1px;
+  margin-bottom: 3px;
+  text-shadow: 0 0 6px rgba(255,215,0,0.7);
+  box-shadow: 2px 2px 0 #000, 0 0 0 1px rgba(255,215,0,0.15);
+}
+
+.bounty-posters {
+  display: flex;
+  gap: 3px;
+}
+
+.bounty-poster {
+  flex: 1;
+  /* Rich aged parchment — warm amber tones that pop against dark wood */
+  background: linear-gradient(170deg, #f2c955 0%, #d4961e 55%, #b07212 100%);
+  border: 2px solid #3a1e00;
+  border-radius: 1px;
+  padding: 4px 3px;
+  text-align: center;
+  box-shadow:
+    2px 3px 0 #000,            /* heavy pixel shadow */
+    inset 0 1px 0 rgba(255,255,200,0.3);  /* top sheen */
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  /* Torn parchment edge */
+  clip-path: polygon(
+    0% 0%, 100% 0%,
+    98% 15%, 100% 32%, 97% 50%, 100% 68%, 98% 85%, 100% 100%,
+    0% 100%, 2% 85%, 0% 68%, 3% 50%, 0% 32%, 2% 15%
+  );
+  transition: filter 0.15s;
+}
+
+.bounty-poster:hover,
+.bounty-poster:focus-visible {
+  filter: brightness(1.1) saturate(1.15);
+  outline: none;
+}
+
+.bounty-poster-label {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 5px;
+  color: #6b0000; /* deep blood red on amber — high contrast */
+  letter-spacing: 1px;
+  border-bottom: 1px solid rgba(60,20,0,0.5);
+  padding-bottom: 2px;
+  margin-bottom: 3px;
+  text-shadow: 0 1px 0 rgba(255,200,100,0.4);
+  font-weight: bold;
+}
+
+.bounty-ingredient {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 6px;
+  color: #1a0800; /* near-black ink — maximum readability on amber */
+  word-break: break-all;
+  line-height: 1.5;
+  padding: 3px 1px;
+  min-height: 14px;
+  text-shadow: 0 1px 0 rgba(255,200,100,0.3);
+}
+
+.bounty-reward {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 4px;
+  color: #3a1e00; /* dark ink — readable against bright amber */
+  line-height: 1.9;
+  margin-top: 3px;
+  word-break: break-word;
+  border-top: 1px dashed rgba(40,15,0,0.4);
+  padding-top: 2px;
+}
+
+/* Override the overflow:hidden so the gap is actually transparent */
+.saloon-fg .bs-bar-surface {
+  overflow: visible;
+  background: transparent;
+  display: flex;
+  align-items: stretch;
+  padding: 0;
+  /* Keep border-top but let segments have the wood gradient */
+  border-top: none;
+}
+
+.bs-bar-seg-l,
+.bs-bar-seg-r {
+  flex: 1;
+  position: relative;
+  background: linear-gradient(
+    to bottom,
+    #6d4c41 0%,
+    #5d4037 30%,
+    #4e342e 70%,
+    #3e2723 100%
+  );
+  border-top: 6px solid #a1887f;
+  box-shadow:
+    inset 0 8px 24px rgba(0,0,0,0.5),
+    inset 0 -2px 8px rgba(0,0,0,0.3),
+    0 -2px 12px rgba(0,0,0,0.4);
+  /* Polished top-edge highlight */
+  overflow: hidden;
+}
+
+/* Wood-grain on each segment */
+.bs-bar-seg-l::after,
+.bs-bar-seg-r::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(90deg,
+      transparent 0, transparent 14px,
+      rgba(0,0,0,0.06) 14px, rgba(0,0,0,0.06) 15px,
+      transparent 15px, transparent 28px,
+      rgba(0,0,0,0.03) 28px, rgba(0,0,0,0.03) 29px
+    ),
+    repeating-linear-gradient(88deg,
+      transparent 0, transparent 40px,
+      rgba(255,255,255,0.025) 40px, rgba(255,255,255,0.025) 41px
+    );
+  pointer-events: none;
+}
+
+/* Left segment: coasters and napkin float inside */
+/* Left segment: wide — tip jar + coasters + mug delivery live here */
+.bs-bar-seg-l {
+  flex: 7; /* ~78% of flex space — gap lands at ~80% of bar total width */
+  position: relative; /* needed for absolute-positioned mug + tip jar */
+}
+
+/* Right segment: narrow sliver past the gap (bartender territory) */
+.bs-bar-seg-r {
+  flex: 1;
+}
+
+/* The walkthrough gap — transparent, just a dark floor strip at bottom */
+.bs-bar-gap {
+  width: 64px;
+  flex-shrink: 0;
+  position: relative;
+  background: transparent;
+}
+
+/* Dark floor trim visible in gap so it doesn't look like a floating gap */
+.bs-bar-gap::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 10px;
+  background: linear-gradient(180deg, transparent 0%, #2a1a12 100%);
+}
+
+/* Reposition coasters/napkin within the left segment */
+.bs-bar-seg-l .bs-bar-coaster {
+  position: absolute;
+}
+
+.bs-bar-seg-l .bs-bar-coaster-1 { left: 14%; top: 6px; }
+
+.bs-bar-seg-l .bs-bar-napkin {
+  position: absolute;
+  top: 12px;
+  left: 40%;
+}
+
+/* Tip jar — relocated to left segment (opened real estate) */
+.bs-bar-seg-l .bs-tip-jar {
+  position: absolute;
+  right: 12%;
+  top: 6px;
+}
+
+/* Coaster in right segment */
+.bs-bar-seg-r .bs-bar-coaster-2 {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 6px;
+}
+
+/* ── Sliding Mug Delivery ─────────────────────────────────────────────────── */
+.bs-sliding-mug {
+  pointer-events: none;
+  will-change: transform;
+}
+
+.bs-mug-foam-trail {
+  position: absolute;
+  top: 12px;
+  right: 30px;
+  width: 40px;
+  height: 3px;
+  background: linear-gradient(to left, rgba(255,255,255,0.7) 0%, transparent 100%);
+  border-radius: 2px;
+  animation: bsMugTrailFade 0.45s ease-out forwards;
+}
+
+/* ── Framer Motion Tip Coin ─────────────────────────────────────────────── */
+.bs-tip-coin-fm {
+  pointer-events: none;
+  will-change: transform, opacity;
+  filter: drop-shadow(0 2px 4px rgba(255, 193, 7, 0.6));
+}
+
+/* ── Framer Motion Floating Notes ──────────────────────────────────────── */
+.bs-float-notes {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  width: 0;
+  height: 0;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.bs-float-note {
+  font-size: 16px;
+  color: #ffd700;
+  text-shadow: 0 0 6px rgba(255, 215, 0, 0.8);
+  will-change: transform, opacity;
+  pointer-events: none;
+  image-rendering: pixelated;
+}
+
+.bs-bt-dance {
+  animation:
+    bs-bt-walk 0.55s steps(2) infinite,  /* repurpose walk for footwork feel */
+    bsBartenderBob 0.55s ease-in-out infinite !important;
+}
+
+.bs-music-notes {
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60px;
+  pointer-events: none;
+  z-index: 15;
+}
+
+.bs-music-note {
+  position: absolute;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  color: #ffd700;
+  text-shadow:
+    0 0 6px rgba(255,215,0,0.8),
+    0 0 12px rgba(255,215,0,0.4),
+    2px 2px 0 rgba(0,0,0,0.6);
+  animation: bsMusicNoteFloat 2.2s ease-in-out var(--delay, 0s) infinite;
+  opacity: 0;
+  /* Offset each note so they don't stack */
+  left: calc(50% + (var(--idx, 0) - 1) * 18px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+.saloon-lantern,
+  .saloon-lantern--flicker rect,
+  .steam-particle,
+  .saloon-door,
+  .secret-pour-glass,
+  .secret-pour-trail,
+  .bs-zzzz-z,
+  .bs-flip-bottle,
+  .bs-flip-shards,
+  .bs-flip-badge,
+  .bs-shingle-wrap,
+  .bs-bt-dance,
+  .bs-music-note {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+.bs-cabinet-shake {
+  animation: bsCabinetShake 0.38s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+.bs-impact-flash {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.85);
+  pointer-events: none;
+  z-index: 200;
+  border-radius: inherit;
+  animation: bsImpactFlash 0.3s ease-out forwards;
+}
+
+/* ── Dimmed Bottles (filter dim, not hide) ────────────────────────────────── */
+.bs-bottle-slot.bs-bottle-dimmed {
+  opacity: 0.15;
+  filter: grayscale(1);
+  transition: opacity 0.35s ease, filter 0.35s ease;
+  pointer-events: none;
+}
+
+.bs-bottle-slot:not(.bs-bottle-dimmed) {
+  transition: opacity 0.35s ease, filter 0.35s ease;
+}
+
+/* Active bottles pulse with golden outline glow */
+.bs-bottle-slot.bs-bottle-active-filter {
+  filter: drop-shadow(0 0 6px rgba(255, 215, 0, 0.7));
+}
+
+/* ── Chiptune Visualizer Bars ─────────────────────────────────────────────── */
+.bs-ct-visualizer {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+
+.bs-ct-bar {
+  width: 3px;
+  background: #ffd700;
+  border-radius: 1px 1px 0 0;
+  transform-origin: bottom center;
+  min-height: 3px;
+  box-shadow: 0 0 4px rgba(255, 215, 0, 0.6);
+}
+
+/* ── Grab / Flying Bartender States ──────────────────────────────────────── */
+.bs-grab-exclaim {
+  position: absolute;
+  top: -22px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  color: #1a1a1a;
+  background: #ffd700;
+  padding: 3px 5px;
+  border-radius: 3px;
+  white-space: nowrap;
+  animation: bsGrabExclaimBounce 0.3s ease-out infinite alternate;
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* Flying scream speech bubble */
+.bs-fly-scream {
+  position: absolute;
+  top: -30px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 6px;
+  color: #1a1a1a;
+  background: #ff5722;
+  padding: 4px 7px;
+  border-radius: 3px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 10;
+  animation: bsFlyScreamWiggle 0.12s ease-in-out infinite alternate;
+}
+
+/* Speech bubble tail for scream */
+.bs-fly-scream::after {
+  content: '';
+  position: absolute;
+  bottom: -5px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: #ff5722;
+  border-bottom: none;
+}
+
+/* ── Landing quip bubble after toss ──────────────────────────────────────── */
+.bs-bt-speech-toss {
+  background: linear-gradient(135deg, #5d4037 0%, #3e2723 100%);
+  border: 2px solid #a1887f;
+  border-radius: 4px;
+  font-size: 7px;
+  color: #f5e6c8;
+  font-style: italic;
+}
+
+.bs-bt-speech-toss::after {
+  border-top-color: #5d4037;
+}
+
+/* ── Cursor states for bartender drag ────────────────────────────────────── */
+.bs-bartender-draggable {
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.bs-bartender-draggable:active {
+  cursor: grabbing;
+}
+
+/* ── Saloon Ambient Events Layer ─────────────────────────────────────────── */
+.saloon-ambience {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 4; /* above fg (z:3) but below detail card */
+}
+
+/* Tumbleweed */
+.saloon-tumbleweed {
+  position: absolute;
+  width: 72px;  /* 2× — now clearly visible rolling across saloon floor */
+  height: 72px;
+  pointer-events: none;
+  image-rendering: pixelated;
+}
+
+/* Pixel art tumbleweed (CSS-drawn) */
+.saloon-tumbleweed-inner {
+  width: 72px;
+  height: 72px;
+  position: relative;
+  image-rendering: pixelated;
+}
+
+.saloon-tumbleweed-inner::before {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 40% 40%, #8d6e63 0%, #6d4c41 45%, #5d4037 100%);
+  box-shadow:
+    inset -3px -3px 0 #4e342e,
+    inset 2px 2px 0 rgba(255,255,255,0.15);
+}
+
+.saloon-tumbleweed-inner::after {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  background:
+    linear-gradient(45deg, transparent 30%, rgba(255,255,255,0.1) 50%, transparent 70%),
+    linear-gradient(-45deg, transparent 30%, rgba(0,0,0,0.15) 50%, transparent 70%);
+  border-radius: 50%;
+}
+
+/* Rattlesnake */
+.saloon-snake {
+  position: absolute;
+  pointer-events: none;
+  image-rendering: pixelated;
+  height: 48px; /* 2.4× bigger — rattlesnake now actually visible */
+}
+
+/* ── Empty slot "cobweb" dust overlay ────────────────────────────────────── */
+.bs-empty-slot::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(100,100,100,0.3) 0%, transparent 70%);
+  box-shadow:
+    4px 0 0 -3px rgba(100,100,100,0.2),
+    0 4px 0 -3px rgba(100,100,100,0.2),
+    3px 3px 0 -3px rgba(100,100,100,0.2);
+  pointer-events: none;
+  animation: bsCobwebPulse 4s ease-in-out infinite alternate;
+}
+
+/* ── Stool tap pull-down ──────────────────────────────────────────────────── */
+.saloon-stool-btn {
+  /* inherits existing rules — tap behavior layered on top */
+  will-change: transform;
+}
+
+/* ── Speech bubble AnimatePresence improvements ──────────────────────────── */
+.bs-bt-speech-idle {
+  animation: bsBubbleEntry 0.25s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+/* ── Bartender return-of-shame idle quip ─────────────────────────────────── */
+.bs-bt-speech-shame {
+  background: linear-gradient(135deg, #4a3520 0%, #3e2723 100%);
+  border-color: #a1887f;
+  font-style: italic;
+  color: #d7ccc8;
+}
+
+/* Enforce strict saloon layering contract */
+.saloon-stage { isolation: isolate; }
+
+.saloon-bg    { z-index: 1;  }
+
+.saloon-mid   { z-index: 3;  }
+
+.saloon-fg    { z-index: 4;  }
+
+/* bar counter — paints over door base & bartender legs */
+.saloon-ambience { z-index: 6; }
+
+/* ambient events float above everything */
+/* Within saloon-mid, back → front:
+   shelves (1) < wall boards & return door (2) < bartender (3).
+   This keeps the boards clearly visible above the shelves while the bartender
+   still walks in front of them. */
+.saloon-mid .bs-backbar        { z-index: 1; }
+
+.saloon-mid .saloon-boards     { z-index: 2; }
+
+.saloon-mid .saloon-exit-door  { z-index: 2; }
+
+.saloon-mid .bs-bartender-wrap { z-index: 3; }
+
+.saloon-mid .bs-shingle-wrap  { z-index: 6; }
+
+.saloon-mid .bs-quips-layer   { z-index: 100; }
+
+/* Within saloon-fg */
+.saloon-fg .bs-bar-surface  { z-index: 5; }
+
+.saloon-fg .bs-bar-rail     { z-index: 7; }
+
+.saloon-fg .saloon-stools   { z-index: 8; }
+
+/* ── Dynamic bartender floor shadow ───────────────────────────────────── */
+.bs-bartender-wrap::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  width: 70%;
+  height: 10px;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0.45) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+  transition: opacity 0.25s cubic-bezier(0.32,0.72,0,1),
+              transform 0.25s cubic-bezier(0.32,0.72,0,1);
+  opacity: 1;
+  z-index: -1;
+}
+
+.bs-bartender-grabbed::after {
+  opacity: 0.55;
+  transform: translateX(-50%) scaleX(1.25) scaleY(0.7);
+}
+
+.bs-bartender-flying::after {
+  opacity: 0.25;
+  transform: translateX(-50%) scaleX(1.6) scaleY(0.5);
+}
+
+/* Grabbed bartender floats above everything in the stage */
+.bs-bartender-grabbed {
+  z-index: 200 !important;
+  cursor: grabbing !important;
+  filter: drop-shadow(0 8px 20px rgba(0,0,0,0.6));
+}
+
+/* Detail card always on top */
+.bs-detail-card { z-index: 300; }
+
+/* Modal overlays */
+.bs-marquee-modal-overlay { z-index: 400; }
+
+.saloon-lantern--flicker rect:nth-child(3),
+.saloon-lantern--flicker rect:nth-child(4) {
+  animation: lanternFlicker 2.1s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+.bs-cabinet-shake,
+  .bs-impact-flash,
+  .bs-grab-exclaim,
+  .bs-bt-speech-shame,
+  .bs-float-note,
+  .bs-sliding-mug,
+  .bs-tip-coin-fm,
+  .saloon-tumbleweed,
+  .saloon-snake {
+    animation: none !important;
+    transition: none !important;
+  }
+
+.bs-bartender-wrap::after { opacity: 0 !important; }
+
+.bounty-poster { animation: none !important; }
+}
+
+/* ── 1. Quote box: float higher + clear the sprite so it never obstructs ── */
+.saloon-mid .bs-quips-layer {
+  bottom: 172px;
+}
+
+.bs-bt-speech--left  { --bubble-x: calc(-100% - 26px); }
+
+.bs-bt-speech--right { --bubble-x: calc(  0% + 26px);  }
+
+.bs-bt-speech-idle { opacity: 0.95; }
+
+/* ── 2. My Bar door: flush-left backbar doorway, clear of the chalkboard ── */
+.saloon-exit-door {
+  left: 0;
+  bottom: 54px;
+  width: 76px;
+  height: 196px;
+  border-left: none;
+  border-radius: 0 14px 0 0;
+  box-shadow:
+    6px 0 14px rgba(0, 0, 0, 0.55),
+    inset -6px 0 12px rgba(0, 0, 0, 0.45),
+    inset 0 0 18px rgba(0, 0, 0, 0.55);
+}
+
+/* Door frame post on the hinge side */
+.saloon-exit-door::before {
+  content: '';
+  position: absolute;
+  top: 0; right: -2px; bottom: 0;
+  width: 7px;
+  background: linear-gradient(180deg, #7d5a30 0%, #4e3419 100%);
+  border-left: 2px solid #160c04;
+  z-index: 2;
+}
+
+/* Swinging half-doors silhouette at the base — reads as a saloon back door */
+.saloon-exit-door::after {
+  content: '';
+  position: absolute;
+  left: 8%; right: 12%; bottom: 0;
+  height: 34%;
+  background:
+    linear-gradient(90deg, transparent 47%, rgba(0,0,0,0.5) 47% 53%, transparent 53%),
+    repeating-linear-gradient(0deg, rgba(0,0,0,0.18) 0 3px, transparent 3px 10px),
+    linear-gradient(180deg, #7d4b28 0%, #5a3018 100%);
+  border: 2px solid #2a1a0a;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  opacity: 0.9;
+}
+
+.saloon-exit-door:hover .saloon-exit-glow { animation-duration: 1.2s; }
+
+.bounty-mugshot {
+  background: #e8d9b0;
+  border: 1px solid rgba(60, 20, 0, 0.55);
+  margin: 2px 2px 3px;
+  padding: 2px 0 1px;
+  box-shadow: inset 0 0 6px rgba(60, 20, 0, 0.25);
+}
+
+.bounty-outlaw-name {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 4px;
+  color: #6b0000;
+  letter-spacing: 0.4px;
+  line-height: 1.5;
+  word-break: break-word;
+  margin-bottom: 2px;
+}
+
+.bounty-poster {
+  animation: bountyJiggle 3.6s ease-in-out infinite;
+  transform-origin: 50% 4px; /* tack point at top */
+  position: relative;
+}
+
+.bounty-poster:nth-child(1) { --poster-tilt: -2.5deg; animation-delay: 0s;   }
+
+.bounty-poster:nth-child(2) { --poster-tilt:  2.5deg; animation-delay: 1.2s; }
+
+/* Poster peel — curled corner hint */
+.bounty-poster::before {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 12px;
+  height: 12px;
+  background: linear-gradient(135deg, transparent 40%, #6b3a00 42%, #d4961e 60%);
+  border-radius: 0 0 1px 0;
+  opacity: 0;
+  transform: scaleY(0);
+  transform-origin: bottom right;
+  transition: opacity 0.3s cubic-bezier(0.32,0.72,0,1),
+              transform 0.3s cubic-bezier(0.32,0.72,0,1);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.bounty-poster:hover::before,
+.bounty-poster:focus-visible::before {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+/* Ingredient hint line revealed on hover */
+.bounty-ingredient-hint {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 3.5px;
+  color: #3a1e00;
+  opacity: 0;
+  max-height: 0;
+  overflow: hidden;
+  transition: opacity 0.25s ease, max-height 0.3s ease;
+  text-shadow: 0 1px 0 rgba(255,200,100,0.3);
+  letter-spacing: 0.3px;
+}
+
+.bounty-poster:hover .bounty-ingredient-hint,
+.bounty-poster:focus-visible .bounty-ingredient-hint {
+  opacity: 1;
+  max-height: 18px;
+}
+
+.bounty-poster:hover .bounty-mugshot { animation: outlawShifty 0.9s steps(2) infinite; }
+
+/* ── 4. Backlit shelving: glow color follows the stool filter ── */
+.bs-display-case { --shelf-glow: rgba(255, 170, 60, 0.32); }
+
+/* warm amber default */
+.bs-case-glow--cocktail { --shelf-glow: rgba(255, 140, 40, 0.42); }
+
+/* whiskey amber */
+.bs-case-glow--mocktail { --shelf-glow: rgba(80, 170, 255, 0.42); }
+
+/* cool mocktail blue */
+.bs-case-glow--recent   { --shelf-glow: rgba(120, 255, 170, 0.36); }
+
+/* fresh green */
+.bs-shelf-plank::after {
+  background: var(--shelf-glow);
+  transition: background 0.6s ease;
+}
+
+.bs-shelf-plank {
+  box-shadow:
+    0 2px 6px rgba(0,0,0,0.6),
+    0 -6px 14px -4px var(--shelf-glow),
+    inset 0 1px 0 rgba(255,200,100,0.2);
+  transition: box-shadow 0.6s ease;
+}
+
+/* ── 5. Candle light source + directional bottle shadows ── */
+.bs-candle-wrap {
+  position: absolute;
+  right: 6px;
+  top: 42%;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.bs-candle-halo {
+  position: absolute;
+  top: -26px; left: 50%;
+  width: 90px; height: 90px;
+  transform: translateX(-50%);
+  background: radial-gradient(circle, rgba(255, 190, 80, 0.28) 0%, transparent 65%);
+  animation: candleHalo 2.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.bs-candle-flame { animation: candleFlame 0.9s steps(3) infinite; transform-origin: center bottom; }
+
+/* Light comes from the right → bottles throw soft shadows to the left */
+.bs-bottle-idle {
+  filter: drop-shadow(-5px 4px 3px rgba(0, 0, 0, 0.45));
+}
+
+/* ── 6. Flickering neon wall sign (time-of-day aware) ── */
+.saloon-neon-wall {
+  position: absolute;
+  top: 66px;
+  right: 5%;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: #ff6ec7;
+  text-shadow:
+    0 0 4px #ff6ec7,
+    0 0 10px #ff6ec7,
+    0 0 22px rgba(255, 110, 199, 0.5);
+  opacity: 0.85;
+  transform: rotate(-2deg);
+  animation: saloonNeonFlicker 7s steps(1) infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ── 7. Saloon haze — two slow-drifting smoke layers (transform-only) ── */
+.saloon-haze {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.saloon-haze-layer {
+  position: absolute;
+  top: 0; bottom: 30%;
+  width: 160%;
+  left: -30%;
+  background:
+    radial-gradient(ellipse 26% 42% at 18% 34%, rgba(220, 200, 170, 0.05) 0%, transparent 70%),
+    radial-gradient(ellipse 32% 36% at 52% 22%, rgba(220, 200, 170, 0.07) 0%, transparent 70%),
+    radial-gradient(ellipse 24% 40% at 82% 40%, rgba(220, 200, 170, 0.045) 0%, transparent 70%);
+  will-change: transform;
+}
+
+.saloon-haze-a { animation: hazeDrift 46s linear infinite; }
+
+.saloon-haze-b {
+  animation: hazeDrift 71s linear infinite reverse;
+  top: 12%;
+  opacity: 0.8;
+}
+
+/* ── 8. Cobwebs (stale bar) ── */
+.bs-cobweb {
+  position: absolute;
+  top: 0;
+  z-index: 3;
+  opacity: 0.65;
+  pointer-events: none;
+  animation: cobwebBreathe 5s ease-in-out infinite;
+}
+
+.bs-cobweb--tl { left: 0; }
+
+.bs-cobweb--tr { right: 0; }
+
+/* ── 9. Broom sweep + dust puff ── */
+.bs-broom-sweep {
+  position: absolute;
+  bottom: 4px;
+  left: 0;
+  z-index: 12;
+  pointer-events: none;
+}
+
+.bs-broom-dust {
+  position: absolute;
+  bottom: 0;
+  left: -18px;
+  width: 26px; height: 12px;
+  background:
+    radial-gradient(circle at 30% 60%, rgba(200, 180, 150, 0.55) 0 3px, transparent 4px),
+    radial-gradient(circle at 65% 30%, rgba(200, 180, 150, 0.4) 0 2px, transparent 3px),
+    radial-gradient(circle at 85% 70%, rgba(200, 180, 150, 0.5) 0 2px, transparent 3px);
+  animation: broomDustPuff 0.5s ease-out infinite;
+}
+
+/* ── 10. New-arrival bottle: golden pulse + landing glow ── */
+.bs-bottle-new-arrival .bs-bottle-idle {
+  animation: newArrivalPulse 1.1s ease-in-out infinite;
+}
+
+.bs-bottle-new-arrival .bs-bottle-label {
+  color: #ffd166;
+  text-shadow: 0 0 6px rgba(255, 209, 102, 0.8);
+}
+
+/* New-arrival toast banner */
+.bs-arrival-toast {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  translate: -50% 0;
+  z-index: 40;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 7px;
+  letter-spacing: 1px;
+  color: #1a1200;
+  background: linear-gradient(180deg, #ffd166 0%, #f0a500 100%);
+  border: 2px solid #7a4515;
+  border-radius: 3px;
+  padding: 6px 12px;
+  box-shadow: 2px 3px 0 #000, 0 0 14px rgba(255, 209, 102, 0.5);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* ── 11. Peeking cat ── */
+.bs-peek-cat {
+  position: absolute;
+  z-index: 0; /* behind the bottles (slots get z:1 below) */
+  pointer-events: none;
+}
+
+.bs-bottle-slot { position: relative; z-index: 1; }
+
+/* ── 12. Wall remodel textures ── */
+/* brick = existing default .saloon-brick-wall */
+.saloon-wall--wood .saloon-brick-wall {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 22px,
+      rgba(0,0,0,0.22) 22px,
+      rgba(0,0,0,0.22) 24px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 46px,
+      rgba(0,0,0,0.12) 46px,
+      rgba(0,0,0,0.12) 47px
+    ),
+    linear-gradient(180deg, #4a2c14 0%, #38200d 60%, #241407 100%);
+  background-size: 24px 100%, 100% 47px, 100% 100%;
+}
+
+.saloon-wall--wallpaper .saloon-brick-wall {
+  background:
+    radial-gradient(circle at 12px 12px, rgba(212, 165, 116, 0.14) 0 3px, transparent 4px),
+    radial-gradient(circle at 36px 36px, rgba(212, 165, 116, 0.14) 0 3px, transparent 4px),
+    radial-gradient(circle at 36px 12px, rgba(120, 60, 90, 0.2) 0 2px, transparent 3px),
+    radial-gradient(circle at 12px 36px, rgba(120, 60, 90, 0.2) 0 2px, transparent 3px),
+    linear-gradient(180deg, #3d1428 0%, #2a0d1c 60%, #1a0812 100%);
+  background-size: 48px 48px, 48px 48px, 48px 48px, 48px 48px, 100% 100%;
+}
+
+.bs-remodel-btn span:first-child { font-size: 12px; line-height: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+.saloon-haze-layer,
+.saloon-neon-wall,
+.bs-candle-halo,
+.bs-candle-flame,
+.bs-cobweb,
+.bs-broom-dust,
+.bs-bottle-new-arrival .bs-bottle-idle,
+.bounty-poster:hover .bounty-mugshot {
+    animation: none !important;
+  }
+}
+
+.bs-topbar {
+  background:
+    repeating-linear-gradient(90deg, rgba(0,0,0,0.12) 0 2px, transparent 2px 26px),
+    linear-gradient(180deg, #2e1a0c 0%, #241408 70%, #1a0e05 100%);
+  border-bottom: 3px solid #7a5a2b;
+  box-shadow: 0 2px 0 #160c04, 0 4px 10px rgba(0,0,0,0.5);
+}
+
+.bs-topbar .bs-back-btn,
+.bs-topbar .bs-import-btn,
+.bs-tools-btn {
+  background: linear-gradient(180deg, #6b4a26 0%, #4e3419 100%);
+  border: 2px solid #2a1a0a;
+  border-radius: 3px;
+  color: #f5e6c8;
+  font-family: 'Press Start 2P', monospace;
+  text-shadow: 0 1px 0 #000;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 220, 160, 0.25),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.35),
+    0 2px 0 #160c04;
+  transition: transform 0.12s cubic-bezier(0.32, 0.72, 0, 1), filter 0.12s ease;
+}
+
+.bs-topbar .bs-back-btn:active,
+.bs-topbar .bs-import-btn:active,
+.bs-tools-btn:active {
+  transform: translateY(2px);
+  box-shadow: inset 0 1px 0 rgba(255, 220, 160, 0.15), 0 0 0 #160c04;
+}
+
+.bs-topbar .bs-import-btn {
+  background: linear-gradient(180deg, #8a6420 0%, #6b4a12 100%);
+  border-color: #3a2a08;
+  color: #ffe9b0;
+}
+
+.bs-topbar .bs-bottle-count {
+  background: linear-gradient(180deg, #8d6a3c 0%, #6b4a26 100%);
+  border: 2px solid #2a1a0a;
+  border-radius: 3px;
+  box-shadow: inset 0 1px 0 rgba(255, 220, 160, 0.3), 0 1px 0 #160c04;
+}
+
+.bs-topbar .bs-count-num { color: #ffe9b0; text-shadow: 0 1px 0 #000; }
+
+.bs-topbar .bs-count-label { color: #d9c49a; }
+
+.bs-tools-btn { display: inline-flex; align-items: center; gap: 5px; padding: 6px 9px; font-size: 8px; cursor: pointer; }
+
+.bs-tools-btn span:first-child { font-size: 12px; line-height: 1; }
+
+.bs-tools-btn--open { filter: brightness(1.18); }
+
+.bs-tools-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 380;
+  background: rgba(0, 0, 0, 0.25);
+}
+
+.bs-tools-menu {
+  position: absolute;
+  top: 52px;
+  right: 10px;
+  z-index: 390;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+  background:
+    repeating-linear-gradient(0deg, rgba(0,0,0,0.08) 0 2px, transparent 2px 12px),
+    linear-gradient(180deg, #7d5a30 0%, #5a3c1c 100%);
+  border: 3px solid #2a1a0a;
+  border-radius: 4px;
+  box-shadow: 3px 5px 0 #000, inset 0 1px 0 rgba(255, 220, 160, 0.25);
+}
+
+/* Hanging chain nubs */
+.bs-tools-menu::before,
+.bs-tools-menu::after {
+  content: '●';
+  position: absolute;
+  top: -7px;
+  font-size: 7px;
+  color: #c8a882;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+}
+
+.bs-tools-menu::before { left: 10px; }
+
+.bs-tools-menu::after  { right: 10px; }
+
+.bs-tools-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 168px;
+  padding: 9px 10px;
+  background: linear-gradient(180deg, #4e3419 0%, #3a2510 100%);
+  border: 2px solid #241408;
+  border-radius: 3px;
+  color: #f5e6c8;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  letter-spacing: 0.5px;
+  text-shadow: 0 1px 0 #000;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255, 220, 160, 0.18), 0 2px 0 #160c04;
+  transition: transform 0.1s cubic-bezier(0.32, 0.72, 0, 1), filter 0.12s ease;
+}
+
+.bs-tools-item:hover { filter: brightness(1.15); }
+
+.bs-tools-item:active { transform: translateY(2px); box-shadow: inset 0 1px 0 rgba(255,220,160,0.1); }
+
+.bs-tools-item--active { border-color: #ffd166; box-shadow: inset 0 1px 0 rgba(255,220,160,0.18), 0 0 8px rgba(255, 209, 102, 0.35), 0 2px 0 #160c04; }
+
+.bs-tools-item-icon { font-size: 12px; line-height: 1; }
+
+.bs-tools-item-hint { margin-left: auto; font-size: 6px; color: #c8a882; opacity: 0.85; }
+
+.saloon-mid .bs-backbar { top: 88px; }
+
+.bs-locked-bottle { opacity: 0.5; }
+
+.bs-empty-slot:hover .bs-locked-bottle { opacity: 0.8; }
+
+.bs-empty-slot { cursor: pointer; }
+
+.saloon-exit-staffsign {
+  position: absolute;
+  bottom: 26%;
+  left: 50%;
+  transform: translateX(-50%) rotate(-3deg);
+  padding: 2px 5px;
+  background: #f5e6c8;
+  border: 1px solid #8b6914;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 5px;
+  color: #5a3c1c;
+  white-space: nowrap;
+  box-shadow: 1px 2px 0 rgba(0,0,0,0.6);
+  pointer-events: none;
+}
+
+.saloon-exit-spill {
+  position: absolute;
+  left: 4px;
+  bottom: 40px;
+  width: 96px;
+  height: 22px;
+  background: radial-gradient(ellipse 70% 100% at 40% 0%, rgba(255, 213, 130, 0.28) 0%, transparent 70%);
+  transform: skewX(-18deg);
+  pointer-events: none;
+  z-index: 2;
+  transition: opacity 0.3s ease, filter 0.3s ease;
+}
+
+.saloon-exit-door:hover ~ .saloon-exit-spill { filter: brightness(1.5); }
+
+.saloon-exit-spill--flare {
+  filter: brightness(2.2) !important;
+  opacity: 1;
+}
+
+.saloon-exit-crates {
+  position: absolute;
+  left: 84px;
+  bottom: 56px;
+  z-index: 2;
+  pointer-events: none;
+  filter: drop-shadow(2px 3px 2px rgba(0,0,0,0.5));
+}
+
+/* Door swing-open — perspective hinge on the left */
+.saloon-exit-door { perspective: 300px; }
+
+.saloon-exit-door .saloon-exit-panel {
+  transform-origin: left center;
+  transition: transform 0.38s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.saloon-exit-door--swing .saloon-exit-panel {
+  transform: rotateY(-52deg);
+}
+
+.saloon-exit-door--swing .saloon-exit-glow {
+  animation-duration: 0.4s;
+  opacity: 1;
+}
+
+.wanted-modal-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 5, 0, 0.72);
+  padding: 18px;
+}
+
+.wanted-modal {
+  position: relative;
+  width: min(320px, 88vw);
+  max-height: 86%;
+  overflow-y: auto;
+  padding: 18px 16px 16px;
+  text-align: center;
+  background:
+    radial-gradient(ellipse 120% 60% at 50% 0%, rgba(120, 70, 10, 0.18) 0%, transparent 60%),
+    linear-gradient(170deg, #f2d98b 0%, #e2b654 55%, #c99432 100%);
+  border: 3px solid #3a1e00;
+  box-shadow: 4px 6px 0 #000, inset 0 0 24px rgba(90, 50, 0, 0.35);
+  clip-path: polygon(
+    0% 1%, 4% 0%, 12% 1%, 22% 0%, 34% 1%, 47% 0%, 60% 1%, 73% 0%, 86% 1%, 96% 0%, 100% 2%,
+    99% 12%, 100% 26%, 99% 41%, 100% 57%, 99% 72%, 100% 86%, 99% 97%, 96% 100%,
+    84% 99%, 70% 100%, 55% 99%, 41% 100%, 27% 99%, 14% 100%, 4% 99%, 0% 97%,
+    1% 84%, 0% 68%, 1% 52%, 0% 36%, 1% 20%, 0% 8%
+  );
+  font-family: 'Press Start 2P', monospace;
+}
+
+.wanted-modal-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  width: 26px;
+  height: 26px;
+  background: #3a1e00;
+  color: #f2d98b;
+  border: none;
+  border-radius: 2px;
+  font-size: 11px;
+  cursor: pointer;
+  box-shadow: 1px 2px 0 rgba(0,0,0,0.5);
+}
+
+.wanted-modal-header {
+  font-size: 15px;
+  color: #6b0000;
+  letter-spacing: 2px;
+  text-shadow: 0 1px 0 rgba(255, 230, 160, 0.6);
+}
+
+.wanted-modal-sub {
+  font-size: 6px;
+  color: #3a1e00;
+  letter-spacing: 3px;
+  margin-top: 4px;
+  opacity: 0.85;
+}
+
+.wanted-modal-mugshot {
+  width: 96px;
+  margin: 12px auto 8px;
+  padding: 8px 8px 5px;
+  background: #ecdcb0;
+  border: 2px solid #3a1e00;
+  box-shadow: inset 0 0 10px rgba(90, 50, 0, 0.3);
+}
+
+.wanted-modal-name {
+  font-size: 10px;
+  color: #3a1e00;
+  letter-spacing: 1px;
+  line-height: 1.6;
+}
+
+.wanted-modal-crime {
+  font-size: 6px;
+  color: #6b0000;
+  margin-top: 7px;
+  line-height: 1.8;
+}
+
+.wanted-modal-ingredient {
+  font-size: 11px;
+  color: #1a0800;
+  margin-top: 6px;
+  letter-spacing: 1px;
+  word-break: break-word;
+}
+
+.wanted-modal-reward {
+  display: inline-block;
+  margin-top: 9px;
+  padding: 5px 12px;
+  font-size: 9px;
+  color: #f2d98b;
+  background: #3a1e00;
+  border-radius: 2px;
+  letter-spacing: 1px;
+  box-shadow: 1px 2px 0 rgba(0,0,0,0.45);
+}
+
+.wanted-modal-unlocks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 12px;
+  padding: 9px 8px;
+  background: rgba(58, 30, 0, 0.1);
+  border: 1px dashed rgba(58, 30, 0, 0.5);
+  text-align: left;
+}
+
+.wanted-modal-unlocks-title {
+  font-size: 6px;
+  color: #6b0000;
+  letter-spacing: 1px;
+  margin-bottom: 2px;
+}
+
+.wanted-modal-unlock-item {
+  font-size: 7px;
+  color: #3a1e00;
+  line-height: 1.7;
+}
+
+.wanted-modal-cta {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
+  padding: 11px 8px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px;
+  letter-spacing: 1px;
+  color: #ffe9b0;
+  background: linear-gradient(180deg, #6b4a26 0%, #4e3419 100%);
+  border: 2px solid #241408;
+  border-radius: 3px;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 rgba(255,220,160,0.25), 0 3px 0 #160c04;
+  transition: transform 0.1s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.wanted-modal-cta:active { transform: translateY(3px); box-shadow: inset 0 1px 0 rgba(255,220,160,0.12); }
+
+@media (prefers-reduced-motion: reduce) {
+.saloon-exit-door .saloon-exit-panel { transition: none; }
+
+.saloon-exit-door--swing .saloon-exit-panel { transform: none; }
+
+.bs-tools-item { animation: none !important; transition: none !important; }
+}
+
+.saloon-cookhouse-door {
+  position: absolute;
+  right: 0;
+  bottom: 54px;
+  width: 62px;
+  height: 150px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0;
+  border: 4px solid #160c04;
+  border-right: none;
+  border-radius: 12px 0 0 0;
+  background:
+    repeating-linear-gradient(90deg, rgba(0,0,0,0.22) 0 1px, transparent 1px 10px),
+    linear-gradient(180deg, #6b4a26 0%, #4e3419 60%, #3a2510 100%);
+  box-shadow: -4px 0 12px rgba(0,0,0,0.5), inset 0 0 16px rgba(0,0,0,0.55);
+  cursor: pointer;
+  overflow: hidden;
+  -webkit-tap-highlight-color: transparent;
+  z-index: 2;
+}
+
+.saloon-cookhouse-lintel {
+  width: 100%;
+  padding: 4px 2px 3px;
+  background: #160c04;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 6px;
+  color: #ffe082;
+  letter-spacing: 0.5px;
+  text-align: center;
+  text-shadow: 0 1px 0 #000;
+}
+
+.saloon-cookhouse-panel {
+  position: relative;
+  flex: 1;
+  width: 78%;
+  margin-top: 7px;
+  border: 2px solid #2a1a0a;
+  border-radius: 7px 7px 0 0;
+  background: radial-gradient(circle at 50% 30%, #f7e8c8 0%, #d9b96a 40%, #7a5a2b 100%);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.saloon-cookhouse-hat { position: relative; z-index: 2; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.4)); }
+
+.saloon-cookhouse-steam { position: absolute; inset: 0; pointer-events: none; }
+
+.saloon-cookhouse-steam i {
+  position: absolute;
+  bottom: 8px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(255, 250, 235, 0.7);
+  animation: cookhouseSteam 2.6s ease-in infinite;
+}
+
+.saloon-cookhouse-steam i:nth-child(1) { left: 30%; animation-delay: 0s; }
+
+.saloon-cookhouse-steam i:nth-child(2) { left: 52%; animation-delay: 0.9s; }
+
+.saloon-cookhouse-steam i:nth-child(3) { left: 68%; animation-delay: 1.7s; }
+
+@media (prefers-reduced-motion: reduce) {
+.saloon-cookhouse-steam i {
+    animation: none !important;
+  }
+}
