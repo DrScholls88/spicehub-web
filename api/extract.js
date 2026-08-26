@@ -13,13 +13,16 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { extractPluginCandidate } from '../src/import/pluginExtractors.js';
 
-const FETCH_TIMEOUT_MS = 12000;
-const MAX_HTML_BYTES = 2_500_000;
+import {
+  USER_AGENTS,
+  EXTRACT_FETCH_TIMEOUT_MS,
+  MAX_HTML_BYTES,
+} from '../src/lib/importConfig.js';
+
 const MAX_MARKDOWN_CHARS = 60000;
 
 export const BROWSER_HEADERS = {
-  'User-Agent':
-    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+  'User-Agent': USER_AGENTS[0],
   Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
   'Accept-Language': 'en-US,en;q=0.9',
 };
@@ -391,7 +394,7 @@ export function parseEmbedImage(html) {
   return decodeEntities(m[1].replace(/\\u0026/g, '&').replace(/\\\//g, '/'));
 }
 
-export async function fetchWithTimeout(url, headers, timeoutMs = FETCH_TIMEOUT_MS) {
+export async function fetchWithTimeout(url, headers, timeoutMs = EXTRACT_FETCH_TIMEOUT_MS) {
   const res = await fetch(url, {
     headers,
     redirect: 'follow',

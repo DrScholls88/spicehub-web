@@ -12,15 +12,13 @@
  *   4. Social media → guide user to Paste Text tab
  */
 
-// ── CORS proxies (cycled on failure) ──────────────────────────────────────────
-// Ordered roughly by reliability. Rotation starts from last successful index.
-const PROXIES = [
-  url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-  url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-  url => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-  url => `https://thingproxy.freeboard.io/fetch/${encodeURIComponent(url)}`,
-  url => `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, // returns JSON {contents} — handled below
-];
+import {
+  CLIENT_APIFY_MS,
+  CLIENT_OEMBED_MS,
+  CLIENT_IG_JSON_MS,
+  CLIENT_IG_JSON_DETAILS_MS,
+  MAX_IMAGE_BYTES,
+} from './lib/importConfig.js';
 
 /**
  * Normalize Instagram URL to canonical form for cache lookups.
@@ -38,9 +36,6 @@ export function normalizeInstagramUrl(url) {
     return u.toString();
   } catch { return url; }
 }
-
-// Track last successful proxy index to avoid always hammering proxy[0]
-let _lastGoodProxyIdx = 0;
 
 /**
  * Fetch HTML via robust proxy cascade.
@@ -153,7 +148,13 @@ export async function fetchHtmlViaProxy(url, timeoutMs = 30000, externalSignal =
         console.log(`[fetchHtmlViaProxy] Internal proxy: target returned ${proxyStatus}, falling to public proxies`);
       } else {
         const text = await resp.text();
-        if (text && text.length > 1000 && !text.includes('"error"')) {
+        // 2026-08-26: the old `!text.includes('"error"')` check false-
+        // positived on legitimate HTML pages containing the word "error"
+        // anywhere (e.g. CSS class names, JS variable names, aria labels).
+        // A real proxy error response is a short JSON body like
+        // `{"error":"Fetch failed"}` — never a multi-KB HTML page.
+        const looksLikeJsonError = text.length < 500 && text.trimStart().startsWith('{');
+        if (text && text.length > 1000 && !looksLikeJsonError) {
           console.log('[fetchHtmlViaProxy] ✅ Internal proxy succeeded');
           return text;
         }
@@ -323,16 +324,65 @@ export function proxyImageUrl(imageUrl) {
 // Uses managed residential proxies for reliable extraction + fresh CDN image URLs.
 // Returns { ok, caption, displayUrl, videoUrl, ownerUsername, ownerFullName, ... } or null.
 
-export async function fetchInstagramViaApify(url) {
+// ── Apify circuit breaker ───────────────────────────────────────────────────
+// After 2 consecutive transient failures (504 / timeout / network error) within
+// a 90-second window, skip Apify entirely and let oEmbed + ig-json handle the
+// next imports. Prevents burning paid Apify runs against a down endpoint while
+// also cutting user-visible latency for those requests.
+const _apifyCB = {
+  failures: [],            // timestamps of recent transient failures
+  WINDOW_MS: 90_000,       // sliding window
+  THRESHOLD: 2,            // consecutive failures before tripping
+  cooldownUntil: 0,        // Date.now() when cooldown expires
+  COOLDOWN_MS: 60_000,     // how long to stay tripped
+
+  /** Record a transient failure. Returns true if breaker just tripped. */
+  recordFailure() {
+    const now = Date.now();
+    this.failures.push(now);
+    // Trim to window
+    this.failures = this.failures.filter(t => now - t < this.WINDOW_MS);
+    if (this.failures.length >= this.THRESHOLD) {
+      this.cooldownUntil = now + this.COOLDOWN_MS;
+      this.failures = [];
+      console.log(`[Apify CB] tripped — skipping Apify for ${this.COOLDOWN_MS / 1000}s`);
+      return true;
+    }
+    return false;
+  },
+
+  /** Record a success — resets the failure count. */
+  recordSuccess() {
+    this.failures = [];
+  },
+
+  /** True if the breaker is open (Apify should be skipped). */
+  isOpen() {
+    return Date.now() < this.cooldownUntil;
+  },
+};
+
+export async function fetchInstagramViaApify(url, { signal: externalSignal } = {}) {
+  // Circuit breaker — skip Apify if it's been failing repeatedly
+  if (_apifyCB.isOpen()) {
+    console.log('[fetchInstagramViaApify] Circuit breaker open, skipping');
+    return null;
+  }
+
   const cleanedUrl = cleanUrl(url);
   const proxyUrl = `/api/proxy?mode=instagram-apify&url=${encodeURIComponent(cleanedUrl)}`;
 
   // One bounded retry on TRANSIENT failures (network throw / 5xx / timeout).
   // We do NOT retry on a successful-but-weak response — that just re-bills Apify.
   for (let attempt = 0; attempt <= 1; attempt += 1) {
+    if (externalSignal?.aborted) return null; // race was won by another fetcher
     try {
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), 35000); // Apify runs can take 20-30s
+      const timer = setTimeout(() => ctrl.abort(), CLIENT_APIFY_MS);
+      // If the race's shared signal fires, abort this fetch too
+      if (externalSignal) {
+        externalSignal.addEventListener('abort', () => ctrl.abort(), { once: true });
+      }
       const resp = await fetch(proxyUrl, { signal: ctrl.signal });
       clearTimeout(timer);
       if (!resp.ok) {
@@ -343,18 +393,24 @@ export async function fetchInstagramViaApify(url) {
           await new Promise(r => setTimeout(r, 800));
           continue;
         }
+        // Final transient failure — record for circuit breaker
+        if (resp.status >= 500) _apifyCB.recordFailure();
         return null;
       }
       const data = await resp.json();
       if (!data.ok || !data.caption) {
         console.log('[fetchInstagramViaApify] No caption in response');
-        return null; // permanent — no retry
+        return null; // permanent — no retry (not a transient failure)
       }
-      console.log(`[fetchInstagramViaApify] ✅ Got caption (${data.caption.length} chars) + image: ${data.displayUrl ? 'yes' : 'no'}${attempt ? ` (retry ${attempt})` : ''}`);
+      _apifyCB.recordSuccess();
+      console.log(`[fetchInstagramViaApify] Got caption (${data.caption.length} chars) + image: ${data.displayUrl ? 'yes' : 'no'}${attempt ? ` (retry ${attempt})` : ''}`);
       return data;
     } catch (e) {
+      if (externalSignal?.aborted) return null; // lost the race, stop retrying
       console.log(`[fetchInstagramViaApify] Error${attempt ? ` (retry ${attempt})` : ''}:`, e.message);
       if (attempt === 0) { await new Promise(r => setTimeout(r, 800)); continue; }
+      // Final network/timeout failure — record for circuit breaker
+      _apifyCB.recordFailure();
       return null;
     }
   }
@@ -676,7 +732,7 @@ export async function fetchWithRetry(input, init = {}, opts = {}) {
  * Convert a fetched Blob → base64 data URL. Validates image MIME and size.
  * Returns null on any failure (caller decides fallback strategy).
  */
-async function _blobToValidatedDataUrl(resp, { maxBytes = 2 * 1024 * 1024, minBytes = 100 } = {}) {
+async function _blobToValidatedDataUrl(resp, { maxBytes = MAX_IMAGE_BYTES, minBytes = 100 } = {}) {
   if (!resp || !resp.ok) return null;
   let blob;
   try { blob = await resp.blob(); } catch { return null; }
@@ -720,7 +776,7 @@ async function _blobToValidatedDataUrl(resp, { maxBytes = 2 * 1024 * 1024, minBy
  */
 export async function downloadImageAsDataUrl(imageUrl, opts = {}) {
   if (!imageUrl || typeof imageUrl !== 'string') return null;
-  const { timeoutMs = 9000, maxBytes = 2 * 1024 * 1024 } = opts;
+  const { timeoutMs = 9000, maxBytes = MAX_IMAGE_BYTES } = opts;
   const cleanedImageUrl = cleanUrl(imageUrl);
 
   // Skip direct fetch for Instagram/Meta CDN URLs — they require server-side headers
@@ -774,12 +830,16 @@ export async function downloadImageAsDataUrl(imageUrl, opts = {}) {
  * Fetch Instagram oEmbed data via the Vercel proxy (uses FB_APP_TOKEN server-side).
  * Returns { html, thumbnail_url, author_name } or null on failure/not-configured.
  */
-export async function fetchInstagramOEmbed(url) {
+export async function fetchInstagramOEmbed(url, { signal: externalSignal } = {}) {
   try {
+    if (externalSignal?.aborted) return null;
     const cleanedUrl = cleanUrl(url);
     const proxyUrl = `/api/proxy?mode=instagram-oembed&url=${encodeURIComponent(cleanedUrl)}`;
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 10000);
+    const timer = setTimeout(() => ctrl.abort(), CLIENT_OEMBED_MS);
+    if (externalSignal) {
+      externalSignal.addEventListener('abort', () => ctrl.abort(), { once: true });
+    }
     const resp = await fetch(proxyUrl, { signal: ctrl.signal });
     clearTimeout(timer);
     if (!resp.ok) return null;
@@ -790,6 +850,7 @@ export async function fetchInstagramOEmbed(url) {
     }
     return data; // { html, thumbnail_url, author_name }
   } catch (e) {
+    if (externalSignal?.aborted) return null;
     console.log('[fetchInstagramOEmbed] Failed:', e.message);
     return null;
   }
@@ -800,11 +861,15 @@ export async function fetchInstagramOEmbed(url) {
  * Returns caption string or null. Works ~60% of the time.
  * @param {string} shortcode - Instagram post shortcode (e.g. 'ABC123xyz')
  */
-export async function fetchInstagramJson(shortcode) {
+export async function fetchInstagramJson(shortcode, { signal: externalSignal } = {}) {
   try {
+    if (externalSignal?.aborted) return null;
     const proxyUrl = `/api/proxy?mode=instagram-json&shortcode=${encodeURIComponent(shortcode)}`;
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 10000);
+    const timer = setTimeout(() => ctrl.abort(), CLIENT_IG_JSON_MS);
+    if (externalSignal) {
+      externalSignal.addEventListener('abort', () => ctrl.abort(), { once: true });
+    }
     const resp = await fetch(proxyUrl, { signal: ctrl.signal });
     clearTimeout(timer);
     if (!resp.ok) return null;
@@ -817,6 +882,7 @@ export async function fetchInstagramJson(shortcode) {
       return null;
     }
   } catch (e) {
+    if (externalSignal?.aborted) return null;
     console.log('[fetchInstagramJson] Failed:', e.message);
     return null;
   }
@@ -872,11 +938,15 @@ function parseInstagramMediaJson(text) {
   };
 }
 
-export async function fetchInstagramJsonDetails(shortcode) {
+export async function fetchInstagramJsonDetails(shortcode, { signal: externalSignal } = {}) {
   try {
+    if (externalSignal?.aborted) return null;
     const proxyUrl = `/api/proxy?mode=instagram-json&shortcode=${encodeURIComponent(shortcode)}`;
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 12000);
+    const timer = setTimeout(() => ctrl.abort(), CLIENT_IG_JSON_DETAILS_MS);
+    if (externalSignal) {
+      externalSignal.addEventListener('abort', () => ctrl.abort(), { once: true });
+    }
     const resp = await fetch(proxyUrl, { signal: ctrl.signal });
     clearTimeout(timer);
     if (!resp.ok) return null;
@@ -884,6 +954,7 @@ export async function fetchInstagramJsonDetails(shortcode) {
     if (!text || text.length < 10) return null;
     return parseInstagramMediaJson(text);
   } catch (e) {
+    if (externalSignal?.aborted) return null;
     console.log('[fetchInstagramJsonDetails] Failed:', e.message);
     return null;
   }

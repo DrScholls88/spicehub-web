@@ -8,6 +8,24 @@
  * Usage: GET /api/proxy?url=https://www.allrecipes.com/recipe/...
  */
 
+import {
+  GRAPH_API_VERSION,
+  APIFY_ACTOR_ID,
+  USER_AGENTS,
+  SEC_CH_UA,
+  SERVER_APIFY_TIMEOUT_S,
+  SERVER_APIFY_FETCH_MS,
+  SERVER_OEMBED_MS,
+  SERVER_IG_JSON_MS,
+  SERVER_IMAGE_MS,
+  SERVER_TIKTOK_MS,
+  SERVER_HTML_PROXY_MS,
+  MAX_IMAGE_BYTES,
+  MAX_CAROUSEL_IMAGES,
+  MAX_LATEST_COMMENTS,
+  MAX_HTML_CHARS,
+} from '../src/lib/importConfig.js';
+
 export const config = {
   runtime: 'edge', // Use Edge Runtime — fast, cheap, no cold starts
 };
@@ -15,14 +33,6 @@ export const config = {
 // Sites known to require special handling
 const INSTAGRAM_HOST = /instagram\.com/i;
 const REDDIT_HOST = /(^|\.)reddit\.com$/i;
-
-// HTML size cap (harden-ideas-audit-2026-08-06.md §3) — api/extract.js already
-// caps its own fetch at MAX_HTML_BYTES=2_500_000; this generic passthrough
-// (used by blogLinkFollower.js's fetchHtmlViaProxy for every blog/short-link/
-// bio-hub fetch) had no cap at all, so a large page would be read into memory
-// in full before any parsing happened. 2MB is comfortably past any real
-// recipe blog page while still bounding worst-case memory per request.
-const MAX_HTML_CHARS = 2_000_000;
 
 /**
  * SSRF guard. Edge Runtime has no `dns`/`net` modules, so this can't re-resolve
@@ -61,12 +71,7 @@ function isBlockedHost(hostname) {
   return false;
 }
 
-const USER_AGENTS = [
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0',
-  'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36',
-];
+// USER_AGENTS imported from importConfig.js — update CHROME_VERSION there.
 
 // 2026-08-09: root-caused the "most drink imports fail" report — for a growing
 // share of posts (confirmed live: sponsored/paid-partnership posts, likely
@@ -133,7 +138,7 @@ function buildHeaders(targetUrl) {
 
   if (isInsta) {
     base['Referer'] = 'https://www.instagram.com/';
-    base['sec-ch-ua'] = '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"';
+    base['sec-ch-ua'] = SEC_CH_UA;
     base['sec-ch-ua-mobile'] = '?0';
     base['sec-ch-ua-platform'] = '"Windows"';
   }
@@ -178,22 +183,23 @@ export default async function handler(req) {
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
     }
-    const token = process.env.FB_APP_TOKEN || null;
-    if (!token) {
-      return new Response(JSON.stringify({ error: 'oEmbed not configured' }), {
-        status: 503,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      });
-    }
     try {
-      const oEmbedUrl = `https://graph.facebook.com/v18.0/instagram_oembed?url=${encodeURIComponent(igUrl)}&fields=html,thumbnail_url,author_name&access_token=${token}`;
-      const resp = await fetch(oEmbedUrl);
-      const json = await resp.text();
-      return new Response(json, {
-        status: 200,
+      const token = process.env.FB_APP_TOKEN || null; // should be APP_ID|APP_SECRET
+      // Start with tokenless
+      let oEmbedUrl = `https://graph.facebook.com/${GRAPH_API_VERSION}/instagram_oembed?url=${encodeURIComponent(igUrl)}&fields=html,thumbnail_url,author_name`;
+      // Prefer token if available (more reliable / richer in some cases)
+      if (token) {
+        oEmbedUrl += `&access_token=${token}`;
+      }
+      const resp = await fetch(oEmbedUrl, {
+        signal: AbortSignal.timeout(SERVER_OEMBED_MS),
+      });
+      const text = await resp.text();
+      return new Response(text, {
+        status: resp.ok ? 200 : resp.status,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
-    } catch {
+    } catch (e) {
       return new Response(JSON.stringify({ error: 'oEmbed fetch failed' }), {
         status: 502,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
@@ -230,6 +236,7 @@ export default async function handler(req) {
           ...buildHeaders(parsed.href),
           Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
         },
+        signal: AbortSignal.timeout(SERVER_IMAGE_MS),
       });
       if (!resp.ok) {
         return new Response(JSON.stringify({ error: 'Image fetch failed', status: resp.status }), {
@@ -239,7 +246,7 @@ export default async function handler(req) {
       }
       const contentType = resp.headers.get('content-type') || 'image/jpeg';
       const bytes = await resp.arrayBuffer();
-      if (bytes.byteLength < 100 || bytes.byteLength > 3 * 1024 * 1024) {
+      if (bytes.byteLength < 100 || bytes.byteLength > MAX_IMAGE_BYTES) {
         return new Response(JSON.stringify({ error: 'Image size rejected' }), {
           status: 422,
           headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
@@ -269,10 +276,23 @@ export default async function handler(req) {
     }
     try {
       const jsonUrl = `https://www.instagram.com/p/${shortcode}/?__a=1&__d=dis`;
-      const resp = await fetch(jsonUrl, { headers: buildHeaders(jsonUrl) });
+      const resp = await fetch(jsonUrl, {
+        headers: buildHeaders(jsonUrl),
+        signal: AbortSignal.timeout(SERVER_IG_JSON_MS),
+      });
       const text = await resp.text();
+      // Instagram sometimes returns an HTML login/block page with HTTP 200.
+      // Detect this and return 403 so the client can distinguish "blocked"
+      // from "genuinely no caption" instead of dying on JSON.parse('<html...').
+      const trimmed = text.trimStart();
+      if (trimmed.startsWith('<') || trimmed.startsWith('<!')) {
+        return new Response(JSON.stringify({ error: 'instagram-blocked', detail: 'HTML block page received instead of JSON' }), {
+          status: 403,
+          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+        });
+      }
       return new Response(text, {
-        status: 200,
+        status: resp.ok ? 200 : resp.status,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
     } catch (e) {
@@ -300,14 +320,14 @@ export default async function handler(req) {
     }
     try {
       // Use Apify's synchronous run endpoint — starts the actor and waits for results
-      const actorId = 'apify~instagram-post-scraper';
       // Pin actor version when APIFY_ACTOR_VERSION is set (harden-ideas §2)
       const actorVersion = process.env.APIFY_ACTOR_VERSION || '';
       const versionParam = actorVersion ? `&build=${encodeURIComponent(actorVersion)}` : '';
-      const apiUrl = `https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${apifyToken}&timeout=25${versionParam}`;
+      const apiUrl = `https://api.apify.com/v2/acts/${APIFY_ACTOR_ID}/run-sync-get-dataset-items?token=${apifyToken}&timeout=${SERVER_APIFY_TIMEOUT_S}${versionParam}`;
       const resp = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: AbortSignal.timeout(SERVER_APIFY_FETCH_MS),
         body: JSON.stringify({
           username: [igUrl],
           resultsLimit: 1,
@@ -334,12 +354,12 @@ export default async function handler(req) {
         ...(Array.isArray(post.childPosts)
           ? post.childPosts.map((c) => c?.displayUrl || c?.imageUrl || '').filter(Boolean)
           : []),
-      ].filter((u, i, a) => u && a.indexOf(u) === i).slice(0, 6);
+      ].filter((u, i, a) => u && a.indexOf(u) === i).slice(0, MAX_CAROUSEL_IMAGES);
       // Return a normalized subset — keep payload small
       // latestComments + ownerUsername feed the blog link follower's
       // comment/bio discovery surface (Phase 0.5B hypercharge).
       const latestComments = Array.isArray(post.latestComments)
-        ? post.latestComments.slice(0, 5).map((c) => c?.text || c?.body || (typeof c === 'string' ? c : '')).filter(Boolean)
+        ? post.latestComments.slice(0, MAX_LATEST_COMMENTS).map((c) => c?.text || c?.body || (typeof c === 'string' ? c : '')).filter(Boolean)
         : [];
       // Defensive bio/external-URL extraction (harden-ideas-audit-2026-08-06.md
       // §2). apify~instagram-post-scraper is a POST scraper, not a profile
@@ -415,6 +435,7 @@ export default async function handler(req) {
       const oEmbedUrl = `https://www.tiktok.com/oembed?url=${encodeURIComponent(ttUrl)}`;
       const resp = await fetch(oEmbedUrl, {
         headers: { 'User-Agent': USER_AGENTS[Math.floor(Date.now() / 900000) % USER_AGENTS.length], 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(SERVER_TIKTOK_MS),
       });
       const json = await resp.text();
       return new Response(json, {
@@ -471,6 +492,7 @@ export default async function handler(req) {
       method: 'GET',
       headers: buildHeaders(targetUrl),
       redirect: 'follow',
+      signal: AbortSignal.timeout(SERVER_HTML_PROXY_MS),
     });
 
     const contentType = response.headers.get('content-type') || 'text/html';
