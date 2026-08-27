@@ -18,8 +18,10 @@
 // working identically whether it's calling this proxy or the provider directly.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { GEMINI_VISION_MODEL } from '../src/lib/importConfig.js';
+
 const REQUEST_TIMEOUT_MS = 45000; // matches photoImportEngine's VISION_TIMEOUT_MS
-const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash-lite'; // 2026-08-27: gemini-2.0-flash-lite is retired, matches api/structure.js (fixed 2026-08-09)
+const DEFAULT_GEMINI_MODEL = GEMINI_VISION_MODEL; // 2026-08-27: centralized in src/lib/importConfig.js
 const MISTRAL_ENDPOINT = 'https://api.mistral.ai/v1/chat/completions';
 
 // ── Rate limiting (best-effort in-memory; resets on cold start) ──────────────
@@ -91,6 +93,7 @@ export default async function handler(req, res) {
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (err) {
+    console.error(`[api/vision] ${provider} fetch failed: ${err?.name || 'Error'}: ${err?.message || err}`);
     return res.status(502).json({
       ok: false,
       reason: err?.name === 'TimeoutError' ? `${provider}-timeout` : 'proxy-fetch-failed',
@@ -102,5 +105,10 @@ export default async function handler(req, res) {
   if (retryAfter) res.setHeader('Retry-After', retryAfter);
   res.setHeader('Content-Type', 'application/json');
   const bodyText = await upstream.text();
+  if (!upstream.ok) {
+    // 2026-08-27: side-channel log only — body/status below are still forwarded
+    // UNCHANGED (see file header) so fetchVisionTier()'s 429-retry handling doesn't change.
+    console.warn(`[api/vision] ${provider} upstream ${upstream.status}: ${bodyText.slice(0, 300)}`);
+  }
   return res.status(upstream.status).send(bodyText);
 }

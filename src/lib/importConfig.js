@@ -4,8 +4,11 @@
 // One file to grep, one file to update when Meta sunsets an API version,
 // Apify renames an actor, or Chrome ships a new major.
 //
-// Consumed by:  api/proxy.js  ·  api/extract.js  ·  src/api.js  ·
-//               src/import/acquire/instagram.js
+// Consumed by:  api/proxy.js  ·  api/extract.js  ·  api/structure.js  ·
+//               api/vision.js  ·  src/api.js  ·  src/import/acquire/instagram.js  ·
+//               src/import/images.js  ·  src/import/structure/gemini.js  ·
+//               src/lib/photoImportEngine.js  ·  src/recipeParser.js  ·
+//               server/index.js
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ─── External API versions ─────────────────────────────────────────────────
@@ -13,6 +16,17 @@
 // Check https://developers.facebook.com/docs/graph-api/changelog for sunsets.
 export const GRAPH_API_VERSION = 'v25.0';
 export const APIFY_ACTOR_ID = 'apify~instagram-post-scraper';
+
+// ─── Gemini models ──────────────────────────────────────────────
+// 2026-08-27: centralizes what six-plus call sites used to hardcode
+// separately — that drift is exactly how gemini-2.0-flash-lite's 2026-08-09
+// retirement went unnoticed in four of them (api/vision.js, src/import/images.js,
+// src/lib/photoImportEngine.js, src/recipeParser.js) while api/structure.js and
+// src/import/structure/gemini.js had already been fixed independently. One
+// constant per tier, one place to update the next time Google retires a model.
+export const GEMINI_PRIMARY_MODEL = 'gemini-2.5-flash-lite';
+export const GEMINI_FLAGSHIP_MODEL = 'gemini-2.5-flash';
+export const GEMINI_VISION_MODEL = 'gemini-2.5-flash-lite';
 
 // ─── Browser identity ──────────────────────────────────────────────────────
 // Update quarterly.  Stale UA strings are the #1 signal bot-walls key on.

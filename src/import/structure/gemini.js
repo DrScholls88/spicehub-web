@@ -16,6 +16,7 @@ import {
   detectKindHeuristic,
 } from '../../recipeSchema.js';
 import { buildPackSections, packHasCompleteCandidate } from '../contextPack.js';
+import { GEMINI_PRIMARY_MODEL, GEMINI_FLAGSHIP_MODEL } from '../../lib/importConfig.js';
 
 // 2026-08-09: gemini-2.0-flash-lite is shut down (Google's model list,
 // "Previous models", updated 2026-08-05) — mirrors the same fix in
@@ -23,9 +24,9 @@ import { buildPackSections, packHasCompleteCandidate } from '../contextPack.js';
 // to (see serverStructurePack below). Kept in sync so the client-key test
 // path doesn't silently rot the same way.
 const GEMINI_MODEL =
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GEMINI_MODEL) || 'gemini-2.5-flash-lite';
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GEMINI_MODEL) || GEMINI_PRIMARY_MODEL;
 const GEMINI_MODEL_FLAGSHIP =
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GEMINI_MODEL_FLAGSHIP) || 'gemini-2.5-flash';
+  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GEMINI_MODEL_FLAGSHIP) || GEMINI_FLAGSHIP_MODEL;
 const GEMINI_CONFIDENCE_FLOOR = 0.6;
 const REQUEST_TIMEOUT_MS = 20000;
 

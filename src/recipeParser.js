@@ -34,6 +34,7 @@ import { acquirePinterestPack } from './import/acquire/pinterest.js';
 import { selectHeroImage, persistCarousel } from './import/images.js';
 import { packHasCompleteCandidate, createContextPack, packFromCaption } from './import/contextPack.js';
 import { structurePack, serverStructurePack } from './import/structure/gemini.js';
+import { GEMINI_PRIMARY_MODEL, GEMINI_FLAGSHIP_MODEL, GEMINI_VISION_MODEL } from './lib/importConfig.js';
 import { tryBlogLinkExtraction, assessCaptionQuality } from './lib/blogLinkFollower.js';
 // 2026-08-09: shared HTML->recipe extraction engine (JSON-LD/microdata/CSS
 // heuristics + the decode/image/instruction helpers it depends on) — moved
@@ -631,7 +632,7 @@ name what you see, estimate ingredients you can identify, and suggest likely pre
 If handwritten, do your best to read every word. Output plain text only — no JSON, no markdown.`;
 
   try {
-    const res = await fetch('/api/vision?model=gemini-2.5-flash-lite', {
+    const res = await fetch(`/api/vision?model=${GEMINI_VISION_MODEL}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -988,8 +989,8 @@ function _enrichWithNormalizer(items = []) {
 // (free-tier friendly); a stronger flagship is used ONLY for confidence-driven
 // escalation on messy imports, so clean imports cost nothing extra. Verify exact
 // ids at ai.google.dev if you override.
-const GEMINI_MODEL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GEMINI_MODEL) || 'gemini-2.5-flash-lite'; // 2026-08-27: gemini-2.0-flash-lite is retired
-const GEMINI_MODEL_FLAGSHIP = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GEMINI_MODEL_FLAGSHIP) || 'gemini-2.5-flash';
+const GEMINI_MODEL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GEMINI_MODEL) || GEMINI_PRIMARY_MODEL; // 2026-08-27: centralized in src/lib/importConfig.js
+const GEMINI_MODEL_FLAGSHIP = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GEMINI_MODEL_FLAGSHIP) || GEMINI_FLAGSHIP_MODEL;
 const GEMINI_CONFIDENCE_FLOOR = 0.6;
 
 /**

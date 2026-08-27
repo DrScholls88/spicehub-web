@@ -25,6 +25,7 @@ import {
   RECIPE_SCHEMA,
   buildFewShotContents,
 } from '../src/recipeSchema.js';
+import { GEMINI_PRIMARY_MODEL } from '../src/lib/importConfig.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -541,7 +542,7 @@ app.post('/api/structure-recipe', expensiveLimiter, async (req, res) => {
   try {
     const genAI = new GoogleGenerativeAI(key);
     const model = genAI.getGenerativeModel({
-      model: process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite', // 2026-08-27: aligned with the Vercel structuring path (api/structure.js, src/import/structure/gemini.js)
+      model: process.env.GEMINI_MODEL || GEMINI_PRIMARY_MODEL, // 2026-08-27: centralized in src/lib/importConfig.js (aligned with api/structure.js, src/import/structure/gemini.js)
       systemInstruction: SYSTEM_INSTRUCTION,
       generationConfig: {
         temperature: 0.1,
@@ -561,6 +562,7 @@ app.post('/api/structure-recipe', expensiveLimiter, async (req, res) => {
     if (parsed.isRecipe === false) return res.status(422).json({ ok: false, error: 'not-a-recipe' });
     return res.json({ ok: true, recipe: parsed });
   } catch (err) {
+    console.error(`[/api/structure-recipe] failed: ${err?.name || 'Error'}: ${err?.message || err}`);
     return res.status(502).json({ ok: false, error: err.message });
   }
 });

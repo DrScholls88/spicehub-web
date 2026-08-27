@@ -29,6 +29,7 @@
 
 import { captionToRecipe, parseCaption } from '../recipeParser.js';
 import { compressImageUrl } from '../imageCompressor.js';
+import { GEMINI_VISION_MODEL as DEFAULT_GEMINI_VISION_MODEL } from './importConfig.js';
 
 // ── Tunables ────────────────────────────────────────────────────────────────
 export const MAX_PAGES = 10;
@@ -65,7 +66,7 @@ function env(key) {
 
 // Security: API keys are server-only. Vision model/model overrides are still
 // client-safe config (no secret, just a model name string).
-const GEMINI_VISION_MODEL = () => env('VITE_GEMINI_VISION_MODEL') || 'gemini-2.5-flash-lite'; // 2026-08-27: gemini-2.0-flash-lite is retired
+const GEMINI_VISION_MODEL = () => env('VITE_GEMINI_VISION_MODEL') || DEFAULT_GEMINI_VISION_MODEL; // 2026-08-27: centralized in src/lib/importConfig.js
 const MISTRAL_MODEL = () => env('VITE_MISTRAL_MODEL') || 'pixtral-12b-latest';
 
 // ── Pure helpers (unit-tested) ──────────────────────────────────────────────

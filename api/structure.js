@@ -22,14 +22,15 @@ import {
   sanitizeModelJson,
 } from '../src/import/structure/gemini.js';
 import { createContextPack } from '../src/import/contextPack.js';
+import { GEMINI_PRIMARY_MODEL, GEMINI_FLAGSHIP_MODEL } from '../src/lib/importConfig.js';
 
 // 2026-08-09: gemini-2.0-flash-lite is officially shut down (confirmed via
 // Google's own model list, "Previous models" table, updated 2026-08-05) —
 // any call to it now fails outright, which is why primary.status was always
 // truthy and every /api/structure call was returning 502. gemini-2.5-flash-lite
 // is its direct same-tier replacement (still listed Stable).
-const PRIMARY_MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
-const FLAGSHIP_MODEL = process.env.GEMINI_MODEL_FLAGSHIP || 'gemini-2.5-flash';
+const PRIMARY_MODEL = process.env.GEMINI_MODEL || GEMINI_PRIMARY_MODEL;
+const FLAGSHIP_MODEL = process.env.GEMINI_MODEL_FLAGSHIP || GEMINI_FLAGSHIP_MODEL;
 const CONFIDENCE_FLOOR = 0.6;
 const REQUEST_TIMEOUT_MS = 20000;
 
@@ -151,6 +152,9 @@ export default async function handler(req, res) {
       if (FLAGSHIP_MODEL && FLAGSHIP_MODEL !== PRIMARY_MODEL) {
         const esc = await geminiCall(FLAGSHIP_MODEL, contents, mode, apiKey, sourceType, kind, kindLocked);
         if (esc.status) {
+          // 2026-08-27: both models failed — the only server-side signal that
+          // a model was renamed/retired (the client only sees the 502 body).
+          console.error(`[api/structure] both models failed: ${PRIMARY_MODEL}=${primary.status}, ${FLAGSHIP_MODEL}=${esc.status}`);
           return res.status(502).json({ ok: false, reason: `gemini-${primary.status}+${esc.status}` });
         }
         if (esc.failed || !esc.structured?.isRecipe) {
@@ -159,6 +163,7 @@ export default async function handler(req, res) {
         primary = esc;
         primary.structured._escalated = true;
       } else {
+        console.error(`[api/structure] ${PRIMARY_MODEL} failed with no flagship configured: status=${primary.status}`);
         return res.status(502).json({ ok: false, reason: 'gemini-' + primary.status });
       }
     }
@@ -186,6 +191,7 @@ export default async function handler(req, res) {
       elapsedMs: Date.now() - started,
     });
   } catch (err) {
+    console.error(`[api/structure] handler threw: ${err?.name || 'Error'}: ${err?.message || err}`);
     return res.status(502).json({
       ok: false,
       reason: err?.name === 'TimeoutError' ? 'gemini-timeout' : 'structure-failed',

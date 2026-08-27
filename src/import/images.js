@@ -12,9 +12,11 @@
 // so this module stays testable without the network.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { GEMINI_VISION_MODEL } from '../lib/importConfig.js';
+
 export const MAX_CAROUSEL = 6;
 const VISION_TIMEOUT_MS = 9000;
-const VISION_MODEL = 'gemini-2.5-flash-lite'; // 2026-08-27: gemini-2.0-flash-lite is retired
+const VISION_MODEL = GEMINI_VISION_MODEL; // 2026-08-27: centralized in src/lib/importConfig.js
 
 // ── Free heuristics ───────────────────────────────────────────────────────────
 const REJECT_URL_RE = /(profile_pic|profile_images|\/pp\/|avatar|favicon|sprite|logo[-_.]|[-_.]logo|badge|icon[-_.]|[-_.]icon|placeholder|blank\.|spacer\.|1x1\.|pixel\.)/i;
