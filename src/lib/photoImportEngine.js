@@ -65,7 +65,7 @@ function env(key) {
 
 // Security: API keys are server-only. Vision model/model overrides are still
 // client-safe config (no secret, just a model name string).
-const GEMINI_VISION_MODEL = () => env('VITE_GEMINI_VISION_MODEL') || 'gemini-2.0-flash-lite';
+const GEMINI_VISION_MODEL = () => env('VITE_GEMINI_VISION_MODEL') || 'gemini-2.5-flash-lite'; // 2026-08-27: gemini-2.0-flash-lite is retired
 const MISTRAL_MODEL = () => env('VITE_MISTRAL_MODEL') || 'pixtral-12b-latest';
 
 // ── Pure helpers (unit-tested) ──────────────────────────────────────────────

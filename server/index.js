@@ -62,21 +62,42 @@ app.use((req, res, next) => {
   next();
 });
 
-// CORS allowlist — driven by ALLOWED_ORIGINS (already wired up as a Render env
-// var, see server/render.yaml). Fails CLOSED (no cross-origin access) rather
-// than open when unset, so a forgotten config doesn't silently become "allow
-// everyone". Same-origin/non-browser requests (no Origin header, e.g. curl,
-// server-to-server) are always allowed through.
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
-  .split(',')
-  .map((s) => s.trim())
-  .filter(Boolean);
+// CORS allowlist — driven by ALLOWED_ORIGINS (Render env var, sync:false in
+// server/render.yaml, set in the Render dashboard). Fails CLOSED (no cross-origin
+// access) rather than open when unset, so a forgotten config doesn't silently
+// become "allow everyone". Same-origin/non-browser requests (no Origin header,
+// e.g. curl, server-to-server) are always allowed through. 2026-08-27: also
+// allow any *.vercel.app hostname as a fallback so preview deploys don't need
+// to be added to ALLOWED_ORIGINS by hand — the explicit list is still checked
+// first.
+const allowedOrigins = new Set(
+  (process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+);
+function isAllowedOrigin(origin) {
+  if (!origin) return true;
+  if (allowedOrigins.has(origin)) return true;
+  try {
+    return new URL(origin).hostname.endsWith('.vercel.app');
+  } catch {
+    return false;
+  }
+}
 
 app.use(cors({
   origin(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
-    return callback(new Error('cors-not-allowed'));
+    if (isAllowedOrigin(origin)) return callback(null, true);
+    console.warn('[cors] blocked origin:', origin);
+    // 2026-08-27: don't throw here — a thrown error strips CORS headers
+    // entirely and surfaces to the browser as an opaque "blocked by CORS
+    // policy" failure. Returning false lets the cors package respond cleanly
+    // (no ACAO header, no crash) so failures are visible in these logs instead.
+    return callback(null, false);
   },
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 app.use(express.json({ limit: '1mb' }));
 
@@ -520,7 +541,7 @@ app.post('/api/structure-recipe', expensiveLimiter, async (req, res) => {
   try {
     const genAI = new GoogleGenerativeAI(key);
     const model = genAI.getGenerativeModel({
-      model: process.env.GEMINI_MODEL || 'gemini-1.5-flash',
+      model: process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite', // 2026-08-27: aligned with the Vercel structuring path (api/structure.js, src/import/structure/gemini.js)
       systemInstruction: SYSTEM_INSTRUCTION,
       generationConfig: {
         temperature: 0.1,

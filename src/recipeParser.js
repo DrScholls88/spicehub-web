@@ -631,7 +631,7 @@ name what you see, estimate ingredients you can identify, and suggest likely pre
 If handwritten, do your best to read every word. Output plain text only — no JSON, no markdown.`;
 
   try {
-    const res = await fetch('/api/vision?model=gemini-2.0-flash-lite', {
+    const res = await fetch('/api/vision?model=gemini-2.5-flash-lite', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -988,7 +988,7 @@ function _enrichWithNormalizer(items = []) {
 // (free-tier friendly); a stronger flagship is used ONLY for confidence-driven
 // escalation on messy imports, so clean imports cost nothing extra. Verify exact
 // ids at ai.google.dev if you override.
-const GEMINI_MODEL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GEMINI_MODEL) || 'gemini-2.0-flash-lite';
+const GEMINI_MODEL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GEMINI_MODEL) || 'gemini-2.5-flash-lite'; // 2026-08-27: gemini-2.0-flash-lite is retired
 const GEMINI_MODEL_FLAGSHIP = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_GEMINI_MODEL_FLAGSHIP) || 'gemini-2.5-flash';
 const GEMINI_CONFIDENCE_FLOOR = 0.6;
 

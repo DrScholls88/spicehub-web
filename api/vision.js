@@ -19,7 +19,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 const REQUEST_TIMEOUT_MS = 45000; // matches photoImportEngine's VISION_TIMEOUT_MS
-const DEFAULT_GEMINI_MODEL = 'gemini-2.0-flash-lite';
+const DEFAULT_GEMINI_MODEL = 'gemini-2.5-flash-lite'; // 2026-08-27: gemini-2.0-flash-lite is retired, matches api/structure.js (fixed 2026-08-09)
 const MISTRAL_ENDPOINT = 'https://api.mistral.ai/v1/chat/completions';
 
 // ── Rate limiting (best-effort in-memory; resets on cold start) ──────────────
