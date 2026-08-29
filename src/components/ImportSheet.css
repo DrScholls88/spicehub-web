@@ -7,39 +7,43 @@
 
 /* ── Design tokens ──────────────────────────────────────────────────────── */
 :root {
-  --sh-accent: #e65100;
-  --sh-accent-light: #ff833a;
-  --sh-accent-dark: #ac1900;
-  --sh-accent-bg: rgba(230, 81, 0, 0.06);
-  --sh-accent-bg-strong: rgba(230, 81, 0, 0.12);
-  --sh-accent-shadow: rgba(230, 81, 0, 0.25);
-  --sh-bg: #fff8f0;
-  --sh-surface: #f5f0e8;
-  --sh-surface-hover: #ede7dc;
-  --sh-text: #2c2c2c;
-  --sh-text-secondary: #666;
-  --sh-text-muted: #7d756c;
-  --sh-border: #e8e2d8;
-  --sh-border-light: #f0ebe3;
-  --sh-radius: 16px;
+  --sh-accent: #C4552A;
+  --sh-accent-hover: #A84521;
+  --sh-accent-bg: rgba(196, 85, 42, 0.08);
+  --sh-accent-bg-strong: rgba(196, 85, 42, 0.15);
+  --sh-accent-shadow: rgba(196, 85, 42, 0.25);
+  --sh-accent-ring: rgba(196, 85, 42, 0.18);
+  --sh-accent-text: #C4552A;
+  --sh-bg: #F7F5F2;
+  --sh-surface: #EFECE8;
+  --sh-surface-hover: #E8E4DE;
+  --sh-text: #2A2521;
+  --sh-text-secondary: #7D756B;
+  --sh-text-muted: #A59E94;
+  --sh-border: #E2DDD6;
+  --sh-border-light: #EDE9E3;
+  --sh-radius: 14px;
   --sh-radius-sm: 10px;
   --sh-radius-lg: 20px;
   --sh-pill: 100px;
-  --sh-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  --sh-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --sh-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+  --sh-shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.10);
   --sh-spring: cubic-bezier(0.32, 0.72, 0, 1);
+  --sh-success: #3A7D44;
+  --sh-success-bg: rgba(58, 125, 68, 0.08);
+  --sh-error: #B5362A;
+  --sh-error-bg: rgba(181, 54, 42, 0.07);
   --sh-conf-high: #2e7d32;
   --sh-conf-high-bg: #e8f5e9;
   --sh-conf-mid: #9a5b00;
   --sh-conf-low: #c62828;
-  --sh-accent-text: #c64500;
-  --sh-danger: #dc2626;
-  --sh-danger-dark: #b91c1c;
-  --sh-danger-bg: rgba(220, 38, 38, 0.08);
+  --sh-danger: #B5362A;
+  --sh-danger-dark: #8E2A20;
+  --sh-danger-bg: rgba(181, 54, 42, 0.07);
   --sh-fs-xs: 11px;
   --sh-fs-sm: 13px;
   --sh-fs-base: 14px;
-  /* Bar/Drinks brand accent — purple, used by .ip-smart-btn--bar (smart action bar) */
+  /* Bar/Drinks brand accent — purple */
   --sh-bar-bg: #4a2060;
   --sh-bar-text: #e0b8ff;
   --sh-bar-shadow: rgba(74, 32, 96, 0.35);
@@ -48,27 +52,35 @@
 }
 
 [data-theme="dark"] {
-  --sh-bg: #1a1714;
-  --sh-surface: #2a2520;
-  --sh-surface-hover: #342e28;
-  --sh-text: #e8e2d8;
-  --sh-text-secondary: #c4bcb0; /* was #b0a898 — bumped 2026-08-10 for readability in tabs/input against the dark brown surface (verified WCAG AA via relative-luminance calc) */
-  --sh-text-muted: #a89e91; /* was #988e82 — same pass; used by .import-input-url placeholder */
-  --sh-border: #3a342e;
-  --sh-border-light: #2e2924;
-  --sh-accent-bg: rgba(230, 81, 0, 0.1);
-  --sh-accent-bg-strong: rgba(230, 81, 0, 0.18);
+  --sh-bg: #1C1A17;
+  --sh-surface: #262320;
+  --sh-surface-hover: #302C28;
+  --sh-text: #E8E4DF;
+  --sh-text-secondary: #A09789;
+  --sh-text-muted: #6E665C;
+  --sh-border: #3A352F;
+  --sh-border-light: #302C27;
+  --sh-accent: #D4703F;
+  --sh-accent-hover: #E07D4A;
+  --sh-accent-bg: rgba(212, 112, 63, 0.10);
+  --sh-accent-bg-strong: rgba(212, 112, 63, 0.18);
+  --sh-accent-shadow: rgba(212, 112, 63, 0.30);
+  --sh-accent-ring: rgba(212, 112, 63, 0.22);
+  --sh-accent-text: #D4703F;
   --sh-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-  --sh-shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.4);
-  --sh-accent-text: #ff9a5c;
+  --sh-shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.35);
+  --sh-success: #5EAA68;
+  --sh-success-bg: rgba(94, 170, 104, 0.12);
+  --sh-error: #D4564A;
+  --sh-error-bg: rgba(212, 86, 74, 0.12);
   --sh-conf-high: #66bb6a;
   --sh-conf-high-bg: rgba(102, 187, 106, 0.15);
   --sh-conf-mid: #e0a040;
   --sh-conf-low: #ef5350;
-  --sh-danger: #f87171;
+  --sh-danger: #D4564A;
   --sh-danger-dark: #fca5a5;
-  --sh-danger-bg: rgba(248, 113, 113, 0.12);
-  /* Bar/Drinks brand accent — lighten purple slightly for better contrast on dark surfaces */
+  --sh-danger-bg: rgba(212, 86, 74, 0.12);
+  /* Bar/Drinks brand accent */
   --sh-bar-bg: #5c2a78;
   --sh-bar-text: #f0d9ff;
   --sh-bar-shadow: rgba(92, 42, 120, 0.45);
@@ -228,11 +240,13 @@
   flex: 1;
 }
 .import-sheet-btn:active { transform: translateY(1px); }
-.import-sheet-btn:disabled {
+.import-sheet-btn:disabled,
+.import-sheet-btn[aria-disabled="true"] {
   opacity: 0.45;
   cursor: not-allowed;
   box-shadow: none;
   transform: none;
+  pointer-events: none;
 }
 
 .import-sheet-btn-primary {
@@ -244,7 +258,10 @@
   color: #fff;
   box-shadow: 0 4px 14px var(--sh-accent-shadow);
 }
-.import-sheet-btn-primary:hover { box-shadow: 0 6px 20px var(--sh-accent-shadow); }
+.import-sheet-btn-primary:hover {
+  background: var(--sh-accent-hover);
+  box-shadow: 0 6px 20px var(--sh-accent-shadow);
+}
 /* Icon + label as one centered group instead of an icon nudged to the left
    edge with independently-centered text next to it. */
 .import-sheet-btn-content {
@@ -267,6 +284,11 @@
   color: var(--sh-accent);
 }
 .import-sheet-btn-secondary:hover { background: var(--sh-accent-bg); }
+
+.import-sheet-btn-background {
+  background: var(--sh-accent-bg);
+  color: var(--sh-accent);
+}
 
 /* ── E.4: background-import floating toast ──────────────────────────────── */
 .import-sheet-toast {
@@ -303,14 +325,6 @@
 }
 
 /* ── Loading state ──────────────────────────────────────────────────────── */
-.import-sheet-loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 32px 0;
-  animation: sh-fade-in 200ms ease-out;
-}
 
 /* Single progress vector (Phase E.2): pulsing dot + status line, no bar */
 .import-sheet-progress-dot {
@@ -326,71 +340,147 @@
   50% { transform: scale(1.25); opacity: 0.75; box-shadow: 0 0 0 8px rgba(230, 81, 0, 0); }
 }
 
-.import-sheet-progress-text {
-  font-size: 13px;
-  color: var(--sh-text-muted);
-  text-align: center;
-}
-
-/* ── Error toast ────────────────────────────────────────────────────────── */
-.import-sheet-error {
-  background: rgba(220, 38, 38, 0.08);
-  border: 1px solid rgba(220, 38, 38, 0.2);
-  border-radius: var(--sh-radius-sm);
-  padding: 12px 14px;
-  margin: 8px 0;
-  animation: sh-fade-in 150ms ease-out;
-}
-.import-sheet-error p {
-  font-size: 13px;
-  color: #b91c1c;
-  margin: 0 0 8px;
-}
-[data-theme="dark"] .import-sheet-error p { color: #fca5a5; }
-.import-sheet-error button {
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--sh-accent);
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0;
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════
-   ImportInput — segmented tabs, type toggle, URL field, collapsed bar
+   ImportInput — Quiet Field (single unified input)
    ═══════════════════════════════════════════════════════════════════════════ */
 
-.import-input {
-  animation: sh-fade-in 150ms ease-out;
+.import-input-field-wrap {
+  margin-bottom: 4px;
+}
+.import-input-field-wrap.dragover .import-input-field {
+  border-color: var(--sh-accent);
+  box-shadow: 0 0 0 3px var(--sh-accent-ring);
+  background: var(--sh-accent-bg);
 }
 
-/* ── Segmented tabs ─────────────────────────────────────────────────────── */
-.import-input-tabs {
+/* ── The field container ───────────────────────────────────────────────── */
+.import-input-field {
   display: flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 4px 4px 4px 14px;
+  border-radius: var(--sh-radius);
   background: var(--sh-surface);
-  border-radius: var(--sh-pill);
-  padding: 4px;
-  gap: 3px;
-  margin-bottom: 14px;
+  border: 1px solid var(--sh-border);
+  transition: border-color 150ms, box-shadow 150ms;
+}
+.import-input-field.focused {
+  border-color: var(--sh-accent);
+  box-shadow: 0 0 0 3px var(--sh-accent-ring);
 }
 
-.import-input-tabs button {
+/* ── Text input inside the field ───────────────────────────────────────── */
+.import-input-text {
   flex: 1;
   border: none;
   background: transparent;
   font: inherit;
-  font-weight: 600;
-  /* Two tabs now instead of three (Text dropped 2026-08-11) — a bit more
-     size/padding fills the extra room instead of leaving it as dead space. */
   font-size: 14px;
-  color: var(--sh-text-secondary);
-  padding: 11px 8px;
-  border-radius: var(--sh-pill);
+  color: var(--sh-text);
+  padding: 8px 0;
+  min-width: 0;
+  outline: none;
+}
+.import-input-text::placeholder {
+  color: var(--sh-text-muted);
+}
+/* Prevent iOS Safari zoom on focus — 16px or larger */
+@supports (-webkit-touch-callout: none) {
+  .import-input-text { font-size: 16px; }
+}
+
+/* ── Divider between input and action icon ─────────────────────────────── */
+.import-input-field-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--sh-border);
+  flex: 0 0 auto;
+  margin: 0 4px;
+}
+.import-input-field.focused .import-input-field-divider,
+.import-input-field.has-content .import-input-field-divider {
+  background: var(--sh-border-light);
+}
+
+/* ── Action icon (camera or clear ✕) ───────────────────────────────────── */
+.import-input-field-action {
+  width: 44px;
+  height: 44px;
+  border: none;
+  background: transparent;
+  color: var(--sh-text-muted);
   cursor: pointer;
-  transition: all 150ms;
-  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  transition: background 120ms, color 120ms;
+  padding: 0;
+}
+.import-input-field-action:hover {
+  background: var(--sh-surface-hover);
+  color: var(--sh-text-secondary);
+}
+.import-input-field-action.camera {
+  color: var(--sh-text-secondary);
+}
+
+/* ── Photo thumbnail inside the field (State 3) ────────────────────────── */
+.import-input-photo-thumb {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  padding: 4px 0;
+}
+.import-input-photo-img {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  object-fit: cover;
+  flex: 0 0 auto;
+}
+.import-input-photo-label {
+  font-size: 14px;
+  color: var(--sh-text);
+  font-weight: 500;
+}
+
+/* ── Detection chip ────────────────────────────────────────────────────── */
+.detection-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 6px 12px;
+  border-radius: 100px;
+  background: var(--sh-success-bg);
+  color: var(--sh-success);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* ── Error line (State 7 — total miss) ─────────────────────────────────── */
+.import-input-error-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: var(--sh-radius-sm);
+  background: var(--sh-error-bg);
+  color: var(--sh-error);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+/* ── First-visit hint ──────────────────────────────────────────────────── */
+.import-input-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--sh-text-muted);
 }
 
 /* ── Offline / pending-import status banner ─────────────────────────────── */
@@ -414,325 +504,64 @@
 .import-sheet-queue-icon { font-size: 15px; line-height: 1; flex-shrink: 0; }
 .import-sheet-queue-text { line-height: 1.3; }
 
-/* ── Unified ingestion zone ─────────────────────────────────────────────── */
-.import-input-zone {
-  border-radius: var(--sh-radius);
-  transition: box-shadow 150ms, background 150ms;
-}
-.import-input-zone.dragover {
-  box-shadow: 0 0 0 2px var(--sh-accent), 0 0 0 6px var(--sh-accent-bg);
-  background: var(--sh-accent-bg);
-}
-
-/* ── Auto-detected type — single-tap inline dropdown badge ──────────────── */
-.import-input-type-row {
+/* ── Source pill (loading phase) ────────────────────────────────────────── */
+.source-pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--sh-radius-sm);
+  background: var(--sh-surface);
   margin-bottom: 12px;
 }
-/* A native <select> sized to cover the whole badge (opacity: 0, positioned
-   absolute) drives this — tapping anywhere on the pill opens the OS picker,
-   so switching Meal ⇄ Drink is one tap instead of tap-to-reveal-then-tap. */
-.import-input-type-badge {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 40px;
-  padding: 8px 12px;
-  border-radius: var(--sh-pill);
-  border: 1.5px solid var(--sh-border);
-  background: var(--sh-bg);
-  color: var(--sh-text-secondary);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-}
-.import-input-type-badge.type-drink {
-  border-color: var(--sh-bar-border);
-  background: color-mix(in oklab, var(--sh-bar-bg) 10%, var(--sh-bg));
-}
-.import-input-type-badge-text strong { color: var(--sh-text); }
-.import-input-type-badge-emoji { font-size: 15px; line-height: 1; }
-.import-input-type-badge-chevron {
-  color: var(--sh-text-muted);
-  flex-shrink: 0;
-}
-.import-input-type-badge-select {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  padding: 0;
-  border: none;
-  background: transparent;
-  opacity: 0;
-  cursor: pointer;
-  font-size: 16px; /* stops iOS Safari zooming the sheet on open */
-}
 
-/* ── Paste-text back-link (2026-08-11: no longer a top-level tab) ───────── */
-.import-input-back-to-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  border: none;
-  background: none;
-  padding: 6px 2px;
-  margin-bottom: 8px;
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--sh-text-secondary);
-  cursor: pointer;
-  min-height: 32px;
-}
-.import-input-back-to-link:hover { color: var(--sh-accent); }
-
-/* ── Single primary CTA ─────────────────────────────────────────────────── */
-.import-input-primary-cta {
+.source-pill-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: var(--sh-surface-hover);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  width: 100%;
-  min-height: 52px;
-  margin-top: 4px;
-  border: none;
-  border-radius: var(--sh-radius-sm);
-  background: var(--sh-accent);
-  color: #fff;
-  font: inherit;
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 0.2px;
-  cursor: pointer;
-  box-shadow: var(--sh-shadow);
-  transition: opacity 150ms, transform 100ms, background 150ms;
-}
-.import-input-primary-cta:active { transform: scale(0.98); }
-.import-input-primary-cta:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-  box-shadow: none;
-}
-
-.import-input-tabs button.active {
-  background: var(--sh-bg);
-  color: var(--sh-accent);
-  box-shadow: var(--sh-shadow);
-}
-
-/* ── URL input ──────────────────────────────────────────────────────────── */
-.import-input-url-row {
-  display: flex;
-  gap: 8px;
-  align-items: stretch;
-}
-.import-input-url {
-  flex: 1;
-  width: 100%;
-  min-width: 0;
-  border: 1.5px solid var(--sh-border);
-  background: var(--sh-bg);
-  border-radius: var(--sh-radius-sm);
-  padding: 13px 14px;
-  font: inherit;
-  font-size: 16px; /* was 15px — stops iOS Safari zooming the page on focus; this is the primary recipe-URL paste field */
-  color: var(--sh-text);
-  transition: border-color 150ms, box-shadow 150ms;
-  box-sizing: border-box;
-  min-height: 48px;
-}
-.import-input-url:focus {
-  outline: none;
-  border-color: var(--sh-accent);
-  box-shadow: 0 0 0 3px var(--sh-accent-bg);
-}
-.import-input-url::placeholder { color: var(--sh-text-muted); }
-
-.import-input-url-submit {
   flex: 0 0 auto;
-  font: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  color: #fff;
-  background: var(--sh-accent);
-  border: 1px solid var(--sh-accent);
-  border-radius: var(--sh-radius-sm);
-  padding: 0 18px;
-  cursor: pointer;
-  min-height: 44px;
-  min-width: 44px;
-  transition: opacity 150ms, transform 100ms;
-}
-.import-input-url-submit:active {
-  transform: scale(0.97);
-}
-.import-input-url-submit:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
 }
 
-/* ── Social detected card ───────────────────────────────────────────────────
-   Status indicator only — NOT a tap target. The single import action is the
-   sticky footer's "Smart Import" button; this card just confirms
-   detection so the two never compete as duplicate CTAs. */
-.import-input-social-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  border: 1.5px solid var(--sh-accent);
-  border-radius: var(--sh-radius);
-  background: var(--sh-bg);
-  margin-top: 10px;
-  cursor: default;
-}
-
-.import-input-social-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #f09433, #dc2743, #bc1888);
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.import-input-social-meta {
+.source-pill-url {
   flex: 1;
-}
-.import-input-social-meta strong {
-  display: block;
-  font-size: 14px;
-  color: var(--sh-text);
-}
-.import-input-social-meta small {
-  font-size: 12px;
-  color: var(--sh-text-muted);
-}
-
-/* ── Paste textarea ─────────────────────────────────────────────────────── */
-.import-input-paste {
-  width: 100%;
-  border: 1.5px solid var(--sh-border);
-  background: var(--sh-bg);
-  border-radius: var(--sh-radius-sm);
-  padding: 13px 14px;
-  font: inherit;
-  font-size: 16px; /* was 14px — stops iOS Safari zooming the page on focus */
-  color: var(--sh-text);
-  resize: vertical;
-  min-height: 120px;
-  box-sizing: border-box;
-}
-.import-input-paste:focus {
-  outline: none;
-  border-color: var(--sh-accent);
-  box-shadow: 0 0 0 3px var(--sh-accent-bg);
-}
-
-.import-input-paste-submit {
-  display: block;
-  margin: 10px 0 0;
-  font: inherit;
   font-size: 13px;
-  font-weight: 600;
-  color: var(--sh-accent);
-  background: var(--sh-accent-bg);
-  border: 1px solid var(--sh-accent);
-  border-radius: var(--sh-pill);
-  padding: 10px 18px;
-  cursor: pointer;
-  min-height: 44px;
-}
-
-/* ── Photo section ──────────────────────────────────────────────────────── */
-.import-input-photo-section {
-  text-align: center;
-  padding: 16px 0;
-}
-.import-input-photo-btn-row {
-  display: flex;
-  gap: 10px;
-}
-.import-input-photo-btn {
-  font: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--sh-accent);
-  background: var(--sh-accent-bg);
-  border: 1.5px dashed var(--sh-accent);
-  border-radius: var(--sh-radius);
-  padding: 20px 12px;
-  width: 100%;
-  cursor: pointer;
-  min-height: 80px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  transition: background 120ms, transform 120ms var(--sh-spring);
-}
-.import-input-photo-btn:hover { background: var(--sh-accent-bg-strong); }
-.import-input-photo-btn:active { transform: scale(0.97); }
-
-.import-input-photo-hint {
-  font-size: 12px;
-  color: var(--sh-text-muted);
-  margin: 10px 0 0;
-  line-height: 1.5;
-}
-
-/* ── Collapsed input bar ────────────────────────────────────────────────── */
-.import-input-collapsed {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: var(--sh-surface);
-  border-radius: var(--sh-radius-sm);
-  cursor: pointer;
-  min-height: 40px;
-  margin-bottom: 8px;
-  transition: background 120ms;
-  animation: sh-collapse 250ms var(--sh-spring);
-}
-.import-input-collapsed:hover { background: var(--sh-surface-hover); }
-
-@keyframes sh-collapse {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.import-input-collapsed-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--sh-conf-high);
-  flex: 0 0 auto;
-}
-
-.import-input-collapsed-url {
-  flex: 1;
-  font-size: 12px;
   color: var(--sh-text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
 }
 
-.import-input-collapsed-edit {
+.source-pill-edit {
+  width: 28px;
+  height: 28px;
   border: none;
-  background: none;
+  border-radius: 7px;
+  background: var(--sh-surface-hover);
   color: var(--sh-text-muted);
-  font-size: 14px;
   cursor: pointer;
-  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
+  transition: background 120ms, color 120ms;
+  padding: 0;
+  /* Expand touch target to 44×44px without changing visual size */
+  position: relative;
+}
+.source-pill-edit::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  /* Expands the touch area to 44x44 */
+}
+.source-pill-edit:hover {
+  background: var(--sh-border);
+  color: var(--sh-text);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1540,31 +1369,6 @@
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Error banner actions
-   ═══════════════════════════════════════════════════════════════════════════ */
-.import-sheet-error-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 8px;
-}
-.import-sheet-error-actions .import-sheet-btn {
-  min-height: 32px;
-  padding: 4px 12px;
-  font-size: var(--sh-fs-xs);
-  flex: 0 0 auto;
-}
-.import-sheet-error-actions .import-sheet-btn-dismiss {
-  margin-left: auto;
-}
-/* Phase 4 (2026-07-20): model-tier toggle chip — a setting, not an action,
-   so it reads lighter than Retry/Transcribe Video next to it. */
-.import-sheet-error-actions .import-sheet-model-toggle {
-  border: 1px dashed var(--sh-border, currentColor);
-  opacity: 0.85;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
    Back-to-review button
    ═══════════════════════════════════════════════════════════════════════════ */
 .import-sheet-back-to-review-btn {
@@ -1588,202 +1392,6 @@
 }
 .import-sheet-back-to-review-btn:hover { background: var(--sh-surface-hover); }
 .import-sheet-back-to-review-btn:active { transform: translateY(1px); }
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Loading container
-   ═══════════════════════════════════════════════════════════════════════════ */
-.import-sheet-loading-container {
-  width: 100%;
-}
-.import-sheet-loading-status {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  justify-content: center;
-  padding: 12px 0;
-}
-.import-sheet-loading-status-text {
-  display: flex;
-  flex-direction: column;
-}
-.import-sheet-progress-text {
-  margin: 0;
-}
-.import-sheet-progress-subtext {
-  font-size: var(--sh-fs-xs);
-  color: var(--sh-text-muted);
-  margin-top: 2px;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Social import pipeline (loading phase)
-   ═══════════════════════════════════════════════════════════════════════════ */
-.import-sheet-pipeline {
-  margin: 12px 0;
-  padding: 16px;
-  background: var(--sh-surface);
-  border-radius: var(--sh-radius-sm);
-  border: 1px solid var(--sh-border-light);
-}
-.import-sheet-steps {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.import-sheet-step {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.import-sheet-step-node {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--sh-border);
-  flex: 0 0 auto;
-  transition: background 200ms;
-}
-.import-sheet-step--done .import-sheet-step-node { background: var(--sh-conf-high); }
-.import-sheet-step--running .import-sheet-step-node { background: var(--sh-accent); }
-.import-sheet-step-check {
-  color: #fff;
-}
-.import-sheet-step-spinner {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #fff;
-  animation: sh-dot-pulse 1s infinite;
-}
-.import-sheet-step-dot {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: var(--sh-text-muted);
-}
-.import-sheet-step-label {
-  font-size: var(--sh-fs-sm);
-  font-weight: 500;
-  color: var(--sh-text-secondary);
-}
-.import-sheet-step--running .import-sheet-step-label {
-  font-weight: 600;
-  color: var(--sh-text);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Skeleton / shimmer (non-social loading state)
-   ═══════════════════════════════════════════════════════════════════════════ */
-@keyframes sh-shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-.import-sheet-skeleton {
-  margin: 12px 0;
-}
-.import-sheet-skeleton .shimmer {
-  background: linear-gradient(90deg, var(--sh-surface) 25%, var(--sh-surface-hover) 50%, var(--sh-surface) 75%);
-  background-size: 200% 100%;
-  animation: sh-shimmer 1.6s ease-in-out infinite;
-}
-.import-sheet-skeleton .review-hero.skeleton {
-  height: 172px;
-  border-radius: var(--sh-radius);
-  overflow: hidden;
-  position: relative;
-  background: var(--sh-surface);
-}
-.import-sheet-skeleton .review-hero-placeholder.shimmer,
-.import-sheet-skeleton .review-hero-image {
-  width: 100%;
-  height: 100%;
-  background-size: cover;
-  background-position: center;
-}
-.import-sheet-skeleton .review-hero-gradient {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.4));
-}
-.import-sheet-skeleton .review-hero-title-wrap.skeleton {
-  position: absolute;
-  bottom: 10px;
-  left: 12px;
-  right: 12px;
-}
-.import-sheet-skeleton .review-hero-title.skeleton-title {
-  height: 24px;
-  width: 60%;
-  border-radius: 4px;
-}
-.import-sheet-skeleton .review-tabs.skeleton {
-  display: flex;
-  gap: 4px;
-  margin-top: 14px;
-}
-.import-sheet-skeleton .review-tab.skeleton {
-  flex: 1;
-  height: 44px;
-  border-radius: var(--sh-radius-sm);
-}
-.import-sheet-skeleton .review-list.skeleton {
-  margin-top: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.import-sheet-skeleton .review-row.skeleton {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 44px;
-  border-bottom: 0.5px solid var(--sh-border-light);
-}
-.import-sheet-skeleton .review-row-handle.skeleton {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  flex: 0 0 auto;
-}
-.import-sheet-skeleton .skeleton-line {
-  height: 14px;
-  border-radius: 4px;
-  flex: 1;
-}
-.import-sheet-skeleton .review-row-more.skeleton {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  flex: 0 0 auto;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Continue-in-background button (loading phase, long imports)
-   ═══════════════════════════════════════════════════════════════════════════ */
-.import-sheet-btn-in-body-background {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: 100%;
-  margin: 12px 0 0;
-  min-height: 44px;
-  padding: 12px;
-  border-radius: var(--sh-pill);
-  background: var(--sh-accent-bg-strong);
-  color: var(--sh-accent-text);
-  border: 1px solid var(--sh-accent);
-  font: inherit;
-  font-size: var(--sh-fs-base);
-  font-weight: 700;
-  cursor: pointer;
-  transition: background 120ms, transform 80ms;
-}
-.import-sheet-btn-in-body-background:hover { background: var(--sh-accent-bg); }
-.import-sheet-btn-in-body-background:active { transform: translateY(1px); }
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Confirm footers (discard / replace)
@@ -1814,30 +1422,7 @@
   background: var(--sh-accent);
 }
 .import-sheet-btn-danger.import-sheet-btn-replace:hover {
-  background: var(--sh-accent-dark);
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   Collapsed input status dot — phase-driven color
-   ═══════════════════════════════════════════════════════════════════════════ */
-.import-input-collapsed-dot.status-loading {
-  background: var(--sh-accent);
-  animation: sh-dot-pulse 1.2s ease-in-out infinite;
-}
-.import-input-collapsed-dot.status-ready {
-  background: var(--sh-conf-high);
-}
-.import-input-collapsed-dot.status-error {
-  background: var(--sh-danger);
-}
-.import-input-collapsed-dot.status-idle {
-  background: var(--sh-text-muted);
-}
-.drop-hint {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--sh-accent);
-  margin-left: 8px;
+  background: var(--sh-accent-hover);
 }
 
 /* Source URL section in MealDetail */
@@ -1909,135 +1494,8 @@
   color: var(--sh-accent, #e65100);
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   Photo Scan Session — multi-page scanner strip (2026-07 photo import)
-   ═══════════════════════════════════════════════════════════════════════════ */
-
-.scan-session {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.scan-strip-wrap {
-  overflow: hidden;
-}
-
-.scan-strip-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  padding: 0 2px 6px;
-}
-
-.scan-strip-count {
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--text, #333);
-}
-
-.scan-strip-hint {
-  font-size: 0.72rem;
-  color: var(--text-light, #999);
-}
-
-.scan-strip {
-  display: flex;
-  gap: 10px;
-  overflow-x: auto;
-  padding: 4px 2px 8px;
-  scrollbar-width: none;         /* matches .sh-carousel treatment */
-  -webkit-overflow-scrolling: touch;
-}
-.scan-strip::-webkit-scrollbar { display: none; }
-
-.scan-thumb {
-  position: relative;
-  flex: 0 0 auto;
-  width: 88px;
-  height: 116px;
-  border-radius: 12px;
-  overflow: hidden;
-  border: 1px solid var(--border, #e8e2d8);
-  background: var(--surface-2, #f5f0e8);
-  cursor: grab;
-  touch-action: pan-x;
-}
-.scan-thumb:active { cursor: grabbing; }
-
-.scan-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-  pointer-events: none;
-}
-
-.scan-thumb-num {
-  position: absolute;
-  left: 6px;
-  bottom: 6px;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 5px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.62);
-  color: #fff;
-  font-size: 0.7rem;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.scan-thumb-remove {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  width: 26px;
-  height: 26px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
-  cursor: pointer;
-  padding: 0;
-  transition: background 120ms cubic-bezier(0.32, 0.72, 0, 1), transform 100ms;
-}
-.scan-thumb-remove:active { transform: scale(0.9); }
-
-.scan-thumb-add {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  border: 1.5px dashed var(--border, #d8d0c4);
-  background: transparent;
-  color: var(--text-muted, #8a8378);
-  font-size: 0.72rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: border-color 140ms cubic-bezier(0.32, 0.72, 0, 1), color 140ms;
-}
-.scan-thumb-add:hover {
-  border-color: var(--sh-accent, #e65100);
-  color: var(--sh-accent, #e65100);
-}
-
-.scan-session-note {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  font-size: 0.78rem;
-  color: var(--text-muted, #8a8378);
-}
-.scan-session-note-busy { color: var(--sh-accent, #e65100); }
+/* Photo Scan Session styles moved — will be re-added when PhotoScanSession
+   is re-integrated into the Quiet Field design. */
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Dish Photo Cropper — manual re-crop overlay (2026-07 photo import)
@@ -2360,3 +1818,140 @@
 }
 .review-hero-adjust:active { transform: scale(0.97); }
 .review-hero-adjust:hover { background: rgba(0, 0, 0, 0.72); }
+
+/* ── Loading area (Quiet Field) ────────────────────────────────────────── */
+.import-sheet-loading-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 0 32px;
+}
+
+/* ── Ring spinner ──────────────────────────────────────────────────────── */
+.import-sheet-ring-spinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.import-sheet-ring-spinner.over-image {
+  margin-top: -28px;
+  position: relative;
+  z-index: 2;
+}
+
+.ring-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--sh-border);
+  border-top-color: var(--sh-accent);
+  border-radius: 50%;
+  animation: ring-spin 0.9s linear infinite;
+}
+
+@keyframes ring-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Status text ───────────────────────────────────────────────────────── */
+.import-sheet-status-text {
+  text-align: center;
+  margin-top: 16px;
+}
+.import-sheet-status-primary {
+  font-size: 14px;
+  color: var(--sh-text-secondary);
+  margin: 0;
+}
+.import-sheet-status-slow {
+  font-size: 13px;
+  color: var(--sh-text-muted);
+  margin: 8px 0 0;
+}
+
+/* ── Loading image background (State 5) ────────────────────────────────── */
+.import-sheet-loading-image {
+  width: 100%;
+  border-radius: var(--sh-radius);
+  overflow: hidden;
+  position: relative;
+  margin-bottom: 0;
+}
+.import-sheet-loading-image-bg {
+  width: 100%;
+  height: 160px;
+  object-fit: cover;
+  opacity: 0.55;
+  filter: blur(1px);
+  display: block;
+}
+.import-sheet-loading-image-gradient {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(transparent 20%, var(--sh-bg) 100%);
+  pointer-events: none;
+}
+
+/* ── Recovery view (State 6 — partial success) ─────────────────────────── */
+.import-sheet-recovery {
+  padding: 8px 0;
+}
+
+.import-sheet-recovery-msg {
+  font-size: 14px;
+  color: var(--sh-text-secondary);
+  line-height: 1.55;
+  margin: 0 0 14px;
+}
+
+.import-sheet-recovery-textarea {
+  width: 100%;
+  min-height: 110px;
+  border: 1px solid var(--sh-border);
+  border-radius: var(--sh-radius-sm);
+  background: var(--sh-surface);
+  color: var(--sh-text);
+  font: inherit;
+  font-size: 14px;
+  padding: 12px 14px;
+  resize: vertical;
+  box-sizing: border-box;
+}
+.import-sheet-recovery-textarea:focus {
+  outline: none;
+  border-color: var(--sh-accent);
+  box-shadow: 0 0 0 3px var(--sh-accent-ring);
+}
+/* Prevent iOS Safari zoom */
+@supports (-webkit-touch-callout: none) {
+  .import-sheet-recovery-textarea { font-size: 16px; }
+}
+
+.import-sheet-recovery-retry {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-top: 4px;
+  border: none;
+  background: none;
+  color: var(--sh-text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+}
+.import-sheet-recovery-retry:hover {
+  color: var(--sh-text-secondary);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Reduced Motion — disable CSS keyframe animations for users who prefer it
+   (Framer Motion transitions are handled by MotionConfig reducedMotion="user")
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  .ring-spinner { animation: none; border-color: var(--sh-accent); border-top-color: transparent; }
+  .import-sheet-progress-dot { animation: none; }
+  .import-sheet-body { animation: none; }
+  .import-sheet-scrim { animation: none; }
+}

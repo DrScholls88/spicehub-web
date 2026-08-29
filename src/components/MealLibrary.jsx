@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { ChefHat, UtensilsCrossed, MoreHorizontal, Play, Sparkles, Heart, Repeat, Clock, AlertTriangle, Tag, Plus, Pencil, Trash2, Check, X, Grid2x2, Grid3x3, List, HelpCircle } from 'lucide-react';
-import { motion, AnimatePresence, Reorder } from 'framer-motion';
+import { ChefHat, UtensilsCrossed, MoreHorizontal, MoreVertical, Play, Sparkles, Heart, Repeat, Clock, AlertTriangle, Tag, Plus, Pencil, Trash2, Check, X, Grid2x2, Grid3x3, List, HelpCircle, Share2, Users, Camera, Wine, ChevronDown } from 'lucide-react';
+import { motion, AnimatePresence, Reorder, useReducedMotion } from 'framer-motion';
 import { downloadMealsFile, importMealsFromJson, shareMealsFile } from '../sync';
 import { toggleRotation, bulkSetRotation, getUserTags, addUserTag, deleteUserTag, renameUserTag, reorderUserTags, setMealTags, bulkSetMealTags } from '../db';
 import db from '../db';
@@ -15,7 +15,7 @@ import SharePickerSheet from './SharePickerSheet';
 import SharedWithYouSection from './SharedWithYouSection';
 import { isFriendsEnabled } from '../lib/supabaseClient';
 import { MEAL_TYPE_CATEGORIES, DIETARY_TAGS, CUISINE } from '../recipeSchema';
-import { getTotalMinutes } from '../lib/recipeTime.js';
+import { getTotalMinutes, formatMinutes } from '../lib/recipeTime.js';
 
 // Extracted from App.css 2026-08-24 (see the header in that file for the
 // move rules). MUST stay the first stylesheet imported here: these rules
@@ -44,6 +44,25 @@ function mealEngineLabel(structuredVia) {
   if (v.startsWith('server')) return 'Server';
   if (v.startsWith('heuristic')) return 'Basic parser';
   return null;
+}
+
+// ── Display-only title-casing for the quick-view modal ───────────────────────
+// Import sources (Instagram captions especially) sometimes hand back an
+// ALL-CAPS title. Convert those to Title Case for display without touching
+// the stored meal.name — titles that are already mixed-case (including
+// legitimate all-caps names) are left exactly as saved.
+const SMALL_TITLE_WORDS = new Set(["a", "an", "and", "as", "at", "but", "by", "for", "in", "nor", "of", "on", "or", "so", "the", "to", "with", "yet"]);
+function displayTitleCase(raw) {
+  if (!raw || typeof raw !== "string") return raw;
+  if (!/[a-zA-Z]/.test(raw) || raw !== raw.toUpperCase()) return raw; // not all-caps, leave alone
+  const words = raw.toLowerCase().split(" ");
+  return words
+    .map((w, i) => {
+      if (!w) return w;
+      if (i !== 0 && i !== words.length - 1 && SMALL_TITLE_WORDS.has(w)) return w;
+      return w.charAt(0).toUpperCase() + w.slice(1);
+    })
+    .join(" ");
 }
 
 // ── Date formatter: relative for recent, absolute for older ──────────────────
@@ -196,6 +215,13 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
   const sheetCurrentDragY = useRef(0);
 
   const [reimportingPhotoId, setReimportingPhotoId] = useState(null);
+
+  // Quick-preview modal chrome: kebab (admin actions) menu + the collapsed
+  // category/tags editor disclosure — both reset per-open, see the effect
+  // below (search "Reset the modal's own transient chrome").
+  const [qpMenuOpen, setQpMenuOpen] = useState(false);
+  const [qpTagsExpanded, setQpTagsExpanded] = useState(false);
+  const prefersReducedMotion = useReducedMotion();
 
   const handleGridChange = useCallback((layout) => {
     setGridLayout(layout);
@@ -719,6 +745,15 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [quickPreview]);
+
+  // Reset the modal's own transient chrome (kebab menu, tag/category editor)
+  // whenever a different meal opens in quick-view — otherwise re-tapping a
+  // new tile could inherit an open menu/editor left behind by the previous
+  // quick-view.
+  useEffect(() => {
+    setQpMenuOpen(false);
+    setQpTagsExpanded(false);
+  }, [quickPreview?.id]);
 
   // ── Render Tile ────────────────────────────────────────────────────────────
   const renderTile = (meal, idx) => (
@@ -1379,21 +1414,117 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.22 }}
+          transition={{ duration: prefersReducedMotion ? 0.01 : 0.22 }}
         >
-          {/* Floating close button (Aceternity-style), outside the card surface */}
-          <motion.button
-            key="qp-close"
-            className="ml-qp-close"
-            aria-label="Close"
-            onClick={() => setQuickPreview(null)}
-            initial={{ opacity: 0, scale: 0.6 }}
-            animate={{ opacity: 1, scale: 1, transition: { delay: 0.08 } }}
-            exit={{ opacity: 0, scale: 0.6, transition: { duration: 0.05 } }}
-            whileTap={{ scale: 0.88 }}
-          >
-            ✕
-          </motion.button>
+          {/* Floating chrome (Aceternity-style), outside the card surface so it
+              never scrolls with the sheet's own content. Kebab menu first (admin
+              actions), close second — see the 2026-08-28 UX pass notes below. */}
+          <div className="ml-qp-float-row">
+            <motion.button
+              key="qp-menu-btn"
+              className="ml-qp-close ml-qp-menu-btn"
+              aria-label="More options"
+              aria-expanded={qpMenuOpen}
+              onClick={e => { e.stopPropagation(); hapticLight(); setQpMenuOpen(v => !v); }}
+              initial={{ opacity: 0, scale: 0.6 }}
+              animate={{ opacity: 1, scale: 1, transition: { delay: prefersReducedMotion ? 0 : 0.08 } }}
+              exit={{ opacity: 0, scale: 0.6, transition: { duration: 0.05 } }}
+              whileTap={{ scale: 0.88 }}
+            >
+              <MoreVertical size={18} strokeWidth={2.25} />
+            </motion.button>
+            <motion.button
+              key="qp-close"
+              className="ml-qp-close"
+              aria-label="Close"
+              onClick={() => setQuickPreview(null)}
+              initial={{ opacity: 0, scale: 0.6 }}
+              animate={{ opacity: 1, scale: 1, transition: { delay: prefersReducedMotion ? 0 : 0.08 } }}
+              exit={{ opacity: 0, scale: 0.6, transition: { duration: 0.05 } }}
+              whileTap={{ scale: 0.88 }}
+            >
+              <X size={18} strokeWidth={2.25} />
+            </motion.button>
+          </div>
+
+          {/* Admin/kebab menu — Edit, Share, Send to Friend, Find Photo, Move to
+              Bar, Delete. These rarely-used actions used to sit in a 10-button
+              grid alongside the primary actions (see GeminiAnalysisMealCard.md);
+              tucking them here is the "purge the admin-mode bleed" fix. */}
+          <AnimatePresence>
+            {qpMenuOpen && (
+              <motion.div
+                key="qp-menu-scrim"
+                className="ml-qp-menu-scrim"
+                onClick={e => { e.stopPropagation(); setQpMenuOpen(false); }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.12 }}
+              />
+            )}
+          </AnimatePresence>
+          <AnimatePresence>
+            {qpMenuOpen && (
+                <motion.div
+                  key="qp-menu"
+                  className="ml-qp-menu"
+                  role="menu"
+                  style={{ transformOrigin: "top right" }}
+                  onClick={e => e.stopPropagation()}
+                  initial={{ opacity: 0, scale: 0.9, y: -6 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.9, y: -6 }}
+                  transition={prefersReducedMotion ? { duration: 0.01 } : { type: "spring", stiffness: 420, damping: 32 }}
+                >
+                  <button type="button" role="menuitem" onClick={() => { setQpMenuOpen(false); setQuickPreview(null); onEdit?.(quickPreview); }}>
+                    <Pencil size={15} strokeWidth={2} /> Edit
+                  </button>
+                  <button type="button" role="menuitem" onClick={() => { setQpMenuOpen(false); onShare?.(quickPreview); }}>
+                    <Share2 size={15} strokeWidth={2} /> Share
+                  </button>
+                  {isFriendsEnabled() && (
+                    <button type="button" role="menuitem" onClick={() => { setQpMenuOpen(false); setQuickPreview(null); setFriendShareMeal(quickPreview); }}>
+                      <Users size={15} strokeWidth={2} /> Send to Friend
+                    </button>
+                  )}
+                  {(quickPreview.link || quickPreview.sourceUrl) && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => { setQpMenuOpen(false); handleReimportPhoto(quickPreview); setQuickPreview(null); }}
+                      disabled={reimportingPhotoId === quickPreview.id}
+                    >
+                      <Camera size={15} strokeWidth={2} />
+                      {reimportingPhotoId === quickPreview.id
+                        ? "Searching…"
+                        : quickPreview.imageUrl
+                        ? "Find Better Photo"
+                        : "Find Photo"}
+                    </button>
+                  )}
+                  {onMoveToBar && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => { setQpMenuOpen(false); hapticLight(); onMoveToBar(quickPreview); setQuickPreview(null); }}
+                      title="Move this to the Bar Library — for a recipe that got imported as a meal by mistake"
+                    >
+                      <Wine size={15} strokeWidth={2} /> Move to Bar
+                    </button>
+                  )}
+                  <div className="ml-qp-menu-divider" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="ml-qp-menu-danger"
+                    onClick={() => { setQpMenuOpen(false); setQuickPreview(null); setConfirmDeleteId(quickPreview.id); }}
+                  >
+                    <Trash2 size={15} strokeWidth={2} /> Delete
+                  </button>
+                </motion.div>
+            )}
+          </AnimatePresence>
 
           <motion.div
             ref={sheetRef}
@@ -1402,7 +1533,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
             initial={{ opacity: 0, scale: 0.96, y: 18 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 18, transition: { duration: 0.16 } }}
-            transition={{ type: 'spring', stiffness: 320, damping: 34 }}
+            transition={prefersReducedMotion ? { duration: 0.01 } : { type: "spring", stiffness: 320, damping: 34 }}
             onTouchStart={handleSheetTouchStart}
             onTouchMove={handleSheetTouchMove}
             onTouchEnd={handleSheetTouchEnd}
@@ -1413,8 +1544,8 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
               {quickPreview.imageUrl ? (
                 <SafeMediaImage
                   src={quickPreview.imageUrl}
-                  alt={quickPreview.name || 'Recipe'}
-                  style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                  alt={quickPreview.name || "Recipe"}
+                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
                   fallbackEmoji="🍽️"
                 />
               ) : (
@@ -1425,64 +1556,135 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
             </motion.div>
             <div className="ml-qp-body">
               <motion.h3 className="ml-qp-title" layoutId={`ml-card-title-${quickPreview.id}`}>
-                {quickPreview.name || 'Untitled Recipe'}
+                {displayTitleCase(quickPreview.name) || "Untitled Recipe"}
               </motion.h3>
               {quickPreview._sharedFrom && (
                 <div style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 4,
-                  padding: '3px 10px', borderRadius: 999,
+                  display: "inline-flex", alignItems: "center", gap: 4,
+                  padding: "3px 10px", borderRadius: 999,
                   fontSize: 12, fontWeight: 600, marginBottom: 6,
-                  color: 'var(--primary)',
-                  background: 'rgba(var(--primary-rgb, 255,107,53), 0.1)',
-                  border: '1px solid rgba(var(--primary-rgb, 255,107,53), 0.2)',
+                  color: "var(--primary)",
+                  background: "rgba(var(--primary-rgb, 255,107,53), 0.1)",
+                  border: "1px solid rgba(var(--primary-rgb, 255,107,53), 0.2)",
                 }}>
                   From @{quickPreview._sharedFrom}
                 </div>
               )}
-              {/* ── Type picker (single-select) ── */}
-              <div className="ml-qp-type-row">
-                {TYPE_OPTIONS.map(t => (
-                  <button
-                    key={t}
-                    className={`ml-qp-type-chip${(quickPreview.category || 'Dinners') === t ? ' ml-qp-type-active' : ''}`}
-                    style={(quickPreview.category || 'Dinners') === t ? { background: TYPE_COLORS[t], borderColor: TYPE_COLORS[t], color: '#fff' } : undefined}
-                    onClick={() => handleSetMealType(quickPreview.id, t)}
-                  >
-                    {t}
-                  </button>
-                ))}
+
+              {/* ── Decision-making stats: time + ingredient count. Replaces the
+                  old truncated step preview ("Step 1…Step 4… +2 more") — a step
+                  count/preview doesn't help a "can I make this tonight" call the
+                  way total time does (GeminiAnalysisMealCard.md, "Swap Steps for
+                  Time"). Falls back to a bare step count only when no time data
+                  was captured on import. */}
+              <div className="ml-qp-stats">
+                {getTotalMinutes(quickPreview) != null ? (
+                  <span className="ml-qp-stat">
+                    <Clock size={13} strokeWidth={2.25} /> {formatMinutes(getTotalMinutes(quickPreview))}
+                  </span>
+                ) : (quickPreview.directions || []).length > 0 && (
+                  <span className="ml-qp-stat">
+                    <Clock size={13} strokeWidth={2.25} /> {(quickPreview.directions || []).length} step{(quickPreview.directions || []).length === 1 ? "" : "s"}
+                  </span>
+                )}
+                <span className="ml-qp-stat">
+                  <UtensilsCrossed size={13} strokeWidth={2.25} /> {(quickPreview.ingredients || []).length} ingredient{(quickPreview.ingredients || []).length === 1 ? "" : "s"}
+                </span>
               </div>
+
+              {/* ── Category + tags: collapsed to just what applies to THIS meal
+                  by default (2026-08-28 UX pass — "purge the inactive tags",
+                  GeminiAnalysisMealCard.md). Tap Edit to reveal the full
+                  editable pickers; handleSetMealType/handleToggleMealTag are
+                  unchanged, only when they're shown changed. */}
+              <div className="ml-qp-meta-row">
+                <span
+                  className="ml-qp-meta-pill ml-qp-meta-pill-cat"
+                  style={{ background: TYPE_COLORS[quickPreview.category || "Dinners"], borderColor: TYPE_COLORS[quickPreview.category || "Dinners"] }}
+                >
+                  {quickPreview.category || "Dinners"}
+                </span>
+                {userTags
+                  .filter(tag => (quickPreview.tags || []).includes(tag.name))
+                  .slice(0, 3)
+                  .map(tag => (
+                    <span key={tag.id} className="ml-qp-meta-pill" style={{ background: tag.color, borderColor: tag.color }}>
+                      {tag.name}
+                    </span>
+                  ))}
+                <button
+                  type="button"
+                  className="ml-qp-meta-edit"
+                  aria-expanded={qpTagsExpanded}
+                  aria-label={qpTagsExpanded ? "Hide category and tag editor" : "Edit category and tags"}
+                  onClick={() => setQpTagsExpanded(v => !v)}
+                >
+                  {qpTagsExpanded ? "Done" : "Edit"}
+                  <motion.span
+                    style={{ display: "inline-flex" }}
+                    animate={{ rotate: qpTagsExpanded ? 180 : 0 }}
+                    transition={{ duration: prefersReducedMotion ? 0.01 : 0.18 }}
+                  >
+                    <ChevronDown size={13} strokeWidth={2.5} />
+                  </motion.span>
+                </button>
+              </div>
+
+              <AnimatePresence initial={false}>
+                {qpTagsExpanded && (
+                  <motion.div
+                    key="qp-tag-editor"
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: prefersReducedMotion ? 0.01 : 0.22, ease: [0.32, 0.72, 0, 1] }}
+                    style={{ overflow: "hidden" }}
+                  >
+                    <div className="ml-qp-type-row">
+                      {TYPE_OPTIONS.map(t => (
+                        <button
+                          key={t}
+                          className={`ml-qp-type-chip${(quickPreview.category || "Dinners") === t ? " ml-qp-type-active" : ""}`}
+                          style={(quickPreview.category || "Dinners") === t ? { background: TYPE_COLORS[t], borderColor: TYPE_COLORS[t], color: "#fff" } : undefined}
+                          onClick={() => handleSetMealType(quickPreview.id, t)}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                    {userTags.length > 0 && (
+                      <div className="ml-qp-tags">
+                        {userTags.map(tag => {
+                          const hasTag = (quickPreview.tags || []).includes(tag.name);
+                          return (
+                            <button
+                              key={tag.id}
+                              className={`ml-qp-tag${hasTag ? " ml-qp-tag-active" : ""}`}
+                              style={hasTag ? { background: tag.color, borderColor: tag.color, color: "#fff" } : undefined}
+                              onClick={() => handleToggleMealTag(quickPreview.id, tag.name)}
+                            >
+                              {hasTag ? <Check size={11} strokeWidth={3} /> : <Tag size={11} strokeWidth={2} />}
+                              {tag.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               {(quickPreview.created || quickPreview.createdAt) && (
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 8 }}>
+                <div style={{ fontSize: "0.8rem", color: "var(--text-muted)", marginBottom: 8 }}>
                   Added: {new Date(quickPreview.created || quickPreview.createdAt).toLocaleDateString()}
                 </div>
               )}
               {mealEngineLabel(quickPreview._structuredVia) && (
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 8 }}>
+                <div style={{ fontSize: "0.72rem", color: "var(--text-muted)", marginBottom: 8 }}>
                   Parsed by {mealEngineLabel(quickPreview._structuredVia)}
-                  {typeof quickPreview.confidence === 'number'
+                  {typeof quickPreview.confidence === "number"
                     ? ` · ${Math.round(quickPreview.confidence * 100)}%`
-                    : ''}
-                </div>
-              )}
-
-              {/* ── Tag chips (tap to toggle) ── */}
-              {userTags.length > 0 && (
-                <div className="ml-qp-tags">
-                  {userTags.map(tag => {
-                    const hasTag = (quickPreview.tags || []).includes(tag.name);
-                    return (
-                      <button
-                        key={tag.id}
-                        className={`ml-qp-tag${hasTag ? ' ml-qp-tag-active' : ''}`}
-                        style={hasTag ? { background: tag.color, borderColor: tag.color, color: '#fff' } : undefined}
-                        onClick={() => handleToggleMealTag(quickPreview.id, tag.name)}
-                      >
-                        {hasTag ? <Check size={11} strokeWidth={3} /> : <Tag size={11} strokeWidth={2} />}
-                        {tag.name}
-                      </button>
-                    );
-                  })}
+                    : ""}
                 </div>
               )}
 
@@ -1492,31 +1694,31 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                 return (
                   <div
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
                       gap: 8,
-                      padding: '8px 10px',
+                      padding: "8px 10px",
                       marginBottom: 10,
                       borderRadius: 10,
-                      background: match.tier === 'ready' ? 'rgba(22,163,74,0.1)' : 'rgba(217,119,6,0.1)',
+                      background: match.tier === "ready" ? "rgba(22,163,74,0.1)" : "rgba(217,119,6,0.1)",
                     }}
                   >
-                    <span style={{ fontSize: 12.5, fontWeight: 700, color: match.tier === 'ready' ? 'var(--success, #16a34a)' : 'var(--warning, #d97706)' }}>
-                      {match.tier === 'ready'
+                    <span style={{ fontSize: 12.5, fontWeight: 700, color: match.tier === "ready" ? "var(--success, #16a34a)" : "var(--warning, #d97706)" }}>
+                      {match.tier === "ready"
                         ? `🟢 Ready to cook — ${match.matched}/${match.total} on hand`
-                        : `🟡 Almost there — missing ${match.missing.join(', ')}`}
+                        : `🟡 Almost there — missing ${match.missing.join(", ")}`}
                     </span>
-                    {match.tier === 'almost' && onAddMissingToGrocery && (
+                    {match.tier === "almost" && onAddMissingToGrocery && (
                       <button
                         type="button"
                         className="ml-qp-type-chip"
-                        style={{ flexShrink: 0, whiteSpace: 'nowrap' }}
+                        style={{ flexShrink: 0, whiteSpace: "nowrap" }}
                         onClick={e => {
                           e.stopPropagation();
                           onAddMissingToGrocery(match.missing.map(name => ({
                             name,
-                            tag: 'meal-quest',
+                            tag: "meal-quest",
                             questName: quickPreview.name,
                             questMealId: quickPreview.id,
                           })));
@@ -1544,77 +1746,64 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                 </ul>
               </div>
 
-              <div className="ml-qp-section">
-                <h4>Steps ({(quickPreview.directions || []).length})</h4>
-                <ol className="ml-qp-list ml-qp-steps">
-                  {(quickPreview.directions || []).slice(0, 4).map((step, i) => (
-                    <li key={i}>{step}</li>
-                  ))}
-                  {(quickPreview.directions || []).length > 4 && (
-                    <li className="ml-qp-more">
-                      +{(quickPreview.directions || []).length - 4} more…
-                    </li>
-                  )}
-                </ol>
-              </div>
+              {(quickPreview.directions || []).length > 0 && (
+                <div className="ml-qp-section">
+                  <h4>Directions ({(quickPreview.directions || []).length})</h4>
+                  <ol className="ml-qp-list ml-qp-steps">
+                    {(quickPreview.directions || []).slice(0, 3).map((step, i) => (
+                      <li key={i}>{step}</li>
+                    ))}
+                    {(quickPreview.directions || []).length > 3 && (
+                      <li
+                        className="ml-qp-more ml-qp-more-link"
+                        onClick={() => { setQuickPreview(null); onViewDetail?.(quickPreview); }}
+                      >
+                        +{(quickPreview.directions || []).length - 3} more steps — View Full Recipe
+                      </li>
+                    )}
+                  </ol>
+                </div>
+              )}
             </div>
 
             <div className="ml-qp-actions">
-              <button onClick={() => { setQuickPreview(null); onViewDetail?.(quickPreview); }}>
+              <button
+                type="button"
+                className="ml-qp-primary-btn"
+                onClick={() => { setQuickPreview(null); onViewDetail?.(quickPreview); }}
+              >
                 View Full Recipe
               </button>
-              <button onClick={() => { setQuickPreview(null); onEdit?.(quickPreview); }}>
-                Edit
-              </button>
-              <button onClick={() => { onShare?.(quickPreview); }}>
-                Share
-              </button>
-              {isFriendsEnabled() && (
-                <button onClick={() => { setQuickPreview(null); setFriendShareMeal(quickPreview); }}>
-                  👤 Send to Friend
-                </button>
-              )}
-              <button onClick={() => { hapticSuccess(); handleToggleRotation(quickPreview); setQuickPreview(null); }}>
-                {quickPreview.inRotation ? '🔄 Remove from Rotation' : '🔄 Add to Rotation'}
-              </button>
-              {onToggleFavorite && (
-                <button onClick={() => { onToggleFavorite(quickPreview); setQuickPreview(null); }}>
-                  {quickPreview.isFavorite ? '💔 Unfavorite' : '❤️ Favorite'}
-                </button>
-              )}
-              {onPlayVideo && getMealVideoSource(quickPreview) && (
+              <div className="ml-qp-icon-actions">
+                {onToggleFavorite && (
+                  <button
+                    type="button"
+                    className={`ml-qp-icon-btn${quickPreview.isFavorite ? " ml-qp-icon-btn-fav-active" : ""}`}
+                    aria-label={quickPreview.isFavorite ? "Remove from favorites" : "Add to favorites"}
+                    onClick={() => { onToggleFavorite(quickPreview); }}
+                  >
+                    <Heart size={19} strokeWidth={2} fill={quickPreview.isFavorite ? "currentColor" : "none"} />
+                  </button>
+                )}
                 <button
-                  onClick={() => { hapticLight(); onPlayVideo(quickPreview); setQuickPreview(null); }}
+                  type="button"
+                  className={`ml-qp-icon-btn${quickPreview.inRotation ? " ml-qp-icon-btn-rotation-active" : ""}`}
+                  aria-label={quickPreview.inRotation ? "Remove from rotation" : "Add to rotation"}
+                  onClick={() => { hapticSuccess(); handleToggleRotation(quickPreview); }}
                 >
-                  🎥 Play Video ({getMealVideoSource(quickPreview).label})
+                  <Repeat size={19} strokeWidth={2} />
                 </button>
-              )}
-              {(quickPreview.link || quickPreview.sourceUrl) && (
-                <button
-                  onClick={() => { handleReimportPhoto(quickPreview); setQuickPreview(null); }}
-                  disabled={reimportingPhotoId === quickPreview.id}
-                >
-                  {reimportingPhotoId === quickPreview.id
-                    ? '⏳ Searching…'
-                    : quickPreview.imageUrl
-                    ? '📸 Find Better Photo'
-                    : '📸 Find Photo'}
-                </button>
-              )}
-              {onMoveToBar && (
-                <button
-                  onClick={() => { hapticLight(); onMoveToBar(quickPreview); setQuickPreview(null); }}
-                  title="Move this to the Bar Library — for a recipe that got imported as a meal by mistake"
-                >
-                  🍸 Move to Bar
-                </button>
-              )}
-              <button
-                className="ml-qp-danger"
-                onClick={() => { setQuickPreview(null); setConfirmDeleteId(quickPreview.id); }}
-              >
-                🗑️ Delete
-              </button>
+                {onPlayVideo && getMealVideoSource(quickPreview) && (
+                  <button
+                    type="button"
+                    className="ml-qp-icon-btn"
+                    aria-label={`Play video (${getMealVideoSource(quickPreview).label})`}
+                    onClick={() => { hapticLight(); onPlayVideo(quickPreview); setQuickPreview(null); }}
+                  >
+                    <Play size={19} strokeWidth={2} />
+                  </button>
+                )}
+              </div>
             </div>
           </motion.div>
         </motion.div>

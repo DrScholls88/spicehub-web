@@ -327,6 +327,7 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
           onPointerDown={(e) => dragControls.start(e)}
         />
 
+        <div className="detail-scroll-body">
         {/* ══════════════ HERO CAROUSEL ══════════════ */}
         <div className={`detail-image-wrap${videoSource ? ' detail-image-wrap-video' : ''}`}>
           {hasGallery ? (
@@ -933,6 +934,7 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
             </div>
           </div>
         )}
+        </div>
       </motion.div>
     </div>
   );

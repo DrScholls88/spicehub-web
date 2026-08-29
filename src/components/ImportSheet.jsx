@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence, MotionConfig, useDragControls } from 'framer-motion';
-import { X, Sparkles, Check, ArrowLeft, Zap, Mic } from 'lucide-react';
+import { X, Sparkles, Check, ArrowLeft } from 'lucide-react';
 import './ImportSheet.css';
 import useBackHandler from '../hooks/useBackHandler';
 import { hapticTap, hapticSuccess, hapticError } from '../haptics';
@@ -8,14 +8,11 @@ import {
   importRecipeFromUrl,
   captionToRecipe,
   scoreExtractionConfidence,
-  isSocialMediaUrl,
-  getSocialPlatform,
-  detectImportType,
   transcribeVideoForRecipe,
 } from '../recipeParser.js';
 import { importRecipeFromPages, PhotoImportError } from '../lib/photoImportEngine.js';
 import { detectVideoSource } from '../lib/videoSource.js';
-import { WHISPER_MODELS, getPreferredWhisperModel, setPreferredWhisperModel } from '../lib/transcriptionService.js';
+import { getPreferredWhisperModel, setPreferredWhisperModel } from '../lib/transcriptionService.js';
 import { cleanUrl } from '../api.js';
 import { ENGINE_PROMPT_VERSION } from '../recipeSchema.js';
 import { humanizeImportStatus } from '../importCopy.js';
@@ -24,7 +21,7 @@ import useOnlineStatus from '../hooks/useOnlineStatus';
 import ImportInput from './ImportInput';
 import ImportReview from './ImportReview';
 import BrowserAssist from './BrowserAssist';
-import ImportTimeline from './import/ImportTimeline.jsx';
+import SourcePill from './SourcePill.jsx';
 import { advanceTimeline, INITIAL_TIMELINE } from '../import/progressMap.js';
 
 /**
@@ -112,6 +109,8 @@ export function computeReviewConfidence(recipe) {
  *   loading  → engine running, progress shown
  *   review   → parsed recipe displayed for editing before save
  *   browserAssist → fallback visual extraction
+ *   recovery → captured text shown for manual edit/retry when extraction
+ *              captured text but couldn't structure a recipe from it
  *
  * Props:
  *   onImport(recipes[])   — called with final recipe array
@@ -130,7 +129,7 @@ export default function ImportSheet({
   initialPhase = null,
 }) {
   // ── Phase state machine ──────────────────────────────────────────────────
-  const [phase, setPhase] = useState('input'); // 'input' | 'loading' | 'review' | 'browserAssist'
+  const [phase, setPhase] = useState('input'); // 'input' | 'loading' | 'review' | 'browserAssist' | 'recovery'
   // E.4: backgrounded — sheet collapses to a floating toast while the import
   // keeps running (component stays mounted, so the in-flight promise survives)
   const [backgrounded, setBackgrounded] = useState(false);
@@ -238,6 +237,9 @@ export default function ImportSheet({
   // Unified three-stage timeline: { stage: 0..2, chip: string|null }.
   // Stages only advance forward within one import (progressMap.advanceTimeline).
   const [timeline, setTimeline] = useState(INITIAL_TIMELINE);
+
+  // ── Quiet Field: recovery phase text ──────────────────────────────────
+  const [recoveryText, setRecoveryText] = useState('');
 
   const abortRef = useRef(null);
   const browserAssistRef = useRef(null);
@@ -409,7 +411,7 @@ export default function ImportSheet({
       setShowDiscardConfirm(false);
       return;
     }
-    if (phase === 'browserAssist') {
+    if (phase === 'browserAssist' || phase === 'recovery') {
       setPhase('input');
       return;
     }
@@ -429,7 +431,7 @@ export default function ImportSheet({
   }, [backgrounded, showDiscardConfirm, phase, onClose]);
 
   useBackHandler(
-    !backgrounded && (phase === 'loading' || phase === 'review' || phase === 'browserAssist' || showDiscardConfirm),
+    !backgrounded && (phase === 'loading' || phase === 'review' || phase === 'browserAssist' || phase === 'recovery' || showDiscardConfirm),
     handleSteppedBack,
     showDiscardConfirm ? 'import-discard' : `import-${phase}`,
   );
@@ -537,10 +539,16 @@ export default function ImportSheet({
       // used, instead of opening a surface that's disabled.
       if (result && result._needsBrowserAssist) {
         hapticError();
-        setError("We couldn't automatically read this post. Paste the recipe text below and we'll sort it for you.");
-        setCapturedText(result.capturedCaption || '');
+        const captured = result.capturedCaption || '';
+        setCapturedText(captured);
         setImportUrl(cleanU);
-        setPhase('input');
+        if (captured.trim().length > 0) {
+          setRecoveryText(captured);
+          setPhase('recovery');
+        } else {
+          setError("We couldn't read a recipe from this.");
+          setPhase('input');
+        }
         return;
       }
 
@@ -551,8 +559,22 @@ export default function ImportSheet({
         setPhase('review');
       } else {
         hapticError();
-        setError("We couldn't find a recipe at that link. Try pasting the recipe text instead?");
-        setPhase('input');
+        // Check if capturedText was set by the import pipeline. result may
+        // carry the captured caption even when it isn't flagged
+        // _needsBrowserAssist (e.g. a weak/empty structured parse) — prefer
+        // that over the possibly-stale capturedText state (setState is async,
+        // so a value set earlier in this same pipeline run may not have
+        // committed yet).
+        const ct = result?.capturedCaption || capturedText;
+        if (ct && ct.trim().length > 0) {
+          setCapturedText(ct);
+          setImportUrl(cleanU);
+          setRecoveryText(ct);
+          setPhase('recovery');
+        } else {
+          setError("We couldn't read a recipe from this.");
+          setPhase('input');
+        }
       }
     } catch (err) {
       if (err.name === 'AbortError') return;
@@ -635,7 +657,7 @@ export default function ImportSheet({
         setPhase('review');
       } else {
         hapticError();
-        setError("That text didn't look like a recipe to us. Add the ingredients or steps and try again.");
+        setError("That text didn't look like a recipe. Try adding the ingredients or steps.");
         setPhase('input');
       }
     } catch (err) {
@@ -710,7 +732,7 @@ export default function ImportSheet({
         setPhase('review');
       } else {
         hapticError();
-        setError("We couldn't read a recipe in that scan. Try a brighter shot, or paste the text instead.");
+        setError("We couldn't read a recipe in that photo. Try a clearer shot.");
         setPhase('input');
       }
     } catch (err) {
@@ -876,6 +898,7 @@ export default function ImportSheet({
     setPhase('input');
     setError('');
     setProgressMsg('');
+    setRecoveryText('');
   }, [phase, recipe, confidence]);
 
   // ── E.4: gentle haptic when a backgrounded import becomes ready ──────────
@@ -908,7 +931,7 @@ export default function ImportSheet({
             <span>Recipe ready — tap to review</span>
           </>
         )}
-        {(phase === 'input' || phase === 'browserAssist') && (
+        {(phase === 'input' || phase === 'browserAssist' || phase === 'recovery') && (
           <span>Import needs your help — tap to continue</span>
         )}
       </motion.button>
@@ -1014,105 +1037,41 @@ export default function ImportSheet({
               </div>
             )}
 
-            {/* Error banner */}
-            <AnimatePresence initial={false}>
-              {error && (
+            {/* Error display is now handled by ImportInput's errorMsg prop —
+               the error line appears below the re-expanded field. */}
+
+            {/* Input field ↔ Source pill crossfade */}
+            <AnimatePresence mode="wait">
+              {phase === 'input' && (
                 <motion.div
-                  className="import-sheet-error"
-                  initial={{ opacity: 0, height: 0, marginTop: 0, marginBottom: 0 }}
-                  animate={{ opacity: 1, height: 'auto', marginTop: 8, marginBottom: 8 }}
-                  exit={{ opacity: 0, height: 0, marginTop: 0, marginBottom: 0 }}
-                  transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
-                  style={{ overflow: 'hidden' }}
+                  key="input-field"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.12, ease: 'easeOut' }}
                 >
-                  <p>{error}</p>
-                  <div className="import-sheet-error-actions">
-                    {importUrl && (
-                      <>
-                        <button
-                          type="button"
-                          className="import-sheet-btn import-sheet-btn-secondary"
-                          onClick={() => handleUrlImport(importUrl, itemType)}
-                        >
-                          Retry
-                        </button>
-                        {detectVideoSource(importUrl) && (
-                          <>
-                            <button
-                              type="button"
-                              className="import-sheet-btn import-sheet-btn-secondary"
-                              onClick={() => executeTranscribeImport(importUrl, itemType)}
-                            >
-                              <Mic size={14} /> Transcribe Video
-                            </button>
-                            {/* Phase 4 (2026-07-20): model tier toggle. A single
-                                tap-to-cycle chip rather than a two-way segmented
-                                control — one more touch target is cheaper than
-                                two on a mobile error banner. Shows the CURRENT
-                                choice; tapping switches to the other tier. */}
-                            <button
-                              type="button"
-                              className="import-sheet-btn import-sheet-btn-ghost import-sheet-model-toggle"
-                              onClick={toggleWhisperModel}
-                              title={
-                                whisperModel === 'small'
-                                  ? `Best accuracy — ${WHISPER_MODELS.small.label}, slower`
-                                  : `Fast — ${WHISPER_MODELS.base.label}, less accurate on noisy audio`
-                              }
-                            >
-                              <Zap size={14} />
-                              {whisperModel === 'small' ? 'Best accuracy' : 'Fast'}
-                            </button>
-                          </>
-                        )}
-                        {/* "Try in browser" (BrowserAssist) removed 2026-07-14 — see
-                            the commented-out render block further down for why. */}
-                      </>
-                    )}
-                    <button
-                      type="button"
-                      className="import-sheet-btn import-sheet-btn-ghost"
-                      onClick={() => {
-                        setActiveTab('paste');
-                        setError('');
-                      }}
-                    >
-                      Paste instead
-                    </button>
-                    <button
-                      type="button"
-                      className="import-sheet-btn import-sheet-btn-ghost import-sheet-btn-dismiss"
-                      onClick={() => setError('')}
-                    >
-                      Dismiss
-                    </button>
-                  </div>
+                  <ImportInput
+                    url={url}
+                    setUrl={setUrl}
+                    pasteText={pasteText}
+                    setPasteText={setPasteText}
+                    scanPages={scanPages}
+                    setScanPages={setScanPages}
+                    onImport={(u) => handleUrlImport(u, itemType)}
+                    disabled={false}
+                    errorMsg={error || null}
+                  />
                 </motion.div>
               )}
+              {(phase === 'loading' || phase === 'recovery') && (
+                <SourcePill
+                  key="source-pill"
+                  url={importUrl}
+                  isPhoto={scanPages.length > 0 && !importUrl}
+                  onEdit={handleReExpand}
+                />
+              )}
             </AnimatePresence>
-
-            {/* ImportInput — full or collapsed */}
-            <ImportInput
-              collapsed={phase !== 'input'}
-              status={error ? 'error' : phase === 'loading' ? 'loading' : phase === 'review' ? 'ready' : 'idle'}
-              activeTab={activeTab}
-              setActiveTab={setActiveTab}
-              url={url}
-              setUrl={setUrl}
-              pasteText={pasteText}
-              setPasteText={setPasteText}
-              itemType={itemType}
-              setItemType={setItemType}
-              onManualTypeChange={() => setManualTypeOverride(true)}
-              onImport={handleUrlImport}
-              onPasteImport={handlePasteImport}
-              scanPages={scanPages}
-              setScanPages={setScanPages}
-              onReExpand={handleReExpand}
-              initialUrl={sharedContent?.url || ''}
-              initialType={initialItemType}
-              title={title}
-            />
 
             {/* Offline / pending-import status banner */}
             <AnimatePresence initial={false}>
@@ -1160,58 +1119,93 @@ export default function ImportSheet({
               {phase === 'loading' && (
                 <motion.div
                   key="loading"
-                  className="import-sheet-loading-container"
+                  className="import-sheet-loading-area"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  role="status"
+                  aria-label="Loading"
+                >
+                  {/* Image background (State 5 — appears when cover image is available) */}
+                  <AnimatePresence>
+                    {loadingImage && (
+                      <motion.div
+                        className="import-sheet-loading-image"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 160 }}
+                        transition={{ duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
+                      >
+                        <img
+                          src={loadingImage}
+                          alt=""
+                          className="import-sheet-loading-image-bg"
+                        />
+                        <div className="import-sheet-loading-image-gradient" />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Ring spinner */}
+                  <div className={`import-sheet-ring-spinner${loadingImage ? ' over-image' : ''}`}>
+                    <div className="ring-spinner" aria-hidden="true" />
+                  </div>
+
+                  {/* Status text */}
+                  <div className="import-sheet-status-text" aria-live="polite">
+                    <p className="import-sheet-status-primary">{progressMsg || 'Reading the post…'}</p>
+                    {/* Slow message after 8 seconds */}
+                    <AnimatePresence>
+                      {elapsedTime >= 8 && (
+                        <motion.p
+                          className="import-sheet-status-slow"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ duration: 0.3 }}
+                        >
+                          This one's taking a moment — trying another way.
+                        </motion.p>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </motion.div>
+              )}
+
+              {phase === 'recovery' && (
+                <motion.div
+                  key="recovery"
+                  className="import-sheet-recovery"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.2 }}
                 >
-                  {/* Unified three-stage timeline: Fetching → Understanding → Polishing
-                      + tier chip + crossfading status line (spec §10). */}
-                  <ImportTimeline
-                    stage={timeline.stage}
-                    chip={timeline.chip}
-                    statusMsg={progressMsg}
-                    slow={elapsedTime >= 8}
+                  <p className="import-sheet-recovery-msg">
+                    We got the post, but couldn't turn it into a recipe.
+                    The text is below — edit it or try again.
+                  </p>
+
+                  <textarea
+                    className="import-sheet-recovery-textarea"
+                    value={recoveryText}
+                    onChange={(e) => setRecoveryText(e.target.value)}
+                    aria-label="Captured recipe text"
+                    rows={6}
                   />
 
-                  {(
-                    /* Shimmer skeleton of the review layout below the timeline */
-                    <div className="import-sheet-skeleton">
-                      {/* Hero skeleton */}
-                      <div className="review-hero skeleton">
-                        {loadingImage ? (
-                          <div className="review-hero-image" style={{ backgroundImage: `url(${loadingImage})` }} />
-                        ) : (
-                          <div className="review-hero-placeholder shimmer" />
-                        )}
-                        <div className="review-hero-gradient" />
-                        <div className="review-hero-title-wrap skeleton">
-                          <div className="review-hero-title skeleton-title shimmer" />
-                        </div>
-                      </div>
-
-                      {/* Tab skeleton */}
-                      <div className="review-tabs skeleton">
-                        <div className="review-tab skeleton shimmer" />
-                        <div className="review-tab skeleton shimmer" />
-                      </div>
-
-                      {/* Rows skeleton */}
-                      <div className="review-list skeleton">
-                        {Array(5).fill(null).map((_, i) => (
-                          <div key={i} className="review-row skeleton">
-                            <div className="review-row-handle skeleton shimmer" />
-                            <div className="skeleton-line shimmer" style={{ width: `${85 - (i % 3) * 10}%` }} />
-                            <div className="review-row-more skeleton shimmer" />
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Backgrounding lives in the sticky footer during loading —
-                      no duplicate in-body button (was shown after 25s). */}
+                  <button
+                    type="button"
+                    className="import-sheet-recovery-retry"
+                    onClick={() => {
+                      setPhase('input');
+                      setRecoveryText('');
+                      if (importUrl) {
+                        handleUrlImport(importUrl, itemType);
+                      }
+                    }}
+                  >
+                    Try again
+                  </button>
                 </motion.div>
               )}
 
@@ -1318,26 +1312,18 @@ export default function ImportSheet({
                   <button
                     className="import-sheet-btn import-sheet-btn-primary"
                     onClick={() => {
-                      if (activeTab === 'url') {
-                        handleUrlImport(url, itemType);
-                      } else if (activeTab === 'paste') {
-                        handlePasteImport(pasteText, itemType);
-                      } else if (activeTab === 'photo') {
+                      // Route based on content type
+                      if (scanPages.length > 0) {
                         handlePhotoImport(scanPages, itemType);
+                      } else if (url.trim()) {
+                        handleUrlImport(url, itemType);
+                      } else if (pasteText.trim()) {
+                        handlePasteImport(pasteText, itemType);
                       }
                     }}
-                    disabled={
-                      (activeTab === 'url' && !url.trim()) ||
-                      (activeTab === 'paste' && !pasteText.trim()) ||
-                      (activeTab === 'photo' && scanPages.length === 0)
-                    }
+                    aria-disabled={!url.trim() && !pasteText.trim() && scanPages.length === 0}
                   >
-                    <span className="import-sheet-btn-content">
-                      <Zap size={17} strokeWidth={2.5} aria-hidden="true" />
-                      {activeTab === 'photo'
-                        ? `Extract Recipe${scanPages.length > 1 ? ` (${scanPages.length} pages)` : ''}`
-                        : 'Smart Import'}
-                    </span>
+                    {error ? 'Try again' : 'Import'}
                   </button>
                 )}
                 {phase === 'loading' && (
@@ -1345,20 +1331,34 @@ export default function ImportSheet({
                     <button
                       className="import-sheet-btn import-sheet-btn-ghost"
                       onClick={() => {
+                        // Cancel: abort but stay on sheet with source visible
                         if (abortRef.current) abortRef.current.abort();
                         setPhase('input');
                         setProgressMsg('');
+                        // URL/photo stays in the field — don't clear
                       }}
                     >
                       Cancel
                     </button>
                     <button
-                      className="import-sheet-btn import-sheet-btn-secondary"
+                      className="import-sheet-btn import-sheet-btn-background"
                       onClick={() => setBackgrounded(true)}
                     >
                       Continue in background
                     </button>
                   </>
+                )}
+                {phase === 'recovery' && (
+                  <button
+                    className="import-sheet-btn import-sheet-btn-primary"
+                    onClick={() => {
+                      setPasteText(recoveryText);
+                      handlePasteImport(recoveryText, itemType);
+                    }}
+                    disabled={!recoveryText.trim()}
+                  >
+                    Import from text
+                  </button>
                 )}
                 {phase === 'review' && (
                   <button

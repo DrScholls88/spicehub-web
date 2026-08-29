@@ -710,9 +710,18 @@
   overflow-x: hidden;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+  /* Quick-view is meant to be a glance, not a scroll — the 2026-08-28 content
+     diet (collapsed tags, no truncated step list) gets most meals to fit
+     without scrolling at all; overflow-y:auto above stays as a safety net
+     for long ingredient lists, just visually hidden per the Gemini UX pass. */
+  scrollbar-width: none;
   box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.45),
               0 0 0 1px rgba(0, 0, 0, 0.04);
   will-change: transform, opacity;
+}
+
+.ml-qp-sheet::-webkit-scrollbar {
+  display: none;
 }
 
 .ml-qp-handle {
@@ -727,7 +736,7 @@
 .ml-qp-hero {
   position: relative;
   width: 100%;
-  height: 240px;
+  height: 130px;
   background: var(--surface-2);
   overflow: hidden;
   border-radius: 16px 16px 0 0;
@@ -742,11 +751,18 @@
 }
 
 /* Floating close button (Aceternity-faithful) */
-.ml-qp-close {
+/* Floating chrome row (Aceternity-faithful): kebab-menu trigger + close,
+   outside the card surface so they never scroll with the sheet content. */
+.ml-qp-float-row {
   position: absolute;
   top: 16px;
   right: 16px;
   z-index: 1010;
+  display: flex;
+  gap: 8px;
+}
+
+.ml-qp-close {
   width: 36px;
   height: 36px;
   border-radius: 50%;
@@ -761,6 +777,11 @@
   justify-content: center;
   cursor: pointer;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+.ml-qp-menu-btn[aria-expanded="true"] {
+  background: var(--primary);
+  color: #fff;
 }
 
 .ml-qp-body {
@@ -778,6 +799,56 @@
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.ml-qp-stats {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.ml-qp-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.ml-qp-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.ml-qp-meta-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 12px;
+  border: 1.5px solid transparent;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ml-qp-meta-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 24px;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  color: var(--primary);
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .ml-qp-section {
@@ -816,43 +887,153 @@
   margin-left: -18px;
 }
 
+.ml-qp-more-link {
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+}
+
+.ml-qp-more-link:hover,
+.ml-qp-more-link:active {
+  color: var(--primary);
+}
+
 .ml-qp-actions {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
-  padding: 12px 16px 20px;
+  padding: 12px 16px calc(20px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--border);
 }
 
-.ml-qp-actions button {
+.ml-qp-primary-btn {
   flex: 1;
-  min-width: 80px;
-  padding: 10px 12px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 10px;
+  background: var(--primary);
+  color: #fff;
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  transition: transform 0.15s, opacity 0.15s, box-shadow 0.15s;
+}
+
+.ml-qp-primary-btn:active {
+  transform: scale(0.97);
+}
+
+.ml-qp-icon-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ml-qp-icon-btn {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--card);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
+  color: var(--text-light);
   cursor: pointer;
-  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, transform 0.15s;
 }
 
-.ml-qp-actions button:active {
-  transform: scale(0.96);
+.ml-qp-icon-btn:active {
+  transform: scale(0.93);
 }
 
-.ml-qp-actions button:hover {
+.ml-qp-icon-btn:hover {
   background: var(--surface-2);
 }
 
-.ml-qp-danger {
-  color: #d32f2f !important;
-  border-color: #ffcdd2 !important;
+.ml-qp-icon-btn-fav-active {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: rgba(211, 47, 47, 0.08);
 }
 
-.ml-qp-danger:hover {
-  background: #ffebee !important;
+.ml-qp-icon-btn-rotation-active {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: rgba(224, 123, 79, 0.1);
+}
+
+/* ── Floating admin/kebab menu (2026-08-28 UX pass) ──
+   Edit / Share / Send to Friend / Find Photo / Move to Bar / Delete used to
+   live in a 10-button grid alongside the primary actions — see
+   GeminiAnalysisMealCard.md. Tucking the rarely-used ones here is the
+   "purge the admin-mode bleed" fix; Favorite/Rotation/Play Video stay as
+   44px icon buttons in .ml-qp-actions since browsing users reach for those
+   often. */
+.ml-qp-menu-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 1005;
+  background: transparent;
+}
+
+.ml-qp-menu {
+  position: absolute;
+  top: 60px;
+  right: 16px;
+  z-index: 1011;
+  min-width: 208px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(45, 42, 38, 0.18);
+}
+
+.ml-qp-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.ml-qp-menu button:hover {
+  background: var(--surface-2);
+}
+
+.ml-qp-menu button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.ml-qp-menu-danger {
+  color: var(--danger) !important;
+}
+
+.ml-qp-menu-danger:hover {
+  background: rgba(211, 47, 47, 0.1) !important;
+}
+
+.ml-qp-menu-divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
 }
 
 /* Keep old classes referenced elsewhere (action buttons not used in gallery but kept for compat) */

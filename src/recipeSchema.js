@@ -905,8 +905,16 @@ export function pluralizeFood(food = '', qty = 1) {
       ? plural[0].toUpperCase() + plural.slice(1)
       : plural;
   }
-  // Default heuristic: words ending in -s, -x, -z, -ch, -sh get -es
-  if (/(?:s|x|z|ch|sh)$/i.test(name)) return name + 'es';
+  // Default heuristic: words ending in -x, -z, -ch, -sh get -es (these are
+  // rarely already-plural in how recipes are written: "box"→"boxes").
+  if (/(?:x|z|ch|sh)$/i.test(name)) return name + 'es';
+  // Words already ending in a bare -s are far more often ALREADY plural as
+  // written by the source recipe ("2 chicken breasts", "3 eggs" is irregular
+  // but mapped above) than genuinely singular — a handful of uncountable
+  // exceptions (hummus, asparagus, couscous, citrus) are either already
+  // listed in FOOD_PLURALS above or fine left unchanged here. Treating -s as
+  // "needs +es" was the root cause of "2 Chicken Breastses" (2026-08-28).
+  if (/s$/i.test(name)) return name;
   // Words ending in consonant + y → -ies
   if (/[^aeiou]y$/i.test(name)) return name.slice(0, -1) + 'ies';
   return name + 's';

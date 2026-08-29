@@ -118,6 +118,34 @@ function getMondayOfWeek(date) {
   return d;
 }
 
+// ── Delayed Suspense fallback (2026-08-28) ──────────────────────────────────
+// Vite's dev server compiles a lazy chunk on first navigation to it — no
+// pre-bundling like a prod build gets — which can take a real, perceptible
+// amount of time for a large component (MealDetail + framer-motion + lucide
+// + PhotoGallery). The modal Suspense boundaries below all use
+// `fallback={null}` deliberately, so a fast/cached load never flashes a
+// spinner — but that same `null` during a genuinely slow dev-mode compile
+// reads as "the button doesn't work" rather than "still loading". This shows
+// nothing for a short grace period, then a centered spinner if the chunk is
+// still pending past it — reuses the existing global `.spinner` (App.css).
+function DelayedFallback({ delay = 180 }) {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setShow(true), delay);
+    return () => clearTimeout(t);
+  }, [delay]);
+  if (!show) return null;
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 1000,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: 'rgba(0, 0, 0, 0.15)',
+    }}>
+      <div className="spinner" />
+    </div>
+  );
+}
+
 export default function App() {
   const { isOnline } = useOnlineStatus();
   useKeyboardInset();
@@ -1969,7 +1997,7 @@ useEffect(() => {
           slide-down in this section. Wrapping outside keeps AnimatePresence's
           child list exactly as it was, and its default `initial` still plays the
           enter animation on the frame the chunk resolves. */}
-      <Suspense fallback={null}>
+      <Suspense fallback={<DelayedFallback />}>
       <AnimatePresence>
         {detailItem && (
           <MealDetail
