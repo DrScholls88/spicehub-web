@@ -1,7 +1,10 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Camera, X, Check } from 'lucide-react';
-import { getDetectionLabel, detectPlatform } from './SourcePill';
+import { Camera, Upload, X, Check, Loader2 } from 'lucide-react';
+import { getDetectionLabel } from './SourcePill';
+import { isPdfFile, pdfToPageDataUrls } from '../lib/pdfPages.js';
+import { MAX_PAGES } from '../lib/photoImportEngine.js';
+import { hapticLight, hapticError } from '../haptics';
 // PhotoScanSession: multi-page scan UI retained for future re-integration
 
 /* ── Constants ──────────────────────────────────────────────────────────── */
@@ -15,10 +18,13 @@ function looksLikeUrl(s) {
 /**
  * ImportInput — Quiet Field design.
  *
- * One unified field that accepts URLs, text, or photos. Auto-detects
- * input type. Camera icon triggers photo capture. DetectionChip shows
- * platform recognition. Photo thumbnail replaces field content when
- * a photo is selected.
+ * One unified field that accepts URLs, text, photos, screenshots, or PDFs.
+ * Auto-detects input type. Two icon actions cover photo intake: Upload
+ * (primary — file/gallery picker, accepts images and PDFs, the common
+ * path for screenshots and cookbook scans) and Camera (secondary — the
+ * least-used of the two, kept for in-the-moment snaps of a physical
+ * recipe card). DetectionChip shows platform recognition. Photo thumbnail
+ * replaces field content once a page has been added.
  */
 export default function ImportInput({
   url,
@@ -32,9 +38,12 @@ export default function ImportInput({
   errorMsg,        // Error string for total-miss error line
 }) {
   const inputRef = useRef(null);
-  const fileInputRef = useRef(null);
+  const uploadInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
   const [focused, setFocused] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState('');
+  const [notice, setNotice] = useState('');
   const [isFirstVisit, setIsFirstVisit] = useState(() => {
     try { return !localStorage.getItem(FIRST_VISIT_KEY); } catch { return false; }
   });
@@ -52,6 +61,7 @@ export default function ImportInput({
   const hasText = pasteText && pasteText.trim().length > 0;
   const hasPhoto = scanPages && scanPages.length > 0;
   const hasContent = hasUrl || hasText || hasPhoto;
+  const isPdfBatch = hasPhoto && scanPages.every((p) => p.source === 'pdf');
 
   // ── Detection ─────────────────────────────────────────────────────────
   const detectionLabel = useMemo(() => {
@@ -72,6 +82,60 @@ export default function ImportInput({
     }
   }, [setUrl, setPasteText]);
 
+  // ── File / photo / PDF handling ───────────────────────────────────────
+  // Accepts a FileList/array of images and/or PDFs from the Upload button,
+  // the Camera button, a paste, or a drop. PDFs are rendered to page images
+  // client-side (same pdfToPageDataUrls pipeline PhotoScanSession uses);
+  // everything lands in the same scanPages shape the photo-import engine
+  // reads ({ id, dataUrl, source }). Caps the running total at MAX_PAGES
+  // so one big PDF (or a big multi-select) can't blow past what the vision
+  // pipeline is tuned for.
+  const ingestFiles = useCallback(async (fileList) => {
+    const files = Array.from(fileList || []);
+    if (!files.length) return;
+    setNotice('');
+
+    const room = () => MAX_PAGES - (scanPages?.length || 0) - collected.length;
+    const collected = [];
+    let truncated = false;
+
+    for (const file of files) {
+      if (room() <= 0) { truncated = true; break; }
+      if (isPdfFile(file)) {
+        try {
+          setPdfBusy(`Reading ${file.name}…`);
+          const { pages: pdfPages, truncated: pdfTruncated } = await pdfToPageDataUrls(file, {
+            maxPages: Math.max(1, room()),
+            onProgress: (n, total) => setPdfBusy(`Rendering page ${n} of ${total}…`),
+          });
+          pdfPages.forEach((dataUrl) => {
+            collected.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, dataUrl, source: 'pdf' });
+          });
+          if (pdfTruncated) truncated = true;
+        } catch (err) {
+          hapticError();
+          setNotice(err.message || "Couldn't read that PDF.");
+        } finally {
+          setPdfBusy('');
+        }
+      } else if (/^image\//.test(file.type)) {
+        collected.push({
+          file,
+          dataUrl: URL.createObjectURL(file),
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          source: 'gallery',
+        });
+      }
+    }
+
+    if (!collected.length) return;
+    if (truncated) setNotice(`Only ${MAX_PAGES} pages per import — kept the first ${MAX_PAGES}.`);
+    setScanPages((prev) => [...prev, ...collected]);
+    // Clear URL/text when photos are added
+    setUrl('');
+    setPasteText('');
+  }, [scanPages, setScanPages, setUrl, setPasteText]);
+
   const handlePaste = useCallback((e) => {
     // Check clipboard for files first (smart paste)
     const items = e.clipboardData?.items;
@@ -80,17 +144,17 @@ export default function ImportInput({
       for (let i = 0; i < items.length; i++) {
         if (items[i].kind === 'file') {
           const f = items[i].getAsFile();
-          if (f && /^image\//.test(f.type)) files.push(f);
+          if (f && (/^image\//.test(f.type) || isPdfFile(f))) files.push(f);
         }
       }
       if (files.length > 0) {
         e.preventDefault();
-        ingestMediaFiles(files);
+        ingestFiles(files);
         return;
       }
     }
     // Text paste — let the onChange handler route it
-  }, []);
+  }, [ingestFiles]);
 
   const handleKeyDown = useCallback((e) => {
     if (e.key === 'Enter' && hasUrl && onImport) {
@@ -100,41 +164,33 @@ export default function ImportInput({
     }
   }, [hasUrl, url, onImport, markUsed]);
 
-  // ── File / photo handling ─────────────────────────────────────────────
-  const ingestMediaFiles = useCallback((files) => {
-    const imageFiles = Array.from(files).filter(f => /^image\//.test(f.type));
-    if (imageFiles.length === 0) return;
-
-    const newPages = imageFiles.map((file) => ({
-      file,
-      dataUrl: URL.createObjectURL(file),
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    }));
-    setScanPages((prev) => [...prev, ...newPages]);
-    // Clear URL/text when photos are added
-    setUrl('');
-    setPasteText('');
-  }, [setScanPages, setUrl, setPasteText]);
+  const handleUploadClick = useCallback(() => {
+    hapticLight();
+    uploadInputRef.current?.click();
+  }, []);
 
   const handleCameraClick = useCallback(() => {
-    fileInputRef.current?.click();
+    hapticLight();
+    cameraInputRef.current?.click();
   }, []);
 
   const handleFileChange = useCallback((e) => {
     if (e.target.files?.length) {
-      ingestMediaFiles(e.target.files);
+      ingestFiles(e.target.files);
     }
     // Reset so the same file can be re-selected
     e.target.value = '';
-  }, [ingestMediaFiles]);
+  }, [ingestFiles]);
 
   // ── Clear ─────────────────────────────────────────────────────────────
   const handleClear = useCallback(() => {
-    // Revoke blob URLs to prevent memory leaks
+    // Revoke blob URLs to prevent memory leaks (no-op for PDF data: URLs)
     scanPages.forEach(p => { try { URL.revokeObjectURL(p.dataUrl); } catch (_) {} });
     setUrl('');
     setPasteText('');
     setScanPages([]);
+    setNotice('');
+    setPdfBusy('');
     inputRef.current?.focus();
   }, [setUrl, setPasteText, setScanPages, scanPages]);
 
@@ -153,9 +209,9 @@ export default function ImportInput({
     setDragOver(false);
     if (e.dataTransfer?.files?.length) {
       const files = Array.from(e.dataTransfer.files);
-      const imageFiles = files.filter(f => /^image\//.test(f.type));
-      if (imageFiles.length > 0) {
-        ingestMediaFiles(imageFiles);
+      const usable = files.filter(f => /^image\//.test(f.type) || isPdfFile(f));
+      if (usable.length > 0) {
+        ingestFiles(usable);
         return;
       }
     }
@@ -170,7 +226,7 @@ export default function ImportInput({
         setUrl('');
       }
     }
-  }, [ingestMediaFiles, setUrl, setPasteText]);
+  }, [ingestFiles, setUrl, setPasteText]);
 
   // ── Focus field on mount ──────────────────────────────────────────────
   useEffect(() => {
@@ -187,6 +243,11 @@ export default function ImportInput({
   // ── Render ────────────────────────────────────────────────────────────
   const fieldValue = hasUrl ? url : (hasText ? pasteText : '');
   const showFirstVisitHint = isFirstVisit && !hasContent;
+  const photoLabel = hasPhoto
+    ? (isPdfBatch
+        ? `PDF · ${scanPages.length} page${scanPages.length === 1 ? '' : 's'}`
+        : (scanPages.length === 1 ? 'Recipe photo' : `${scanPages.length} photos`))
+    : '';
 
   return (
     <div
@@ -195,13 +256,23 @@ export default function ImportInput({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {/* Hidden file input for camera/gallery */}
+      {/* Hidden file input — Upload button: gallery/files, images + PDFs */}
       <input
-        ref={fileInputRef}
+        ref={uploadInputRef}
+        type="file"
+        accept="image/*,application/pdf,.pdf"
+        multiple
+        onChange={handleFileChange}
+        style={{ display: 'none' }}
+        aria-hidden="true"
+      />
+
+      {/* Hidden file input — Camera button: one live snap */}
+      <input
+        ref={cameraInputRef}
         type="file"
         accept="image/*"
         capture="environment"
-        multiple
         onChange={handleFileChange}
         style={{ display: 'none' }}
         aria-hidden="true"
@@ -210,16 +281,14 @@ export default function ImportInput({
       {/* The field */}
       <div className={`import-input-field${focused ? ' focused' : ''}${hasContent ? ' has-content' : ''}`}>
         {hasPhoto ? (
-          /* ── Photo thumbnail display (State 3) ───────────────────── */
+          /* ── Photo/PDF thumbnail display (State 3) ───────────────────── */
           <div className="import-input-photo-thumb">
             <img
               src={scanPages[0]?.dataUrl}
               alt="Selected recipe photo"
               className="import-input-photo-img"
             />
-            <span className="import-input-photo-label">
-              {scanPages.length === 1 ? 'Recipe photo' : `${scanPages.length} photos`}
-            </span>
+            <span className="import-input-photo-label">{photoLabel}</span>
           </div>
         ) : (
           /* ── Text/URL input ──────────────────────────────────────── */
@@ -241,7 +310,7 @@ export default function ImportInput({
           />
         )}
 
-        {/* Divider + action icon */}
+        {/* Divider + action icon(s) */}
         <div className="import-input-field-divider" />
 
         {hasContent ? (
@@ -254,14 +323,26 @@ export default function ImportInput({
             <X size={20} strokeWidth={2} />
           </button>
         ) : (
-          <button
-            className="import-input-field-action camera"
-            onClick={handleCameraClick}
-            aria-label="Take or choose a photo"
-            type="button"
-          >
-            <Camera size={20} strokeWidth={1.8} />
-          </button>
+          <div className="import-input-actions">
+            <button
+              className="import-input-field-action upload"
+              onClick={handleUploadClick}
+              aria-label="Upload a photo, screenshot, or PDF"
+              title="Upload photo or PDF"
+              type="button"
+            >
+              <Upload size={20} strokeWidth={1.8} />
+            </button>
+            <button
+              className="import-input-field-action camera"
+              onClick={handleCameraClick}
+              aria-label="Take a photo"
+              title="Take photo"
+              type="button"
+            >
+              <Camera size={20} strokeWidth={1.8} />
+            </button>
+          </div>
         )}
       </div>
 
@@ -278,6 +359,33 @@ export default function ImportInput({
             <Check size={14} strokeWidth={2.5} />
             <span>{detectionLabel}</span>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* PDF render progress */}
+      <AnimatePresence>
+        {pdfBusy && (
+          <motion.p
+            className="import-input-notice"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            role="status"
+          >
+            <Loader2 size={13} strokeWidth={2} style={{ animation: 'spin 1s linear infinite' }} />
+            <span>{pdfBusy}</span>
+          </motion.p>
+        )}
+        {notice && !pdfBusy && (
+          <motion.p
+            className="import-input-notice"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            role="status"
+          >
+            <span>{notice}</span>
+          </motion.p>
         )}
       </AnimatePresence>
 
@@ -304,7 +412,7 @@ export default function ImportInput({
 
       {/* First-visit hint */}
       {showFirstVisitHint && (
-        <p className="import-input-hint">or drop a photo of a recipe card</p>
+        <p className="import-input-hint">or drop a photo, screenshot, or PDF of a recipe</p>
       )}
     </div>
   );
