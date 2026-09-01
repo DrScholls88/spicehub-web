@@ -1540,6 +1540,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
             onTouchCancel={handleSheetTouchEnd}
           >
             <div className="ml-qp-handle" />
+            <div className="ml-qp-scroll-body">
             <motion.div className="ml-qp-hero" layoutId={`ml-card-img-${quickPreview.id}`}>
               {quickPreview.imageUrl ? (
                 <SafeMediaImage
@@ -1764,6 +1765,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                   </ol>
                 </div>
               )}
+            </div>
             </div>
 
             <div className="ml-qp-actions">

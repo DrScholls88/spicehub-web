@@ -681,23 +681,35 @@
   padding: 20px 20px calc(128px + env(safe-area-inset-bottom));
 }
 
-/* ── Sticky bottom action bar (Meal Detail) — Scale + Add to Rotation +
-   Start Cooking/Mixing, kept reachable without scrolling. Token-based (not
-   the old hardcoded cream #fff3e0/#ffe0b2 .servings-scaler box) so it reads
-   correctly in both themes. ── */
+/* ── Fixed bottom action bar (Meal Detail) — Scale + Add to Rotation +
+   Start Cooking/Mixing, always reachable without scrolling.
+
+   This is position: fixed, not position: sticky. .detail-modal (the sheet)
+   is a framer-motion drag/animate element with a permanent transform on
+   it, which makes IT the containing block for any position:fixed
+   descendant — so this bar resolves left/right/bottom against the SHEET's
+   own box, not the raw viewport, while staying completely immune to the
+   scroll position of .detail-scroll-body next to it. That is deliberate:
+   sticky was fragile here — scroll-linked recalculation glitches in
+   Chrome/WebView whenever its scrolling ancestor is transformed (see the
+   .modal-content.detail-modal comment above) — while fixed-inside-a-
+   transformed-ancestor is a plain layout-time position with nothing to
+   recompute on scroll, so it cannot "roll" in portrait OR landscape.
+   Token-based (not the old hardcoded cream #fff3e0/#ffe0b2
+   .servings-scaler box) so it reads correctly in both themes. ── */
 .detail-sticky-bar {
-  position: sticky;
-  bottom: 0;
+  position: fixed;
   left: 0;
   right: 0;
-  margin: 20px -20px calc(-32px - env(safe-area-inset-bottom));
-  padding: 12px 20px calc(14px + env(safe-area-inset-bottom));
+  bottom: 0;
+  margin: 0;
+  padding: 10px 20px calc(12px + env(safe-area-inset-bottom));
   background: var(--card);
   border-top: 1px solid var(--border);
   box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   z-index: 4;
 }
 
@@ -723,11 +735,13 @@
 .detail-sticky-actions .rotation-toggle-btn {
   flex: 1 1 auto;
   justify-content: center;
+  min-height: 44px;
 }
 
 .detail-sticky-actions .cook-mode-launch-btn {
   width: auto;
   flex: 1 1 auto;
+  min-height: 44px;
   padding: 10px 16px;
   font-size: 14px;
   display: inline-flex;

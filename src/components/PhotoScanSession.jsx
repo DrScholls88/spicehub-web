@@ -1,9 +1,10 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
-import { Camera, Images, FileText, X as XIcon, Plus } from 'lucide-react';
+import { ScanLine, Images, FileText, X as XIcon, Plus } from 'lucide-react';
 import { hapticLight, hapticError } from '../haptics';
 import { isPdfFile, pdfToPageDataUrls } from '../lib/pdfPages.js';
 import { MAX_PAGES } from '../lib/photoImportEngine.js';
+import DocumentScanner from './DocumentScanner';
 
 // Shared spring easing (matches ImportSheet/ImportInput)
 const SPRING = { type: 'spring', stiffness: 380, damping: 30 };
@@ -12,8 +13,17 @@ const SPRING = { type: 'spring', stiffness: 380, damping: 30 };
  * PhotoScanSession — scanner-style multi-page capture for photo import.
  *
  * Renders the Photo tab body: a reorderable thumbnail strip of captured
- * pages plus camera / gallery / PDF intake. Page state lives in ImportSheet
+ * pages plus scan / gallery / PDF intake. Page state lives in ImportSheet
  * (needed again at review time for dish-photo re-cropping).
+ *
+ * Scan page opens DocumentScanner (live camera, auto-centering quad,
+ * perspective flatten on capture) — the teaching moment for this tab:
+ * line it up, we flatten it, then we read it. Choose Files (images + PDF)
+ * stays as the direct fallback; if the live camera can't open, the
+ * scanner's own error state offers the system camera as a second
+ * fallback via the hidden capture=environment input below. Captured
+ * pages are still plain { id, dataUrl, source } and feed the same
+ * importRecipeFromPages pipeline as every other source.
  *
  * Props:
  *   pages             — [{ id, dataUrl, source }]
@@ -33,6 +43,7 @@ export default function PhotoScanSession({
   const galleryRef = useRef(null);
   const [pdfBusy, setPdfBusy] = useState('');
   const [notice, setNotice] = useState('');
+  const [scannerOpen, setScannerOpen] = useState(false);
 
   const remaining = MAX_PAGES - pages.length;
 
@@ -47,6 +58,25 @@ export default function PhotoScanSession({
       return [...prev, ...newOnes.slice(0, room)];
     });
   }, [setPages]);
+
+  // Live document scanner — primary path for both the button row and the
+  // strip's "Add page" tile. Stays open across captures (pushPages handles
+  // the MAX_PAGES room/truncation notice the same way file intake does).
+  const openScanner = useCallback(() => {
+    hapticLight();
+    setScannerOpen(true);
+  }, []);
+
+  const handleScanCapture = useCallback((dataUrl) => {
+    pushPages([{ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, dataUrl, source: 'scan' }]);
+  }, [pushPages]);
+
+  // Fallback out of the live scanner: closes it and falls back to the
+  // system camera app via the existing hidden capture=environment input.
+  const handleUseSystemCamera = useCallback(() => {
+    setScannerOpen(false);
+    cameraRef.current?.click();
+  }, []);
 
   const readFileAsDataUrl = (file) =>
     new Promise((resolve, reject) => {
@@ -175,7 +205,7 @@ export default function PhotoScanSession({
                 <motion.button
                   type="button"
                   className="scan-thumb scan-thumb-add"
-                  onClick={() => { hapticLight(); cameraRef.current?.click(); }}
+                  onClick={openScanner}
                   whileTap={{ scale: 0.95 }}
                   aria-label="Add another page"
                 >
@@ -193,11 +223,11 @@ export default function PhotoScanSession({
         <button
           type="button"
           className="import-input-photo-btn"
-          onClick={() => { hapticLight(); cameraRef.current?.click(); }}
+          onClick={openScanner}
           disabled={disabled || remaining <= 0}
         >
-          <Camera size={22} strokeWidth={2} />
-          <span>{pages.length ? 'Snap next page' : 'Take Photo'}</span>
+          <ScanLine size={22} strokeWidth={2} />
+          <span>{pages.length ? 'Scan next page' : 'Scan page'}</span>
         </button>
         <button
           type="button"
@@ -212,9 +242,9 @@ export default function PhotoScanSession({
 
       <p className="import-input-photo-hint">
         {pages.length === 0 ? (
-          <>Cookbook pages, recipe cards, menu boards, screenshots — even a PDF. Add up to {MAX_PAGES} pages, then extract once.</>
+          <>Line up the page — we'll flatten it and read it. Cookbook pages, recipe cards, menu boards, screenshots, even a PDF. Up to {MAX_PAGES} pages.</>
         ) : (
-          <>Add the back of the card or the next page, or hit <strong>Extract Recipe</strong> below.</>
+          <>Scan the back of the card or the next page, or hit <strong>Extract Recipe</strong> below.</>
         )}
       </p>
 
@@ -262,6 +292,21 @@ export default function PhotoScanSession({
         onChange={handleInputChange}
         style={{ display: 'none' }}
       />
+
+      {/* Live document scanner overlay — line it up, we flatten it, then we
+         read it. Stays open across captures; each page still lands in the
+         strip above via handleScanCapture -> pushPages. */}
+      <AnimatePresence>
+        {scannerOpen && (
+          <DocumentScanner
+            remaining={remaining}
+            pageCount={pages.length}
+            onCapture={handleScanCapture}
+            onClose={() => setScannerOpen(false)}
+            onUseSystemCamera={handleUseSystemCamera}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

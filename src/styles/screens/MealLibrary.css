@@ -695,7 +695,15 @@
   padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
 }
 
-/* Expandable card: centered modal that the tile morphs into */
+/* Expandable card: centered modal that the tile morphs into.
+   Like .detail-modal in MealDetail, this is a framer-motion
+   animate={{...}} element AND the target of a manual swipe-to-dismiss
+   transform (handleSheetTouchMove writes sheetRef.current.style.transform
+   directly) — so it always carries a live transform. It only clips to the
+   rounded corners now; .ml-qp-scroll-body below does the actual scrolling,
+   and .ml-qp-actions is position:fixed against THIS box (see that rule) so
+   neither one is a position:sticky descendant of a transformed scrolling
+   container — the combination that was making the action row "roll". */
 .ml-qp-sheet {
   background: var(--card);
   border-radius: 20px;
@@ -706,6 +714,17 @@
      The overlay's own safe-area padding already carves out the notch and
      home indicator, so 100% here is the remaining usable box. */
   max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.45),
+              0 0 0 1px rgba(0, 0, 0, 0.04);
+  will-change: transform, opacity;
+}
+
+.ml-qp-scroll-body {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
@@ -715,12 +734,12 @@
      without scrolling at all; overflow-y:auto above stays as a safety net
      for long ingredient lists, just visually hidden per the Gemini UX pass. */
   scrollbar-width: none;
-  box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.45),
-              0 0 0 1px rgba(0, 0, 0, 0.04);
-  will-change: transform, opacity;
+  /* Room for the fixed .ml-qp-actions bar so the last section never sits
+     underneath it. */
+  padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
 }
 
-.ml-qp-sheet::-webkit-scrollbar {
+.ml-qp-scroll-body::-webkit-scrollbar {
   display: none;
 }
 
@@ -898,12 +917,24 @@
   color: var(--primary);
 }
 
+/* position:fixed against .ml-qp-sheet (its nearest transformed ancestor —
+   see the comment on that rule) instead of sitting in normal flow at the
+   end of the scrollable content. Always visible without scrolling, and
+   rides along as one rigid piece with the sheet during the swipe-to-
+   dismiss gesture instead of lagging/glitching behind it. */
 .ml-qp-actions {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 12px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+  background: var(--card);
   border-top: 1px solid var(--border);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+  z-index: 4;
 }
 
 .ml-qp-primary-btn {
@@ -964,6 +995,34 @@
   color: var(--primary);
   border-color: var(--primary);
   background: rgba(224, 123, 79, 0.1);
+}
+
+/* Short landscape phones — same treatment as MealDetail's sticky bar
+   (.detail-sticky-bar's @media (max-height:500px) and (orientation:
+   landscape) block): the quick-view is already a tight glance-card, but
+   on a rotated short viewport its hero + fixed action bar can still eat
+   an outsized share of the little vertical room available, so both
+   shrink further here — a deliberate, scoped exception to the 44px
+   touch-target minimum for this cramped case only, matching the
+   precedent already set on the full recipe card. */
+@media (max-height: 500px) and (orientation: landscape) {
+.ml-qp-hero {
+    height: 90px;
+  }
+
+.ml-qp-actions {
+    padding: 8px 16px calc(10px + env(safe-area-inset-bottom, 0px));
+    gap: 6px;
+  }
+
+.ml-qp-primary-btn {
+    min-height: 38px;
+  }
+
+.ml-qp-icon-btn {
+    width: 38px;
+    height: 38px;
+  }
 }
 
 /* ── Floating admin/kebab menu (2026-08-28 UX pass) ──

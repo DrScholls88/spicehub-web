@@ -888,6 +888,8 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
           </div>
         )}
 
+        </div>
+
         {/* ── Sticky bottom action bar ── */}
         {(scaleOptions.length > 0 || onToggleRotation || (onStartCook && meal.directions?.length > 0) || (onStartMix && meal.directions?.length > 0)) && (
           <div className="detail-sticky-bar">
@@ -934,7 +936,6 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
             </div>
           </div>
         )}
-        </div>
       </motion.div>
     </div>
   );

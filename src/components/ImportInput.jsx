@@ -1,11 +1,11 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Camera, Upload, X, Check, Loader2 } from 'lucide-react';
+import { ScanLine, Upload, X, Check, Loader2 } from 'lucide-react';
 import { getDetectionLabel } from './SourcePill';
 import { isPdfFile, pdfToPageDataUrls } from '../lib/pdfPages.js';
 import { MAX_PAGES } from '../lib/photoImportEngine.js';
 import { hapticLight, hapticError } from '../haptics';
-// PhotoScanSession: multi-page scan UI retained for future re-integration
+import DocumentScanner from './DocumentScanner';
 
 /* ── Constants ──────────────────────────────────────────────────────────── */
 const FIRST_VISIT_KEY = 'spicehub_hasUsedImport';
@@ -21,10 +21,13 @@ function looksLikeUrl(s) {
  * One unified field that accepts URLs, text, photos, screenshots, or PDFs.
  * Auto-detects input type. Two icon actions cover photo intake: Upload
  * (primary — file/gallery picker, accepts images and PDFs, the common
- * path for screenshots and cookbook scans) and Camera (secondary — the
- * least-used of the two, kept for in-the-moment snaps of a physical
- * recipe card). DetectionChip shows platform recognition. Photo thumbnail
- * replaces field content once a page has been added.
+ * path for screenshots and cookbook scans) and Scan (secondary — the
+ * least-used of the two; opens the live DocumentScanner — auto-centering
+ * quad, perspective flatten on capture — instead of a raw camera snap,
+ * which is what actually teaches the causal line: line it up, we flatten
+ * it, then we read it. Falls back to the system camera app if the live
+ * feed can't open). DetectionChip shows platform recognition. Photo
+ * thumbnail replaces field content once a page has been added.
  */
 export default function ImportInput({
   url,
@@ -44,6 +47,7 @@ export default function ImportInput({
   const [dragOver, setDragOver] = useState(false);
   const [pdfBusy, setPdfBusy] = useState('');
   const [notice, setNotice] = useState('');
+  const [scannerOpen, setScannerOpen] = useState(false);
   const [isFirstVisit, setIsFirstVisit] = useState(() => {
     try { return !localStorage.getItem(FIRST_VISIT_KEY); } catch { return false; }
   });
@@ -171,6 +175,21 @@ export default function ImportInput({
 
   const handleCameraClick = useCallback(() => {
     hapticLight();
+    setScannerOpen(true);
+  }, []);
+
+  // DocumentScanner capture -> same scanPages shape everything else uses.
+  const handleScanCapture = useCallback((dataUrl) => {
+    setScanPages((prev) => {
+      if (prev.length >= MAX_PAGES) return prev;
+      return [...prev, { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, dataUrl, source: 'scan' }];
+    });
+  }, [setScanPages]);
+
+  // Fallback out of the live scanner: close it and fall back to the
+  // system camera app via the existing hidden capture=environment input.
+  const handleUseSystemCamera = useCallback(() => {
+    setScannerOpen(false);
     cameraInputRef.current?.click();
   }, []);
 
@@ -336,11 +355,11 @@ export default function ImportInput({
             <button
               className="import-input-field-action camera"
               onClick={handleCameraClick}
-              aria-label="Take a photo"
-              title="Take photo"
+              aria-label="Scan a page with your camera"
+              title="Scan a page"
               type="button"
             >
-              <Camera size={20} strokeWidth={1.8} />
+              <ScanLine size={20} strokeWidth={1.8} />
             </button>
           </div>
         )}
@@ -414,6 +433,21 @@ export default function ImportInput({
       {showFirstVisitHint && (
         <p className="import-input-hint">or drop a photo, screenshot, or PDF of a recipe</p>
       )}
+
+      {/* Live document scanner — line it up, we flatten it, then we read it.
+         Stays open across captures; each page lands in scanPages via
+         handleScanCapture, same shape Upload/paste/drop already produce. */}
+      <AnimatePresence>
+        {scannerOpen && (
+          <DocumentScanner
+            remaining={MAX_PAGES - scanPages.length}
+            pageCount={scanPages.length}
+            onCapture={handleScanCapture}
+            onClose={() => setScannerOpen(false)}
+            onUseSystemCamera={handleUseSystemCamera}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
