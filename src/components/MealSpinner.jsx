@@ -250,7 +250,7 @@ export default function MealSpinner({
       {/* Source badge */}
       <div style={{padding:'10px 20px 0'}}>
         {usingRotation
-          ? <span style={BADGE_ROT}>🔄 The Rotation · {rotationMeals.length} meals</span>
+          ? <span style={BADGE_ROT}>🔄 Rotation · {rotationMeals.length} meals</span>
           : <span style={BADGE_ALL}>
               {rotationMeals?.length>0&&rotationMeals.length<5
                 ? `⚠️ Need 5+ in Rotation (have ${rotationMeals.length})`

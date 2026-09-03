@@ -209,8 +209,8 @@ export default function SettingsSheet({
             <div className="stg-group stg-group-pad" style={{ marginTop: 14 }}>
               <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 10px' }}>
                 {starterCount > 0
-                  ? `${starterCount} starter recipe${starterCount === 1 ? '' : 's'} in your library — a curated pack to try Spin and grocery.`
-                  : 'Load a curated pack of cookable recipes so Spin and grocery work out of the box.'}
+                  ? `${starterCount} starter recipe${starterCount === 1 ? '' : 's'} in your library — a curated pack to try Spin and your grocery list.`
+                  : 'Load a curated pack of cookable recipes so Spin and your grocery list work right away.'}
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <button className="st-install-btn" type="button" onClick={onAddStarterKit}>

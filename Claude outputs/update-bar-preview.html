@@ -1,0 +1,422 @@
+<title>SpiceHub Update Bar</title>
+<style>
+  :root {
+    --radius-sm: 10px;
+    --surface: #fff;
+    --text: #2b2b2b;
+    --text-light: #6b6b6b;
+    --border: #e6e0d6;
+    --primary: #e65100;
+    color-scheme: light dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f4f1ec;
+    color: #2b2b2b;
+    padding: 28px 20px 60px;
+  }
+  h1 { font-size: 19px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .sub { font-size: 13px; color: #6b6b6b; margin: 0 0 24px; max-width: 62ch; line-height: 1.6; }
+  .wrap { max-width: 760px; margin: 0 auto; }
+  .panel { margin-bottom: 26px; }
+  .panel h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.09em;
+    color: #8a8279; margin: 0 0 8px; font-weight: 700;
+  }
+  .phone {
+    border: 1px solid #ded7cc; border-radius: 14px; overflow: hidden;
+    background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  }
+  .phone[data-theme="dark"] { background: #141414; border-color: #333; }
+  .fakehdr {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 16px; font-weight: 800; font-size: 15px;
+    border-bottom: 1px solid #eee9e0; background: #fff;
+  }
+  .phone[data-theme="dark"] .fakehdr { background: #1a1a1a; border-bottom-color: #2c2c2c; color: #eee; }
+  .fakebody { padding: 16px; display: grid; gap: 9px; }
+  .fakerow { height: 11px; border-radius: 5px; background: #eee9e0; }
+  .phone[data-theme="dark"] .fakerow { background: #262626; }
+  .fakerow:nth-child(2) { width: 72%; }
+  .fakerow:nth-child(3) { width: 55%; }
+  .controls { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 20px; align-items: center; }
+  .controls button {
+    font: inherit; font-size: 12px; font-weight: 600;
+    padding: 7px 13px; border-radius: 8px; border: 1px solid #ded7cc;
+    background: #fff; color: #2b2b2b; cursor: pointer;
+    transition: background-color 150ms ease, border-color 150ms ease, transform 150ms cubic-bezier(0.23,1,0.32,1);
+  }
+  .controls button:hover { background: #f7f4ee; }
+  .controls button:active { transform: scale(0.97); }
+  .controls button[aria-pressed="true"] { background: #2b2b2b; border-color: #2b2b2b; color: #fff; }
+  .controls button.go { background: #e65100; border-color: #e65100; color: #fff; }
+  .clock {
+    font-variant-numeric: tabular-nums; font-size: 12px; color: #6b6b6b;
+    margin-left: 4px; min-width: 128px;
+  }
+  .notes { font-size: 12.5px; color: #6b6b6b; line-height: 1.65; max-width: 66ch; }
+  .notes b { color: #2b2b2b; }
+  code { font-size: 12px; background: #ece7de; padding: 1px 5px; border-radius: 4px; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #17161a; color: #ececec; }
+    .sub, .notes, .clock { color: #a2a2a2; }
+    .notes b { color: #ececec; }
+    .phone { border-color: #333; }
+    .fakehdr { background: #1a1a1a; border-bottom-color: #2c2c2c; color: #eee; }
+    .fakerow { background: #262626; }
+    .controls button { background: #202024; border-color: #3a3a40; color: #ececec; }
+    .controls button:hover { background: #26262c; }
+    .controls button[aria-pressed="true"] { background: #ececec; border-color: #ececec; color: #17161a; }
+    code { background: #26262c; }
+  }
+
+/* ── Below this line: lifted verbatim from src/App.css ─────────────────── */
+.install-banner {
+  background: linear-gradient(135deg, #e65100, #ff833a);
+  color: white;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.install-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.install-banner-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.install-banner-actions .btn-small {
+  background: white;
+  color: var(--primary);
+  font-weight: 700;
+  border: none;
+  padding: 6px 14px;
+}
+
+.btn-small {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 8px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 36px;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.btn-small:active {
+  transform: scale(0.96);
+}
+
+.btn-icon {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: var(--radius-sm);
+  transition: background 0.15s, color 0.15s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  min-width: 44px;
+  min-height: 44px;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  /* Lucide icons render via stroke="currentColor" with no color set here,
+     <button> falls back to the browser's system "buttontext" color instead
+     of inheriting the app's theme — untied to --text/data-theme, so it can
+     land close to the card/backdrop color in either mode. Pin it. */
+  color: var(--text-light);
+}
+
+.btn-icon.small {
+  font-size: 14px;
+  padding: 6px;
+  min-width: 36px;
+  min-height: 36px;
+}
+
+.update-banner {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, #2e7d32, #43a047);
+  /* Entry: 4px of travel, no more. This bar appears above content the reader
+     may already be looking at, so it should settle in rather than swoop.
+     ease-out so it is already moving on the first frame anyone sees. */
+  animation: update-bar-in 220ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  transition: border-bottom-color 320ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.update-banner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, #37474f, #4e5d66);
+  opacity: 0;
+  transition: opacity 320ms cubic-bezier(0.23, 1, 0.32, 1);
+  pointer-events: none;
+}
+
+.update-banner.is-pending::before {
+  opacity: 1;
+}
+
+.update-banner.is-pending {
+  border-bottom-color: #4e5d66;
+}
+
+.update-banner.is-pending::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(100deg,
+      rgba(255, 255, 255, 0) 35%,
+      rgba(255, 255, 255, 0.14) 50%,
+      rgba(255, 255, 255, 0) 65%);
+  transform: translateX(-100%);
+  animation: update-bar-sweep 1.5s linear infinite;
+}
+
+.update-banner .install-banner-content {
+  position: relative;
+  z-index: 1;
+}
+
+.update-banner-label {
+  flex: 1;
+  transition: filter 220ms ease, opacity 220ms ease;
+}
+
+.update-banner.is-pending .update-banner-label {
+  opacity: 0.92;
+  filter: blur(0.15px);
+}
+
+.update-banner .install-banner-actions .btn-small {
+  color: #2e7d32;
+}
+
+.update-banner .install-banner-actions .btn-icon {
+  color: #fff;
+}
+
+.update-banner .install-banner-actions .btn-icon:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.update-skel {
+  display: block;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.26);
+  animation: update-skel-breathe 1.5s ease-in-out infinite;
+}
+
+.update-skel-btn {
+  /* Measured, not guessed: "Refresh" at 13px/700 inside 6px/14px padding
+     lays out at 76.4px. */
+  width: 76px;
+}
+
+.update-skel-icon {
+  width: 36px;
+  /* Second in the row, so a half-beat behind the first. Short enough to read
+     as one object breathing rather than two things blinking out of sync. */
+  animation-delay: 120ms;
+}
+
+[data-theme="dark"] .install-banner {
+  background: #1b331b;
+}
+
+[data-theme="dark"] .update-banner {
+  background: linear-gradient(135deg, #1b5e20, #2e7d32);
+}
+
+[data-theme="dark"] .update-banner::before {
+  background: linear-gradient(135deg, #263238, #37474f);
+}
+
+[data-theme="dark"] .update-banner .install-banner-actions .btn-small {
+  background: #e8f5e9;
+  color: #1b5e20;
+}
+
+@keyframes update-bar-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes update-bar-sweep {
+  to { transform: translateX(100%); }
+}
+
+@keyframes update-skel-breathe {
+  0%, 100% { opacity: 0.6; }
+  50%      { opacity: 1; }
+}
+
+/* Reduced motion: keep every state change, drop the movement. The sweep and
+   the entry slide go entirely. The skeleton keeps a slow opacity breathe —
+   with no change at all it reads as a broken empty box rather than a wait,
+   and opacity alone does not cause the vestibular problem that movement
+   does. */
+@media (prefers-reduced-motion: reduce) {
+  .update-banner {
+    animation: none;
+  }
+
+  .update-banner.is-pending::after {
+    animation: none;
+    opacity: 0;
+  }
+
+  .update-skel,
+  .update-skel-icon {
+    animation: update-skel-breathe 2.6s ease-in-out infinite;
+    animation-delay: 0s;
+  }
+}
+</style>
+
+<div class="wrap">
+  <h1>Update bar &mdash; pending &rarr; ready</h1>
+  <p class="sub">
+    One element, two states. The pending state holds the exact box the Refresh button
+    lands in, so a new version arriving is a colour and a label changing in place
+    rather than a second bar shoving the page down. Jump to a state, or run the real
+    timeline to see it the way a user on a slow connection would.
+  </p>
+
+  <div class="controls">
+    <button data-state="idle" aria-pressed="false">Idle</button>
+    <button data-state="checking" aria-pressed="false">Checking</button>
+    <button data-state="downloading" aria-pressed="false">Downloading</button>
+    <button data-state="ready" aria-pressed="true">Ready</button>
+    <button class="go" id="run">Run real timeline</button>
+    <span class="clock" id="clock"></span>
+  </div>
+
+  <div class="panel">
+    <h2>Light</h2>
+    <div class="phone" id="light">
+      <div class="fakehdr">&#127798; SpiceHub</div>
+      <div class="slot"></div>
+      <div class="fakebody"><div class="fakerow"></div><div class="fakerow"></div><div class="fakerow"></div></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Dark</h2>
+    <div class="phone" data-theme="dark" id="dark">
+      <div class="fakehdr">&#127798; SpiceHub</div>
+      <div class="slot"></div>
+      <div class="fakebody"><div class="fakerow"></div><div class="fakerow"></div><div class="fakerow"></div></div>
+    </div>
+  </div>
+
+  <p class="notes">
+    <b>Timeline.</b> <code>0ms</code> check starts, nothing painted &mdash; a check that comes
+    back empty inside 900ms never puts a pixel on screen.
+    <code>900ms</code> still waiting, so the bar appears.
+    <code>~1.4s</code> a new build is confirmed and precaching begins &mdash; the slow part.
+    <code>~11s</code> installed; same bar turns green and the Refresh button replaces the skeleton.
+    <br><br>
+    <b>Reduced motion.</b> Turn on your OS "reduce motion" setting and reload: the shimmer and
+    the entry slide go, the skeleton keeps a slower opacity breathe, and every state change
+    still happens.
+  </p>
+</div>
+
+<script>
+  const SLOTS = [document.querySelector('#light .slot'), document.querySelector('#dark .slot')];
+  const clock = document.getElementById('clock');
+  let timers = [];
+  const stop = () => { timers.forEach(clearTimeout); timers = []; };
+
+  function markup(state) {
+    if (state === 'idle') return '';
+    const ready = state === 'ready';
+    const label = ready ? '&#128260; New version ready'
+      : state === 'downloading' ? 'Downloading new version&hellip;'
+      : 'Checking for updates&hellip;';
+    const actions = ready
+      ? '<button class="btn-small">Refresh</button>' +
+        '<button class="btn-icon small" aria-label="Dismiss update prompt">&#10005;</button>'
+      : '<span class="update-skel update-skel-btn"></span>' +
+        '<span class="update-skel update-skel-icon"></span>';
+    return '<div class="install-banner update-banner ' + (ready ? 'is-ready' : 'is-pending') + '" role="status">' +
+             '<div class="install-banner-content">' +
+               '<span class="update-banner-label">' + label + '</span>' +
+               '<div class="install-banner-actions">' + actions + '</div>' +
+             '</div>' +
+           '</div>';
+  }
+
+  let current = null;
+  function render(state) {
+    // Swap only what changed, so the pending -> ready transition happens on the
+    // SAME node -- re-writing innerHTML wholesale would remount it and lose the
+    // crossfade, which is the entire point of the design.
+    for (const slot of SLOTS) {
+      const bar = slot.querySelector('.update-banner');
+      if (state === 'idle') { slot.innerHTML = ''; continue; }
+      if (!bar) { slot.innerHTML = markup(state); continue; }
+      const ready = state === 'ready';
+      bar.classList.toggle('is-ready', ready);
+      bar.classList.toggle('is-pending', !ready);
+      bar.querySelector('.update-banner-label').innerHTML =
+        ready ? '&#128260; New version ready'
+        : state === 'downloading' ? 'Downloading new version&hellip;'
+        : 'Checking for updates&hellip;';
+      bar.querySelector('.install-banner-actions').innerHTML = ready
+        ? '<button class="btn-small">Refresh</button><button class="btn-icon small" aria-label="Dismiss update prompt">&#10005;</button>'
+        : '<span class="update-skel update-skel-btn"></span><span class="update-skel update-skel-icon"></span>';
+    }
+    current = state;
+    document.querySelectorAll('.controls button[data-state]').forEach(b =>
+      b.setAttribute('aria-pressed', String(b.dataset.state === state)));
+  }
+
+  document.querySelectorAll('.controls button[data-state]').forEach(b =>
+    b.addEventListener('click', () => { stop(); clock.textContent = ''; render(b.dataset.state); }));
+
+  document.getElementById('run').addEventListener('click', () => {
+    stop();
+    render('idle');
+    const t0 = performance.now();
+    const tick = () => {
+      const ms = performance.now() - t0;
+      clock.textContent = (ms / 1000).toFixed(1) + 's \u2014 ' + (current === 'idle' ? 'checking, nothing shown' : current);
+      if (ms < 11600) timers.push(setTimeout(tick, 100));
+    };
+    tick();
+    timers.push(setTimeout(() => render('checking'), 900));
+    timers.push(setTimeout(() => render('downloading'), 1400));
+    timers.push(setTimeout(() => render('ready'), 11000));
+  });
+
+  render('ready');
+</script>

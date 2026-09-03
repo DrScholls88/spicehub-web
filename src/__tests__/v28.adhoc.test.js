@@ -1,13 +1,20 @@
-// Ad-hoc, throwaway verification for the db.js v28 migration (Phase 3.4.1
-// bar tag system). Not part of the permanent suite — copied into
-// src/__tests__/ only for this one run, then deleted.
+// Verification for the db.js v28 migration (Phase 3.4.1 bar tag system).
+//
+// Written as a throwaway for one run and never deleted, but the five cases
+// below cover shipped behaviour — per-domain tag isolation, the drinks.tags
+// multi-entry index, and the delete/rename paths — so it has been kept. The
+// name is now the only misleading thing about it.
 import { describe, it, expect } from 'vitest';
 import db, { getUserTags, addUserTag, setDrinkTags, bulkSetDrinkTags, deleteUserTag, renameUserTag } from '../db';
 
 describe('v28 migration — bar tag system', () => {
-  it('opens cleanly at version 28 and seeds 7 drink-domain default tags', async () => {
+  it('runs the v28 upgrade and seeds 7 drink-domain default tags', async () => {
     await db.open();
-    expect(db.verno).toBe(28);
+    // Deliberately NOT asserting db.verno. It was pinned to 28 here, which
+    // meant every later migration broke this test without a defect existing:
+    // v29 shipped and this went red on the version number alone. What the
+    // case actually cares about is that the v28 upgrade RAN, and the seven
+    // seeded drink tags below prove that far better than a version integer.
     const drinkTags = await getUserTags('drink');
     expect(drinkTags.length).toBe(7);
     expect(drinkTags.map(t => t.name).sort()).toEqual(

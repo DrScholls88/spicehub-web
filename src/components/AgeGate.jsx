@@ -20,20 +20,60 @@ function storeAgeVerified() {
   }
 }
 
+// ── Why the gate is up ───────────────────────────────────────────────────────
+// Same component, same one-time acknowledgment, three different moments. The
+// labels matter: a gate that says "Enter Bar" while the user is trying to SAVE
+// a recipe reads as a navigation prompt and gets dismissed reflexively.
+//
+// 'Enter Saloon' was the old blanket confirm label. The tab is called Bar, and
+// the Saloon is a room inside it — so the entry label is now Enter Bar and the
+// save label names the actual outcome.
+const REASON_COPY = {
+  'enter-bar': {
+    lead: '',
+    confirm: 'Enter Bar',
+    cancel: 'Not now',
+  },
+  'save-drink': {
+    lead: 'This one reads as a drink, so it belongs on your Bar shelf.',
+    confirm: 'Save to Bar',
+    cancel: 'Back to review',
+  },
+  'open-drink-detail': {
+    lead: "You're opening a drink recipe.",
+    confirm: 'View drink',
+    cancel: 'Not now',
+  },
+};
+
 /**
- * AgeGate — blocking "Drink Responsibly" confirmation shown the first time
- * a user opens the Bar/Saloon area. Persisted once per device (not
- * versioned like ConsentGate — this is a one-time age/responsibility
- * acknowledgment, not something that needs re-confirming when copy changes).
+ * AgeGate — blocking "Drink Responsibly" confirmation. Persisted once per
+ * device (not versioned like ConsentGate — this is a one-time age/
+ * responsibility acknowledgment, not something that needs re-confirming when
+ * copy changes).
+ *
+ * Raised on three occasions, all owned by App.jsx:
+ *   'enter-bar'          — navigateToTab('bar')
+ *   'save-drink'         — an import resolves to a drink and would write to
+ *                          db.drinks. Cancelling writes NOTHING: the import
+ *                          sheet is still mounted behind this gate with the
+ *                          user's edits, so they can flip the type chip back
+ *                          to Meal instead. Importing a drink never
+ *                          auto-verifies — keyword false positives like
+ *                          "rum cake" or "whiskey chicken" are exactly why the
+ *                          chip stays editable after the gate.
+ *   'open-drink-detail'  — opening a drink from outside the Bar (rows saved by
+ *                          builds from before the save-drink gate existed).
  *
  * Props:
+ *   reason    - one of the keys above; drives lead copy + button labels
  *   onConfirm - callback() fired once the user confirms
  *   onCancel  - callback() fired if the user backs out without confirming
- *               (e.g. navigates to a different tab instead)
  */
-export default function AgeGate({ onConfirm, onCancel }) {
+export default function AgeGate({ reason = 'enter-bar', onConfirm, onCancel }) {
   const [checked, setChecked] = useState(false);
   const checkboxRef = useRef(null);
+  const copy = REASON_COPY[reason] || REASON_COPY['enter-bar'];
 
   useEffect(() => {
     checkboxRef.current?.focus();
@@ -55,6 +95,9 @@ export default function AgeGate({ onConfirm, onCancel }) {
       >
         <div className="agegate-icon" aria-hidden="true">🥃</div>
         <h2 id="agegate-title" className="agegate-title">{DRINK_RESPONSIBLY_TEXT.title}</h2>
+        {copy.lead && (
+          <p className="agegate-paragraph agegate-lead">{copy.lead}</p>
+        )}
         {DRINK_RESPONSIBLY_TEXT.paragraphs.map((p, i) => (
           <p key={i} className="agegate-paragraph">{p}</p>
         ))}
@@ -77,7 +120,7 @@ export default function AgeGate({ onConfirm, onCancel }) {
 
         <div className="agegate-actions">
           <button type="button" className="agegate-cancel-btn" onClick={onCancel}>
-            Not now
+            {copy.cancel}
           </button>
           <button
             type="button"
@@ -85,7 +128,7 @@ export default function AgeGate({ onConfirm, onCancel }) {
             disabled={!checked}
             onClick={handleConfirm}
           >
-            Enter Saloon
+            {copy.confirm}
           </button>
         </div>
       </div>

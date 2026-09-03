@@ -1563,10 +1563,6 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
 }
 
-.ml-fab-action-icon--import {
-  background: linear-gradient(135deg, #1565c0, #1976d2);
-}
-
 .ml-fab-action-icon--add {
   background: linear-gradient(135deg, var(--primary), var(--primary-light, #ff8a4c));
 }

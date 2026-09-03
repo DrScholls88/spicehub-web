@@ -9,7 +9,7 @@ const STEPS = [
   },
   {
     title: 'Tag your favorites',
-    description: "Mark meals as 'The Rotation' — those are the ones the weekly spinner draws from.",
+    description: "Add meals to your rotation — that's the pool the weekly spinner picks from.",
     targetKey: 'myMeals',
   },
   {

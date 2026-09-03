@@ -1439,7 +1439,7 @@ export default function WeekView({
         ) : (
           <div style={{ flex: 1 }}>
             <span style={{ fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>
-              The Rotation
+              Your Rotation
             </span>
           </div>
         )}
@@ -1562,7 +1562,7 @@ export default function WeekView({
                 className="wv-week-toolbar-btn primary"
                 onClick={() => { setJustCompletedSpin(false); navigator.vibrate?.([50, 30, 50]); onGenerate(); }}
               >
-                <RefreshCw size={13} strokeWidth={2.5} /> Spin Unlocked
+                <RefreshCw size={13} strokeWidth={2.5} /> Spin the week
               </button>
 
               {(onLockAll || onUnlockAll) && hasWeek && (
@@ -3248,7 +3248,7 @@ function PantryMatchDrawer({ ranked, targetDate, hasFridgeData, onSelect, onSurp
               padding: '32px 16px', textAlign: 'center',
               color: 'var(--text-muted)', fontSize: 14,
             }}>
-              Add meals to The Rotation to see pantry picks
+              Add meals to your rotation to see pantry picks
             </div>
           ) : (
             ranked.map(({ meal, score }) => (

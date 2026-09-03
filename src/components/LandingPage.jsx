@@ -7,9 +7,6 @@ import {
   getMondayOfWeek,
   localDateKey,
   addDays,
-  mealTickerMinutes,
-  DOW_SHORT,
-  diceVariants,
   TILE_COLORS,
   PRIMARY_TILES,
   getSeasonInfo,
@@ -29,6 +26,11 @@ import CookTonightCarousel from './landing/CookTonightCarousel.jsx';
 import OnboardingCoach from './landing/OnboardingCoach.jsx';
 import ImportNudgeBanner from './landing/ImportNudgeBanner.jsx';
 import AppIntroHero from './landing/AppIntroHero.jsx';
+
+// Written the first time the app is backgrounded with the intro hero on
+// screen. See the showIntroHero initializer for why sh_onboarding_v1 alone
+// could not do this job.
+const INTRO_SEEN_KEY = 'sh_intro_seen_v1';
 
 const STYLES = {
   container: {
@@ -55,7 +57,7 @@ export default function LandingPage({
   onNavigate = () => {},
   onGenerate = () => {},
   onViewDetail = () => {},
-  onOpenFridge = () => {},
+  onOpenPantryMatches = () => {},
   onOpenPantry = () => {},
   onOpenStats = () => {},
   onOpenDiscover = () => {},
@@ -67,8 +69,6 @@ export default function LandingPage({
   onRespinDate = null,
   onAssignMeal = null,
   onCreateMealForDay = null,
-  spinConstraints = null,
-  onChangeSpinConstraints = null,
   batchQueueCount = 0,
 }) {
   const [previewDay, setPreviewDay] = useState(null); // { date, meal, isToday }
@@ -78,9 +78,6 @@ export default function LandingPage({
   const [layout, setLayout] = useState(() => loadLandingLayout()); // { order, hidden }
   useEffect(() => { saveLandingLayout(layout); }, [layout]);
 
-  // ── Banner interactivity: tactile Spin button dice-rattle-on-tap ──────────
-  const [diceRattling, setDiceRattling] = useState(false);
-
   // ── Sticky header visibility via IntersectionObserver ────────────────────
   const heroRef = useRef(null);
   const ctaRef = useRef(null);
@@ -88,6 +85,44 @@ export default function LandingPage({
   const [showOnboarding] = useState(() => {
     try { return !localStorage.getItem('sh_onboarding_v1'); } catch { return false; }
   });
+
+  // ── Intro hero retirement ─────────────────────────────────────────────────
+  // AppIntroHero used to render unconditionally — a four-stage feature carousel
+  // pinned above the fold on day 400. It is onboarding, and onboarding that
+  // never leaves is a brochure, so it retires after the first session.
+  //
+  // `sh_onboarding_v1` alone was not a usable kill switch: it is written only
+  // when OnboardingCoach *completes*, and the coach only mounts when
+  // meals.length === 0 — so most users never set it and the hero would have
+  // outlived them. We honour it (anyone who finished onboarding has certainly
+  // seen the pitch) and add our own key, written the first time the app is
+  // backgrounded with the hero on screen. That is genuinely "after session
+  // one", rather than "the second time you tap Home" — the hero does not
+  // vanish out from under someone still reading it.
+  const [showIntroHero] = useState(() => {
+    try {
+      return !localStorage.getItem(INTRO_SEEN_KEY) && !localStorage.getItem('sh_onboarding_v1');
+    } catch {
+      return false; // storage blocked — err toward the quieter Home
+    }
+  });
+
+  useEffect(() => {
+    if (!showIntroHero) return undefined;
+    const retire = () => {
+      try { localStorage.setItem(INTRO_SEEN_KEY, '1'); } catch { /* nothing to do */ }
+    };
+    // visibilitychange covers Android/desktop; iOS standalone PWAs sometimes
+    // skip it but always fire pagehide — the same pairing main.jsx already
+    // relies on for update checks.
+    const onVisibility = () => { if (document.visibilityState === 'hidden') retire(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', retire);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', retire);
+    };
+  }, [showIntroHero]);
   const [stickyVisible, setStickyVisible] = useState(false);
 
   useEffect(() => {
@@ -99,23 +134,6 @@ export default function LandingPage({
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
-
-  // Greeting and date
-  const { greeting } = useMemo(() => {
-    const hour = new Date().getHours();
-    if (hour < 12) return { greeting: 'Good morning! ☀️' };
-    if (hour < 18) return { greeting: 'Good afternoon! 🌤️' };
-    if (hour < 21) return { greeting: "What's for dinner? 🍽️" };
-    return { greeting: 'Night owl mode 🦉' };
-  }, []);
-
-  const formattedDate = useMemo(() => {
-    const today = new Date();
-    const dow = DOW_SHORT[today.getDay()];
-    const date = today.getDate();
-    const monthName = today.toLocaleString('default', { month: 'long' });
-    return `${dow}, ${monthName} ${date}`;
   }, []);
 
   const timeClass = useMemo(() => getTimeOfDayClass(), []);
@@ -149,20 +167,7 @@ export default function LandingPage({
   const hasAnyMeal = next5Days.some(d => d.meal !== null);
 
   // ── Tiles ──────────────────────────────────────────────────────────────────
-  const { streak = 0, totalCooked = 0, topMeal = null } = cookingStats || {};
-
-  // Streak count-up animation (600ms on first render)
-  const [displayStreak, setDisplayStreak] = useState(0);
-  useEffect(() => {
-    if (!streak) { setDisplayStreak(0); return; }
-    const start = performance.now();
-    const animate = (now) => {
-      const progress = Math.min((now - start) / 600, 1);
-      setDisplayStreak(Math.round(progress * streak));
-      if (progress < 1) requestAnimationFrame(animate);
-    };
-    requestAnimationFrame(animate);
-  }, [streak]);
+  const { totalCooked = 0 } = cookingStats || {};
 
   // Widget telemetry (Gemini landing analysis, 2026-07-14): status at a glance,
   // computed entirely from local data already in props — no network calls.
@@ -172,7 +177,7 @@ export default function LandingPage({
     return unchecked > 0 ? `${unchecked} item${unchecked === 1 ? '' : 's'} needed` : 'All set ✓';
   }, [groceryItems]);
 
-  const fridgeTelemetry = useMemo(() => {
+  const pantryTelemetry = useMemo(() => {
     if (!fridgeInventory.length) return 'All I have is ingredients for food.';
     // "Expiring soon" only makes sense for perishables — a jar of cumin isn't
     // going anywhere in 6 days the way a chicken breast is.
@@ -228,21 +233,19 @@ export default function LandingPage({
       accent: TILE_COLORS.grocery,
       onClick: () => onNavigate('grocery'),
     },
+    // Merged 2026-09-03: this was two adjacent tiles — 'Pantry' (static
+    // subtitle) and 'What Can I Cook today?' (the live telemetry) — for a
+    // single user idea, one of them titled with a question instead of a place.
+    // Now one Pantry tile carrying the telemetry. Same destination either way;
+    // it just opens on the matches view when there is actually stock to match
+    // against, and on the plain shelf when there is not.
     {
       id: 'pantry',
       emoji: '🥫',
       title: 'Pantry',
-      subtitle: 'Track what’s on hand',
+      subtitle: pantryTelemetry,
       accent: TILE_COLORS.pantry,
-      onClick: () => onOpenPantry(),
-    },
-    {
-      id: 'fridge',
-      emoji: '🧊',
-      title: 'What Can I Cook today?',
-      subtitle: fridgeTelemetry,
-      accent: TILE_COLORS.fridge,
-      onClick: () => onOpenFridge(),
+      onClick: () => (fridgeInventory.length > 0 ? onOpenPantryMatches() : onOpenPantry()),
     },
     // Friends tile — only shown when the feature is on
     ...(onOpenFriends ? [{
@@ -261,7 +264,7 @@ export default function LandingPage({
       accent: TILE_COLORS.stats,
       onClick: () => onOpenStats(),
     },
-  ], [rotationCount, meals.length, drinks.length, totalCooked, groceryTelemetry, fridgeTelemetry, friendsBadgeCount, friendCount, onNavigate, onGenerate, onOpenFridge, onOpenPantry, onOpenStats, onOpenFriends]);
+  ], [rotationCount, meals.length, drinks.length, totalCooked, groceryTelemetry, pantryTelemetry, fridgeInventory.length, friendsBadgeCount, friendCount, onNavigate, onGenerate, onOpenPantryMatches, onOpenPantry, onOpenStats, onOpenFriends]);
 
   const tilesById = useMemo(() => {
     const map = {};
@@ -310,41 +313,6 @@ export default function LandingPage({
     [fridgeInventory, meals]
   );
 
-  // ── Telemetry Ticker — rotating status line replacing the static tagline ──
-  // Skips weather entirely per product decision (2026-07-14) — every line
-  // here comes from data already in props, no network/geolocation involved.
-  const tickerItems = useMemo(() => {
-    const items = [{ key: 'tagline', text: 'Your meals, gamified.', onTap: null }];
-    if (streak > 0) {
-      items.push({ key: 'streak', text: `Active Streak: ${streak} home-cooked meal${streak === 1 ? '' : 's'} 🔥`, onTap: () => onOpenStats() });
-    }
-    if (groceryItems.length > 0) {
-      const unchecked = groceryItems.filter(i => !i.isChecked).length;
-      if (unchecked > 0) {
-        items.push({ key: 'grocery', text: `Pantry Status: ${unchecked} item${unchecked === 1 ? '' : 's'} running low`, onTap: () => onNavigate('grocery') });
-      }
-    }
-    const todayMealForTicker = next5Days[0]?.meal;
-    if (todayMealForTicker && !todayMealForTicker._special) {
-      const mins = mealTickerMinutes(todayMealForTicker);
-      if (mins != null) {
-        items.push({ key: 'tonight', text: `Tonight: ${mins} min prep time`, onTap: () => onViewDetail(todayMealForTicker) });
-      }
-    }
-    return items;
-  }, [streak, groceryItems, next5Days, onOpenStats, onNavigate, onViewDetail]);
-
-  const [statusIndex, setStatusIndex] = useState(0);
-  const activeStatus = tickerItems[statusIndex % tickerItems.length] || tickerItems[0];
-
-  const handleStatusTap = useCallback(() => {
-    if (activeStatus.onTap) {
-      activeStatus.onTap();
-    } else if (tickerItems.length > 1) {
-      setStatusIndex(i => (i + 1) % tickerItems.length);
-    }
-  }, [activeStatus, tickerItems]);
-
   // Today's meal for hero card
   const todayMeal = next5Days[0]?.meal;
 
@@ -355,10 +323,13 @@ export default function LandingPage({
 
       {/* Hero — app introduction + feature highlights. Spin now lives down in
           the widget grid as its own "Spin the Week" tile (2026-07-30) — this
-          fold's job is telling a user what SpiceHub does, not pushing Spin. */}
-      <div ref={heroRef} style={{ marginBottom: '20px' }}>
-        <AppIntroHero />
-      </div>
+          fold's job is telling a user what SpiceHub does, not pushing Spin.
+          Retired after the first session; see showIntroHero above. */}
+      {showIntroHero && (
+        <div ref={heroRef} style={{ marginBottom: '20px' }}>
+          <AppIntroHero />
+        </div>
+      )}
 
       {/* Install banner — shown when PWA install is available */}
       <AnimatePresence>
@@ -379,8 +350,12 @@ export default function LandingPage({
       {/* Cook Tonight — pantry-matched meals */}
       <CookTonightCarousel matches={pantryMatches} onViewDetail={onViewDetail} />
 
-      {/* ── Next 5 Days ── */}
-      <div className="landing-next-days">
+      {/* ── Next 5 Days ──
+          Doubles as the sticky-header scroll sentinel once the intro hero has
+          retired: heroRef would otherwise point at nothing, the
+          IntersectionObserver would bail on mount, and the sticky mini-header
+          (with its Spin button) would never appear again. */}
+      <div className="landing-next-days" ref={showIntroHero ? undefined : heroRef}>
         <div className="landing-section-label">Next 5 Days</div>
         {hasAnyMeal ? (
           <div className="landing-next-days-wrap">
@@ -437,12 +412,12 @@ export default function LandingPage({
               <Dices size={22} strokeWidth={1.75} />
             </motion.div>
             <div className="landing-empty-text">Nothing planned yet</div>
-            <div className="landing-empty-hint">Spin the wheel to fill your week with meals.</div>
+            <div className="landing-empty-hint">One tap picks meals for every empty day.</div>
             <button
               className="landing-empty-btn"
               onClick={onGenerate}
             >
-              Spin the Wheel
+              Fill my week
             </button>
           </motion.div>
         )}
@@ -450,7 +425,7 @@ export default function LandingPage({
 
       {/* ── Widget dashboard (reorder / pin / hide, persisted local layout) ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-        <div className="landing-section-label" style={{ marginBottom: 0 }}>Your Widgets</div>
+        <div className="landing-section-label" style={{ marginBottom: 0 }}>Shortcuts</div>
         <button
           type="button"
           className="landing-edit-toggle"

@@ -586,14 +586,14 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
     const newVal = !meal.inRotation;
     await toggleRotation(meal.id, newVal);
     onReload?.();
-    onToast?.(newVal ? `Added "${meal.name}" to The Rotation` : `Removed "${meal.name}" from The Rotation`);
+    onToast?.(newVal ? `Added "${meal.name}" to your rotation` : `Removed "${meal.name}" from your rotation`);
   }, [onReload, onToast]);
 
   const handleBatchAddToRotation = useCallback(async () => {
     if (selectedIds.size === 0) return;
     await bulkSetRotation([...selectedIds], true);
     onReload?.();
-    onToast?.(`Added ${selectedIds.size} meal${selectedIds.size !== 1 ? 's' : ''} to The Rotation`);
+    onToast?.(`Added ${selectedIds.size} meal${selectedIds.size !== 1 ? 's' : ''} to your rotation`);
     exitSelectMode();
   }, [selectedIds, onReload, onToast, exitSelectMode]);
 
@@ -1307,15 +1307,13 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                 closed: { transition: { staggerChildren: 0.04, staggerDirection: -1 } },
               }}
             >
-              <motion.button
-                className="ml-fab-action"
-                variants={fabActionVariants}
-                onClick={() => { hapticLight(); setFabOpen(false); onImport?.(); }}
-                whileTap={{ scale: 0.94 }}
-              >
-                <span className="ml-fab-action-label">Import Recipe</span>
-                <span className="ml-fab-action-icon ml-fab-action-icon--import" aria-hidden="true">📥</span>
-              </motion.button>
+              {/* "Import Recipe" used to lead this list. It moved to the + on
+                  the tab bar (2026-09-03), where it is reachable from every
+                  screen instead of only this one — so the speed dial is now
+                  pure overflow: the paths that genuinely belong behind a menu.
+                  `onImport` is still a prop: the empty state's "Import a
+                  Recipe" CTA below uses it, which is what a user with zero
+                  recipes actually reaches for. */}
               <motion.button
                 className="ml-fab-action"
                 variants={fabActionVariants}

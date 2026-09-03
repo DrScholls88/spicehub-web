@@ -63,13 +63,16 @@ export const TILE_COLORS = {
   bar: '#7b1fa2',
   grocery: '#1565c0',
   pantry: '#8a6d3b',
-  fridge: '#00838f',
   friends: '#1976d2',
   stats: '#e65100',
 };
 
-// Primary tiles span full width with distinct treatment
-export const PRIMARY_TILES = new Set(['planWeek', 'fridge']);
+// Primary tiles span full width with distinct treatment.
+// 'fridge' merged into 'pantry' (see DEFAULT_WIDGET_ORDER in landingLayout.js),
+// so the merged tile inherits the full-width slot. 'planWeek' stays listed even
+// though it is hidden by default — a user who restores it should still get the
+// full-width treatment it was designed for.
+export const PRIMARY_TILES = new Set(['planWeek', 'pantry']);
 
 // ── Seasonal helpers ──────────────────────────────────────────────────────────
 export function getSeasonInfo() {

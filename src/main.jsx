@@ -124,7 +124,28 @@ if ('serviceWorker' in navigator) {
       // don't reliably re-check for a new sw.js on their own, so we force
       // a check every time the tab/app becomes visible or regains focus —
       // "just reopen the app" is now enough to pick up an update. ──────────
-      const checkForUpdate = () => { registration.update().catch(() => {}); };
+      //
+      // `announce` is passed only by the once-per-load check further down.
+      // Resume/focus/interval checks stay silent: a status bar on every tab
+      // focus is noise, and if one of them does find something, updatefound
+      // still reports the 'downloading' phase on its own.
+      const checkForUpdate = (announce = false) => {
+        const done = registration.update();
+        // !updateAnnounced: a waiting worker found at startup has already put
+        // the bar in its ready state, and narrating a check underneath that
+        // would be describing work whose answer is already on screen.
+        if (announce && navigator.serviceWorker.controller && !updateAnnounced) {
+          setUpdatePhase('checking');
+          // update() settles when the whole job finishes: immediately when
+          // sw.js came back byte-identical, or only AFTER install when it did
+          // not. Clear the phase only if we are still in 'checking' — in the
+          // second case updatefound has long since moved us to 'downloading'
+          // and clearing here would yank the bar mid-download.
+          const settle = () => { if (updatePhase === 'checking') setUpdatePhase('idle'); };
+          done.then(settle, settle);
+        }
+        return done.catch(() => {});
+      };
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
           checkForUpdate();
@@ -134,7 +155,9 @@ if ('serviceWorker' in navigator) {
           }
         }
       });
-      window.addEventListener('focus', checkForUpdate);
+      // Wrapped rather than passed directly: as a listener it would receive the
+      // FocusEvent as `announce`, which is truthy.
+      window.addEventListener('focus', () => { checkForUpdate(); });
 
       // iOS bfcache / Home Screen resume — visibilitychange sometimes
       // doesn't fire on iOS standalone, but pageshow always does.
@@ -169,12 +192,29 @@ if ('serviceWorker' in navigator) {
       registration.addEventListener('updatefound', () => {
         const installing = registration.installing;
         if (!installing) return;
+        // This is the slow stretch users were complaining about: the new
+        // worker is precaching the whole app shell, which can run past ten
+        // seconds on a phone. A controller already existing is what makes it
+        // an UPDATE rather than a first install, and only an update is worth
+        // narrating — nobody needs to be told their first visit is loading.
+        if (navigator.serviceWorker.controller) setUpdatePhase('downloading');
         installing.addEventListener('statechange', () => {
           if (installing.state === 'installed' && navigator.serviceWorker.controller) {
             announceUpdateReady();
+          } else if (installing.state === 'redundant') {
+            // Install failed — went offline mid-download, quota, bad response.
+            // Release the bar instead of leaving it shimmering forever.
+            setUpdatePhase('idle');
           }
         });
       });
+
+      // The once-per-load check. Registration itself triggers an update job,
+      // but it gives us no promise to hang a phase on, and every other check
+      // above is bound to resume/focus — a cold session that stays in the
+      // foreground would otherwise report nothing at all. Deliberately placed
+      // after the updatefound listener so the event cannot fire unobserved.
+      checkForUpdate(true);
     } catch (error) {
       console.warn('Service Worker registration failed:', error)
     }
@@ -189,6 +229,31 @@ if ('serviceWorker' in navigator) {
   let swRefreshing = false;
   let updateAnnounced = false;
 
+  // ── Update-phase channel (2026-09-03) ─────────────────────────────────────
+  // Feedback: precaching a new build can take 10+ seconds, so the green "New
+  // version ready" bar arrived long after the user had scrolled on and stopped
+  // expecting anything. The UI now renders the SAME bar in a pending state for
+  // the duration of that work, so the Refresh button appears somewhere the eye
+  // has already been given a reason to rest.
+  //
+  //   'checking'    — sw.js is being fetched and byte-compared (fast, usually)
+  //   'downloading' — a new worker exists and is precaching (the slow one)
+  //   'idle'        — nothing in flight; the UI takes the bar away
+  //
+  // 'ready' is deliberately NOT a phase: it stays on the existing
+  // spicehub:update-ready event, so none of the wiring around it changes.
+  //
+  // This module reports only what is true. App.jsx decides what is worth
+  // painting — it holds 'checking' behind a delay so that the common case, a
+  // check that comes back empty in a few hundred milliseconds, never puts a
+  // single pixel on screen or costs a layout shift.
+  let updatePhase = 'idle';
+  function setUpdatePhase(next) {
+    if (updatePhase === next) return;
+    updatePhase = next;
+    window.dispatchEvent(new CustomEvent('spicehub:update-phase', { detail: { phase: next } }));
+  }
+
   function applyUpdate() {
     if (swRefreshing) return;
     swRefreshing = true;
@@ -201,6 +266,9 @@ if ('serviceWorker' in navigator) {
   function announceUpdateReady() {
     if (updateAnnounced) return;
     updateAnnounced = true;
+    // Hand the bar over: the pending state has nothing left to say once the
+    // ready state can speak for itself.
+    setUpdatePhase('idle');
     if (document.visibilityState === 'hidden') {
       applyUpdate();            // user isn't looking — safe to refresh now
     } else {

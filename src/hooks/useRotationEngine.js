@@ -140,7 +140,7 @@ export function useRotationEngine({ meals, showToast, profileUpdateDietaryPref }
       recencyMap: recencyMapRef.current,
       prefs: dietaryPref,
     });
-    if (!pick) { showToast('Add more meals to The Rotation to swap in 🔄'); return null; }
+    if (!pick) { showToast('Add more meals to your rotation to swap in 🔄'); return null; }
     setWeekPlan(prev => prev.map((m, i) => i === dayIndex ? pick : m));
     return pick;
   }, [meals, weekPlan, rotationMeals, dietaryPref, showToast]);
@@ -155,7 +155,7 @@ export function useRotationEngine({ meals, showToast, profileUpdateDietaryPref }
   // using the local scoring engine. Locked/filled days are preserved.
   const smartPlanWeek = useCallback(async () => {
     if (rotationMeals.length === 0) {
-      showToast('Add meals to The Rotation first, then plan your week 🔄');
+      showToast('Add meals to your rotation first, then plan your week 🔄');
       return;
     }
     let recencyMap = recencyMapRef.current;
@@ -172,7 +172,7 @@ export function useRotationEngine({ meals, showToast, profileUpdateDietaryPref }
     const filled = planned.filter(Boolean).length;
     setWeekPlan(planned);
     if (filled < 7) {
-      showToast(`Planned ${filled} day${filled === 1 ? '' : 's'} — add more to The Rotation to fill the week ✨`);
+      showToast(`Planned ${filled} day${filled === 1 ? '' : 's'} — add more to your rotation to fill the week ✨`);
     } else {
       showToast('Week planned ✨');
     }

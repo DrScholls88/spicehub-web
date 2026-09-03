@@ -912,9 +912,9 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
                 <button
                   className={`rotation-toggle-btn ${meal.inRotation ? 'in-rotation' : ''}`}
                   onClick={() => onToggleRotation(meal)}
-                  title={meal.inRotation ? 'Remove from The Rotation' : 'Add to The Rotation'}
+                  title={meal.inRotation ? 'Remove from rotation' : 'Add to rotation'}
                 >
-                  <RefreshCw size={15} strokeWidth={1.75} /> {meal.inRotation ? 'In Rotation' : 'Add to Rotation'}
+                  <RefreshCw size={15} strokeWidth={1.75} /> {meal.inRotation ? 'In rotation' : 'Add to rotation'}
                 </button>
               )}
               {onStartCook && meal.directions && meal.directions.length > 0 && (

@@ -424,6 +424,26 @@ export function extractRecipeByCSS(html) {
     /class\s*=\s*["'][^"']*ingredient-text[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|span|div)>/gi,
     // schema.org recipeIngredient inside any tag
     /itemprop\s*=\s*["']recipeIngredient["'][^>]*>([^<]{3,200})/gi,
+    // 2026-08-24: bare `class="ingredient"` on a list item. Every pattern above
+    // needs a COMPOUND class (wprm-recipe-ingredient, ingredient-item,
+    // recipe-ingredient …), so a hand-rolled blog that simply writes
+    // <li class="ingredient"> matched nothing, extractRecipeByCSS returned null,
+    // and the whole heuristic path fell through — which is what left
+    // tests/import/corpus.blogLinkFollower.test.js red.
+    //
+    // Deliberately LAST: the loop below breaks on the first pattern that yields
+    // any results, so this only runs on a page where every plugin-specific
+    // pattern already found nothing. Pages that extract correctly today cannot
+    // change behaviour.
+    //
+    // Tightened rather than using a loose [^"']*ingredient[^"']* substring: the
+    // class must contain `ingredient`/`ingredients` as a WHOLE space-delimited
+    // token and the element must be an <li>. Verified to reject
+    // `ingredients-header`, `no-ingredient`, `ingredientary` and
+    // `<div class="ingredient">`, while accepting `class="item ingredient bold"`
+    // and single-quoted attributes. The quote alternation must stay
+    // NON-capturing — the loop reads m[1] as the content unconditionally.
+    /<li\b[^>]*\sclass\s*=\s*(?:"(?:[^"]*\s)?ingredients?(?:\s[^"]*)?"|'(?:[^']*\s)?ingredients?(?:\s[^']*)?')[^>]*>([\s\S]*?)<\/li>/gi,
   ];
 
   const ingredients = [];
@@ -467,6 +487,13 @@ export function extractRecipeByCSS(html) {
     /class\s*=\s*["'][^"']*step-text[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div|p)>/gi,
     // schema.org recipeInstructions inside <li>
     /itemprop\s*=\s*["'](?:recipeInstructions|step)["'][^>]*>([\s\S]*?)<\/(?:li|div|section)>/gi,
+    // 2026-08-24: bare `class="instruction"` / `"step"` / `"direction"` on a
+    // list item — the direction-side counterpart of the ingredient fallback
+    // above, same rationale and same guardrails (last in the chain, whole-token
+    // class match, <li> only, non-capturing quote alternation). `step` is the
+    // loosest of the three, which is exactly why it is confined to an <li> and
+    // to whole-token matching: that rejects `stepper` and `checkout-step-2`.
+    /<li\b[^>]*\sclass\s*=\s*(?:"(?:[^"]*\s)?(?:instruction|direction|step)s?(?:\s[^"]*)?"|'(?:[^']*\s)?(?:instruction|direction|step)s?(?:\s[^']*)?')[^>]*>([\s\S]*?)<\/li>/gi,
   ];
 
   const directions = [];

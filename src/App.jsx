@@ -25,6 +25,7 @@ import { compressRecipeImage } from './imageCompressor.js';
 import { markImportTimestamp } from './components/landing/ImportNudgeBanner.jsx';
 import ConsentGate, { getStoredConsent } from './components/ConsentGate';
 import AgeGate, { isAgeVerified } from './components/AgeGate';
+import { parseLaunchIntent, intentFromShareEvent, scrubLaunchQuery, syncTabHash } from './lib/launchIntent';
 import LegalFooter from './components/LegalFooter';
 import useProfile from './hooks/useProfile';
 import useHomeGroup from './hooks/useHomeGroup';
@@ -146,6 +147,37 @@ function DelayedFallback({ delay = 180 }) {
   );
 }
 
+/**
+ * Resolve which shelf an imported item belongs on.
+ *
+ *   userOverride ?? engineGuess ?? intentHint ?? 'meal'
+ *
+ * userOverride is the explicit "Save to" destination the user tapped in
+ * ImportReview; engineGuess is what the extractor (or the in-review
+ * Meal/Drink correction chip) decided; intentHint is the tab the import was
+ * launched from — a hint only, which is the whole point. Used by BOTH the
+ * AgeGate check and the write loop in handleImport so they can never
+ * disagree about what an item is.
+ *
+ * @param {object} recipe
+ * @param {string} target  destination ('library'|'bar'|'week'|'grocery') or
+ *                         the launching tab hint ('meals'|'drinks')
+ * @returns {'meal'|'drink'}
+ */
+function resolveItemType(recipe, target) {
+  // 1. userOverride — an explicit destination the user chose.
+  if (target === 'drinks' || target === 'bar') return 'drink';
+  if (target === 'week' || target === 'grocery') return 'meal';
+
+  // 2. engineGuess — extractor output, or the user's in-review type chip.
+  const guess = recipe?.itemType || recipe?._type || recipe?.type;
+  if (guess === 'drink' || guess === 'meal') return guess;
+
+  // 3. intentHint / default. 'meals' and 'library' both land here and mean
+  //    the same thing: nobody had an opinion, so assume food.
+  return 'meal';
+}
+
 export default function App() {
   const { isOnline } = useOnlineStatus();
   useKeyboardInset();
@@ -249,7 +281,7 @@ export default function App() {
     weekPlan, setWeekPlan,
     weekHistory,
     dietaryPref, updateDietaryPref,
-    spinConstraints: effectiveSpinConstraints, updateSpinConstraints,
+    spinConstraints: effectiveSpinConstraints,
     rotationMeals, recentlyUsedIds,
     respinDay: rotationRespinDay, setDayMeal: rotationSetDayMeal,
     toggleLockDay, lockAllPlanned, unlockAllPlanned, setDaySpecial,
@@ -376,6 +408,10 @@ export default function App() {
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
   const [updateReady, setUpdateReady] = useState(false); // new build installed while app on-screen
+  // The pending half of that same bar: 'idle' | 'checking' | 'downloading'.
+  // Reported by main.jsx; see the effect below for why 'checking' is not
+  // shown the moment it arrives.
+  const [updatePhase, setUpdatePhase] = useState('idle');
   // Already-installed detection: hide the "Add to Home Screen" action when the
   // app is already running as an installed PWA (iOS uses navigator.standalone;
   // everyone else exposes the standalone display-mode media query).
@@ -444,14 +480,44 @@ export default function App() {
   // ── Legal: clickwrap consent gate + Bar/Saloon age gate ─────────────────
   const [consentAccepted, setConsentAccepted] = useState(() => getStoredConsent() !== null);
   const [showAgeGate, setShowAgeGate] = useState(false);
+  // Which situation raised the gate — drives its copy and confirm label.
+  // 'enter-bar' | 'save-drink' | 'open-drink-detail'
+  const [ageGateReason, setAgeGateReason] = useState('enter-bar');
+  // Work parked while the gate is open. Nothing is written and no navigation
+  // happens until the user answers; cancelling drops these on the floor rather
+  // than quietly falling back to the wrong shelf.
+  const pendingDrinkImportRef = useRef(null);
+  const pendingDrinkDetailRef = useRef(null);
+  const closeAgeGate = useCallback(() => {
+    pendingDrinkImportRef.current = null;
+    pendingDrinkDetailRef.current = null;
+    setShowAgeGate(false);
+  }, []);
   // Wraps setTab so entering 'bar' the first time on this device is gated
   // behind the Drink Responsibly confirmation. Every other tab passes through.
   const navigateToTab = useCallback((target) => {
     if (target === 'bar' && !isAgeVerified()) {
+      setAgeGateReason('enter-bar');
       setShowAgeGate(true);
       return;
     }
     setTab(target);
+  }, []);
+
+  // Single verb for opening a recipe/drink detail. Drinks reached from outside
+  // the Bar (Cook Tonight, pantry matches, Stats — and global search when it
+  // lands) meet the gate first. Legacy rows saved by builds before the
+  // save-drink gate existed are exactly the population this catches.
+  const openDetailItem = useCallback((item) => {
+    if (!item) { setDetailItem(null); return; }
+    const isDrinkRow = item.itemType === 'drink' || item._type === 'drink' || item.type === 'drink';
+    if (isDrinkRow && !isAgeVerified()) {
+      pendingDrinkDetailRef.current = item;
+      setAgeGateReason('open-drink-detail');
+      setShowAgeGate(true);
+      return;
+    }
+    setDetailItem(item);
   }, []);
 
   const handleBrandHome = useCallback(() => {
@@ -529,7 +595,7 @@ export default function App() {
   useBackHandler(!!batchReviewItem, () => setBatchReviewItem(null), 'batch-review');
   useBackHandler(showZipImport, () => setShowZipImport(false), 'zip-import');
   useBackHandler(!!exportSheet, () => setExportSheet(null), 'export');
-  useBackHandler(showAgeGate, () => setShowAgeGate(false), 'age-gate');
+  useBackHandler(showAgeGate, closeAgeGate, 'age-gate');
 
   // Double-back-to-exit at root + history sentinel (Track 0)
   useRootBackGuard(showToast);
@@ -624,7 +690,7 @@ export default function App() {
   const handleQuickImport = useCallback((url) => {
     if (!url) return;
     setImportModalKey(k => k + 1);
-    setShowImportFor('meals');
+    setShowImportFor('any');
     setSharedContent({ mode: 'url', url, text: '', title: '', isShare: false });
   }, []);
 
@@ -840,10 +906,91 @@ export default function App() {
   // app is on-screen. main.jsx dispatches spicehub:update-ready instead of
   // auto-reloading a visible session, so the user chooses when to refresh
   // (their in-progress work is already persisted to Dexie either way).
+  //
+  // 2026-09-03: precaching a new build can run past ten seconds, so that
+  // prompt used to arrive well after the user had moved on and had no reason
+  // to still be watching that strip of screen. main.jsx now also reports what
+  // is happening while it happens (spicehub:update-phase) and we render the
+  // SAME bar in a pending state for the duration, so the Refresh button lands
+  // somewhere the eye has already been told to expect something.
+  //
+  // Two guards stop that from becoming noise, because unlike the ready prompt
+  // this code path runs on every single load:
+  //
+  //   SLOW_CHECK_MS  A bare 'checking' phase is not shown for the first 900ms.
+  //                  A byte-identical sw.js check settles well inside that on
+  //                  any ordinary connection, so the overwhelming majority of
+  //                  loads paint nothing at all and pay no layout shift — the
+  //                  bar appears only when the wait is real. 'downloading'
+  //                  ignores the delay: by then an update provably exists.
+  //
+  //   MIN_VISIBLE_MS Once the bar IS up it stays at least this long, so a
+  //                  check that resolves 40ms later cannot flash it in and
+  //                  straight back out.
   useEffect(() => {
-    const onUpdateReady = () => setUpdateReady(true);
+    const SLOW_CHECK_MS = 900;
+    const MIN_VISIBLE_MS = 550;
+
+    let showTimer = null;
+    let hideTimer = null;
+    // null, not 0: `shownAt` is a timestamp sentinel and a falsy check on a
+    // Date.now() value is a trap waiting for someone to fake the clock.
+    let shownAt = null;
+
+    const clearTimers = () => {
+      if (showTimer) { clearTimeout(showTimer); showTimer = null; }
+      if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+    };
+
+    const onPhase = (e) => {
+      const phase = e?.detail?.phase;
+      // Every phase supersedes the last, so nothing scheduled under the old
+      // one is allowed to survive and fire against the new one.
+      clearTimers();
+
+      if (phase === 'checking') {
+        showTimer = setTimeout(() => {
+          showTimer = null;
+          shownAt = Date.now();
+          setUpdatePhase('checking');
+        }, SLOW_CHECK_MS);
+        return;
+      }
+
+      if (phase === 'downloading') {
+        if (shownAt === null) shownAt = Date.now();
+        setUpdatePhase('downloading');
+        return;
+      }
+
+      // idle. If the bar never became visible there is nothing to take away
+      // and no minimum to honour — this is the common path, and it must not
+      // schedule anything.
+      if (shownAt === null) { setUpdatePhase('idle'); return; }
+      const remaining = Math.max(0, MIN_VISIBLE_MS - (Date.now() - shownAt));
+      hideTimer = setTimeout(() => {
+        hideTimer = null;
+        shownAt = null;
+        setUpdatePhase('idle');
+      }, remaining);
+    };
+
+    const onUpdateReady = () => {
+      // The ready state takes over the same DOM node, so drop every pending
+      // timer rather than let one fire later and argue with it.
+      clearTimers();
+      shownAt = null;
+      setUpdatePhase('idle');
+      setUpdateReady(true);
+    };
+
+    window.addEventListener('spicehub:update-phase', onPhase);
     window.addEventListener('spicehub:update-ready', onUpdateReady);
-    return () => window.removeEventListener('spicehub:update-ready', onUpdateReady);
+    return () => {
+      clearTimers();
+      window.removeEventListener('spicehub:update-phase', onPhase);
+      window.removeEventListener('spicehub:update-ready', onUpdateReady);
+    };
   }, []);
 
   const handleInstallApp = async () => {
@@ -884,82 +1031,99 @@ function _looksLikeDrink(url, title, text) {
   return detectImportType(url, `${title || ''} ${text || ''}`) === 'drink';
 }
 
-// Handle Share Target (Android + PWA)
-// Supports both GET (legacy) and POST (via sw.js redirect) methods
-useEffect(() => {
-  const params = new URLSearchParams(window.location.search);
-  if (params.has('share-target')) {
-    const sharedUrl   = params.get('url')   || '';
-    const sharedTitle = params.get('title') || '';
-    const sharedText  = params.get('text')  || '';
+// ── Inbound launch intents ───────────────────────────────────────────────────
+// Every doorway into the app funnels through lib/launchIntent.js: the Web Share
+// Target (manifest POST → sw.js 303 → this GET), the home-screen shortcuts
+// declared in public/manifest.json, hash routes, and the Capacitor native share
+// event wired in main.jsx.
+//
+// Before 2026-09-03 only the first and last were read at all. `/?action=import`,
+// `/?action=plan` and `/?action=grocery` had shipped in the manifest for months
+// with NO handler anywhere in src — long-pressing the installed icon and tapping
+// "Add Recipe" silently dropped the user on Home. One parser + one handler means
+// a new doorway can't quietly go unread again.
+const runLaunchIntent = useCallback((intent) => {
+  if (!intent) return;
 
-    const batchUrls = extractMultipleUrls(`${sharedUrl} ${sharedText}`);
-    if (batchUrls.length >= 2) {
-      addBatchQueueItems(batchUrls).then(() => {
-        setShowBatchQueue(true);
-        window.dispatchEvent(new CustomEvent('spicehub:batch-queue-updated'));
-      });
-      window.history.replaceState({}, '', window.location.pathname);
-      return;
-    }
-
-    const target = _looksLikeDrink(sharedUrl, sharedTitle, sharedText) ? 'drinks' : 'meals';
-    if (sharedUrl) {
-      // ── I-2: Offline share queue ─────────────────────────────────────────
-      // If device is offline when a URL is shared, queue it for later
-      // instead of silently failing inside ImportSheet.
-      if (!navigator.onLine) {
-        addBatchQueueItems([sharedUrl]).then(() => {
-          setBatchQueueCount(c => c + 1);
-          window.dispatchEvent(new CustomEvent('spicehub:batch-queue-updated'));
-          setToast({ message: "Queued! We'll import this when you're back online 📥", type: 'info' });
-          setTimeout(() => setToast(null), 4500);
-        }).catch(() => {});
-        window.history.replaceState({}, '', window.location.pathname);
-        return;
-      }
-      // ── I-2: Mark share-target for post-save quick actions ───────────────
-      isShareImportRef.current = target === 'meals';
-      setImportModalKey(k => k + 1);
-      setShowImportFor(target);
-      setSharedContent({ mode: 'url', url: sharedUrl, title: sharedTitle, text: sharedText, isShare: true });
-      window.history.replaceState({}, '', window.location.pathname);
-    }
+  if (intent.action === 'navigate') {
+    // navigateToTab, not setTab — a `#/bar` deep link or the Bar shortcut still
+    // has to meet the AgeGate rather than sneaking past it.
+    navigateToTab(intent.tab);
+    return;
   }
-}, []);
+  if (intent.action !== 'import') return;
 
-// Handle native share-target intents from Capacitor (@capgo/capacitor-share-target).
-// main.jsx wires the native plugin and dispatches `spicehub:share-import` whenever
-// the OS routes a share to us. Here we mirror the PWA behavior — open the import
-// modal and pre-populate it with the shared URL or text.
-useEffect(() => {
-  const handler = (e) => {
-    const detail = e?.detail;
-    if (!detail || (!detail.url && !detail.text)) return;
+  // Several links in one share → batch queue, not one lossy import.
+  const batchUrls = extractMultipleUrls(`${intent.url} ${intent.text}`);
+  if (batchUrls.length >= 2) {
+    addBatchQueueItems(batchUrls).then(() => {
+      setShowBatchQueue(true);
+      window.dispatchEvent(new CustomEvent('spicehub:batch-queue-updated'));
+    }).catch(() => {});
+    return;
+  }
 
-    const batchUrls = extractMultipleUrls(`${detail.url || ''} ${detail.text || ''}`);
-    if (batchUrls.length >= 2) {
-      addBatchQueueItems(batchUrls).then(() => {
-        setShowBatchQueue(true);
-        window.dispatchEvent(new CustomEvent('spicehub:batch-queue-updated'));
-      });
-      return;
-    }
-
-    const target = _looksLikeDrink(detail.url, detail.title, detail.text) ? 'drinks' : 'meals';
+  // A payload-free import intent is the "Add Recipe" shortcut doing exactly what
+  // it says on the tin: open an empty import sheet.
+  if (!intent.url && !intent.text) {
     setImportModalKey(k => k + 1);
-    setShowImportFor(target);
-    setSharedContent({
-      mode: detail.mode || (detail.url ? 'url' : 'text'),
-      url: detail.url || '',
-      text: detail.text || '',
-      title: detail.title || '',
-      isShare: true,
-    });
-  };
+    setShowImportFor('any');
+    return;
+  }
+
+  const target = _looksLikeDrink(intent.url, intent.title, intent.text) ? 'drinks' : 'meals';
+
+  // ── I-2: Offline share queue ───────────────────────────────────────────────
+  // Offline when a URL arrives → queue it instead of letting ImportSheet fail.
+  if (intent.url && !navigator.onLine) {
+    addBatchQueueItems([intent.url]).then(() => {
+      setBatchQueueCount(c => c + 1);
+      window.dispatchEvent(new CustomEvent('spicehub:batch-queue-updated'));
+      setToast({ message: "Queued! We'll import this when you're back online 📥", type: 'info' });
+      setTimeout(() => setToast(null), 4500);
+    }).catch(() => {});
+    return;
+  }
+
+  // ── I-2: Mark share-target for post-save quick actions ─────────────────────
+  isShareImportRef.current = intent.isShare && target === 'meals';
+  setImportModalKey(k => k + 1);
+  setShowImportFor(target);
+  setSharedContent({
+    mode: intent.url ? 'url' : 'text',
+    url: intent.url,
+    text: intent.text,
+    title: intent.title,
+    isShare: intent.isShare,
+  });
+}, [navigateToTab]);
+
+// Boot: read the launch URL exactly once. The ref latch matters — StrictMode
+// double-invokes effects in dev, and a second run would re-fire the import.
+const launchIntentReadRef = useRef(false);
+useEffect(() => {
+  if (launchIntentReadRef.current) return;
+  launchIntentReadRef.current = true;
+  const intent = parseLaunchIntent();
+  if (!intent) return;
+  scrubLaunchQuery();   // spend the query string; the hash is left alone
+  runLaunchIntent(intent);
+}, [runLaunchIntent]);
+
+// Native share intents (@capgo/capacitor-share-target) — same handler, different
+// doorway. main.jsx dispatches `spicehub:share-import`; we normalize and reuse.
+useEffect(() => {
+  const handler = (e) => runLaunchIntent(intentFromShareEvent(e?.detail));
   window.addEventListener('spicehub:share-import', handler);
   return () => window.removeEventListener('spicehub:share-import', handler);
-}, []);
+}, [runLaunchIntent]);
+
+// Keep the address bar honest about which tab is open, so a tab can be
+// bookmarked and shared. replaceState ONLY — src/navigation/backStack.js owns
+// popstate for modal layers, and a second writer would make one back gesture
+// close two things. That means this does not (yet) make Back restore the
+// previous tab; wiring that needs backStack to own tab layers too.
+useEffect(() => { syncTabHash(tab); }, [tab]);
 
 // Re-import hook: allows MealDetail "Re-import" button to trigger import
 useEffect(() => {
@@ -1227,7 +1391,7 @@ useEffect(() => {
     // Update the detailItem in-place so UI reflects immediately
     setDetailItem(prev => prev && prev.id === meal.id ? { ...prev, inRotation: newVal } : prev);
     await loadMeals();
-    showToast(newVal ? `Added "${meal.name}" to The Rotation` : `Removed "${meal.name}" from The Rotation`);
+    showToast(newVal ? `Added "${meal.name}" to your rotation` : `Removed "${meal.name}" from your rotation`);
   }, [loadMeals, showToast]);
 
   const rateMeal = useCallback(async (meal, rating) => {
@@ -1453,11 +1617,28 @@ useEffect(() => {
   // destination overrides showImportFor and is set by the Smart Action Bar
   // in ImportModal when the user taps "→ Bar", "→ Grocery", or "→ This Week".
   const handleImport = useCallback(async (imported, destination) => {
+    const target = destination || showImportFor;
+
+    // ── AgeGate fires on resolve-to-drink, not on tab change (2026-09-03) ──
+    // Gate BEFORE any write and BEFORE the sheet is torn down, so cancelling
+    // costs the user nothing: ImportSheet is still mounted with their edits
+    // intact and they can flip the type chip back to Meal themselves. The old
+    // failure mode was silent — a drink saved past the gate, or (worse) landed
+    // in db.meals as a cocktail because the Meals tab locked the type.
+    // Mirrors the write loop's ghost-row skip so gate and write agree exactly.
+    if (!isAgeVerified() && Array.isArray(imported) && imported.some(
+      (r) => !(r.id && !r.name && !r.ingredients) && resolveItemType(r, target) === 'drink'
+    )) {
+      pendingDrinkImportRef.current = { imported, destination };
+      setAgeGateReason('save-drink');
+      setShowAgeGate(true);
+      return;
+    }
+
     // ── I-2: Capture and reset share-target flag before any state clears ────
     const wasShareMeal = isShareImportRef.current;
     isShareImportRef.current = false;
 
-    const target = destination || showImportFor;
     setShowImportFor(null);
     setSharedContent(null);
 
@@ -1560,8 +1741,13 @@ useEffect(() => {
     const failures = [];
     for (const r of imported) {
       if (r.id && !r.name && !r.ingredients) continue;
-      const isDrinkItem = target === 'drinks' || target === 'bar' ||
-        (target !== 'meals' && (r.itemType === 'drink' || r._type === 'drink' || r.type === 'drink'));
+      // The active tab is a HINT, never a lock (2026-09-03). This used to read
+      // `target !== 'meals' && (r.itemType === 'drink' || ...)`, which meant an
+      // import launched from the Meals tab forced a detected cocktail into
+      // db.meals. resolveItemType() is now the single source of truth, shared
+      // with the AgeGate check at the top of handleImport so the gate and the
+      // write can never disagree about what this item is.
+      const isDrinkItem = resolveItemType(r, target) === 'drink';
       try {
         if (isDrinkItem) { await saveMealDeduped(r, { table: 'drinks' }); anyDrink = true; }
         else { await saveMealDeduped(r, { table: 'meals' }); anyMeal = true; }
@@ -1786,16 +1972,46 @@ useEffect(() => {
         </div>
       )}
 
-      {updateReady && (
-        <div className="install-banner update-banner" role="status">
+      {/* One bar, two states, one DOM node — which is the whole design. The
+          pending state holds the exact box the Refresh button will occupy, so
+          the arrival of a new version is a colour and a label changing in
+          place, not a second bar shoving the page down ten seconds after the
+          user stopped looking. role="status" announces both wordings to
+          screen readers as the node's text changes. */}
+      {(updateReady || updatePhase !== 'idle') && (
+        <div
+          className={`install-banner update-banner ${updateReady ? 'is-ready' : 'is-pending'}`}
+          role="status"
+        >
           <div className="install-banner-content">
-            <span>🔄 New version ready</span>
+            <span className="update-banner-label">
+              {updateReady
+                ? '🔄 New version ready'
+                : updatePhase === 'downloading'
+                  ? 'Downloading new version…'
+                  : 'Checking for updates…'}
+            </span>
             <div className="install-banner-actions">
-              <button
-                className="btn-small"
-                onClick={() => (window.__spicehubApplyUpdate ? window.__spicehubApplyUpdate() : window.location.reload())}
-              >Refresh</button>
-              <button className="btn-icon small" onClick={() => { setUpdateReady(false); window.dispatchEvent(new CustomEvent('spicehub:update-dismissed')); }} aria-label="Dismiss update prompt">✕</button>
+              {updateReady ? (
+                <>
+                  <button
+                    className="btn-small"
+                    onClick={() => (window.__spicehubApplyUpdate ? window.__spicehubApplyUpdate() : window.location.reload())}
+                  >Refresh</button>
+                  <button className="btn-icon small" onClick={() => { setUpdateReady(false); setUpdatePhase('idle'); window.dispatchEvent(new CustomEvent('spicehub:update-dismissed')); }} aria-label="Dismiss update prompt">✕</button>
+                </>
+              ) : (
+                /* The skeleton. Two shapes, matched to the two controls they
+                   stand in for, so nothing reflows when the real ones arrive.
+                   Deliberately button-shaped rather than a spinner: a spinner
+                   says "busy", a button-shaped hole says "a button is coming
+                   here", and the second is the thing users were missing.
+                   aria-hidden — the label has already said it in words. */
+                <>
+                  <span className="update-skel update-skel-btn" aria-hidden="true" />
+                  <span className="update-skel update-skel-icon" aria-hidden="true" />
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -1841,8 +2057,8 @@ useEffect(() => {
             rotationCount={rotationMeals.length}
             onNavigate={navigateToTab}
             onGenerate={generateWeek}
-            onViewDetail={setDetailItem}
-            onOpenFridge={() => { setPantryStartOnMatches(true); setShowFridge(true); }}
+            onViewDetail={openDetailItem}
+            onOpenPantryMatches={() => { setPantryStartOnMatches(true); setShowFridge(true); }}
             onOpenPantry={() => { setPantryStartOnMatches(false); setShowFridge(true); }}
             onOpenStats={() => setShowStats(true)}
             onOpenDiscover={() => setShowDiscover(true)}
@@ -1854,8 +2070,6 @@ useEffect(() => {
             onRespinDate={handleRespinForDate}
             onAssignMeal={handleAssignMealToDay}
             onCreateMealForDay={handleCreateMealForDay}
-            spinConstraints={effectiveSpinConstraints}
-            onChangeSpinConstraints={updateSpinConstraints}
             batchQueueCount={batchQueueCount}
           />
         )}
@@ -1873,7 +2087,7 @@ useEffect(() => {
             onRespin={respinDay}
             onSetDay={setDayMeal}
             onSetSpecial={setDaySpecial}
-            onViewDetail={setDetailItem}
+            onViewDetail={openDetailItem}
             onBuildGrocery={buildGroceryList}
             onToggleLock={toggleLockDay}
             onLockAll={lockAllPlanned}
@@ -1891,9 +2105,9 @@ useEffect(() => {
             spinConstraints={effectiveSpinConstraints}
             fridgeInventoryNames={fridgeInventoryNames}
             onSpinConstraintsSkipped={(skipped) => {
-              const labels = { vegetarianOnly: 'Vegetarian Only', under30: 'Under 30 Mins', useFridgeStock: 'Use Fridge Stock' };
+              const labels = { vegetarianOnly: 'Vegetarian only', under30: 'Under 30 min', useFridgeStock: 'Use what I have' };
               const names = skipped.map(k => labels[k] || k).join(', ');
-              showToast(`Not enough meals match ${names} — showing the full rotation instead`, 'info', 3600);
+              showToast(`Not enough meals match ${names} — picking from all your meals instead`, 'info', 3600);
             }}
             onAddCustomDayTag={handleAddCustomDayTag}
             onDeleteCustomDayTag={handleDeleteCustomDayTag}
@@ -1907,7 +2121,7 @@ useEffect(() => {
             onAdd={() => setEditMeal({})}
             onEdit={setEditMeal}
             onDelete={deleteMeal}
-            onViewDetail={setDetailItem}
+            onViewDetail={openDetailItem}
             onShare={shareItem}
             onExport={(item) => openExportSheet('recipe', item)}
             onImport={() => { setImportModalKey(k => k + 1); setShowImportFor('meals'); }}
@@ -1930,7 +2144,7 @@ useEffect(() => {
             onAdd={() => setEditDrink({})}
             onEdit={setEditDrink}
             onDelete={deleteDrink}
-            onViewDetail={setDetailItem}
+            onViewDetail={openDetailItem}
             onShare={shareItem}
             onImport={() => { setImportModalKey(k => k + 1); setShowImportFor('drinks'); }}
             onReload={loadDrinks}
@@ -1966,6 +2180,22 @@ useEffect(() => {
         <button className={tab === 'week' ? 'active' : ''} onClick={() => setTab('week')} aria-current={tab === 'week' ? 'page' : undefined}>
           <span style={{ fontSize: 18 }}>📅</span>
           <span>Plan</span>
+        </button>
+        {/* ── Capture ──
+            Import is the product, and until now it had no home on the chrome:
+            every entry point lived inside MealLibrary's speed dial, BarLibrary,
+            or a share handler, so from Home / Plan / Shop you had to change tabs
+            first. This is a sixth SLOT but not a sixth destination — no label,
+            no active state, no aria-current — and it opens the sheet with no
+            meal/drink hint at all, so the engine's guess wins. ── */}
+        <button
+          type="button"
+          className="tab-bar-capture"
+          onClick={() => { setImportModalKey(k => k + 1); setShowImportFor('any'); }}
+          title="Add a recipe"
+          aria-label="Add a recipe"
+        >
+          <span className="tab-bar-capture-glyph" aria-hidden="true">+</span>
         </button>
         <button className={tab === 'library' ? 'active' : ''} onClick={() => setTab('library')} aria-current={tab === 'library' ? 'page' : undefined} style={{ position: 'relative' }}>
           <span style={{ fontSize: 18 }}>🍳</span>
@@ -2066,8 +2296,16 @@ useEffect(() => {
             key={importModalKey}
             onImport={batchReviewItem ? handleBatchReviewSave : handleImport}
             onClose={() => { setShowImportFor(null); setSharedContent(null); }}
-            title={showImportFor === 'drinks' ? 'Import Drink' : 'Import Recipe'}
+            title={showImportFor === 'drinks' ? 'Import Drink'
+              : showImportFor === 'any' ? 'Add a Recipe'
+              : 'Import Recipe'}
             sharedContent={sharedContent}
+            // 'any' deliberately passes 'meal' here. ImportSheet reads
+            // `initialItemType === 'drink'` as "the user explicitly picked a
+            // type" and sets kindLocked from it (see its userChose lines), so
+            // 'meal' is precisely the value that means "no explicit pick —
+            // let the engine decide". Anything else would re-lock the type we
+            // just went to the trouble of leaving open.
             initialItemType={showImportFor === 'drinks' ? 'drink' : 'meal'}
           />
         </Suspense>
@@ -2081,7 +2319,7 @@ useEffect(() => {
               key="pantry-mode"
               meals={meals}
               initialShowMatches={pantryStartOnMatches}
-              onViewDetail={(meal) => { setShowFridge(false); setDetailItem(meal); }}
+              onViewDetail={(meal) => { setShowFridge(false); openDetailItem(meal); }}
               onClose={() => setShowFridge(false)}
               onAddToGrocery={handleAddToGrocery}
             />
@@ -2092,7 +2330,7 @@ useEffect(() => {
         <Suspense fallback={null}>
           <BarShelf
             drinks={drinks}
-            onViewDetail={(drink) => { setShowBarShelf(false); setDetailItem(drink); }}
+            onViewDetail={(drink) => { setShowBarShelf(false); openDetailItem(drink); }}
             onClose={() => setShowBarShelf(false)}
             onImport={() => { setImportModalKey(k => k + 1); setShowImportFor('drinks'); }}
             onAddToGrocery={handleAddToGrocery}
@@ -2107,7 +2345,7 @@ useEffect(() => {
             <BarFridgeMode
               key="bar-fridge-mode"
               drinks={drinks}
-              onViewDetail={(drink) => { setShowBarFridge(false); setDetailItem(drink); }}
+              onViewDetail={(drink) => { setShowBarFridge(false); openDetailItem(drink); }}
               onClose={() => setShowBarFridge(false)}
               onAddToGrocery={handleAddToGrocery}
               onOpenSaloon={() => tripBetweenRooms('toSaloon')}
@@ -2166,7 +2404,7 @@ useEffect(() => {
           <MealStats
             meals={meals}
             onClose={() => setShowStats(false)}
-            onViewDetail={(meal) => { setShowStats(false); setDetailItem(meal); }}
+            onViewDetail={(meal) => { setShowStats(false); openDetailItem(meal); }}
           />
         </Suspense>
       )}
@@ -2243,11 +2481,36 @@ useEffect(() => {
         </Suspense>
       )}
 
-      {/* ── Drink Responsibly age gate — blocks first entry to Bar/Saloon ── */}
+      {/* ── Drink Responsibly age gate ──
+          Raised by three different situations now (see `ageGateReason`):
+          entering the Bar tab, saving an import that resolves to a drink, and
+          opening a drink's detail. The save path is the one that used to leak:
+          AgeGate only ever wrapped navigateToTab('bar'), so a shared cocktail
+          wrote into db.drinks on a device that had never confirmed age. ── */}
       {showAgeGate && (
         <AgeGate
-          onConfirm={() => { setShowAgeGate(false); setTab('bar'); }}
-          onCancel={() => setShowAgeGate(false)}
+          reason={ageGateReason}
+          onConfirm={() => {
+            // Read + clear the parked work BEFORE hiding, so nothing can be
+            // replayed twice if a confirm and a back gesture race.
+            const pendingImport = pendingDrinkImportRef.current;
+            const pendingDetail = pendingDrinkDetailRef.current;
+            pendingDrinkImportRef.current = null;
+            pendingDrinkDetailRef.current = null;
+            setShowAgeGate(false);
+            // AgeGate.handleConfirm() persists verification before calling us,
+            // so re-entering handleImport now passes its own isAgeVerified().
+            if (pendingImport) {
+              // Fire-and-forget like every other onImport call site, but with an
+              // explicit catch — this one is not wrapped by ImportSheet.
+              Promise.resolve(handleImport(pendingImport.imported, pendingImport.destination))
+                .catch((err) => console.error('[AgeGate] retry import failed:', err));
+              return;
+            }
+            if (pendingDetail) { setDetailItem(pendingDetail); return; }
+            setTab('bar');
+          }}
+          onCancel={closeAgeGate}
         />
       )}
 

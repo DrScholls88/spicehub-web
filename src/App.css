@@ -472,8 +472,21 @@ body::before {
   /* Icon glyph is an inline-styled <span> (fontSize:18 set in App.jsx), so an
      inline style beats a normal rule here — !important is the deliberate,
      narrow exception, matching existing usage elsewhere in this file. */
-  .tab-bar button span:first-child {
+  .tab-bar button:not(.tab-bar-capture) span:first-child {
     font-size: 15px !important;
+  }
+
+  /* Capture control: shrink to match the tighter bar without letting the
+     circle set the bar's height. */
+  .tab-bar .tab-bar-capture {
+    padding: 2px 0;
+  }
+
+  .tab-bar-capture-glyph {
+    width: 30px;
+    height: 30px;
+    font-size: 21px;
+    padding-bottom: 2px;
   }
 
   .tab-bar button span:not(:first-child) {
@@ -515,6 +528,58 @@ body::before {
 
 .tab-bar button:active {
   transform: scale(0.95);
+}
+
+/* ── Capture control (2026-09-03) ─────────────────────────────────────────
+   A sixth slot in the bar, but an ACTION rather than a destination: no label,
+   no .active state, no aria-current. Import is the product and it previously
+   had no presence on the chrome at all.
+
+   Deliberately NOT protruding above the bar. A cradled/raised FAB would need
+   .tab-bar to stop clipping and would invalidate three separate bottom-offset
+   assumptions that are hard-coded elsewhere — .main-content's padding-bottom,
+   .ml-fab-group's `52px + safe-area` clearance in MealLibrary.css, and the
+   toast at bottom:88px. A filled circle already reads as "the action" beside
+   five text tabs, so the prominence is bought for none of that risk.
+
+   Fixed 56px wide rather than flex:1 so the five real tabs keep equal widths;
+   at 360px that leaves ~60px per tab, comfortably over the 44px minimum. ── */
+.tab-bar .tab-bar-capture {
+  flex: 0 0 56px;
+  width: 56px;
+  min-width: 56px;
+  padding: 6px 0;
+  /* Never show the active indicator the real tabs use. */
+  border-top-color: transparent;
+}
+
+.tab-bar-capture-glyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  font-size: 27px;
+  font-weight: 300;
+  line-height: 1;
+  /* Optical centering — the "+" glyph's ink sits high of the em box centre in
+     the system stack at this size. */
+  padding-bottom: 2px;
+  box-shadow: 0 2px 8px rgba(230, 81, 0, 0.32);
+  transition: transform 0.15s var(--ease-spring, ease), box-shadow 0.15s ease;
+}
+
+.tab-bar .tab-bar-capture:active .tab-bar-capture-glyph {
+  box-shadow: 0 1px 4px rgba(230, 81, 0, 0.28);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab-bar-capture-glyph {
+    transition: none;
+  }
 }
 
 /* ── Main Content ── */
@@ -3119,15 +3184,177 @@ body::before {
   justify-content: space-between;
 }
 
-/* Update-ready prompt reuses the install-banner layout but a distinct green,
-   so it reads as "good news, action available" rather than a promo/install nag.
-   Override the action button's text colour off var(--primary) (orange) so the
-   white pill stays legible on the green bar. */
+/* ═══ Update bar ═══════════════════════════════════════════════════════════
+   Reuses the install-banner layout but a distinct green, so it reads as "good
+   news, action available" rather than a promo/install nag.
+
+   It carries two states in ONE element. `.is-pending` runs while a new build
+   is being fetched and precached — work that can take upwards of ten seconds
+   on a phone, during which the old bar showed nothing at all and the Refresh
+   button therefore arrived unannounced at a strip of screen the user had long
+   since stopped watching. `.is-ready` is the payoff. Because it is the same
+   node throughout, the switch is a colour and a label changing in place, and
+   nothing on the page moves at the moment it happens. */
 .update-banner {
+  position: relative;
+  overflow: hidden;
   background: linear-gradient(135deg, #2e7d32, #43a047);
+  /* Entry: 4px of travel, no more. This bar appears above content the reader
+     may already be looking at, so it should settle in rather than swoop.
+     ease-out so it is already moving on the first frame anyone sees. */
+  animation: update-bar-in 220ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  transition: border-bottom-color 320ms cubic-bezier(0.23, 1, 0.32, 1);
 }
+
+/* The pending fill, crossfaded ON TOP of the ready green rather than replacing
+   it. `transition: background` cannot interpolate between two gradients, so
+   the pending colour gets its own layer and we fade the layer instead —
+   opacity only, which stays on the compositor. Slate, not a paler green:
+   green is the payoff, and spending it on the wait would leave the actual
+   arrival with nothing new to say. */
+.update-banner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, #37474f, #4e5d66);
+  opacity: 0;
+  transition: opacity 320ms cubic-bezier(0.23, 1, 0.32, 1);
+  pointer-events: none;
+}
+
+.update-banner.is-pending::before {
+  opacity: 1;
+}
+
+/* .install-banner ends in `border-bottom: 1px solid rgba(255,255,255,0.2)`, and
+   an absolutely-positioned ::before is laid out against the PADDING box — so
+   the layer above stops 1px short and the green base paints through the
+   translucent border, leaving a green hairline along the bottom of the slate
+   bar. Overhanging the pseudo-element cannot fix it (overflow: hidden clips at
+   that same edge), so give the pending state an opaque border of its own. */
+.update-banner.is-pending {
+  border-bottom-color: #4e5d66;
+}
+
+/* Shimmer, and only while pending. A transform sweep on a pseudo-element, not
+   an animated background-position: transform composites, background-position
+   repaints the full width of the bar every frame. `linear` because continuous
+   motion has no beginning or end for an easing curve to shape. */
+.update-banner.is-pending::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(100deg,
+      rgba(255, 255, 255, 0) 35%,
+      rgba(255, 255, 255, 0.14) 50%,
+      rgba(255, 255, 255, 0) 65%);
+  transform: translateX(-100%);
+  animation: update-bar-sweep 1.5s linear infinite;
+}
+
+@keyframes update-bar-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes update-bar-sweep {
+  to { transform: translateX(100%); }
+}
+
+/* Both pseudo-elements are absolutely positioned over the bar, so the real
+   content has to be lifted above them. */
+.update-banner .install-banner-content {
+  position: relative;
+  z-index: 1;
+}
+
+/* Pin the actions to the right edge so the two labels — which are different
+   lengths — cannot drag the buttons sideways as the wording changes. */
+.update-banner-label {
+  flex: 1;
+  transition: filter 220ms ease, opacity 220ms ease;
+}
+
+/* A touch of blur across the label swap. Without it you see two words
+   crossfading as two separate objects; blur bridges them so it reads as one
+   thing changing its mind. */
+.update-banner.is-pending .update-banner-label {
+  opacity: 0.92;
+  filter: blur(0.15px);
+}
+
 .update-banner .install-banner-actions .btn-small {
   color: #2e7d32;
+}
+
+/* .btn-icon pins its colour to var(--text-light) so Lucide strokes do not fall
+   back to the browser's system buttontext. On a white card that is correct; on
+   this green bar it left the dismiss control at roughly 1.5:1 — present, but
+   not really visible. White clears 5:1 against both ends of the gradient and
+   both themes, and the hierarchy against Refresh is carried by the filled pill
+   rather than by dimming this one into illegibility. */
+.update-banner .install-banner-actions .btn-icon {
+  color: #fff;
+}
+
+.update-banner .install-banner-actions .btn-icon:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+/* ── Skeleton controls ────────────────────────────────────────────────────
+   Sized to the two controls they stand in for — .btn-small is min-height 36px
+   with 6px/14px padding around a 13px word, .btn-icon.small is a 36px square
+   — so the real buttons drop into the same footprint with nothing around
+   them moving. Deliberately button-shaped rather than a spinner: a spinner
+   says "busy", a button-shaped hole says "a button is coming here", and the
+   second is the thing users were missing. */
+.update-skel {
+  display: block;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.26);
+  animation: update-skel-breathe 1.5s ease-in-out infinite;
+}
+
+.update-skel-btn {
+  /* Measured, not guessed: "Refresh" at 13px/700 inside 6px/14px padding
+     lays out at 76.4px. */
+  width: 76px;
+}
+
+.update-skel-icon {
+  width: 36px;
+  /* Second in the row, so a half-beat behind the first. Short enough to read
+     as one object breathing rather than two things blinking out of sync. */
+  animation-delay: 120ms;
+}
+
+@keyframes update-skel-breathe {
+  0%, 100% { opacity: 0.6; }
+  50%      { opacity: 1; }
+}
+
+/* Reduced motion: keep every state change, drop the movement. The sweep and
+   the entry slide go entirely. The skeleton keeps a slow opacity breathe —
+   with no change at all it reads as a broken empty box rather than a wait,
+   and opacity alone does not cause the vestibular problem that movement
+   does. */
+@media (prefers-reduced-motion: reduce) {
+  .update-banner {
+    animation: none;
+  }
+
+  .update-banner.is-pending::after {
+    animation: none;
+    opacity: 0;
+  }
+
+  .update-skel,
+  .update-skel-icon {
+    animation: update-skel-breathe 2.6s ease-in-out infinite;
+    animation-delay: 0s;
+  }
 }
 
 .install-banner-content {
@@ -4406,6 +4633,23 @@ body::before {
 /* ── Install banner dark ── */
 [data-theme="dark"] .install-banner {
   background: #1b331b;
+}
+
+/* The rule above is [data-theme="dark"] .install-banner — specificity (0,2,0)
+   against .update-banner's (0,1,0) — so in dark mode the update bar was
+   losing its green and rendering identical to the install bar. Same
+   specificity here and placed after, so these win on source order. */
+[data-theme="dark"] .update-banner {
+  background: linear-gradient(135deg, #1b5e20, #2e7d32);
+}
+
+[data-theme="dark"] .update-banner::before {
+  background: linear-gradient(135deg, #263238, #37474f);
+}
+
+[data-theme="dark"] .update-banner .install-banner-actions .btn-small {
+  background: #e8f5e9;
+  color: #1b5e20;
 }
 
 [data-theme="dark"] .storage-warning-banner {
@@ -10392,6 +10636,15 @@ select:focus-visible,
   color: var(--text-light);
   font-size: 0.92rem;
   line-height: 1.5;
+}
+
+/* Reason-specific lead line on AgeGate (save-drink / open-drink-detail). Says
+   why the gate appeared right now, above the standing Drink Responsibly copy.
+   Full --text rather than --text-light so it reads as the answer to "why am I
+   seeing this", not as more fine print. */
+.agegate-paragraph.agegate-lead {
+  color: var(--text);
+  font-weight: 600;
 }
 
 .consentgate-links {
