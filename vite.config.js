@@ -41,8 +41,13 @@ if (isProduction) {
   buildNum++;
   fs.writeFileSync(buildNumPath, JSON.stringify({ build: buildNum }, null, 2));
 }
-const BUILD_VERSION = `1.0.${buildNum}`;
-console.log(`\n  SpiceHub Build #${buildNum}  (v${BUILD_VERSION})\n`);
+// v2 marks the 2026-09 visual/IA overhaul (Jakob sprint: capture on the
+// chrome, four-tab bar, Lucide, Home diet). The counter was reset to 0 at the
+// same time, so this is a two-part display version — major, then build — not
+// semver. Zero-padded so the header badge keeps a stable width.
+const APP_MAJOR = 2;
+const BUILD_VERSION = `${APP_MAJOR}.${String(buildNum).padStart(3, '0')}`;
+console.log(`\n  SpiceHub v${BUILD_VERSION}  (build #${buildNum})\n`);
 
 // ── Deferred main stylesheet (2026-08-24, PageSpeed remediation) ─────────────
 // Vite injects the bundled CSS as a plain <link rel="stylesheet">, which blocks

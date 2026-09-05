@@ -89,10 +89,22 @@
    sauce row, so they are the ones a user actually types into repeatedly;
    the zoom fired on every tap. Padding trimmed 6px -> 5px vertically so the
    larger text does not grow the row height and reflow the card. */
-.aem-sauce-row input {
+.aem-sauce-row input,
+.aem-sauce-row textarea {
   flex: 1;
   font-size: 16px;
   padding: 5px 10px;
+}
+.aem-sauce-row textarea {
+  font-family: inherit;
+  color: var(--text);
+  border: none;
+  background: transparent;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.4;
+  field-sizing: content;
 }
 
 /* Side dishes input in edit form */
@@ -165,9 +177,12 @@
   scroll-margin-bottom: 25vh;
 }
 
-/* Ingredient row — one inline line: handle · input · move · delete. No
-   header row here; ingredients are short enough that a header per row
-   would just add vertical bulk to a list that can run 15+ items deep. */
+/* Ingredient row — one inline line: handle · field · row menu. No header
+   row here; ingredients are short enough that a header per row would add
+   vertical bulk to a list that can run 15+ items deep. 2026-09-03: the
+   field is now an auto-expanding textarea (was a single-line input) so a
+   long ingredient line doesn't need select-and-drag to edit — it just
+   grows the row by a line or two instead of scrolling sideways. */
 .aem-row-inline {
   display: flex;
   align-items: center;
@@ -175,7 +190,8 @@
   padding: 4px 6px 4px 2px;
 }
 
-.aem-row-inline input {
+.aem-row-inline input,
+.aem-row-inline textarea {
   flex: 1;
   min-width: 0;
   border: none;
@@ -184,6 +200,13 @@
   font-size: 16px; /* 16px stops iOS Safari zooming the page on focus */
   color: var(--text);
   outline: none;
+}
+.aem-row-inline textarea {
+  font-family: inherit;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.4;
+  field-sizing: content;
 }
 
 /* Step row — controls in a header bar above the textarea instead of a
@@ -287,6 +310,71 @@
 [data-theme="auto"][data-system-dark="true"] .aem-row-action-danger:hover {
   background: #2a1515;
   color: var(--danger);
+}
+
+/* ── Row overflow menu (Move to directions/ingredients, Move to Notes,
+   Move to Sauce/Add-on) — mirrors ImportReview's .review-row-menu-*
+   pattern but uses this file's --surface/--border/--text token set. */
+.aem-row-menu-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.aem-row-menu-btn[aria-expanded="true"] {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.aem-row-menu-list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 2px);
+  z-index: 20;
+  min-width: 200px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.aem-row-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.aem-row-menu-item:hover {
+  background: var(--surface);
+}
+
+.aem-row-menu-item-danger {
+  color: var(--danger);
+}
+
+.aem-row-menu-item-danger:hover {
+  background: #ffebee;
+}
+
+[data-theme="dark"] .aem-row-menu-item-danger:hover,
+[data-theme="auto"][data-system-dark="true"] .aem-row-menu-item-danger:hover {
+  background: #2a1515;
 }
 
 /* ── Individual Steps / Raw Text Mode toggle ── */

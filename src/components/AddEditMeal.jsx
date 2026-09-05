@@ -1,8 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { motion, Reorder, useDragControls } from 'framer-motion';
-import { Tag, GripVertical, X, ArrowRightLeft, AlignLeft, List as ListIcon, Plus, ChevronDown, ChevronUp, Utensils, Salad, Trash2 } from 'lucide-react';
-import { parseFromUrl, isSocialMediaUrl, getSocialPlatform } from '../recipeParser';
-import { importRecipeFromPages } from '../lib/photoImportEngine.js';
+import { motion, AnimatePresence, Reorder, useDragControls } from 'framer-motion';
+import { Tag, GripVertical, X, ArrowRightLeft, AlignLeft, List as ListIcon, Plus, ChevronDown, ChevronUp, Utensils, Salad, Trash2, MoreVertical, NotebookPen } from 'lucide-react';
+import { parseFromUrl, isSocialMediaUrl, getSocialPlatform, importRecipeFromPages } from '../import/index.js';
 import { getUserTags } from '../db';
 
 // Extracted from App.css 2026-08-24 (see the header in that file for the
@@ -10,15 +9,10 @@ import { getUserTags } from '../db';
 // used to live in App.css, which loads ahead of every component sheet, and
 // importing it first is what preserves that order for equal-specificity ties.
 import '../styles/screens/AddEditMeal.css';
+import { autoExpand } from '../lib/autoExpandTextarea.js';
 
-// Auto-expand a textarea to fit its content (call on mount + onChange).
-// field-sizing:content (CSS) already does this on modern Chrome/Safari; this
-// stays as the universal fallback for browsers that don't support it yet.
-function autoExpand(el) {
-  if (!el) return;
-  el.style.height = 'auto';
-  el.style.height = el.scrollHeight + 'px';
-}
+// autoExpand now lives in a shared module — see src/lib/autoExpandTextarea.js —
+// so this file and ImportReview.jsx's post-import screen stay in sync.
 
 let rowIdSeq = 0;
 const makeRowId = () => `row-${Date.now()}-${rowIdSeq++}`;
@@ -349,6 +343,61 @@ export default function AddEditMeal({
     setToIds(prev => [...prev, makeRowId()]);
   };
 
+  // Move a row straight to Notes — same "Gemini grabbed a description"
+  // fix as the post-import review screen (ImportReview.jsx), for edits
+  // made here after the recipe's already saved.
+  const moveRowToNotes = (fromList, idx) => {
+    const isIngredients = fromList === 'ingredients';
+    const items = isIngredients ? ingredients : directions;
+    const setItems = isIngredients ? setIngredients : setDirections;
+    const setIds = isIngredients ? setIngredientIds : setDirectionIds;
+    const value = items[idx];
+    setItems(prev => prev.filter((_, i) => i !== idx));
+    setIds(prev => prev.filter((_, i) => i !== idx));
+    const text = (value || '').trim();
+    if (!text) return;
+    setNotes(prev => {
+      const existing = (prev || '').trim();
+      return existing ? `${existing}\n\n${text}` : text;
+    });
+  };
+
+  // Move a row into an EXISTING sauce/add-on. Drops an untouched blank
+  // placeholder already sitting in that sauce's matching list first, same
+  // as ImportReview's moveRowToSauce.
+  const moveRowToSauce = (fromList, idx, sauceIdx) => {
+    const isIngredients = fromList === 'ingredients';
+    const items = isIngredients ? ingredients : directions;
+    const setItems = isIngredients ? setIngredients : setDirections;
+    const setIds = isIngredients ? setIngredientIds : setDirectionIds;
+    const value = items[idx];
+    setItems(prev => prev.filter((_, i) => i !== idx));
+    setIds(prev => prev.filter((_, i) => i !== idx));
+    const listKey = isIngredients ? 'ingredients' : 'directions';
+    setSauces(prev => prev.map((s, i) => {
+      if (i !== sauceIdx) return s;
+      const list = (s[listKey] || []).filter(v => (v || '').trim() !== '');
+      return { ...s, [listKey]: [...list, value] };
+    }));
+    setSaucesExpanded(true);
+  };
+
+  // Move a row into a brand-new sauce/add-on.
+  const moveRowToNewSauce = (fromList, idx) => {
+    const isIngredients = fromList === 'ingredients';
+    const items = isIngredients ? ingredients : directions;
+    const setItems = isIngredients ? setIngredients : setDirections;
+    const setIds = isIngredients ? setIngredientIds : setDirectionIds;
+    const value = items[idx];
+    setItems(prev => prev.filter((_, i) => i !== idx));
+    setIds(prev => prev.filter((_, i) => i !== idx));
+    const listKey = isIngredients ? 'ingredients' : 'directions';
+    const newSauce = { name: '', ingredients: [''], directions: [''] };
+    newSauce[listKey] = [value];
+    setSauces(prev => [...prev, newSauce]);
+    setSaucesExpanded(true);
+  };
+
   // Smart Paste Splitting — a multi-line paste into one step almost always
   // means the user pasted several instructions at once — but a single step
   // is often several sentences or a wrapped line, so we only treat it as
@@ -575,6 +624,10 @@ export default function AddEditMeal({
                   onChange={(val) => updateList(setIngredients, i, val)}
                   onRemove={() => removeRow(setIngredients, setIngredientIds, i)}
                   onMoveToDirections={() => moveRowToOtherList('ingredients', i)}
+                  onMoveToNotes={() => moveRowToNotes('ingredients', i)}
+                  sauces={sauces}
+                  onMoveToSauce={(si) => moveRowToSauce('ingredients', i, si)}
+                  onMoveToNewSauce={() => moveRowToNewSauce('ingredients', i)}
                   canRemove={ingredients.length > 1}
                 />
               ))}
@@ -637,6 +690,10 @@ export default function AddEditMeal({
           onChange={(val) => updateList(setDirections, i, val)}
           onRemove={() => removeRow(setDirections, setDirectionIds, i)}
           onMoveToIngredients={() => moveRowToOtherList('directions', i)}
+          onMoveToNotes={() => moveRowToNotes('directions', i)}
+          sauces={sauces}
+          onMoveToSauce={(si) => moveRowToSauce('directions', i, si)}
+          onMoveToNewSauce={() => moveRowToNewSauce('directions', i)}
           canRemove={directions.length > 1}
           onPaste={(e) => handlePasteInStep(i, e)}
           pastePrompt={pasteSplitPrompt?.index === i ? pasteSplitPrompt : null}
@@ -694,10 +751,11 @@ export default function AddEditMeal({
         <span className="aem-sauce-sub-label">Ingredients</span>
         {(sauce.ingredients || ['']).map((ing, ii) => (
           <div key={ii} className="aem-sauce-row">
-            <input
-              type="text"
+            <textarea
+              rows={1}
               value={ing}
-              onChange={e => updateSauceListItem(si, 'ingredients', ii, e.target.value)}
+              onChange={e => { updateSauceListItem(si, 'ingredients', ii, e.target.value); autoExpand(e.target); }}
+              ref={el => el && autoExpand(el)}
               placeholder={`Ingredient ${ii + 1}`}
             />
             {(sauce.ingredients || []).length > 1 && (
@@ -715,10 +773,11 @@ export default function AddEditMeal({
         <span className="aem-sauce-sub-label">Directions</span>
         {(sauce.directions || ['']).map((dir, di) => (
           <div key={di} className="aem-sauce-row">
-            <input
-              type="text"
+            <textarea
+              rows={1}
               value={dir}
-              onChange={e => updateSauceListItem(si, 'directions', di, e.target.value)}
+              onChange={e => { updateSauceListItem(si, 'directions', di, e.target.value); autoExpand(e.target); }}
+              ref={el => el && autoExpand(el)}
               placeholder={`Step ${di + 1}`}
             />
             {(sauce.directions || []).length > 1 && (
@@ -799,8 +858,104 @@ export default function AddEditMeal({
 // button pair + HTML5 draggable — draggable="true" never fires a touch drag
 // on Android/iOS without a polyfill, so the previous reorder path was
 // effectively dead on the phones this app targets.
-function IngredientRow({ rowId, value, index, onChange, onRemove, onMoveToDirections, canRemove }) {
+// ── RowMenu ──
+// Overflow menu shared by IngredientRow and StepRow: move to the other
+// list, move to Notes, move into a sauce/add-on (an existing one, or
+// start a new one), remove. Mirrors ImportReview.jsx's RowMenu (same
+// interaction pattern, this file's own aem-* styling) so editing a saved
+// recipe here behaves the same way as reviewing one right after import.
+function RowMenu({
+  onMoveToOtherList,
+  moveToOtherListLabel,
+  onMoveToNotes,
+  sauces,
+  onMoveToSauce,
+  onMoveToNewSauce,
+  onRemove,
+  canRemove,
+}) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handlePointer = (e) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+    };
+    const handleKey = (e) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('pointerdown', handlePointer, true);
+    document.addEventListener('keydown', handleKey, true);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointer, true);
+      document.removeEventListener('keydown', handleKey, true);
+    };
+  }, [open]);
+
+  const runAndClose = (fn) => () => { fn?.(); setOpen(false); };
+
+  return (
+    <div className="aem-row-menu-wrap" ref={wrapRef}>
+      <button
+        type="button"
+        className="aem-row-action aem-row-menu-btn"
+        aria-label="Row actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(v => !v)}
+      >
+        <MoreVertical size={16} strokeWidth={2.25} />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            className="aem-row-menu-list"
+            role="menu"
+            initial={{ opacity: 0, scale: 0.92, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.92, y: -4 }}
+            transition={{ duration: 0.12 }}
+          >
+            <button type="button" role="menuitem" className="aem-row-menu-item" onClick={runAndClose(onMoveToOtherList)}>
+              <ArrowRightLeft size={15} strokeWidth={2.25} />
+              {moveToOtherListLabel}
+            </button>
+            <button type="button" role="menuitem" className="aem-row-menu-item" onClick={runAndClose(onMoveToNotes)}>
+              <NotebookPen size={15} strokeWidth={2.25} />
+              Move to Notes
+            </button>
+            {Array.isArray(sauces) && sauces.map((s, si) => (
+              <button key={si} type="button" role="menuitem" className="aem-row-menu-item" onClick={runAndClose(() => onMoveToSauce(si))}>
+                <Utensils size={15} strokeWidth={2.25} />
+                {`Move to "${(s.name || '').trim() || `Sauce ${si + 1}`}"`}
+              </button>
+            ))}
+            <button type="button" role="menuitem" className="aem-row-menu-item" onClick={runAndClose(onMoveToNewSauce)}>
+              <Plus size={15} strokeWidth={2.25} />
+              Move to new sauce/add-on
+            </button>
+            {canRemove && (
+              <button type="button" role="menuitem" className="aem-row-menu-item aem-row-menu-item-danger" onClick={runAndClose(onRemove)}>
+                <Trash2 size={15} strokeWidth={2.25} />
+                Remove
+              </button>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// ── IngredientRow ──
+// 2026-09-03: input -> auto-expanding textarea (rows=1, grows with
+// autoExpand()) so a long ingredient line no longer needs select-and-drag
+// to read or edit — same fallback-plus-field-sizing:content approach as
+// StepRow's textarea below. Row controls collapsed into the shared
+// RowMenu (move / notes / sauce / remove) — see that component above.
+function IngredientRow({ rowId, value, index, onChange, onRemove, onMoveToDirections, onMoveToNotes, sauces, onMoveToSauce, onMoveToNewSauce, canRemove }) {
   const dragControls = useDragControls();
+  const taRef = useRef(null);
+  useEffect(() => { if (taRef.current) autoExpand(taRef.current); }, [value]);
   return (
     <Reorder.Item
       as="div"
@@ -817,31 +972,23 @@ function IngredientRow({ rowId, value, index, onChange, onRemove, onMoveToDirect
       >
         <GripVertical size={16} strokeWidth={2} />
       </span>
-      <input
-        type="text"
+      <textarea
+        ref={taRef}
+        rows={1}
         value={value}
-        onChange={e => onChange(e.target.value)}
+        onChange={e => { onChange(e.target.value); autoExpand(e.target); }}
         placeholder={`Ingredient ${index + 1}`}
       />
-      <button
-        type="button"
-        className="aem-row-action"
-        onClick={onMoveToDirections}
-        title="Move to directions"
-        aria-label="Move ingredient to directions"
-      >
-        <ArrowRightLeft size={14} strokeWidth={2.25} />
-      </button>
-      {canRemove && (
-        <button
-          type="button"
-          className="aem-row-action aem-row-action-danger"
-          onClick={onRemove}
-          aria-label="Remove ingredient"
-        >
-          <X size={15} strokeWidth={2.25} />
-        </button>
-      )}
+      <RowMenu
+        onMoveToOtherList={onMoveToDirections}
+        moveToOtherListLabel="Move to directions"
+        onMoveToNotes={onMoveToNotes}
+        sauces={sauces}
+        onMoveToSauce={onMoveToSauce}
+        onMoveToNewSauce={onMoveToNewSauce}
+        onRemove={onRemove}
+        canRemove={canRemove}
+      />
     </Reorder.Item>
   );
 }
@@ -852,7 +999,7 @@ function IngredientRow({ rowId, value, index, onChange, onRemove, onMoveToDirect
 // phone a right column of two 30px buttons ate ~70px off the textarea, which
 // is exactly the width pinch that made pasted text wrap into an unreadable
 // sliver. The textarea now gets the full row width.
-function StepRow({ rowId, value, index, stepNumber, onChange, onRemove, onMoveToIngredients, canRemove, onPaste, pastePrompt, onResolvePaste }) {
+function StepRow({ rowId, value, index, stepNumber, onChange, onRemove, onMoveToIngredients, onMoveToNotes, sauces, onMoveToSauce, onMoveToNewSauce, canRemove, onPaste, pastePrompt, onResolvePaste }) {
   const dragControls = useDragControls();
   const taRef = useRef(null);
   useEffect(() => { if (taRef.current) autoExpand(taRef.current); }, [value]);
@@ -876,25 +1023,16 @@ function StepRow({ rowId, value, index, stepNumber, onChange, onRemove, onMoveTo
         </span>
         <span className="aem-step-num">Step {stepNumber}</span>
         <span className="aem-step-spacer" />
-        <button
-          type="button"
-          className="aem-row-action"
-          onClick={onMoveToIngredients}
-          title="Move to ingredients"
-          aria-label="Move step to ingredients"
-        >
-          <ArrowRightLeft size={14} strokeWidth={2.25} />
-        </button>
-        {canRemove && (
-          <button
-            type="button"
-            className="aem-row-action aem-row-action-danger"
-            onClick={onRemove}
-            aria-label="Remove step"
-          >
-            <X size={15} strokeWidth={2.25} />
-          </button>
-        )}
+        <RowMenu
+          onMoveToOtherList={onMoveToIngredients}
+          moveToOtherListLabel="Move to ingredients"
+          onMoveToNotes={onMoveToNotes}
+          sauces={sauces}
+          onMoveToSauce={onMoveToSauce}
+          onMoveToNewSauce={onMoveToNewSauce}
+          onRemove={onRemove}
+          canRemove={canRemove}
+        />
       </div>
       <textarea
         ref={taRef}

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence, MotionConfig, useDragControls } from 'framer-motion';
 import { X, Sparkles, Check, ArrowLeft } from 'lucide-react';
 import './ImportSheet.css';
@@ -9,8 +9,9 @@ import {
   captionToRecipe,
   scoreExtractionConfidence,
   transcribeVideoForRecipe,
-} from '../recipeParser.js';
-import { importRecipeFromPages, PhotoImportError } from '../lib/photoImportEngine.js';
+  importRecipeFromPages,
+  PhotoImportError,
+} from '../import/index.js';
 import { detectVideoSource } from '../lib/videoSource.js';
 import { getPreferredWhisperModel, setPreferredWhisperModel } from '../lib/transcriptionService.js';
 import { cleanUrl } from '../api.js';
@@ -366,18 +367,127 @@ export default function ImportSheet({
     }).catch(err => console.warn('[ImportSheet] Failed to load drafts:', err));
   }, []);
 
-  // ── Auto-save draft on review changes ─────────────────────────────────────
-  useEffect(() => {
-    if (phase === 'review' && recipe) {
-      const key = draftKey();
-      db.importDrafts?.put({
-        url: key,
-        recipe,
-        confidence,
-        timestamp: Date.now()
-      }).catch(e => console.warn(e));
+  // ── Draft snapshot ───────────────────────────────────────────────────────
+  // What a resumable draft carries. Until 2026-09-03 only the `review` phase
+  // wrote a draft, so a user who pasted a wall of recipe text and had the tab
+  // reaped by iOS before extraction finished lost every word of it. The
+  // snapshot now also covers the pre-review phases by storing the source text
+  // so a resume can restore the input fields. Photo scans stay review-only on
+  // purpose: scanPages carry megabytes of base64 and writing them on a
+  // debounce would thrash IndexedDB for a source still in the camera roll.
+  const draftSnapshot = useMemo(() => {
+    const pasted = activeTab === 'paste' ? pasteText.trim() : '';
+    const captured = (capturedText || '').trim();
+    if (recipe) {
+      return { recipe, confidence, sourceText: pasted, capturedText: captured };
     }
-  }, [recipe, confidence, phase, importUrl, activeTab, draftKey]);
+    // No structured recipe yet — only worth resuming if there is real text at
+    // risk. A URL is one tap to retype, so bare-URL sessions write nothing.
+    if (pasted.length < 40 && captured.length < 40) return null;
+    return {
+      recipe: null,
+      confidence: null,
+      sourceText: pasted.length >= 40 ? pasted : '',
+      capturedText: captured.length >= 40 ? captured : '',
+    };
+  }, [recipe, confidence, activeTab, pasteText, capturedText]);
+
+  // Parked in refs so the flush handlers below can stay stable listeners
+  // instead of being torn down and re-added on every keystroke.
+  const draftSnapshotRef = useRef(null);
+  const draftKeyRef = useRef('');
+  const lastDraftKeyRef = useRef('');
+  // Set while a save is in flight so the pending debounce below cannot
+  // resurrect the row a moment after handleSave deletes it.
+  const draftRetiredRef = useRef(false);
+
+  useEffect(() => {
+    draftSnapshotRef.current = draftSnapshot;
+    draftKeyRef.current = draftSnapshot ? draftKey() : '';
+  }, [draftSnapshot, draftKey]);
+
+  const writeDraft = useCallback(() => {
+    if (draftRetiredRef.current) return;
+    const snap = draftSnapshotRef.current;
+    const key = draftKeyRef.current;
+    if (!snap || !key) return;
+    // draftSessionId is assigned at the start of execute*Import, so anything
+    // written before that lives under the bare 'pasted-text' fallback key and
+    // would be orphaned the moment the real key appears. Retire the previous
+    // row as the key moves rather than leaving it for the mount-time sweep.
+    const previous = lastDraftKeyRef.current;
+    lastDraftKeyRef.current = key;
+    if (previous && previous !== key) db.importDrafts?.delete(previous)?.catch(() => {});
+    db.importDrafts?.put({ url: key, ...snap, timestamp: Date.now() })
+      ?.catch(e => console.warn('[ImportSheet] draft save failed:', e));
+  }, []);
+
+  // Debounced, so a keystroke in the paste box is not an IndexedDB write.
+  useEffect(() => {
+    if (!draftSnapshot) return undefined;
+    const id = setTimeout(writeDraft, 400);
+    return () => clearTimeout(id);
+  }, [draftSnapshot, writeDraft]);
+
+  // pagehide / visibilitychange are the only lifecycle events an iOS PWA is
+  // reliably given before the OS reaps the process, and the unmount cleanup
+  // never runs in that case — so flush the pending debounce here, or the last
+  // few seconds of editing die with the tab.
+  useEffect(() => {
+    const onHide = () => writeDraft();
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') writeDraft();
+    };
+    window.addEventListener('pagehide', onHide);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('pagehide', onHide);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [writeDraft]);
+
+  // ── Resume / dismiss the offered draft ───────────────────────────────────
+  const handleResumeDraft = useCallback(() => {
+    if (!draftToResume) return;
+    // 2026-08-14: paste/photo drafts are keyed 'pasted-text:<id>' /
+    // 'photo-import:<id>' (see draftSessionId) rather than the bare literal,
+    // so this has to match by prefix — an exact-equality check would treat
+    // the new keyed format as a real URL and try to import it as one.
+    const draftUrl = draftToResume.url || '';
+    const isPasteDraft = draftUrl === 'pasted-text' || draftUrl.startsWith('pasted-text:');
+    const isPhotoDraft = draftUrl === 'photo-import' || draftUrl.startsWith('photo-import:');
+    if (draftUrl && !isPasteDraft && !isPhotoDraft) {
+      setUrl(draftUrl);
+      setImportUrl(draftUrl);
+    }
+    // Restore the exact draft key so continued edits keep autosaving to this
+    // same row instead of spawning a new one under a fresh session id.
+    if (isPasteDraft || isPhotoDraft) setDraftSessionId(draftUrl);
+    lastDraftKeyRef.current = draftUrl;
+    draftRetiredRef.current = false;
+
+    if (draftToResume.capturedText) setCapturedText(draftToResume.capturedText);
+    if (draftToResume.recipe) {
+      setRecipe(draftToResume.recipe);
+      setConfidence(draftToResume.confidence ?? null);
+      if (isPasteDraft) setPasteText(draftToResume.sourceText || draftToResume.recipe.notes || '');
+      setPhase('review');
+    } else {
+      // Pre-review draft: hand the text back in an editable field and let the
+      // user press import themselves. Auto-firing would spend a network call
+      // (and possibly an API credit) on a session they may have abandoned on
+      // purpose.
+      setPasteText(draftToResume.sourceText || draftToResume.capturedText || '');
+      setActiveTab('paste');
+      setPhase('input');
+    }
+    setDraftToResume(null);
+  }, [draftToResume]);
+
+  const handleDismissDraft = useCallback(() => {
+    if (draftToResume?.url) db.importDrafts?.delete(draftToResume.url)?.catch(e => console.warn(e));
+    setDraftToResume(null);
+  }, [draftToResume]);
 
   // ── Loading Timer ────────────────────────────────────────────────────────
   useEffect(() => {
@@ -872,10 +982,6 @@ export default function ImportSheet({
       engineVersion: ENGINE_PROMPT_VERSION,
       extractedAt: finalRecipe.extractedAt || new Date().toISOString(),
     };
-    // Clear draft from IndexedDB
-    const key = draftKey();
-    db.importDrafts?.delete(key).catch(e => console.warn(e));
-
     // Offline OCR draft → queue a background vision upgrade with the scanned
     // pages. When connectivity returns, processImportQueue re-runs the online
     // tiers and merges the better extraction into the saved recipe.
@@ -886,7 +992,33 @@ export default function ImportSheet({
     }
 
     hapticSuccess();
-    onImport([out], destination);
+    // The draft is retired only once the save is confirmed. handleImport can
+    // park the import behind the AgeGate and return { blocked: 'age-gate' }
+    // having written nothing — deleting the draft here (as this did until
+    // 2026-09-03) meant a gate cancel plus a background kill lost the work
+    // for good.
+    const key = draftKey();
+    // Handed to App so the AgeGate confirm path — which re-enters
+    // handleImport directly, long after this sheet has unmounted — can
+    // still retire the draft once the save actually lands.
+    const retireDraft = () => {
+      db.importDrafts?.delete(key)?.catch(e => console.warn(e));
+    };
+    draftRetiredRef.current = true;
+    Promise.resolve(onImport([out], destination, { onCommitted: retireDraft }))
+      .then((result) => {
+        if (result && result.blocked) {
+          // Parked behind the gate: keep autosaving, and let retireDraft
+          // above clean up if the user goes through with it.
+          draftRetiredRef.current = false;
+          return;
+        }
+        db.importDrafts?.delete(key)?.catch(e => console.warn(e));
+      })
+      .catch((e) => {
+        draftRetiredRef.current = false;
+        console.warn('[ImportSheet] save failed, draft kept:', e);
+      });
   }, [onImport, importUrl, activeTab, destination, capturedText, pasteText, confidence, scanPages, itemType, draftKey]);
 
   // ── Re-expand input from collapsed state ─────────────────────────────────
@@ -988,48 +1120,25 @@ export default function ImportSheet({
                   <span className="resume-icon"><Sparkles size={14} /></span>
                   <div className="resume-content">
                     <strong>Resume your last import?</strong>
-                    <span className="resume-sub">We saved your edits for "{draftToResume.recipe.title || 'Untitled Recipe'}"</span>
+                    <span className="resume-sub">
+                      {draftToResume.recipe
+                        ? `We saved your edits for "${draftToResume.recipe.title || 'Untitled Recipe'}"`
+                        : 'We saved the text you pasted before the app closed'}
+                    </span>
                   </div>
                 </div>
                 <div className="resume-actions">
                   <button
                     type="button"
                     className="import-sheet-btn import-sheet-btn-secondary"
-                    onClick={() => {
-                      setRecipe(draftToResume.recipe);
-                      setConfidence(draftToResume.confidence);
-                      // 2026-08-14: paste/photo drafts are now keyed
-                      // 'pasted-text:<id>' / 'photo-import:<id>' (see
-                      // draftSessionId) rather than the bare literal, so this
-                      // has to match by prefix — an exact-equality check would
-                      // treat the new keyed format as a real URL and try to
-                      // import.exe it as one.
-                      const draftUrl = draftToResume.url || '';
-                      const isPasteDraft = draftUrl === 'pasted-text' || draftUrl.startsWith('pasted-text:');
-                      const isPhotoDraft = draftUrl === 'photo-import' || draftUrl.startsWith('photo-import:');
-                      if (draftUrl && !isPasteDraft && !isPhotoDraft) {
-                        setUrl(draftUrl);
-                        setImportUrl(draftUrl);
-                      } else if (isPasteDraft) {
-                        setPasteText(draftToResume.recipe.notes || '');
-                      }
-                      // Restore the exact draft key so continued edits in
-                      // review keep autosaving to this same row instead of
-                      // spawning a new one under a fresh session id.
-                      if (isPasteDraft || isPhotoDraft) setDraftSessionId(draftUrl);
-                      setPhase('review');
-                      setDraftToResume(null);
-                    }}
+                    onClick={handleResumeDraft}
                   >
                     Resume
                   </button>
                   <button
                     type="button"
                     className="import-sheet-btn import-sheet-btn-ghost"
-                    onClick={() => {
-                      db.importDrafts?.delete(draftToResume.url).catch(e => console.warn(e));
-                      setDraftToResume(null);
-                    }}
+                    onClick={handleDismissDraft}
                   >
                     Dismiss
                   </button>
@@ -1281,7 +1390,11 @@ export default function ImportSheet({
                   className="import-sheet-btn import-sheet-btn-danger"
                   onClick={() => {
                     setShowDiscardConfirm(false);
-                    db.importDrafts?.delete(draftKey()).catch(e => console.warn(e));
+                    // Explicit discard: stop the autosave debounce before
+                    // deleting, so a keystroke from a moment ago cannot
+                    // write the row back after this delete lands.
+                    draftRetiredRef.current = true;
+                    db.importDrafts?.delete(draftKey())?.catch(e => console.warn(e));
                     onClose();
                   }}
                 >

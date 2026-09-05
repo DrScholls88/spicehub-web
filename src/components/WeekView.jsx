@@ -439,6 +439,13 @@ const ANIMATIONS_CSS = `
     border: 1.5px solid var(--border);
   }
   .wv-tl-toggle-btn {
+    /* Equal halves. Not cosmetic: it is what lets the pill below be a fixed
+       width that only ever translates. With content-sized segments ("Week" is
+       narrower than "Month") the pill had to animate left AND width — two
+       layout properties — or scaleX and distort its own 9px radius. Two equal
+       segments is also what every native segmented control does. */
+    flex: 1 1 0;
+    justify-content: center;
     padding: 7px 14px; border-radius: 9px; border: none;
     font-size: 12px; font-weight: 700; cursor: pointer;
     display: flex; align-items: center; gap: 5px;
@@ -455,12 +462,26 @@ const ANIMATIONS_CSS = `
   }
   .wv-tl-toggle-btn:active { transform: scale(0.95); }
   .wv-tl-toggle-pill {
-    position: absolute; top: 3px; bottom: 3px;
+    position: absolute; top: 3px; bottom: 3px; left: 3px;
+    /* 100% resolves against the container's padding box, which still includes
+       its own 3px padding either side — hence the -6px before halving. */
+    width: calc((100% - 6px) / 2);
     border-radius: 9px;
     background: var(--card);
     box-shadow: 0 1px 4px rgba(0,0,0,0.10), 0 0 0 0.5px rgba(0,0,0,0.04);
     z-index: 1;
-    transition: left 0.3s cubic-bezier(0.32,0.72,0,1), width 0.3s cubic-bezier(0.32,0.72,0,1);
+    /* Was a transition on left AND width — both layout properties, so every
+       toggle tap ran layout for 300ms. Equal segments (above) mean the second
+       slot starts exactly at left+width, so translateX(100%) lands on it and
+       the whole move is compositor-only. */
+    transform: translateX(0);
+    transition: transform 0.3s cubic-bezier(0.32,0.72,0,1);
+  }
+  .wv-tl-toggle-pill.is-month {
+    transform: translateX(100%);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .wv-tl-toggle-pill { transition: none; }
   }
   /* ── Pick-up / carry-to-place ──
      Tap-based, not native HTML5 drag — draggable+dragstart/drop never fires on
@@ -2172,39 +2193,25 @@ function WeekSummaryStrip({ weekPlan, dietaryPref }) {
 }
 
 // ── Premium segmented toggle ─────────────────────────────────────────────────
+// The pill used to be positioned by measurement: three refs, a state object,
+// and a useEffect calling getBoundingClientRect on both the container and the
+// active button after every toggle. Equal-width segments make its position a
+// constant, so all of that is gone — the pill is now a CSS class swap, and
+// nothing reads layout on the way.
 function ViewToggle({ viewMode, onChangeMode }) {
-  const toggleRef = useRef(null);
-  const weekBtnRef = useRef(null);
-  const monthBtnRef = useRef(null);
-  const [pillStyle, setPillStyle] = useState({});
-
-  useEffect(() => {
-    const container = toggleRef.current;
-    const activeBtn = viewMode === 'timeline' ? weekBtnRef.current : monthBtnRef.current;
-    if (!container || !activeBtn) return;
-    const cRect = container.getBoundingClientRect();
-    const bRect = activeBtn.getBoundingClientRect();
-    setPillStyle({
-      left: bRect.left - cRect.left,
-      width: bRect.width,
-    });
-  }, [viewMode]);
-
   return (
-    <div className="wv-tl-toggle" ref={toggleRef}>
+    <div className="wv-tl-toggle">
       <div
-        className="wv-tl-toggle-pill"
-        style={{ left: pillStyle.left ?? 3, width: pillStyle.width ?? '50%' }}
+        className={`wv-tl-toggle-pill${viewMode === 'month' ? ' is-month' : ''}`}
+        aria-hidden="true"
       />
       <button
-        ref={weekBtnRef}
         className={`wv-tl-toggle-btn ${viewMode === 'timeline' ? 'active' : ''}`}
         onClick={() => onChangeMode('timeline')}
       >
         <List size={14} strokeWidth={2.5} /> Week
       </button>
       <button
-        ref={monthBtnRef}
         className={`wv-tl-toggle-btn ${viewMode === 'month' ? 'active' : ''}`}
         onClick={() => onChangeMode('month')}
       >

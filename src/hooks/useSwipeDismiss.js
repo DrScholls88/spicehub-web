@@ -28,6 +28,13 @@ export default function useSwipeDismiss(onDismiss, options = {}) {
     const sheet = sheetRef.current;
     if (!sheet) return;
 
+    // A touch that began inside a horizontally-scrolling strip (the recipe
+    // hero carousel, .rmc-track) belongs to that strip. Swiping a photo
+    // carousel is rarely perfectly horizontal, and without this a few pixels
+    // of downward drift would hand the gesture to dismiss-the-sheet halfway
+    // through a swipe between photos.
+    if (findHorizontalScroller(e.target, sheet)) return;
+
     const scrollableParent = findScrollableParent(e.target, sheet);
     if (scrollableParent && scrollableParent.scrollTop > 5) return;
 
@@ -140,6 +147,19 @@ function findOverlayParent(sheet) {
     el = el.parentElement;
   }
   return sheet.parentElement;
+}
+
+function findHorizontalScroller(target, container) {
+  let el = target;
+  while (el && el !== container) {
+    const style = window.getComputedStyle(el);
+    const overflowX = style.overflowX;
+    if ((overflowX === 'auto' || overflowX === 'scroll') && el.scrollWidth > el.clientWidth) {
+      return el;
+    }
+    el = el.parentElement;
+  }
+  return null;
 }
 
 function findScrollableParent(target, container) {

@@ -90,192 +90,14 @@
   margin: 0 -20px 20px;
 }
 
-/* Hero banner: fixed 16:9 aspect ratio when a video source exists, so the
-   play control + gradient have a real "hero" frame instead of floating over
-   whatever height the source photo happened to be. Photo-only recipes keep
-   the plain cover-fit image (no forced aspect ratio, no gradient). */
-.detail-image-wrap-video {
-  aspect-ratio: 16 / 9;
-  overflow: hidden;
-}
-
-.detail-image-wrap-video .detail-image {
-  width: 100%;
-  height: 100%;
-  max-height: none;
-}
-
-.detail-image {
-  width: calc(100% + 40px);
-  max-height: 300px;
-  object-fit: cover;
-  margin: 0;
-  border-radius: 0;
-  background: var(--surface);
-  display: block;
-}
-
-.detail-image-placeholder {
-  width: 100%;
-  height: 120px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 40px;
-  background: var(--surface);
-  color: var(--text-muted);
-}
-
-/* Hero gradient + integrated play control — replaces the old small corner
-   play badge. Spans the bottom third of the hero, tap anywhere in it (or
-   the button itself) to open the floating player. */
-.detail-hero-gradient {
-  position: absolute;
-  inset: auto 0 0 0;
-  height: 45%;
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
-  padding: 0 14px 12px;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0));
-  cursor: pointer;
-}
-
-.detail-play-btn {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: 1.5px solid rgba(255, 255, 255, 0.9);
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  flex-shrink: 0;
-  -webkit-backdrop-filter: blur(3px);
-  backdrop-filter: blur(3px);
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
-  transition: background 0.15s, transform 0.1s;
-}
-
-.detail-play-btn:active { transform: scale(0.9); }
-
-.detail-hero-video-label {
-  color: #fff;
-  font-size: 13px;
-  font-weight: 700;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
-  padding-bottom: 9px;
-}
-
-/* Swipe-to-view photo count pill — shown only when the import captured more
-   than one photo (multi-page photo/PDF scan, or an Instagram/Reddit
-   carousel). Tapping opens the same PhotoGallery lightbox, which already
-   supports swipe/pinch across every captured photo. */
-.detail-photo-count {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px 10px;
-  border-radius: 20px;
-  border: none;
-  background: rgba(0, 0, 0, 0.55);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-  z-index: 3;
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
-  transition: background 0.15s, transform 0.1s;
-}
-
-.detail-photo-count:active { transform: scale(0.94); }
-
-.detail-hero-carousel {
-  display: flex;
-  overflow-x: auto;
-  scroll-snap-type: x mandatory;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-}
-
-.detail-hero-carousel::-webkit-scrollbar { display: none; }
-
-.detail-hero-slide {
-  flex: 0 0 100%;
-  width: calc(100% + 40px);
-  max-height: 300px;
-  object-fit: cover;
-  scroll-snap-align: start;
-  scroll-snap-stop: always;
-  cursor: zoom-in;
-  -webkit-user-drag: none;
-  background: var(--surface);
-}
-
-.detail-image-wrap-video .detail-hero-carousel { height: 100%; }
-
-.detail-image-wrap-video .detail-hero-slide {
-  width: 100%;
-  height: 100%;
-  max-height: none;
-}
-
-/* Dot pagination — echoes Instagram's own carousel-post indicator, which is
-   exactly where most of these photos came from. Active dot uses --primary
-   (the brand's actual accent, not a generic white/blue) so it reads as
-   "this app," not a borrowed carousel widget. */
-.detail-hero-dots {
-  position: absolute;
-  left: 50%;
-  bottom: 10px;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 4px 6px;
-  border-radius: 20px;
-  background: rgba(0, 0, 0, 0.35);
-  -webkit-backdrop-filter: blur(6px);
-  backdrop-filter: blur(6px);
-  z-index: 3;
-}
-
-.detail-hero-dot {
-  width: 22px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  background: transparent;
-  padding: 0;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-}
-
-.detail-hero-dot-inner {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.55);
-  transition: background 0.2s ease, width 0.2s ease, border-radius 0.2s ease;
-  display: block;
-}
-
-.detail-hero-dot-inner.is-active {
-  width: 16px;
-  border-radius: 3px;
-  background: var(--primary);
-}
+/* 2026-09-03: the whole hero block that used to live here — .detail-image,
+   .detail-image-wrap-video, .detail-image-placeholder, .detail-hero-gradient,
+   .detail-play-btn, .detail-hero-video-label, .detail-photo-count,
+   .detail-hero-carousel/-slide and .detail-hero-dot(s) — was deleted with the
+   markup that used it. That hero is now RecipeMediaCarousel (its own
+   component + stylesheet), shared with the library quick-peek so the two
+   cards can't drift apart again. .detail-image-wrap above survives as the
+   full-bleed positioning shell the carousel drops into. */
 
 .detail-section {
   margin-bottom: var(--space-lg);
@@ -383,34 +205,8 @@
   background: #a15206;
 }
 
-/* ── Carousel arrows (left/right chevrons) ── */
-.detail-hero-arrow {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 4;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: none;
-  background: rgba(0, 0, 0, 0.45);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  -webkit-backdrop-filter: blur(4px);
-  backdrop-filter: blur(4px);
-  -webkit-tap-highlight-color: transparent;
-  touch-action: manipulation;
-  transition: background 0.15s, transform 0.1s;
-}
-
-.detail-hero-arrow:active { transform: translateY(-50%) scale(0.9); }
-
-.detail-hero-arrow--left { left: 8px; }
-
-.detail-hero-arrow--right { right: 8px; }
+/* .detail-hero-arrow(-left/-right) also moved into RecipeMediaCarousel.css
+   as .rmc-arrow — see the note above. */
 
 /* ── Title row — compact, below the hero ── */
 .detail-title-row {
@@ -519,11 +315,13 @@
   min-width: 0;
 }
 
+/* 2026-09-03: these were `position: sticky; top: 0` so each column's heading
+   rode along with its own list. Removed — by the time a heading would start
+   tracking, the reader is already inside the list and knows which one it is,
+   and two independently-pinned headings sliding at different rates over a
+   two-column grid read as a rendering bug rather than as navigation. They are
+   plain flow headings now. */
 .detail-recipe-col h3 {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  background: var(--card);
   padding-top: 4px;
   padding-bottom: 8px;
   margin-bottom: 0;
@@ -675,70 +473,69 @@
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  /* Same 20px sides / 128px+safe-area bottom reserve the old single-scroll
-     .modal-content.detail-modal rule used — unchanged, just relocated to the
-     element that now actually scrolls. */
-  padding: 20px 20px calc(128px + env(safe-area-inset-bottom));
+  /* 2026-09-03: the 128px bottom reserve is gone with the floating action
+     bar it existed for — .detail-action-bar is an ordinary block at the end
+     of this scroller now, so it occupies its own room and nothing needs to
+     be padded out from underneath it. Only the safe-area inset remains, so
+     the last row clears the home indicator. */
+  padding: 20px 20px calc(20px + env(safe-area-inset-bottom));
 }
 
-/* ── Fixed bottom action bar (Meal Detail) — Scale + Add to Rotation +
-   Start Cooking/Mixing, always reachable without scrolling.
+/* ── Bottom action bar (Meal Detail) — Scale + Add to Rotation + Start
+   Cooking/Mixing.
 
-   This is position: fixed, not position: sticky. .detail-modal (the sheet)
-   is a framer-motion drag/animate element with a permanent transform on
-   it, which makes IT the containing block for any position:fixed
-   descendant — so this bar resolves left/right/bottom against the SHEET's
-   own box, not the raw viewport, while staying completely immune to the
-   scroll position of .detail-scroll-body next to it. That is deliberate:
-   sticky was fragile here — scroll-linked recalculation glitches in
-   Chrome/WebView whenever its scrolling ancestor is transformed (see the
-   .modal-content.detail-modal comment above) — while fixed-inside-a-
-   transformed-ancestor is a plain layout-time position with nothing to
-   recompute on scroll, so it cannot "roll" in portrait OR landscape.
-   Token-based (not the old hardcoded cream #fff3e0/#ffe0b2
-   .servings-scaler box) so it reads correctly in both themes. ── */
-.detail-sticky-bar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  margin: 0;
-  padding: 10px 20px calc(12px + env(safe-area-inset-bottom));
+   2026-09-03: this used to be `position: fixed` against the sheet (which is
+   a framer-motion transform element, so it was the containing block). That
+   made the bar hover over the recipe permanently — the layout underneath it
+   had to reserve 128px of dead padding to compensate, the reserve was only
+   ever approximately right, and on a short landscape viewport the bar was
+   covering a serious fraction of the whole sheet no matter how much its
+   paddings were shrunk. It is now an ORDINARY BLOCK glued to the end of
+   .detail-scroll-body's content: it takes up its own space, occludes
+   nothing, needs no reserve, and has nothing left to recompute on scroll,
+   in either orientation.
+
+   `margin: 24px -20px 0` cancels .detail-scroll-body's 20px side padding so
+   the bar still spans the sheet edge-to-edge, and the top border reads as
+   the end of the recipe. Token-based (not the old hardcoded cream
+   #fff3e0/#ffe0b2 .servings-scaler box) so it reads correctly in both
+   themes. ── */
+.detail-action-bar {
+  margin: 24px -20px 0;
+  padding: 14px 20px 4px;
   background: var(--card);
   border-top: 1px solid var(--border);
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  z-index: 4;
+  gap: 10px;
 }
 
-.detail-sticky-scale {
+.detail-action-scale {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.detail-sticky-scale-label {
+.detail-action-scale-label {
   font-size: 12px;
   font-weight: 700;
   color: var(--text-muted);
   flex-shrink: 0;
 }
 
-.detail-sticky-actions {
+.detail-action-buttons {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
 }
 
-.detail-sticky-actions .rotation-toggle-btn {
+.detail-action-buttons .rotation-toggle-btn {
   flex: 1 1 auto;
   justify-content: center;
   min-height: 44px;
 }
 
-.detail-sticky-actions .cook-mode-launch-btn {
+.detail-action-buttons .cook-mode-launch-btn {
   width: auto;
   flex: 1 1 auto;
   min-height: 44px;
@@ -750,33 +547,11 @@
   gap: 6px;
 }
 
-@media (max-height: 500px) and (orientation: landscape) {
-.detail-sticky-bar {
-    padding: 8px 20px calc(8px + env(safe-area-inset-bottom));
-    gap: 6px;
-  }
-
-.detail-sticky-scale-label {
-    font-size: 11px;
-  }
-
-.detail-sticky-bar .btn-scale {
-    min-height: 30px;
-    padding: 3px 10px;
-    font-size: 13px;
-  }
-
-.detail-sticky-actions .rotation-toggle-btn {
-    min-height: 34px;
-    padding: 6px 14px;
-    font-size: 13px;
-  }
-
-.detail-sticky-actions .cook-mode-launch-btn {
-    padding: 6px 12px;
-    font-size: 13px;
-  }
-}
+/* In-flow now, so the short-landscape shrink that used to claw back screen
+   space from a permanently-overlaid bar is no longer needed — the bar only
+   occupies room at the point in the scroll where the recipe has ended. The
+   44px touch targets above therefore hold in every orientation, which
+   retires the deliberate a11y exception the fixed version had to make. */
 
 /* ── Detail header bar styling ── */
 .detail-header-bar {

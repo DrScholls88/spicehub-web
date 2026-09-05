@@ -1952,6 +1952,10 @@
 .bl-qp-overlay {
   position: fixed;
   inset: 0;
+  /* Without an explicit dvh height the centred card sits low enough on iOS
+     that its bottom actions fall under the Safari toolbar — same fix as
+     .ml-qp-overlay and .modal-overlay. */
+  height: 100dvh;
   background: rgba(0, 0, 0, 0.55);
   -webkit-backdrop-filter: blur(6px);
   backdrop-filter: blur(6px);
@@ -1960,21 +1964,51 @@
   align-items: center;
   justify-content: center;
   padding: 16px;
+  padding-top: calc(16px + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
 }
 
-/* Expandable card: centered modal that the tile morphs into */
+/* Expandable card: centered modal that the tile morphs into.
+   2026-09-03: the sheet used to BE the scroller. It is also a framer-motion
+   animate={{...}} element AND the target of useSwipeDismiss, which writes
+   sheetRef.current.style.transform directly on every touchmove — so it always
+   carries a live transform, and a transformed scrolling container breaks
+   position:sticky for its descendants in Chrome/WebView (the bug documented on
+   .modal-content.detail-modal). Split the way .ml-qp-sheet is: this box only
+   clips to the rounded corners, .bl-qp-scroll-body below does the scrolling.
+   That also fixes swipe-to-dismiss firing mid-scroll — useSwipeDismiss's
+   findScrollableParent() walks up to but NOT including the sheet, so while the
+   sheet was the scroller its scrollTop guard could never apply. */
 .bl-qp-sheet {
   background: var(--card);
   border-radius: 20px;
   width: 100%;
   max-width: 460px;
-  max-height: 88vh;
-  overflow-y: auto;
-  overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
+  /* The overlay's own safe-area padding already carves out the notch and the
+     home indicator, so 100% here is the remaining usable box. */
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.45),
               0 0 0 1px rgba(0, 0, 0, 0.04);
   will-change: transform, opacity;
+}
+
+.bl-qp-scroll-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  /* Hidden scrollbar, same glance-card treatment as the Meal Library peek. */
+  scrollbar-width: none;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.bl-qp-scroll-body::-webkit-scrollbar {
+  display: none;
 }
 
 .bl-qp-handle {
@@ -1985,7 +2019,10 @@
   margin: 8px auto 4px;
 }
 
-/* Shared-element hero — matches the tile image box so the morph is seamless */
+/* Shared-element hero — matches the tile image box so the morph is seamless.
+   RecipeMediaCarousel fills this box (variant="peek" is height:100%), so the
+   240px stays the Bar's own taller-hero look while the carousel, video slide
+   and photo controls come from the shared component. */
 .bl-qp-hero {
   position: relative;
   width: 100%;
@@ -1993,29 +2030,42 @@
   background: #2a1538;
   overflow: hidden;
   border-radius: 16px 16px 0 0;
+  flex-shrink: 0;
 }
 
-.bl-qp-hero-empty {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 56px;
-  line-height: 1;
+/* Short landscape phones: the hero is the one element here with room to
+   spare, so it gives up height rather than the controls. Matches the
+   .ml-qp-hero treatment. */
+@media (max-height: 500px) and (orientation: landscape) {
+.bl-qp-hero {
+    height: 120px;
+  }
 }
 
-/* Floating close button (Aceternity-faithful) */
-.bl-qp-close {
+/* .bl-qp-hero-empty was the no-photo placeholder for the old single <img>
+   hero. RecipeMediaCarousel renders its own (.rmc-placeholder), so the rule
+   went with the markup. */
+
+/* Floating chrome row (Aceternity-faithful): kebab-menu trigger + close,
+   outside the card surface so they never scroll with the sheet's content. */
+.bl-qp-float-row {
   position: absolute;
   top: 16px;
   right: 16px;
   z-index: 1010;
+  display: flex;
+  gap: 8px;
+}
+
+.bl-qp-close {
   width: 36px;
   height: 36px;
   border-radius: 50%;
   border: none;
   background: var(--card, #fff);
+  /* Explicit color: an icon-only <button> with no color declaration renders
+     lucide's currentColor stroke in the browser's system ButtonText, which
+     tracks the OS, not data-theme (design.md §4b). */
   color: var(--text, #222);
   font-size: 15px;
   font-weight: 700;
@@ -2026,6 +2076,85 @@
   cursor: pointer;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
   -webkit-tap-highlight-color: transparent;
+}
+
+.bl-qp-menu-btn[aria-expanded="true"] {
+  background: #7b1fa2;
+  color: #fff;
+}
+
+/* ── Admin/kebab menu ──
+   Edit / Share / Send to Friend / Improve / Re-import / Find Photo / Move to
+   Meals / Delete used to sit in an eleven-button grid alongside the primary
+   actions. Tucking the rarely-used ones here is the same "purge the
+   admin-mode bleed" fix the Meal Library peek got on 2026-08-28; Favorite and
+   Play stay as 44px icon buttons in .bl-qp-actions because browsing users
+   reach for those often. */
+.bl-qp-menu-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 1005;
+  background: transparent;
+}
+
+.bl-qp-menu {
+  position: absolute;
+  top: 60px;
+  right: 16px;
+  z-index: 1011;
+  min-width: 208px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 18px 44px -10px rgba(0, 0, 0, 0.45);
+}
+
+.bl-qp-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 42px;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s;
+}
+
+.bl-qp-menu button:hover,
+.bl-qp-menu button:active {
+  background: var(--surface);
+}
+
+.bl-qp-menu button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.bl-qp-menu-danger {
+  color: var(--danger, #d32f2f);
+}
+
+.bl-qp-menu-danger:hover,
+.bl-qp-menu-danger:active {
+  background: rgba(211, 47, 47, 0.1);
+}
+
+.bl-qp-menu-divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
 }
 
 .bl-qp-body {
@@ -2154,43 +2283,78 @@
   margin-left: -18px;
 }
 
-/* ── Action buttons row ── */
+/* ── Footer: one primary CTA + 44px icon row ──
+   An ordinary block at the end of .bl-qp-scroll-body — glued to the bottom of
+   the content, occluding nothing, no reserve to keep in sync and no landscape
+   exception. The top border and the card's own background keep it reading as
+   a footer rather than as one more section. */
 .bl-qp-actions {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
-  padding: 12px 0 16px;
+  margin-top: 12px;
+  padding: 12px 16px calc(16px + env(safe-area-inset-bottom, 0px));
+  background: var(--card);
   border-top: 1px solid var(--border);
-  margin-top: 8px;
 }
 
-.bl-qp-btn {
+.bl-qp-primary-btn {
   flex: 1;
-  min-width: 72px;
-  padding: 10px 8px;
-  border: 1px solid var(--border);
+  min-height: 44px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 10px;
+  /* Self-paired with white text in this same rule, and the Bar's own accent
+     (matches .bl-qp-cat-chip.active) — deliberately theme-invariant per
+     design.md §5. 8.9:1 against #fff. */
+  background: #7b1fa2;
+  color: #fff;
+  font-size: 14.5px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.15s, opacity 0.15s, box-shadow 0.15s;
+}
+
+.bl-qp-primary-btn:active {
+  transform: scale(0.97);
+}
+
+.bl-qp-icon-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.bl-qp-icon-btn {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--border);
   border-radius: 10px;
   background: var(--card);
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text);
+  /* design.md §4b — icon-only button needs an explicit color. */
+  color: var(--text-light);
   cursor: pointer;
-  transition: background-color 0.15s, transform 0.1s;
   -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s, transform 0.1s;
 }
 
-.bl-qp-btn:active {
-  transform: scale(0.96);
-  background: var(--bg-subtle, #f5f5f5);
+.bl-qp-icon-btn:hover {
+  background: var(--surface);
 }
 
-.bl-qp-btn-danger {
-  color: #d32f2f;
-  border-color: #ffcdd2;
+.bl-qp-icon-btn:active {
+  transform: scale(0.93);
 }
 
-.bl-qp-btn-danger:active {
-  background: #ffebee;
+.bl-qp-icon-btn-fav-active {
+  color: var(--danger);
+  border-color: var(--danger);
+  background: rgba(211, 47, 47, 0.08);
 }
 
 /* ── Sheet cancel button ── */

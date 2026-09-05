@@ -9,7 +9,7 @@ import db, {
   recoverStuckBatchItems,
   getBatchQueueItems,
 } from './db';
-import { importRecipeFromUrl, detectImportType } from './recipeParser';
+import { importRecipeFromUrl, detectImportType } from './import/index.js';
 
 let running = false;
 let listenersAttached = false;

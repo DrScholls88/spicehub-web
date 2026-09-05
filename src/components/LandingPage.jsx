@@ -18,6 +18,7 @@ import './LandingPage.css';
 import TodayHeroCard from './landing/TodayHeroCard.jsx';
 import DiscoverFeatureCard from './landing/DiscoverFeatureCard.jsx';
 import InstallBanner from './landing/InstallBanner.jsx';
+import IosShareBanner from './landing/IosShareBanner.jsx';
 import StickyHeader from './landing/StickyHeader.jsx';
 import DayPhotoCard from './landing/DayPhotoCard.jsx';
 import MealPreviewSheet from './landing/MealPreviewSheet.jsx';
@@ -66,6 +67,12 @@ export default function LandingPage({
   friendCount = 0,
   onInstallApp = null,
   canInstall = false,
+  // Installed-iOS only, and only until dismissed or set up — App owns the
+  // gating. Shares InstallBanner's slot on purpose: the two are mutually
+  // exclusive, since canInstall is false once the app is already installed.
+  showIosSharePrompt = false,
+  onOpenIosShareSetup = null,
+  onDismissIosSharePrompt = null,
   onRespinDate = null,
   onAssignMeal = null,
   onCreateMealForDay = null,
@@ -173,7 +180,7 @@ export default function LandingPage({
   // computed entirely from local data already in props — no network calls.
   const groceryTelemetry = useMemo(() => {
     if (!groceryItems.length) return 'Build shopping list';
-    const unchecked = groceryItems.filter(i => !i.isChecked).length;
+    const unchecked = groceryItems.filter(i => !i.checked && !i.covered).length;
     return unchecked > 0 ? `${unchecked} item${unchecked === 1 ? '' : 's'} needed` : 'All set ✓';
   }, [groceryItems]);
 
@@ -336,6 +343,12 @@ export default function LandingPage({
         {canInstall && onInstallApp && (
           <InstallBanner onInstall={onInstallApp} />
         )}
+        {showIosSharePrompt && onOpenIosShareSetup && (
+          <IosShareBanner
+            onOpenSetup={onOpenIosShareSetup}
+            onDismiss={onDismissIosSharePrompt}
+          />
+        )}
       </AnimatePresence>
 
       <AnimatePresence>
@@ -404,13 +417,14 @@ export default function LandingPage({
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
           >
-            <motion.div
-              className="landing-empty-icon"
-              animate={{ scale: [1, 1.06, 1] }}
-              transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-            >
+            {/* Was a scale loop on repeat: Infinity. An element that never
+                stops moving is a permanent claim on attention, and this one had
+                nothing new to say after the first second — the parent already
+                animates the whole empty state in, and the CTA below is the
+                thing meant to draw the eye. */}
+            <div className="landing-empty-icon">
               <Dices size={22} strokeWidth={1.75} />
-            </motion.div>
+            </div>
             <div className="landing-empty-text">Nothing planned yet</div>
             <div className="landing-empty-hint">One tap picks meals for every empty day.</div>
             <button

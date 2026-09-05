@@ -1,11 +1,16 @@
 import { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { AnimatePresence } from 'framer-motion';
+// One icon family in the chrome. The tab bar and header used emoji while
+// every screen inside them (WeekView, GroceryList, Import) already used
+// Lucide — two icon systems visible at once. The chilli stays: a brand mark
+// is not an icon.
+import { House, CalendarDays, ChefHat, Martini, Plus, ShoppingCart, ShoppingBasket, Users, Settings } from 'lucide-react';
 import db, { importSeedMeals, removeStarterKitMeals, logCook, logMix, saveGroceryList, loadGroceryList, getStoreMemory, getCookingLog, toggleRotation, addBatchQueueItems, getBatchQueueItems, updateBatchQueueItem, getLearnedAliases, moveMealToBar, moveDrinkToMeals, getCustomDayTags, addCustomDayTag, deleteCustomDayTag, saveMealDeduped } from './db';
 import { buildStarterKitMeals, STARTER_KIT_SEED_FLAG } from './data/starterKitMeals';
 import { checkStorageQuota, requestPersistentStorage, isPersistentStorageGranted } from './storageManager';
 import LandingPage from './components/LandingPage';
 import { startBatchImportEngine } from './batchImportEngine';
-import { extractMultipleUrls, detectImportType } from './recipeParser';
+import { extractMultipleUrls, detectImportType } from './import/index.js';
 import { categorizeIngredient, upgradeRecipeIngredients, setLearnedAliases, fuzzyResolveIngredient } from './recipeSchema';
 import { seedEntities } from './utils/ingredientEntities';
 import { getMealVideoSource } from './lib/videoSource';
@@ -26,6 +31,7 @@ import { markImportTimestamp } from './components/landing/ImportNudgeBanner.jsx'
 import ConsentGate, { getStoredConsent } from './components/ConsentGate';
 import AgeGate, { isAgeVerified } from './components/AgeGate';
 import { parseLaunchIntent, intentFromShareEvent, scrubLaunchQuery, syncTabHash } from './lib/launchIntent';
+import { isIosSharePromptDismissed } from './components/landing/IosShareBanner.jsx';
 import LegalFooter from './components/LegalFooter';
 import useProfile from './hooks/useProfile';
 import useHomeGroup from './hooks/useHomeGroup';
@@ -260,6 +266,14 @@ export default function App() {
   // Increment this to force ImportModal to fully remount (fresh state) on each open
   const [importModalKey, setImportModalKey] = useState(0);
   const [groceryItems, setGroceryItems] = useState([]);
+  // Header cart badge. `checked` is the real runtime field — the Dexie index
+  // is called `isChecked` but loadGroceryList normalises it to `checked`, and
+  // GroceryList reads `item.checked` throughout. `covered` means it is already
+  // in the pantry, so it is not something to buy.
+  const groceryToBuyCount = useMemo(
+    () => groceryItems.filter(i => !i.checked && !i.covered).length,
+    [groceryItems]
+  );
   const [toast, setToast] = useState(null);
 
   const showToast = useCallback((message, type = 'success', duration = 2500) => {
@@ -480,6 +494,13 @@ export default function App() {
   // ── Legal: clickwrap consent gate + Bar/Saloon age gate ─────────────────
   const [consentAccepted, setConsentAccepted] = useState(() => getStoredConsent() !== null);
   const [showAgeGate, setShowAgeGate] = useState(false);
+  // iOS cannot register a PWA as a share-sheet target, so that path needs a
+  // one-time Shortcut. Read once on mount: dismissing should settle the banner
+  // for this session immediately, not wait for a reload.
+  const [iosShareDismissed, setIosShareDismissed] = useState(() => isIosSharePromptDismissed());
+  // True only when Settings was opened from that banner, so the instructions
+  // are already unfolded on arrival.
+  const [settingsAutoIosShare, setSettingsAutoIosShare] = useState(false);
   // Which situation raised the gate — drives its copy and confirm label.
   // 'enter-bar' | 'save-drink' | 'open-drink-detail'
   const [ageGateReason, setAgeGateReason] = useState('enter-bar');
@@ -488,9 +509,14 @@ export default function App() {
   // than quietly falling back to the wrong shelf.
   const pendingDrinkImportRef = useRef(null);
   const pendingDrinkDetailRef = useRef(null);
+  // The batchQueue row whose save was parked by the gate, so confirming
+  // can finish marking it saved (the retry below calls handleImport
+  // directly and would otherwise leave the row stuck at "ready").
+  const pendingBatchSaveRef = useRef(null);
   const closeAgeGate = useCallback(() => {
     pendingDrinkImportRef.current = null;
     pendingDrinkDetailRef.current = null;
+    pendingBatchSaveRef.current = null;
     setShowAgeGate(false);
   }, []);
   // Wraps setTab so entering 'bar' the first time on this device is gated
@@ -589,7 +615,7 @@ export default function App() {
   useBackHandler(showSpinner, () => setShowSpinner(false), 'spinner');
   useBackHandler(showStats, () => setShowStats(false), 'stats');
   useBackHandler(showStorageManager, () => setShowStorageManager(false), 'storage');
-  useBackHandler(showSettings, () => setShowSettings(false), 'settings');
+  useBackHandler(showSettings, () => { setShowSettings(false); setSettingsAutoIosShare(false); }, 'settings');
   useBackHandler(showFriendsSheet, () => setShowFriendsSheet(false), 'friends-sheet');
   useBackHandler(showBatchQueue, () => setShowBatchQueue(false), 'batch-queue');
   useBackHandler(!!batchReviewItem, () => setBatchReviewItem(null), 'batch-review');
@@ -1616,7 +1642,7 @@ useEffect(() => {
   // ── Import handler — routes to meals, drinks, grocery, or week ──────────────
   // destination overrides showImportFor and is set by the Smart Action Bar
   // in ImportModal when the user taps "→ Bar", "→ Grocery", or "→ This Week".
-  const handleImport = useCallback(async (imported, destination) => {
+  const handleImport = useCallback(async (imported, destination, opts = {}) => {
     const target = destination || showImportFor;
 
     // ── AgeGate fires on resolve-to-drink, not on tab change (2026-09-03) ──
@@ -1629,10 +1655,12 @@ useEffect(() => {
     if (!isAgeVerified() && Array.isArray(imported) && imported.some(
       (r) => !(r.id && !r.name && !r.ingredients) && resolveItemType(r, target) === 'drink'
     )) {
-      pendingDrinkImportRef.current = { imported, destination };
+      pendingDrinkImportRef.current = { imported, destination, onCommitted: opts.onCommitted };
       setAgeGateReason('save-drink');
       setShowAgeGate(true);
-      return;
+      // Callers need to know nothing was written: ImportSheet keeps its
+      // draft, and handleBatchReviewSave leaves the queue row unsaved.
+      return { blocked: 'age-gate' };
     }
 
     // ── I-2: Capture and reset share-target flag before any state clears ────
@@ -1794,14 +1822,21 @@ useEffect(() => {
   }, [showImportFor, loadMeals, loadDrinks, showToast, setGroceryItems, setWeekPlan, setTab, setPostImportActions, syncGroceryAction]);
 
   // ── Batch import: mark a batchQueue row 'saved' after ImportSheet save ────
-  const handleBatchReviewSave = useCallback(async (imported, destination) => {
+  const handleBatchReviewSave = useCallback(async (imported, destination, opts = {}) => {
     const item = batchReviewItem;
+    const result = await handleImport(imported, destination, opts);
+    // A blocked import wrote nothing (the AgeGate parked it), so the row stays
+    // "ready" and the review sheet stays mounted with the user's edits.
+    if (result && result.blocked) {
+      pendingBatchSaveRef.current = item;
+      return result;
+    }
     setBatchReviewItem(null);
-    await handleImport(imported, destination);
     if (item) {
       await updateBatchQueueItem(item.id, { status: 'saved' });
       window.dispatchEvent(new CustomEvent('spicehub:batch-queue-updated'));
     }
+    return result;
   }, [batchReviewItem, handleImport]);
 
   // ── Cook Mode ────────────────────────────────────────────────────────────────
@@ -1871,6 +1906,24 @@ useEffect(() => {
     return drinks.some(d => d.id === item.id);
   }, [drinks]);
 
+  // ── Recipe photo add/remove (from the hero carousel on the full card) ──────
+  // `patch` is whatever RecipeMediaCarousel computed: some combination of
+  // userPhotos / hiddenPhotos / imageUrl. Routed to whichever table the item
+  // actually lives in, then mirrored into the open detail snapshot so the
+  // carousel re-renders immediately instead of after a close/reopen
+  // (design.md §4e).
+  const updateItemMedia = useCallback(async (item, patch) => {
+    if (!item?.id || !patch) return;
+    const drink = isDrink(item);
+    if (drink) {
+      await db.drinks.update(item.id, patch);
+    } else {
+      await db.meals.update(item.id, patch);
+    }
+    setDetailItem(prev => (prev && prev.id === item.id ? { ...prev, ...patch } : prev));
+    if (drink) await loadDrinks(); else await loadMeals();
+  }, [isDrink, loadDrinks, loadMeals]);
+
   // ── Share / Export ──────────────────────────────────────────────────────────
   // Quick share: uses the template renderer for clean text, then navigator.share
   const shareItem = useCallback((item) => {
@@ -1925,15 +1978,13 @@ useEffect(() => {
               <span className="app-brand-name">SpiceHub</span>
             </button>
           </h1>
-          <button
-            type="button"
-            className="app-build-badge"
-            title={`SpiceHub v${__SPICEHUB_VERSION__} · build #${__SPICEHUB_BUILD__}`}
-            aria-label={`Build ${__SPICEHUB_BUILD__}, version ${__SPICEHUB_VERSION__}. Open settings.`}
-            onClick={() => setShowSettings(true)}
-          >
-            #{__SPICEHUB_BUILD__}
-          </button>
+          {/* Build stamp, for checking which build is on a device at a glance.
+              A <span>, not the button it used to be: silently opening Settings
+              was what made it read as broken chrome rather than a control, and
+              Settings has its own gear two inches to the right. The version
+              string already ends in the build number, so there is nothing to
+              add on tap. */}
+          <span className="app-build-badge">v{__SPICEHUB_VERSION__}</span>
         </div>
         {/* Decluttered (feedback 2026-07-15): header used to carry 5 icons
             crowding the logo/build badge, worse on iPhone where the notch
@@ -1942,21 +1993,42 @@ useEffect(() => {
             ZIP import moved into MealLibrary's + speed-dial, and Storage
             moved into the Settings sheet. */}
         <div className="header-actions">
-          <button className="hdr-btn" onClick={() => setShowFridge(true)} title="The Pantry — what can I cook?" aria-label="Open the pantry">🧺</button>
+          {/* Shop left the bottom bar so four tabs could sit two-a-side around a
+              genuinely centred +. A grocery list IS a cart, and a badged cart in
+              the header is the pattern every shopping app has already taught
+              this user — it also carries a live count, which a tab label never
+              could. It keeps aria-current because it is still a destination:
+              nothing in the bottom bar represents Shop any more. */}
+          <button
+            className={`hdr-btn${tab === 'grocery' ? ' hdr-btn-active' : ''}`}
+            onClick={() => { setTab('grocery'); if (groceryItems.length === 0 && weekPlan.some(Boolean)) buildGroceryList(); }}
+            title="Shopping list"
+            aria-label={groceryToBuyCount > 0
+              ? `Shopping list, ${groceryToBuyCount} item${groceryToBuyCount === 1 ? '' : 's'} to buy`
+              : 'Shopping list'}
+            aria-current={tab === 'grocery' ? 'page' : undefined}
+          >
+            <ShoppingCart size={20} strokeWidth={2} aria-hidden="true" />
+            {groceryToBuyCount > 0 && (
+              <span className="hdr-badge">{groceryToBuyCount > 9 ? '9+' : groceryToBuyCount}</span>
+            )}
+          </button>
+          <button className="hdr-btn" onClick={() => setShowFridge(true)} title="The Pantry — what can I cook?" aria-label="Open the pantry">
+            <ShoppingBasket size={20} strokeWidth={2} aria-hidden="true" />
+          </button>
           {isFriendsEnabled() && (
-            <button className="hdr-btn" onClick={openFriendsSheet} title="Friends" aria-label="Friends" style={{ position: 'relative' }}>
-              👤
+            <button className="hdr-btn" onClick={openFriendsSheet} title="Friends" aria-label="Friends">
+              <Users size={20} strokeWidth={2} aria-hidden="true" />
               {(pendingRequestCount + pendingShareCount) > 0 && (
-                <span style={{
-                  position: 'absolute', top: 0, right: 0,
-                  minWidth: 14, height: 14, borderRadius: 7, padding: '0 3px',
-                  background: 'var(--primary)', color: '#fff',
-                  fontSize: 9, fontWeight: 700, lineHeight: '14px', textAlign: 'center',
-                }}>{(pendingRequestCount + pendingShareCount) > 9 ? '9+' : pendingRequestCount + pendingShareCount}</span>
+                <span className="hdr-badge">
+                  {(pendingRequestCount + pendingShareCount) > 9 ? '9+' : pendingRequestCount + pendingShareCount}
+                </span>
               )}
             </button>
           )}
-          <button className="hdr-btn" onClick={() => setShowSettings(true)} title="Settings" aria-label="Settings">⚙️</button>
+          <button className="hdr-btn" onClick={() => setShowSettings(true)} title="Settings" aria-label="Settings">
+            <Settings size={20} strokeWidth={2} aria-hidden="true" />
+          </button>
         </div>
       </header>
 
@@ -2067,6 +2139,9 @@ useEffect(() => {
             friendCount={friendCount}
             canInstall={!!deferredPrompt}
             onInstallApp={handleInstallApp}
+            showIosSharePrompt={isStandalone && isIOS() && !iosShareDismissed}
+            onOpenIosShareSetup={() => { setSettingsAutoIosShare(true); setShowSettings(true); }}
+            onDismissIosSharePrompt={() => setIosShareDismissed(true)}
             onRespinDate={handleRespinForDate}
             onAssignMeal={handleAssignMealToDay}
             onCreateMealForDay={handleCreateMealForDay}
@@ -2172,22 +2247,28 @@ useEffect(() => {
       </main>
 
       {/* ── Bottom Tab Bar (mobile-first) ── */}
+      {/* Four destinations, two either side of the capture control — so the +
+          sits on the bar's true centre line. It could not with five: the +
+          always had 2 tabs on one side and 3 on the other, and no slot width
+          fixes an asymmetry that lives in the COUNTS. Shop moved up to the
+          header cart to buy that fifth slot back. Instagram and YouTube reach a
+          centred + the same way — four places, not five. */}
       <nav className="tab-bar">
         <button className={tab === 'home' ? 'active' : ''} onClick={() => setTab('home')} aria-current={tab === 'home' ? 'page' : undefined}>
-          <span style={{ fontSize: 18 }}>🏠</span>
-          <span>Home</span>
+          <House className="tab-bar-icon" size={20} strokeWidth={2} aria-hidden="true" />
+          <span className="tab-bar-label">Home</span>
         </button>
         <button className={tab === 'week' ? 'active' : ''} onClick={() => setTab('week')} aria-current={tab === 'week' ? 'page' : undefined}>
-          <span style={{ fontSize: 18 }}>📅</span>
-          <span>Plan</span>
+          <CalendarDays className="tab-bar-icon" size={20} strokeWidth={2} aria-hidden="true" />
+          <span className="tab-bar-label">Plan</span>
         </button>
         {/* ── Capture ──
             Import is the product, and until now it had no home on the chrome:
             every entry point lived inside MealLibrary's speed dial, BarLibrary,
             or a share handler, so from Home / Plan / Shop you had to change tabs
-            first. This is a sixth SLOT but not a sixth destination — no label,
-            no active state, no aria-current — and it opens the sheet with no
-            meal/drink hint at all, so the engine's guess wins. ── */}
+            first. A slot in the bar but NOT a destination — no label, no active
+            state, no aria-current — and it opens the sheet with no meal/drink
+            hint at all, so the engine's guess wins. ── */}
         <button
           type="button"
           className="tab-bar-capture"
@@ -2195,11 +2276,13 @@ useEffect(() => {
           title="Add a recipe"
           aria-label="Add a recipe"
         >
-          <span className="tab-bar-capture-glyph" aria-hidden="true">+</span>
+          <span className="tab-bar-capture-glyph" aria-hidden="true">
+            <Plus size={26} strokeWidth={2.5} />
+          </span>
         </button>
         <button className={tab === 'library' ? 'active' : ''} onClick={() => setTab('library')} aria-current={tab === 'library' ? 'page' : undefined} style={{ position: 'relative' }}>
-          <span style={{ fontSize: 18 }}>🍳</span>
-          <span>Meals</span>
+          <ChefHat className="tab-bar-icon" size={20} strokeWidth={2} aria-hidden="true" />
+          <span className="tab-bar-label">Meals</span>
           {pendingShareCount > 0 && (
             <span style={{
               position: 'absolute', top: 2, right: '50%', transform: 'translateX(14px)',
@@ -2210,12 +2293,8 @@ useEffect(() => {
           )}
         </button>
         <button className={tab === 'bar' ? 'active bar-tab' : 'bar-tab'} onClick={() => navigateToTab('bar')} aria-current={tab === 'bar' ? 'page' : undefined}>
-          <span style={{ fontSize: 18 }}>🍹</span>
-          <span>Bar</span>
-        </button>
-        <button className={tab === 'grocery' ? 'active' : ''} onClick={() => { setTab('grocery'); if (groceryItems.length === 0 && weekPlan.some(Boolean)) buildGroceryList(); }} aria-current={tab === 'grocery' ? 'page' : undefined}>
-          <span style={{ fontSize: 18 }}>🛒</span>
-          <span>Shop</span>
+          <Martini className="tab-bar-icon" size={20} strokeWidth={2} aria-hidden="true" />
+          <span className="tab-bar-label">Bar</span>
         </button>
       </nav>
 
@@ -2250,6 +2329,8 @@ useEffect(() => {
               if (isDrink(item)) setEditDrink(item); else setEditMeal(item);
             }}
             isDrink={isDrink(detailItem)}
+            onUpdateMedia={updateItemMedia}
+            onToast={showToast}
             fridgeInventory={fridgeInventory}
           />
         )}
@@ -2458,7 +2539,8 @@ useEffect(() => {
       {showSettings && (
         <Suspense fallback={null}>
         <SettingsSheet
-          onClose={() => setShowSettings(false)}
+          autoOpenIosShare={settingsAutoIosShare}
+          onClose={() => { setShowSettings(false); setSettingsAutoIosShare(false); }}
           profile={profile}
           onUpdateProfile={updateProfile}
           isOnline={isOnline}
@@ -2504,6 +2586,18 @@ useEffect(() => {
               // Fire-and-forget like every other onImport call site, but with an
               // explicit catch — this one is not wrapped by ImportSheet.
               Promise.resolve(handleImport(pendingImport.imported, pendingImport.destination))
+                .then(async (res) => {
+                  if (res && res.blocked) return;
+                  // Lets ImportSheet retire the draft it deliberately kept
+                  // when the gate blocked this same save a moment ago.
+                  pendingImport.onCommitted?.();
+                  const row = pendingBatchSaveRef.current;
+                  pendingBatchSaveRef.current = null;
+                  if (!row) return;
+                  setBatchReviewItem(null);
+                  await updateBatchQueueItem(row.id, { status: 'saved' });
+                  window.dispatchEvent(new CustomEvent('spicehub:batch-queue-updated'));
+                })
                 .catch((err) => console.error('[AgeGate] retry import failed:', err));
               return;
             }

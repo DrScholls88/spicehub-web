@@ -72,3 +72,8 @@ cookies.json
 .codex/
 .cursor/
 .superpowers/
+
+# Pre-refactor snapshot of the import surface (2026-09-04 overhaul plan,
+# Task 0). File-copy backup so slices can be diffed/restored without
+# stash/reset. Delete once the overhaul lands.
+_import_backup_2026-09-04/

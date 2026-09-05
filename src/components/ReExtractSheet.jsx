@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Sparkles, Check, RefreshCw, WifiOff, ArrowRight, Mic } from 'lucide-react';
-import { captionToRecipe, transcribeVideoForRecipe, scoreExtractionConfidence } from '../recipeParser.js';
+import { captionToRecipe, transcribeVideoForRecipe, scoreExtractionConfidence } from '../import/index.js';
 import { ENGINE_PROMPT_VERSION } from '../recipeSchema.js';
 import { hapticLight, hapticSuccess, hapticError } from '../haptics';
 import { getMealVideoSource } from '../lib/videoSource.js';

@@ -19,6 +19,8 @@ import {
   Trash2,
   X,
   Crop,
+  Utensils,
+  Plus,
 } from 'lucide-react';
 import { fuzzyResolveIngredient, normalizeIngredientForMatching, learnableAliasFrom, addLearnedAlias } from '../recipeSchema';
 import { saveLearnedAliases, invalidateCachedImport } from '../db';
@@ -26,6 +28,7 @@ import { hapticLight } from '../haptics';
 import PhotoGallery from './PhotoGallery';
 import DishPhotoCropper from './DishPhotoCropper';
 import CoverPicker from './import/CoverPicker.jsx';
+import { autoExpand } from '../lib/autoExpandTextarea.js';
 
 // Spring-like easing shared across review animations (spec §1)
 const SPRING_EASE = [0.32, 0.72, 0, 1];
@@ -128,6 +131,10 @@ function RowMenu({
   onMoveToOtherList,
   moveToOtherListLabel,
   moveToOtherListIcon,
+  onMoveToNotes,
+  sauces,
+  onMoveToSauce,
+  onMoveToNewSauce,
 }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
@@ -206,6 +213,40 @@ function RowMenu({
                 {moveToOtherListLabel}
               </button>
             )}
+            {onMoveToNotes && (
+              <button
+                type="button"
+                role="menuitem"
+                className="review-row-menu-item"
+                onClick={runAndClose(onMoveToNotes)}
+              >
+                <NotebookPen size={16} strokeWidth={2} />
+                Move to Notes
+              </button>
+            )}
+            {onMoveToSauce && Array.isArray(sauces) && sauces.map((s, si) => (
+              <button
+                key={si}
+                type="button"
+                role="menuitem"
+                className="review-row-menu-item"
+                onClick={runAndClose(() => onMoveToSauce(si))}
+              >
+                <Utensils size={16} strokeWidth={2} />
+                {`Move to "${(s.name || '').trim() || `Sauce ${si + 1}`}"`}
+              </button>
+            ))}
+            {onMoveToNewSauce && (
+              <button
+                type="button"
+                role="menuitem"
+                className="review-row-menu-item"
+                onClick={runAndClose(onMoveToNewSauce)}
+              >
+                <Plus size={16} strokeWidth={2} />
+                Move to new sauce/add-on
+              </button>
+            )}
             <button
               type="button"
               role="menuitem"
@@ -243,6 +284,10 @@ function ListItem({
   onMoveToOtherList,
   moveToOtherListLabel,
   moveToOtherListIcon,
+  onMoveToNotes,
+  sauces,
+  onMoveToSauce,
+  onMoveToNewSauce,
   rowId,
   onHandleDrag,
   onHandleDragEnd,
@@ -251,6 +296,7 @@ function ListItem({
   const dragControls = useDragControls();
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef(null);
+  useEffect(() => { if (inputRef.current) autoExpand(inputRef.current); }, [value]);
 
   return (
     <Reorder.Item
@@ -285,11 +331,11 @@ function ListItem({
       >
         <GripVertical size={18} strokeWidth={2} />
       </span>
-      <input
+      <textarea
         ref={inputRef}
-        type="text"
+        rows={1}
         value={value}
-        onChange={(e) => onChange(index, e.target.value)}
+        onChange={(e) => { onChange(index, e.target.value); autoExpand(e.target); }}
       />
       {Array.isArray(confHints) && confHints.length > 0 && (
         <span className="review-conf-hints">
@@ -325,6 +371,10 @@ function ListItem({
         onMoveToOtherList={onMoveToOtherList ? () => onMoveToOtherList(index) : null}
         moveToOtherListLabel={moveToOtherListLabel}
         moveToOtherListIcon={moveToOtherListIcon}
+        onMoveToNotes={onMoveToNotes ? () => onMoveToNotes(index) : null}
+        sauces={sauces}
+        onMoveToSauce={onMoveToSauce ? (si) => onMoveToSauce(index, si) : null}
+        onMoveToNewSauce={onMoveToNewSauce ? () => onMoveToNewSauce(index) : null}
       />
     </Reorder.Item>
   );
@@ -466,6 +516,98 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
     const [id] = rowIdsRef.current[fromList].splice(index, 1);
     rowIdsRef.current[toList].push(id);
     onChange({ ...recipe, [fromList]: fromArr, [toList]: toArr });
+  }, [recipe, onChange]);
+
+  // Move a row straight to Notes — the one-tap fix for when Gemini grabs a
+  // description/blurb and drops it into ingredients or steps instead of
+  // recognizing it as a note.
+  const moveRowToNotes = useCallback((fromList, index) => {
+    const fromArr = [...(recipe[fromList] || [])];
+    const [item] = fromArr.splice(index, 1);
+    if (item == null) return;
+    rowIdsRef.current[fromList].splice(index, 1);
+    const text = String(item).trim();
+    if (!text) {
+      onChange({ ...recipe, [fromList]: fromArr });
+      return;
+    }
+    const existingNotes = String(recipe.notes || '').trim();
+    const nextNotes = existingNotes ? `${existingNotes}\n\n${text}` : text;
+    onChange({ ...recipe, [fromList]: fromArr, notes: nextNotes });
+  }, [recipe, onChange]);
+
+  // ── Sauces / Add-ons sub-recipes ─────────────────────────────────────────
+  // Same { name, ingredients: string[], directions: string[] } shape
+  // AddEditMeal's "Sauces & Add-ons" uses — reusing it here means a sauce
+  // separated out during import shows up correctly on the recipe detail
+  // page and stays editable from Edit Recipe with no conversion step.
+  const addSauce = useCallback(() => {
+    const sauces = [...(recipe.sauces || []), { name: '', ingredients: [''], directions: [''] }];
+    onChange({ ...recipe, sauces });
+  }, [recipe, onChange]);
+
+  const removeSauce = useCallback((si) => {
+    const sauces = (recipe.sauces || []).filter((_, i) => i !== si);
+    onChange({ ...recipe, sauces });
+  }, [recipe, onChange]);
+
+  const updateSauceField = useCallback((si, field, val) => {
+    const sauces = (recipe.sauces || []).map((s, i) => (i === si ? { ...s, [field]: val } : s));
+    onChange({ ...recipe, sauces });
+  }, [recipe, onChange]);
+
+  const updateSauceListItem = useCallback((si, listKey, ii, val) => {
+    const sauces = (recipe.sauces || []).map((s, i) => {
+      if (i !== si) return s;
+      const list = [...(s[listKey] || [])];
+      list[ii] = val;
+      return { ...s, [listKey]: list };
+    });
+    onChange({ ...recipe, sauces });
+  }, [recipe, onChange]);
+
+  const addSauceListItem = useCallback((si, listKey) => {
+    const sauces = (recipe.sauces || []).map((s, i) => (i === si ? { ...s, [listKey]: [...(s[listKey] || []), ''] } : s));
+    onChange({ ...recipe, sauces });
+  }, [recipe, onChange]);
+
+  const removeSauceListItem = useCallback((si, listKey, ii) => {
+    const sauces = (recipe.sauces || []).map((s, i) => {
+      if (i !== si) return s;
+      const list = (s[listKey] || []).filter((_, j) => j !== ii);
+      return { ...s, [listKey]: list.length ? list : [''] };
+    });
+    onChange({ ...recipe, sauces });
+  }, [recipe, onChange]);
+
+  // Move a row from the main ingredients/steps list into an EXISTING sauce.
+  // Drops any untouched blank placeholder already sitting in that sauce's
+  // matching list so a freshly-created sauce doesn't keep a stray empty row.
+  const moveRowToSauce = useCallback((fromList, index, sauceIndex) => {
+    const fromArr = [...(recipe[fromList] || [])];
+    const [item] = fromArr.splice(index, 1);
+    if (item == null) return;
+    const targetKey = fromList === 'ingredients' ? 'ingredients' : 'directions';
+    const sauces = (recipe.sauces || []).map((s, i) => {
+      if (i !== sauceIndex) return s;
+      const list = (s[targetKey] || []).filter((v) => String(v || '').trim() !== '');
+      return { ...s, [targetKey]: [...list, item] };
+    });
+    rowIdsRef.current[fromList].splice(index, 1);
+    onChange({ ...recipe, [fromList]: fromArr, sauces });
+  }, [recipe, onChange]);
+
+  // Move a row into a brand-new sauce/add-on.
+  const moveRowToNewSauce = useCallback((fromList, index) => {
+    const fromArr = [...(recipe[fromList] || [])];
+    const [item] = fromArr.splice(index, 1);
+    if (item == null) return;
+    const targetKey = fromList === 'ingredients' ? 'ingredients' : 'directions';
+    const newSauce = { name: '', ingredients: [''], directions: [''] };
+    newSauce[targetKey] = [item];
+    const sauces = [...(recipe.sauces || []), newSauce];
+    rowIdsRef.current[fromList].splice(index, 1);
+    onChange({ ...recipe, [fromList]: fromArr, sauces });
   }, [recipe, onChange]);
 
   const moveIngredientToStep = useCallback((index) => {
@@ -945,6 +1087,10 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
                 onMoveToOtherList={moveIngredientToStep}
                 moveToOtherListLabel="Move to steps"
                 moveToOtherListIcon={<ClipboardList size={16} strokeWidth={2} />}
+                onMoveToNotes={(idx) => moveRowToNotes('ingredients', idx)}
+                sauces={recipe.sauces}
+                onMoveToSauce={(idx, si) => moveRowToSauce('ingredients', idx, si)}
+                onMoveToNewSauce={(idx) => moveRowToNewSauce('ingredients', idx)}
                 onHandleDrag={(info) => handleHandleDrag('ingredients', i, info)}
                 onHandleDragEnd={(info) => handleHandleDragEnd('ingredients', i, info)}
                 confHints={hintsForLine(item)}
@@ -1005,6 +1151,10 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
                 onMoveToOtherList={moveStepToIngredients}
                 moveToOtherListLabel="Move to ingredients"
                 moveToOtherListIcon={<Carrot size={16} strokeWidth={2} />}
+                onMoveToNotes={(idx) => moveRowToNotes('directions', idx)}
+                sauces={recipe.sauces}
+                onMoveToSauce={(idx, si) => moveRowToSauce('directions', idx, si)}
+                onMoveToNewSauce={(idx) => moveRowToNewSauce('directions', idx)}
                 onHandleDrag={(info) => handleHandleDrag('directions', i, info)}
                 onHandleDragEnd={(info) => handleHandleDragEnd('directions', i, info)}
               />
@@ -1018,6 +1168,89 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
           </button>
         </Reorder.Group>
       )}
+
+      {/* Sauces & Add-ons — separate a custom sauce or side prep from the
+          main recipe. Same shape AddEditMeal's Sauces & Add-ons uses, so a
+          sauce built here (or moved into via a row's overflow menu) shows
+          correctly on the recipe detail page and stays editable from Edit
+          Recipe with zero conversion. Keyed so it auto-opens the first time
+          a sauce appears, but still respects a later manual collapse. */}
+      <AccordionSection
+        key={(recipe.sauces || []).length > 0 ? 'sauces-open' : 'sauces-empty'}
+        icon={<Utensils size={16} strokeWidth={2} />}
+        title="Sauces & Add-ons"
+        count={(recipe.sauces || []).length || null}
+        defaultOpen={(recipe.sauces || []).length > 0}
+      >
+        {(recipe.sauces || []).map((sauce, si) => (
+          <div key={si} className="review-sauce-card">
+            <div className="review-sauce-header">
+              <input
+                type="text"
+                value={sauce.name}
+                onChange={(e) => updateSauceField(si, 'name', e.target.value)}
+                placeholder={'Sauce / add-on name (e.g. "Garlic Aioli")'}
+                className="review-sauce-name-input"
+              />
+              <button
+                type="button"
+                className="review-sauce-remove-btn"
+                onClick={() => removeSauce(si)}
+                aria-label="Remove sauce"
+                title="Remove this sauce/add-on"
+              >
+                <Trash2 size={15} strokeWidth={2} />
+              </button>
+            </div>
+
+            <div className="review-sauce-sub">
+              <span className="review-sauce-sub-label">Ingredients</span>
+              {(sauce.ingredients || ['']).map((ing, ii) => (
+                <div key={ii} className="review-sauce-row">
+                  <textarea
+                    rows={1}
+                    value={ing}
+                    onChange={(e) => { updateSauceListItem(si, 'ingredients', ii, e.target.value); autoExpand(e.target); }}
+                    ref={(el) => el && autoExpand(el)}
+                    placeholder={`Ingredient ${ii + 1}`}
+                  />
+                  {(sauce.ingredients || []).length > 1 && (
+                    <button type="button" className="review-sauce-remove-btn" onClick={() => removeSauceListItem(si, 'ingredients', ii)} aria-label="Remove">
+                      <X size={14} strokeWidth={2.25} />
+                    </button>
+                  )}
+                </div>
+              ))}
+              <button type="button" className="review-add-row" onClick={() => addSauceListItem(si, 'ingredients')}>+ Ingredient</button>
+            </div>
+
+            <div className="review-sauce-sub">
+              <span className="review-sauce-sub-label">Directions</span>
+              {(sauce.directions || ['']).map((dir, di) => (
+                <div key={di} className="review-sauce-row">
+                  <textarea
+                    rows={1}
+                    value={dir}
+                    onChange={(e) => { updateSauceListItem(si, 'directions', di, e.target.value); autoExpand(e.target); }}
+                    ref={(el) => el && autoExpand(el)}
+                    placeholder={`Step ${di + 1}`}
+                  />
+                  {(sauce.directions || []).length > 1 && (
+                    <button type="button" className="review-sauce-remove-btn" onClick={() => removeSauceListItem(si, 'directions', di)} aria-label="Remove">
+                      <X size={14} strokeWidth={2.25} />
+                    </button>
+                  )}
+                </div>
+              ))}
+              <button type="button" className="review-add-row" onClick={() => addSauceListItem(si, 'directions')}>+ Step</button>
+            </div>
+          </div>
+        ))}
+
+        <button type="button" className="review-add-row" onClick={addSauce}>
+          <Plus size={13} strokeWidth={2.5} /> Add Sauce / Add-on
+        </button>
+      </AccordionSection>
 
       {/* Drink-specific fields */}
       {isDrink && (
@@ -1051,9 +1284,10 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
       {/* Notes */}
       <AccordionSection icon={<NotebookPen size={16} strokeWidth={2} />} title="Notes" defaultOpen={false}>
         <textarea
+          ref={(el) => el && autoExpand(el)}
           className="review-notes"
           value={recipe.notes || ''}
-          onChange={(e) => updateField('notes', e.target.value)}
+          onChange={(e) => { updateField('notes', e.target.value); autoExpand(e.target); }}
           placeholder="Any notes about this recipe..."
           rows={3}
         />

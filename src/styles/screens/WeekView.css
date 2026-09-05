@@ -207,24 +207,31 @@
   box-shadow: 0 0 0 3px #FF6B35, 0 4px 16px rgba(255, 107, 53, 0.4);
 }
 
-/* ── Meal indicator dot ── */
+/* ── Meal indicator dot ──
+   Sized at the TODAY dimension and scaled down at rest, rather than animating
+   width/height between 5px and 8px. Those are layout properties, and this dot
+   sits on every day cell of the busiest screen in the app, so each transition
+   forced a reflow of the row. Rendered sizes are unchanged: 8 x 0.625 = 5.
+   transform-origin pins it to the bottom edge so `bottom: 0` still reads as
+   flush, and the translateX(-50%) that centres it has to be re-stated in every
+   transform or the dot jumps half its width. */
 .wv-day-dot {
   position: absolute;
   bottom: 0;
   left: 50%;
-  transform: translateX(-50%);
-  width: 5px;
-  height: 5px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: var(--primary-light);
   opacity: 0.5;
-  transition: width 0.15s cubic-bezier(0.4, 0, 0.2, 1), height 0.15s cubic-bezier(0.4, 0, 0.2, 1), background 0.15s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  transform: translateX(-50%) scale(0.625);
+  transform-origin: center bottom;
+  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), background 0.15s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* ── Today's meal indicator: larger + orange + opaque ── */
 .wv-day-pill.today .wv-day-dot {
-  width: 8px;
-  height: 8px;
+  transform: translateX(-50%) scale(1);
   background: #FF6B35;
   opacity: 1;
 }

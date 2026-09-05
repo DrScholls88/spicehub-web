@@ -12,7 +12,7 @@
  * - navigator.vibrate() is dead on iOS — every tap that calls hapticLight()
  *   also gets the `.stg-pulse` scale-down as a universal visual fallback.
  */
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { ThemeSettings } from './ThemeProvider';
 import HomeGroupSection from './HomeGroupSection';
 import LegalFooter from './LegalFooter';
@@ -43,10 +43,32 @@ export default function SettingsSheet({
   onOpenStorageManager,
   onAddStarterKit,
   onRemoveStarterKit,
+  // Set when the user arrived here from the Home banner, so the Shortcut
+  // instructions are already open instead of hidden behind another tap.
+  autoOpenIosShare = false,
 }) {
   const swipe = useSwipeDismiss(onClose);
 
   const starterCount = meals.filter(m => m.starterKit).length;
+
+  // The exact string the Shortcut's "URL" action needs. [Shortcut Input] is a
+  // literal token iOS substitutes at run time — it is not a placeholder for
+  // the user to fill in, which is precisely why this wants copying rather than
+  // retyping from a <code> block on a phone.
+  const shortcutUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/?share-target=1&url=[Shortcut Input]`;
+  const [copiedShortcut, setCopiedShortcut] = useState(false);
+  const handleCopyShortcutUrl = useCallback(async () => {
+    hapticLight();
+    try {
+      await navigator.clipboard.writeText(shortcutUrl);
+      setCopiedShortcut(true);
+      setTimeout(() => setCopiedShortcut(false), 2000);
+    } catch {
+      // Clipboard can be refused (no permission, insecure context). The URL is
+      // on screen either way, so say so rather than failing silently.
+      showToast?.('Copy failed — long-press the URL above to copy it', 'info', 3500);
+    }
+  }, [shortcutUrl, showToast]);
 
   // 2026-08-09: iOS/iPadOS Safari has never implemented the Web Share Target
   // API (share_target in the manifest) — a home-screen-installed PWA cannot
@@ -56,7 +78,7 @@ export default function SettingsSheet({
   // WebKit feature-status page). The standard, zero-cost workaround is an
   // iOS Shortcut that forwards the shared link to SpiceHub's existing
   // GET-based share handler (App.jsx already listens for ?share-target=1).
-  const [showIosShareHelp, setShowIosShareHelp] = useState(false);
+  const [showIosShareHelp, setShowIosShareHelp] = useState(autoOpenIosShare);
 
   const handleCheckForUpdates = async () => {
     if (!navigator.onLine) {
@@ -78,7 +100,7 @@ export default function SettingsSheet({
       } else if (reg.installing) {
         showToast?.('New version found — installing…', 'success', 3000);
       } else {
-        showToast?.(`You're on the latest version (build #${__SPICEHUB_BUILD__})`, 'success', 3000);
+        showToast?.(`You're on the latest version (v${__SPICEHUB_VERSION__})`, 'success', 3000);
       }
     } catch {
       showToast?.('Could not check for updates — check your connection', 'error', 3000);
@@ -192,9 +214,19 @@ export default function SettingsSheet({
                   <li>Open the <strong>Shortcuts</strong> app → <strong>+</strong> to create a new Shortcut.</li>
                   <li>Add action <strong>"Get Text from Input"</strong> (accepts URLs from the share sheet).</li>
                   <li>Add action <strong>"URL"</strong>, set it to:<br />
-                    <code style={{ fontSize: 11, wordBreak: 'break-all' }}>
-                      https://spicehub-web.vercel.app/?share-target=1&amp;url=[Shortcut Input]
-                    </code>
+                    {/* Built from the live origin, not a hard-coded
+                        spicehub-web.vercel.app. On any other deployment (a
+                        preview build, a custom domain, localhost) the literal
+                        sent people to the wrong app entirely. */}
+                    <code style={{ fontSize: 11, wordBreak: 'break-all' }}>{shortcutUrl}</code>
+                    <br />
+                    <button
+                      type="button"
+                      className="stg-inline-copy"
+                      onClick={handleCopyShortcutUrl}
+                    >
+                      {copiedShortcut ? 'Copied' : 'Copy URL'}
+                    </button>
                   </li>
                   <li>Add action <strong>"Open URLs"</strong> using that URL.</li>
                   <li>Rename the Shortcut "Save to SpiceHub", tap the settings icon, and enable <strong>"Show in Share Sheet"</strong> (accepting URLs/text).</li>

@@ -1065,6 +1065,16 @@
   min-width: 0;
   resize: none;
 }
+.review-row textarea {
+  /* 2026-09-03: ingredient/step rows became auto-expanding textareas so a
+     long line no longer needs select-and-drag to read/edit — see the
+     autoExpand() JS fallback in ImportReview.jsx. field-sizing:content
+     handles it natively where supported; overflow:hidden keeps no
+     scrollbar flashing before the JS fallback runs on older browsers. */
+  overflow: hidden;
+  field-sizing: content;
+  line-height: 1.4;
+}
 .review-row input::placeholder,
 .review-row textarea::placeholder {
   color: var(--sh-text-muted);
@@ -1234,8 +1244,103 @@
   background: var(--sh-bg);
   resize: vertical;
   box-sizing: border-box;
+  overflow: hidden; /* auto-expand fallback (autoExpand() in ImportReview.jsx); resize:vertical above still lets a person grow it further by hand */
+  field-sizing: content;
 }
 .review-notes:focus {
+  outline: none;
+  border-color: var(--sh-accent);
+}
+
+/* ── Sauces & Add-ons (sub-recipes) ───────────────────────────────────────
+   Mirrors AddEditMeal's .aem-sauce-* cards visually (same shape of data),
+   using this screen's own --sh-* tokens rather than AddEditMeal's --text/
+   --surface/--border namespace. */
+.review-sauce-card {
+  background: var(--sh-surface);
+  border: 1px solid var(--sh-border);
+  border-radius: var(--sh-radius-sm);
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.review-sauce-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.review-sauce-name-input {
+  flex: 1;
+  font: inherit;
+  font-weight: 700;
+  font-size: 16px; /* stops iOS Safari zooming the page on focus */
+  border: 1px solid var(--sh-border);
+  border-radius: var(--sh-radius-sm);
+  padding: 8px 10px;
+  color: var(--sh-text);
+  background: var(--sh-bg);
+}
+.review-sauce-name-input:focus {
+  outline: none;
+  border-color: var(--sh-accent);
+}
+
+.review-sauce-remove-btn {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--sh-text-muted);
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 120ms, color 120ms;
+}
+.review-sauce-remove-btn:hover {
+  background: rgba(192, 57, 43, 0.1);
+  color: #c0392b;
+}
+[data-theme="dark"] .review-sauce-remove-btn:hover { color: #ff8a75; }
+
+.review-sauce-sub { margin-bottom: 8px; }
+
+.review-sauce-sub-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--sh-text-muted);
+  margin-bottom: 4px;
+}
+
+.review-sauce-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.review-sauce-row textarea {
+  flex: 1;
+  border: 1px solid var(--sh-border);
+  border-radius: var(--sh-radius-sm);
+  padding: 6px 10px;
+  font: inherit;
+  font-size: 16px; /* stops iOS Safari zooming the page on focus */
+  color: var(--sh-text);
+  background: var(--sh-bg);
+  resize: none;
+  overflow: hidden;
+  field-sizing: content;
+  line-height: 1.4;
+}
+.review-sauce-row textarea:focus {
   outline: none;
   border-color: var(--sh-accent);
 }

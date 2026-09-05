@@ -1,0 +1,794 @@
+<title>Import Modal Bench</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* ─────────────────────────────────────────────────────────────
+   PAGE CHROME — cool workshop bench. Deliberately cold so the
+   warm SpiceHub screens read as the product, not the page.
+   ───────────────────────────────────────────────────────────── */
+:root{
+  --bench:#eceef1; --bench-2:#f7f8fa; --bench-line:#d2d7de;
+  --ink:#171a1f; --ink-2:#4a525e; --ink-3:#78818f;
+  --mark:#1f6feb; --flag:#b3261e; --ok:#1a6c3c; --rail:#dfe3e9;
+  --sans:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bench:#15181d; --bench-2:#1b1f26; --bench-line:#2b313a;
+    --ink:#e9ecf1; --ink-2:#a8b1bf; --ink-3:#78818f;
+    --mark:#589dff; --flag:#ff7b72; --ok:#56c47f; --rail:#252b33;
+  }
+}
+:root[data-theme="dark"]{
+  --bench:#15181d; --bench-2:#1b1f26; --bench-line:#2b313a;
+  --ink:#e9ecf1; --ink-2:#a8b1bf; --ink-3:#78818f;
+  --mark:#589dff; --flag:#ff7b72; --ok:#56c47f; --rail:#252b33;
+}
+
+*{box-sizing:border-box}
+body{margin:0;background:var(--bench);color:var(--ink);
+  font-family:var(--sans);font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1240px;margin:0 auto;padding:28px 22px 64px}
+
+.masthead{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end;justify-content:space-between;
+  padding-bottom:16px;border-bottom:2px solid var(--ink);margin-bottom:22px}
+.masthead h1{font-size:27px;line-height:1.15;margin:0 0 5px;letter-spacing:-.02em;font-weight:700;text-wrap:balance}
+.masthead p{margin:0;color:var(--ink-2);max-width:60ch;font-size:14px}
+.kicker{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-3);margin:0 0 8px}
+.pagetheme{font-family:var(--mono);font-size:11px;background:none;border:1px solid var(--bench-line);
+  color:var(--ink-2);padding:7px 12px;border-radius:6px;cursor:pointer;white-space:nowrap}
+.pagetheme:hover{border-color:var(--ink-3);color:var(--ink)}
+
+.surfaces{display:flex;gap:2px;margin-bottom:22px;border-bottom:1px solid var(--bench-line);flex-wrap:wrap}
+.surf{appearance:none;background:none;border:0;border-bottom:2px solid transparent;
+  font-family:var(--mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--ink-3);padding:10px 14px;cursor:pointer;margin-bottom:-1px}
+.surf:hover{color:var(--ink)}
+.surf[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--mark)}
+.surf .n{font-size:10px;opacity:.6;margin-left:6px}
+
+.bench{display:grid;grid-template-columns:minmax(225px,1fr) auto minmax(255px,1.15fr);gap:26px;align-items:start}
+@media (max-width:1080px){.bench{grid-template-columns:1fr;justify-items:center}
+  .col-notes,.col-opts{max-width:520px;width:100%}}
+
+.colhead{font-family:var(--mono);font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;
+  color:var(--ink-3);margin:0 0 10px;padding-bottom:6px;border-bottom:1px solid var(--bench-line)}
+.opts{display:flex;flex-direction:column;gap:7px}
+.opt{display:block;width:100%;text-align:left;background:var(--bench-2);cursor:pointer;
+  border:1px solid var(--bench-line);border-left:3px solid var(--bench-line);border-radius:3px;
+  padding:11px 13px;font-family:var(--sans);color:var(--ink);transition:border-color .18s}
+.opt:hover{border-color:var(--ink-3);border-left-color:var(--ink-3)}
+.opt[aria-pressed="true"]{border-left-color:var(--mark);border-color:var(--ink-3)}
+.opt[aria-pressed="true"] .opt-id{color:var(--mark)}
+.opt.is-current[aria-pressed="true"]{border-left-color:var(--flag)}
+.opt.is-current[aria-pressed="true"] .opt-id{color:var(--flag)}
+.opt-id{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);display:block;margin-bottom:3px}
+.opt-name{font-weight:600;font-size:14.5px;display:block;line-height:1.3}
+.opt-cost{font-family:var(--mono);font-size:11px;color:var(--ink-2);display:block;margin-top:5px}
+
+.col-device{display:flex;flex-direction:column;align-items:center;gap:12px}
+.devbar{display:flex;gap:6px;align-items:center}
+.tgl{font-family:var(--mono);font-size:11px;background:var(--bench-2);border:1px solid var(--bench-line);
+  color:var(--ink-2);padding:6px 11px;border-radius:5px;cursor:pointer}
+.tgl:hover{border-color:var(--ink-3);color:var(--ink)}
+.tgl[aria-pressed="true"]{background:var(--ink);color:var(--bench);border-color:var(--ink)}
+.tgl:disabled{opacity:.35;cursor:not-allowed}
+
+.device{width:375px;height:734px;border-radius:38px;padding:11px;background:#0d0f12;
+  box-shadow:0 22px 48px rgba(8,12,20,.34),0 0 0 1px rgba(255,255,255,.05) inset;flex:none}
+.screen{position:relative;width:100%;height:100%;border-radius:28px;overflow:hidden;
+  display:flex;flex-direction:column;background:var(--sh-bg);font-size:15px;color:var(--sh-text)}
+@media (max-width:420px){.device{width:100%;max-width:375px;height:700px}}
+
+/* SpiceHub app tokens — component-local namespace, same idea as ImportSheet.css */
+.screen{
+  --sh-bg:#fff8f0; --sh-card:#ffffff; --sh-surface:#f5f0e8; --sh-surface-2:#f5f0e8;
+  --sh-text:#2c2c2c; --sh-text-light:#666666; --sh-text-muted:#6d6d6d;
+  --sh-border:#e8e2d8; --sh-primary:#e65100; --sh-primary-light:#ff833a;
+  --sh-danger:#d32f2f; --sh-success:#2e7d32; --sh-warning:#f59e0b;
+  --sh-scrim:rgba(28,20,12,.44);
+}
+.screen[data-app="dark"]{
+  --sh-bg:#1f1a16; --sh-card:#2c2722; --sh-surface:#332e29; --sh-surface-2:#2a2520;
+  --sh-text:#f5f0e8; --sh-text-light:#b0a898; --sh-text-muted:#968e86;
+  --sh-border:#3e3730; --sh-primary:#66bb6a; --sh-primary-light:#81c784;
+  --sh-danger:#ef5350; --sh-success:#66bb6a; --sh-warning:#d97706;
+  --sh-scrim:rgba(0,0,0,.55);
+}
+
+.appbg{position:absolute;inset:0;background:var(--sh-bg);padding:20px 16px}
+.appbg-h{font-size:19px;font-weight:700;color:var(--sh-text);margin:22px 0 14px}
+.appbg-tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.appbg-tile{height:82px;border-radius:12px;background:var(--sh-card);border:1px solid var(--sh-border)}
+.scrim{position:absolute;inset:0;background:var(--sh-scrim)}
+
+.sheet{position:absolute;left:0;right:0;bottom:0;background:var(--sh-card);border-radius:22px 22px 0 0;
+  display:flex;flex-direction:column;box-shadow:0 -8px 32px rgba(0,0,0,.18);max-height:94%}
+.grab{width:38px;height:4px;border-radius:2px;background:var(--sh-border);margin:9px auto 0;flex:none}
+.sheet-head{display:flex;align-items:center;gap:10px;padding:12px 16px 10px;flex:none}
+.sheet-title{font-size:16.5px;font-weight:700;margin:0;flex:1;color:var(--sh-text)}
+.sheet-x{width:34px;height:34px;border-radius:50%;border:0;background:var(--sh-surface-2);
+  color:var(--sh-text-light);cursor:pointer;display:grid;place-items:center;flex:none;font-size:14px}
+.sheet-body{padding:4px 16px 14px;overflow-y:auto;display:flex;flex-direction:column;gap:14px;flex:1}
+.sheet-foot{flex:none;padding:11px 16px calc(14px + 4px);border-top:1px solid var(--sh-border);
+  background:var(--sh-card);display:flex;gap:9px;align-items:center}
+.sheet-foot .btn{margin:0}
+
+.seg{display:flex;gap:4px;background:var(--sh-surface-2);padding:3px;border-radius:9px;flex:none}
+.seg button{flex:1;border:0;background:none;font:inherit;font-size:13px;font-weight:600;
+  padding:7px 0;border-radius:7px;color:var(--sh-text-light);cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--sh-card);color:var(--sh-text);box-shadow:0 1px 3px rgba(0,0,0,.12)}
+
+.hint{font-size:13.5px;color:var(--sh-text-light);margin:0;line-height:1.5}
+.thumb{width:100%;height:126px;border-radius:12px;flex:none;position:relative;overflow:hidden;
+  background:linear-gradient(140deg,#c2703a,#7d3f1d 60%,#5a2c14)}
+.thumb::after{content:"";position:absolute;inset:0;
+  background:linear-gradient(to top,rgba(0,0,0,.55),transparent 62%)}
+.thumb-cap{position:absolute;left:12px;bottom:10px;z-index:1;color:#fff;font-size:12px;
+  font-family:var(--mono);opacity:.94}
+.btn{display:block;width:100%;border:0;border-radius:12px;padding:14px;font:inherit;font-size:15.5px;
+  font-weight:700;cursor:pointer;min-height:48px;background:var(--sh-primary);color:#fff}
+.btn.ghost{background:var(--sh-surface-2);color:var(--sh-text)}
+.btn.quiet{background:none;color:var(--sh-text-light);font-weight:600;font-size:14.5px;
+  border:1px solid var(--sh-border)}
+.btn.link{background:none;color:var(--sh-text-light);font-weight:600;font-size:14px;min-height:44px;padding:10px}
+.btn.danger{background:var(--sh-danger);color:#fff}
+.btn.w-auto{width:auto;flex:none;padding:14px 18px}
+.field{width:100%;border:1px solid var(--sh-border);border-radius:12px;background:var(--sh-surface-2);
+  color:var(--sh-text);font:inherit;font-size:16px;padding:13px;resize:none;font-family:inherit}
+.field::placeholder{color:var(--sh-text-muted)}
+.field.focused{border-color:var(--sh-primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--sh-primary) 16%,transparent)}
+
+/* ring spinner (real .ring-spinner geometry) */
+.ring{width:46px;height:46px;border-radius:50%;border:3px solid var(--sh-border);
+  border-top-color:var(--sh-primary);animation:spin 1s linear infinite}
+.ring.sm{width:26px;height:26px;border-width:2.5px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.statusline{text-align:center;font-size:15px;color:var(--sh-text);margin:16px 0 0}
+.statussub{text-align:center;font-size:13px;color:var(--sh-text-muted);margin:7px 0 0}
+
+/* timeline — mirrors ImportTimeline.jsx */
+.itl{display:flex;flex-direction:column;gap:14px;padding:6px 2px 0}
+.itl-rail{position:relative;height:34px}
+.itl-line{position:absolute;left:9%;right:9%;top:8px;height:2px;background:var(--sh-border);border-radius:2px}
+.itl-fill{position:absolute;left:9%;top:8px;height:2px;background:var(--sh-primary);border-radius:2px;
+  transition:width .5s cubic-bezier(.32,.72,0,1)}
+.itl-nodes{position:absolute;inset:0;display:flex;justify-content:space-between}
+.itl-node{width:33.33%;display:flex;flex-direction:column;align-items:center;gap:7px}
+.itl-dot{width:18px;height:18px;border-radius:50%;background:var(--sh-card);border:2px solid var(--sh-border);
+  display:grid;place-items:center;transition:.3s}
+.itl-node.done .itl-dot{background:var(--sh-primary);border-color:var(--sh-primary)}
+.itl-node.active .itl-dot{border-color:var(--sh-primary);transform:scale(1.18);
+  box-shadow:0 0 0 5px color-mix(in srgb,var(--sh-primary) 18%,transparent)}
+.itl-node.active .itl-core{width:7px;height:7px;border-radius:50%;background:var(--sh-primary);
+  animation:breathe 1.5s ease-in-out infinite}
+@keyframes breathe{0%,100%{opacity:1}50%{opacity:.35}}
+.itl-check{color:#fff;font-size:10px;font-weight:700;line-height:1}
+.itl-lab{font-size:11px;color:var(--sh-text-muted);font-weight:600}
+.itl-node.active .itl-lab,.itl-node.done .itl-lab{color:var(--sh-text)}
+.itl-spin{display:grid;place-items:center;padding:2px 0}
+.itl-status{display:flex;flex-direction:column;align-items:center;gap:7px;text-align:center}
+.itl-chip{font-family:var(--mono);font-size:10.5px;font-weight:600;padding:3px 9px;border-radius:20px;
+  background:color-mix(in srgb,var(--sh-primary) 14%,transparent);color:var(--sh-primary);white-space:nowrap}
+.itl-msg{margin:0;font-size:15px;color:var(--sh-text);line-height:1.45}
+.itl-sub{margin:0;font-size:12.5px;color:var(--sh-text-muted)}
+
+/* evidence receipt (parked option) */
+.ev{list-style:none;margin:0;padding:0}
+.ev li{display:flex;align-items:center;gap:11px;padding:11px 2px;font-size:14px;
+  border-bottom:1px solid var(--sh-border);color:var(--sh-text-muted)}
+.ev li:last-child{border-bottom:0}
+.ev li.got,.ev li.now{color:var(--sh-text)}
+.ev-mark{width:19px;height:19px;border-radius:50%;flex:none;display:grid;place-items:center;
+  border:2px solid var(--sh-border);font-size:10px;font-weight:700;color:#fff}
+.ev li.got .ev-mark{background:var(--sh-success);border-color:var(--sh-success)}
+.ev li.now .ev-mark{border-color:var(--sh-primary);animation:breathe 1.5s ease-in-out infinite}
+.ev li.skip .ev-mark{border-style:dashed}
+.ev-what{flex:1}
+.ev-val{font-family:var(--mono);font-size:11.5px;color:var(--sh-text-muted);font-variant-numeric:tabular-nums}
+
+.quiet-line{display:flex;align-items:center;gap:12px;padding:4px 0}
+.quiet-dot{width:8px;height:8px;border-radius:50%;background:var(--sh-primary);flex:none;
+  animation:breathe 1.4s ease-in-out infinite}
+.quiet-msg{font-size:15px;color:var(--sh-text);margin:0}
+.chipdemo{display:flex;align-items:center;gap:9px;background:var(--sh-card);border:1px solid var(--sh-border);
+  border-radius:24px;padding:8px 15px 8px 9px;box-shadow:0 4px 14px rgba(0,0,0,.14);
+  position:absolute;bottom:22px;left:16px;z-index:3}
+.chipdemo .ring{width:19px;height:19px;border-width:2px}
+.chipdemo span{font-size:13px;font-weight:600;color:var(--sh-text)}
+
+/* miss */
+.callout{border-left:3px solid var(--sh-warning);background:var(--sh-surface-2);padding:12px 13px;border-radius:0 9px 9px 0}
+.callout p{margin:0;font-size:13.5px;color:var(--sh-text);line-height:1.5}
+.callout strong{font-weight:700}
+
+/* ── review, OG two-tab layout ── */
+.rv-title{font-size:20px;font-weight:700;margin:0;color:var(--sh-text);line-height:1.25;text-wrap:balance}
+.trust{font-size:13px;color:var(--sh-text-light);margin:5px 0 0}
+.rvtabs{display:grid;grid-template-columns:1fr 1fr;gap:8px;flex:none}
+.rvtab{display:flex;flex-direction:row;align-items:center;justify-content:center;gap:7px;
+  padding:0 10px;height:42px;border-radius:10px;border:1px solid var(--sh-border);
+  background:var(--sh-surface-2);cursor:pointer;font:inherit;color:var(--sh-text-light);position:relative}
+.rvtab .lab{font-size:13.5px;font-weight:700}
+.rvtab .cnt{font-family:var(--mono);font-size:11px;color:var(--sh-text-muted);font-variant-numeric:tabular-nums}
+.rvtab[aria-selected="true"]{background:var(--sh-card);border-color:var(--sh-primary);color:var(--sh-text);
+  box-shadow:0 0 0 1px var(--sh-primary) inset}
+.rvtab[aria-selected="true"] .cnt{color:var(--sh-primary)}
+.rvtab .ico{opacity:.9;flex:none}
+.rvtab .warn{position:absolute;top:6px;right:7px;width:7px;height:7px;border-radius:50%;background:var(--sh-warning)}
+
+/* kind chip — small dropdown, the OG correction affordance */
+.kindwrap{position:relative;align-self:flex-start;flex:none}
+.kindchip{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border-radius:16px;
+  border:1px solid var(--sh-border);background:var(--sh-surface-2);color:var(--sh-text);
+  font:inherit;font-size:12.5px;font-weight:700;cursor:pointer}
+.kindchip .cv{color:var(--sh-text-muted);font-size:10px;line-height:1}
+.kindmenu{position:absolute;top:34px;left:0;z-index:6;background:var(--sh-card);border:1px solid var(--sh-border);
+  border-radius:11px;box-shadow:0 8px 24px rgba(0,0,0,.2);padding:5px;min-width:172px}
+.kindmenu button{display:flex;align-items:center;gap:9px;width:100%;border:0;background:none;font:inherit;
+  font-size:13.5px;font-weight:600;color:var(--sh-text);padding:10px;border-radius:8px;cursor:pointer;text-align:left}
+.kindmenu button[aria-pressed="true"]{background:var(--sh-surface-2)}
+.kindmenu .sub{display:block;font-size:11px;font-weight:500;color:var(--sh-text-muted);margin-top:1px}
+
+.slipped{display:flex;align-items:center;gap:10px;background:color-mix(in srgb,var(--sh-warning) 13%,transparent);
+  border-radius:11px;padding:10px 12px}
+.slipped p{margin:0;font-size:13px;color:var(--sh-text);flex:1;line-height:1.42}
+.slipped button{flex:none;border:0;background:var(--sh-card);color:var(--sh-text);font:inherit;font-size:12.5px;
+  font-weight:700;padding:8px 11px;border-radius:8px;cursor:pointer;border:1px solid var(--sh-border)}
+
+.oglist{display:flex;flex-direction:column;position:relative}
+.ogrow{display:flex;align-items:flex-start;gap:9px;padding:7px 0;border-bottom:1px solid var(--sh-border);
+  position:relative}
+.ogrow:last-child{border-bottom:0}
+.oghandle,.ogmenu{width:28px;height:28px;border-radius:50%;background:var(--sh-surface-2);flex:none;
+  display:grid;place-items:center;color:var(--sh-text-muted);font-size:13px;border:0;cursor:pointer;margin-top:2px}
+.ogmenu[aria-expanded="true"]{background:var(--sh-primary);color:#fff}
+.ogfield{flex:1;min-width:0;display:flex;align-items:flex-start;gap:7px;padding-top:5px}
+.ogq{font-family:var(--mono);font-size:13px;color:var(--sh-text-muted);font-variant-numeric:tabular-nums;
+  flex:none;padding-top:1px}
+/* auto-expanding textarea — plain text until touched, same as autoExpandTextarea.js */
+.ogta{flex:1;min-width:0;border:1px solid transparent;background:none;color:var(--sh-text);font:inherit;
+  font-size:16px;line-height:1.42;resize:none;overflow:hidden;padding:1px 6px;margin:-1px -6px;
+  border-radius:7px;font-family:inherit}
+.ogta:focus{outline:none;border-color:var(--sh-primary);background:var(--sh-surface-2)}
+.flagtag{display:inline-block;font-family:var(--mono);font-size:9.5px;font-weight:600;color:var(--sh-warning);
+  border:1px solid var(--sh-warning);border-radius:4px;padding:1px 5px;flex:none;margin-top:5px}
+.addrow{border:1px dashed var(--sh-border);background:none;color:var(--sh-text-light);font:inherit;
+  font-size:13.5px;font-weight:600;padding:11px;border-radius:11px;cursor:pointer;width:100%;margin-top:9px}
+
+/* row overflow menu — the real item list */
+.rowmenu{position:absolute;right:0;top:34px;z-index:7;background:var(--sh-card);border:1px solid var(--sh-border);
+  border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.24);padding:5px;width:212px}
+.rowmenu button{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;font:inherit;
+  font-size:13.5px;color:var(--sh-text);padding:9px 10px;border-radius:8px;cursor:pointer;text-align:left}
+.rowmenu button:hover{background:var(--sh-surface-2)}
+.rowmenu button.danger{color:var(--sh-danger)}
+.rowmenu hr{border:0;border-top:1px solid var(--sh-border);margin:4px 6px}
+.rowmenu svg{flex:none;opacity:.75}
+
+.confirmbar{display:flex;align-items:center;gap:9px;width:100%}
+.confirmbar .ctext{font-size:14.5px;font-weight:700;color:var(--sh-text);flex:1}
+
+/* notes column */
+.note{background:var(--bench-2);border:1px solid var(--bench-line);border-radius:3px;padding:15px 16px}
+.note h3{margin:0 0 9px;font-size:15.5px;font-weight:700;line-height:1.3}
+.note p{margin:0 0 11px;font-size:14px;color:var(--ink-2);line-height:1.6}
+.note p:last-child{margin-bottom:0}
+.note strong{color:var(--ink);font-weight:600}
+.note code{font-family:var(--mono);font-size:12px;background:var(--rail);padding:1px 5px;border-radius:3px;
+  color:var(--ink);word-break:break-all}
+.verdict{display:flex;align-items:baseline;gap:8px;font-family:var(--mono);font-size:11px;letter-spacing:.09em;
+  text-transform:uppercase;margin:0 0 13px;padding-bottom:11px;border-bottom:1px solid var(--bench-line);flex-wrap:wrap}
+.tag{padding:2px 7px;border-radius:3px;font-weight:600}
+.tag.bug{background:color-mix(in srgb,var(--flag) 15%,transparent);color:var(--flag)}
+.tag.cheap{background:color-mix(in srgb,var(--ok) 15%,transparent);color:var(--ok)}
+.tag.mid{background:color-mix(in srgb,var(--mark) 15%,transparent);color:var(--mark)}
+.copytable{width:100%;border-collapse:collapse;margin:0 0 12px;font-size:12.5px;font-family:var(--mono);
+  display:block;overflow-x:auto}
+.copytable th{text-align:left;font-weight:500;font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--ink-3);padding:0 12px 5px 0;border-bottom:1px solid var(--bench-line);white-space:nowrap}
+.copytable td{padding:6px 12px 6px 0;border-bottom:1px solid var(--bench-line);color:var(--ink-3);vertical-align:top}
+.copytable td:last-child{color:var(--ink);padding-right:0}
+.copytable tr:last-child td{border-bottom:0}
+.anchor{font-family:var(--mono);font-size:11.5px;color:var(--ink-3);margin-top:13px;padding-top:11px;
+  border-top:1px solid var(--bench-line);line-height:1.7}
+.anchor b{color:var(--ink-2);font-weight:500}
+
+footer{margin-top:34px;padding-top:16px;border-top:1px solid var(--bench-line);
+  font-size:13px;color:var(--ink-3);max-width:78ch}
+footer p{margin:0 0 7px}
+footer code{font-family:var(--mono);font-size:11.5px}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;
+    transition-duration:.001ms!important}
+}
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <div>
+      <p class="kicker">SpiceHub PWA · Import surface</p>
+      <h1>Import Modal Bench</h1>
+      <p>Three surfaces, side by side with what ships today. Every screen uses the real <code style="font-family:var(--mono);font-size:12px">App.css</code> tokens, so the orange/green hue flip between themes is the app's, not a mockup choice.</p>
+    </div>
+    <button class="pagetheme" id="pagetheme" type="button">Page: auto</button>
+  </header>
+
+  <div class="surfaces" role="tablist" aria-label="Import surface">
+    <button class="surf" role="tab" data-surface="working" aria-selected="true">Working<span class="n">4</span></button>
+    <button class="surf" role="tab" data-surface="miss" aria-selected="false">Miss<span class="n">3</span></button>
+    <button class="surf" role="tab" data-surface="review" aria-selected="false">Review<span class="n">2</span></button>
+  </div>
+
+  <div class="bench">
+    <div class="col-opts">
+      <p class="colhead">Options</p>
+      <div class="opts" id="opts"></div>
+    </div>
+
+    <div class="col-device">
+      <div class="devbar">
+        <button class="tgl" id="apptheme" type="button" aria-pressed="false">Dark</button>
+        <button class="tgl" id="play" type="button">Play progress</button>
+        <button class="tgl" id="discard" type="button">Show discard</button>
+      </div>
+      <div class="device"><div class="screen" id="screen" data-app="light"></div></div>
+    </div>
+
+    <div class="col-notes">
+      <p class="colhead">Read-out</p>
+      <div class="note" id="note"></div>
+    </div>
+  </div>
+
+  <footer>
+    <p><strong>Reading this bench.</strong> Options marked <em>ships today</em> are traced from the current source, not imagined — the annotation names the file and line. Everything else is a proposal, costed against the overhaul plan's slices.</p>
+    <p><strong>No engine words reach the screen.</strong> The engine keeps saying <code>apify: caption (847 chars)</code> in the console where it's useful; the display layer decides what a person reads. That split already exists in <code>importCopy.js</code> — the chosen options extend it rather than inventing a second system.</p>
+    <p>Phone frame is 375&nbsp;×&nbsp;734, the app's own bottom-sheet geometry. Type inside the phone is a stand-in; SpiceHub self-hosts Press Start 2P for display and a system stack for body, neither of which loads here.</p>
+  </footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var esc=function(s){return String(s).replace(/[&<>"]/g,function(c){
+    return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c];});};
+
+  /* icons — inline, 20px, currentColor */
+  var ICO={
+    carrot:'<svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 21.5c1.5 1.5 5 .5 8-2.5s4-6.5 2.5-8-5-.5-8 2.5-4 6.5-2.5 8Z"/><path d="M13 11c1.5-1.5 3-4 2-6"/><path d="M15 8c2-1 4-1 5 0"/></svg>',
+    steps:'<svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h4"/></svg>',
+    book:'<svg class="ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>',
+    wine:'<svg class="ico" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 22h8"/><path d="M12 15v7"/><path d="M7 2h10l-1 7a4 4 0 0 1-8 0Z"/><path d="M6.8 8h10.4"/></svg>'
+  };
+  function ic(d,sz){ return '<svg width="' + (sz||16) + '" height="' + (sz||16) + '" viewBox="0 0 24 24"'
+    + ' fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"'
+    + ' aria-hidden="true">' + d + '</svg>'; }
+  ICO.up    = ic('<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>');
+  ICO.down  = ic('<path d="M12 5v14"/><path d="m19 12-7 7-7-7"/>');
+  ICO.note  = ic('<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.4 2.6a2 2 0 0 1 3 3L16 11l-4 1 1-4Z"/>');
+  ICO.sauce = ic('<path d="M7 2v9a3 3 0 0 0 6 0V2"/><path d="M10 2v20"/><path d="M17 2v20"/><path d="M21 8h-4"/>');
+  ICO.plus  = ic('<path d="M12 5v14"/><path d="M5 12h14"/>');
+  ICO.trash = ic('<path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>');
+  ICO.bookSm = ic('<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/>', 14);
+  ICO.wineSm = ic('<path d="M8 22h8"/><path d="M12 15v7"/><path d="M7 2h10l-1 7a4 4 0 0 1-8 0Z"/>', 14);
+
+  function appBg(){
+    return '<div class="appbg"><div class="appbg-h">Meals</div>'
+      + '<div class="appbg-tiles"><div class="appbg-tile"></div><div class="appbg-tile"></div>'
+      + '<div class="appbg-tile"></div><div class="appbg-tile"></div></div></div><div class="scrim"></div>';
+  }
+  function sheet(title, body, o){
+    o = o || {};
+    return appBg() + (o.chip || '')
+      + '<div class="sheet"' + (o.style ? ' style="' + o.style + '"' : '') + '>'
+      +   '<div class="grab"></div>'
+      +   '<div class="sheet-head"><h2 class="sheet-title">' + title + '</h2>'
+      +     '<button class="sheet-x" type="button" aria-label="Close">&#10005;</button></div>'
+      +   '<div class="sheet-body">' + body + '</div>'
+      +   (o.foot ? '<div class="sheet-foot">' + o.foot + '</div>' : '')
+      + '</div>';
+  }
+  function segmented(a){
+    return '<div class="seg" role="group" aria-label="Kind">'
+      + '<button type="button" aria-pressed="' + (a === 'meal') + '">Meal</button>'
+      + '<button type="button" aria-pressed="' + (a === 'drink') + '">Drink</button></div>';
+  }
+  function thumb(c){ return '<div class="thumb"><span class="thumb-cap">' + esc(c) + '</span></div>'; }
+
+  /* discard confirm — the same footer the sheet already renders */
+  function discardFoot(){
+    return '<div class="confirmbar"><span class="ctext">Throw this one out?</span>'
+      + '<button class="btn quiet w-auto" type="button">Keep</button>'
+      + '<button class="btn danger w-auto" type="button">Discard</button></div>';
+  }
+
+  /* ── progression script ───────────────────────────────────
+     raw  = what the engine emits (console only)
+     msg  = what a person reads
+     chip = where it came from, in plain words                */
+  var STEPS = [
+    { stage:0, chip:'',               msg:'Sniffing out the recipe…',
+      raw:'Trying multiple extraction methods…',       ev:['now','wait','wait','wait'] },
+    { stage:0, chip:'from the post',  msg:'Got the post — lifting the words out',
+      raw:'apify: caption (847 chars)',                ev:['got','now','wait','wait'] },
+    { stage:1, chip:'from the post',  msg:'Reading the caption, comments and all',
+      raw:'ig-json: caption (847 chars) + 3 comments', ev:['got','got','now','wait'] },
+    { stage:1, chip:'from the video', msg:'Not much written down — having a listen',
+      raw:'Checking video subtitles / transcribing…',  ev:['got','got','got','now'] },
+    { stage:2, chip:'',               msg:'Sorting ingredients from steps…',
+      raw:'✨ Structuring recipe with Gemini…',         ev:['got','got','got','got'] },
+    { stage:2, chip:'',               msg:'Plated up.', done:true,
+      raw:'Recipe structured (confidence 0.81)',       ev:['got','got','got','got'] }
+  ];
+  var TODAY = ['Trying another way to read it…','Grabbing the recipe caption…',
+    'Grabbing the recipe caption…','Listening for a spoken recipe…',
+    'Sorting ingredients from instructions…','Sorting ingredients from instructions…'];
+  var EV_ROWS=[{what:'Caption',val:'847 chars'},{what:'Cover photo',val:'1 of 4'},
+    {what:'Comments',val:'3 kept'},{what:'Spoken steps',val:'0:41 audio'}];
+  var step = 2;
+
+  function timeline(s){
+    var labels = ['Fetching','Understanding','Polishing'];
+    var fill = s.done ? 100 : [10,47,82][s.stage];
+    var nodes = labels.map(function(l,i){
+      var done = s.done || i < s.stage, active = !s.done && i === s.stage;
+      var inner = done ? '<span class="itl-check">&#10003;</span>'
+                       : (active ? '<span class="itl-core"></span>' : '');
+      return '<div class="itl-node ' + (done ? 'done' : active ? 'active' : '') + '">'
+           + '<div class="itl-dot">' + inner + '</div><span class="itl-lab">' + l + '</span></div>';
+    }).join('');
+    var spin = s.done ? '' : '<div class="itl-spin"><div class="ring"></div></div>';
+    var chip = s.chip ? '<span class="itl-chip">' + esc(s.chip) + '</span>' : '';
+    var sub  = (step >= 3 && !s.done)
+      ? '<p class="itl-sub">Still going — some posts hide the recipe well.</p>' : '';
+    return '<div class="itl"><div class="itl-rail"><div class="itl-line"></div>'
+      + '<div class="itl-fill" style="width:' + fill + '%"></div>'
+      + '<div class="itl-nodes">' + nodes + '</div></div>'
+      + spin
+      + '<div class="itl-status">' + chip
+      + '<p class="itl-msg">' + esc(s.msg) + '</p>' + sub + '</div></div>';
+  }
+  function receipt(s){
+    return '<ul class="ev">' + EV_ROWS.map(function(r,i){
+      var st = s.ev[i], cls = st === 'got' ? 'got' : st === 'now' ? 'now' : 'skip';
+      return '<li class="' + cls + '"><span class="ev-mark">' + (st === 'got' ? '&#10003;' : '') + '</span>'
+        + '<span class="ev-what">' + esc(r.what) + '</span>'
+        + '<span class="ev-val">' + esc(st === 'got' ? r.val : st === 'now' ? 'looking…' : '') + '</span></li>';
+    }).join('') + '</ul>';
+  }
+
+  /* ── review pieces ───────────────────────────────────────── */
+  var ING = [
+    ['2 cups','basil leaves, packed'],
+    ['1','lemon, halved and charred'],
+    ['⅓ cup','pine nuts, toasted'],
+    ['—','parmesan, grated', true],
+    ['2','garlic cloves'],
+    ['½ cup','olive oil']
+  ];
+  var STP = [
+    ['1','Char the lemon halves cut-side down in a dry pan, 3–4 minutes.'],
+    ['2','Blitz basil, pine nuts and garlic to a coarse paste.'],
+    ['3','¼ cup grated pecorino', true],
+    ['4','Stream in the oil, then squeeze in the charred lemon.']
+  ];
+  function rowMenu(inIng){
+    var m = '<div class="rowmenu" role="menu">'
+      + '<button role="menuitem" type="button">' + ICO.up + 'Move up</button>'
+      + '<button role="menuitem" type="button">' + ICO.down + 'Move down</button>'
+      + '<button role="menuitem" type="button">' + (inIng ? ICO.steps : ICO.carrot)
+      +   'Move to ' + (inIng ? 'Steps' : 'Ingredients') + '</button>'
+      + '<hr>'
+      + '<button role="menuitem" type="button">' + ICO.note + 'Move to Notes</button>'
+      + '<button role="menuitem" type="button">' + ICO.sauce + 'Move to &ldquo;Pesto base&rdquo;</button>'
+      + '<button role="menuitem" type="button">' + ICO.plus + 'Move to new sauce/add-on</button>'
+      + '<hr>'
+      + '<button role="menuitem" type="button" class="danger">' + ICO.trash + 'Remove</button></div>';
+    return m;
+  }
+  function rows(list){
+    var inIng = (list === ING);
+    return '<div class="oglist">' + list.map(function(r,i){
+      var open = (openRow === (inIng ? 'i' : 's') + i);
+      return '<div class="ogrow">'
+        + '<button class="oghandle" type="button" aria-label="Reorder">&#8942;&#8942;</button>'
+        + '<div class="ogfield"><span class="ogq">' + esc(r[0]) + '</span>'
+        +   '<textarea class="ogta" rows="1" aria-label="Edit line">' + esc(r[1]) + '</textarea>'
+        +   (r[2] ? '<span class="flagtag">' + (inIng ? 'no amount' : 'ingredient?') + '</span>' : '')
+        + '</div>'
+        + '<button class="ogmenu" type="button" aria-label="Row options" aria-expanded="' + open + '"'
+        +   ' data-row="' + (inIng ? 'i' : 's') + i + '">&#8943;</button>'
+        + (open ? rowMenu(inIng) : '') + '</div>';
+    }).join('') + '</div>';
+  }
+  function tabs(active, warn){
+    function t(key,label,count,icon,flag){
+      return '<button class="rvtab" type="button" role="tab" aria-selected="' + (active === key) + '"'
+        + ' data-rvtab="' + key + '">' + icon
+        + '<span class="lab">' + label + '</span><span class="cnt">' + count + '</span>'
+        + (flag ? '<span class="warn"></span>' : '') + '</button>';
+    }
+    return '<div class="rvtabs" role="tablist">'
+      + t('ingredients','Ingredients', ING.length, ICO.carrot, false)
+      + t('directions','Steps', STP.length, ICO.steps, warn) + '</div>';
+  }
+  /* kind chip — small dropdown. Kind picks the shelf; there is no separate
+     destination control, because there was never a real choice to make. */
+  function kindChip(){
+    var isDrink = rvKind === 'drink';
+    var menu = kindOpen
+      ? '<div class="kindmenu" role="menu">'
+        + '<button role="menuitem" type="button" data-kind="meal" aria-pressed="' + !isDrink + '">'
+        +   ICO.book + '<span>Meal<span class="sub">Saves to Meal Library</span></span></button>'
+        + '<button role="menuitem" type="button" data-kind="drink" aria-pressed="' + isDrink + '">'
+        +   ICO.wine + '<span>Drink<span class="sub">Saves to Bar Library</span></span></button></div>'
+      : '';
+    return '<div class="kindwrap"><button class="kindchip" type="button" id="kindchip"'
+      + ' aria-haspopup="menu" aria-expanded="' + kindOpen + '">'
+      + (isDrink ? ICO.wineSm : ICO.bookSm)
+      + (isDrink ? 'Drink' : 'Meal') + '<span class="cv">&#9660;</span></button>' + menu + '</div>';
+  }
+  var rvTab = 'ingredients', rvKind = 'meal', kindOpen = false, openRow = null;
+
+  function reviewBody(salvage){
+    var head = '<div><h3 class="rv-title">Charred Lemon &amp; Basil Pesto</h3>'
+      + '<p class="trust">' + (salvage
+          ? 'Pieced together from the caption and 3 comments — worth a quick look.'
+          : 'From the caption.') + '</p></div>';
+    var slip = (salvage && rvTab === 'directions')
+      ? '<div class="slipped"><p>Looks like an ingredient slipped into the steps.</p>'
+        + '<button type="button">Move it</button></div>' : '';
+    var list = rvTab === 'ingredients' ? rows(ING) : rows(STP);
+    var add  = '<button class="addrow" type="button">+ Add '
+             + (rvTab === 'ingredients' ? 'an ingredient' : 'a step') + '</button>';
+    return thumb('instagram.com/reel/C8xK…') + kindChip() + head
+      + tabs(rvTab, salvage) + slip + list + add;
+  }
+  function saveLabel(){ return rvKind === 'drink' ? 'Save to Bar Library' : 'Save to Meal Library'; }
+
+  /* ── renderers ───────────────────────────────────────────── */
+  var RENDER = {
+    'working:current': function(){
+      return sheet('Importing', kindChip() +thumb('instagram.com/reel/C8xK…')
+        + '<div style="display:grid;place-items:center;margin-top:26px"><div class="ring"></div></div>'
+        + '<p class="statusline">' + esc(TODAY[step]) + '</p>'
+        + (step >= 3 ? '<p class="statussub">This one’s taking a moment — trying another way.</p>' : '')
+        + '<div style="height:30px"></div>');
+    },
+    'working:a': function(){
+      return sheet('Importing', kindChip() +thumb('instagram.com/reel/C8xK…')
+        + timeline(STEPS[step]) + '<div style="height:6px"></div>',
+        { foot: showDiscard ? discardFoot()
+            : '<button class="btn quiet" type="button">Cancel import</button>' });
+    },
+    'working:b': function(){
+      var s = STEPS[step];
+      return sheet('Importing', kindChip() +thumb('instagram.com/reel/C8xK…')
+        + '<p class="hint" style="margin-top:2px">' + esc(s.msg) + '</p>' + receipt(s),
+        { foot:'<button class="btn quiet" type="button">Cancel</button>'
+             + '<button class="btn ghost" type="button">Keep this running</button>' });
+    },
+    'working:c': function(){
+      var s = STEPS[step];
+      return sheet('Importing', thumb('instagram.com/reel/C8xK…')
+        + '<div class="quiet-line"><span class="quiet-dot"></span>'
+        + '<p class="quiet-msg">' + esc(s.msg) + '</p></div>',
+        { chip: step >= 3 ? '<div class="chipdemo"><div class="ring sm"></div><span>Importing…</span></div>' : '',
+          style:'max-height:60%',
+          foot:'<button class="btn quiet" type="button">Cancel</button>'
+             + '<button class="btn ghost" type="button">Keep this running</button>' });
+    },
+
+    'miss:current': function(){
+      return sheet('Import', segmented('meal')
+        + '<p class="hint">We got the post, but couldn’t turn it into a recipe. '
+        + 'The text is below — edit it or try again.</p>'
+        + '<textarea class="field" rows="7">Save this one!! ⬇️\n\nFull recipe on the blog '
+        + '(link in bio) — you guys have been asking for this pesto for MONTHS 🧄✨\n\n'
+        + '#pasta #dinnerideas #easyrecipes</textarea>'
+        + '<button class="btn" type="button">Try again</button>');
+    },
+    'miss:b': function(){
+      return sheet('Import', segmented('meal')
+        + '<div class="callout"><p><strong>The recipe’s on their blog.</strong> '
+        + 'The post just points at &ldquo;link in bio&rdquo; — there’s nothing here to cook from yet.</p></div>'
+        + '<textarea class="field focused" rows="3" placeholder="Paste the blog link…"></textarea>'
+        + '<button class="btn" type="button">Follow that link</button>'
+        + '<button class="btn link" type="button">Paste the recipe text instead</button>',
+        { foot: showDiscard ? discardFoot()
+            : '<button class="btn quiet" type="button">Give up on this one</button>' });
+    },
+    'miss:a': function(){
+      return sheet('Import', segmented('meal')
+        + '<p class="hint"><strong style="color:var(--sh-text)">The post links out to a blog we couldn’t reach.</strong> '
+        + 'Here’s the caption we did get — edit it and we’ll build the recipe from that.</p>'
+        + '<textarea class="field" rows="6">Save this one!! ⬇️\n\nFull recipe on the blog '
+        + '(link in bio) — you guys have been asking for this pesto for MONTHS 🧄✨</textarea>'
+        + '<button class="btn" type="button">Use this text</button>',
+        { foot:'<button class="btn quiet" type="button">Give up on this one</button>' });
+    },
+
+    'review:current': function(){
+      return sheet('Review', reviewBody(false),
+        { foot: showDiscard ? discardFoot()
+            : '<button class="btn" type="button">' + saveLabel() + '</button>' });
+    },
+    'review:a': function(){
+      return sheet('Review', reviewBody(true),
+        { foot: showDiscard ? discardFoot()
+            : '<button class="btn quiet w-auto" type="button">Discard</button>'
+            + '<button class="btn" type="button">' + saveLabel() + '</button>' });
+    }
+  };
+
+  /* ── option + note data ──────────────────────────────────── */
+  var DATA = {
+    working:{ opts:[
+      { id:'current', tag:'Ships today', name:'Ring spinner', cost:'—', current:true, verdict:['bug','No sense of travel'],
+        note:'<p>A 46px ring, one status line, and after 8 seconds <em>&ldquo;This one’s taking a moment — trying another way.&rdquo;</em> Every import looks identical, whether it lands in 1.2 seconds off a blog’s own recipe data or 41 seconds through audio.</p>'
+          + '<p><strong>The wording was never the problem.</strong> Press Play and read the line — <code>importCopy.js</code> already rewrites engine output, so <code>apify: caption (847 chars)</code> reaches the user as <em>&ldquo;Grabbing the recipe caption…&rdquo;</em>. That humanizer has been in place since the June CX pass.</p>'
+          + '<p><strong>The problem is that nothing accumulates.</strong> One line replaces another with no sense of travel, so a long import reads as a stalled one. Meanwhile <code>ImportTimeline.jsx</code> — 145 lines, spring-animated rail, its own CSS, a passing test file — sits unrendered while <code>ImportSheet</code> computes the state it needs in <strong>ten places</strong> and reads it in <strong>zero</strong>.</p>',
+        anchor:'<b>ImportSheet.jsx:1226–1282</b> — loading branch draws <code>.ring-spinner</code><br><b>ImportSheet.jsx:239, 574…915</b> — ten <code>setTimeline</code> calls, no reader<br><b>importCopy.js:13</b> — humanizer, wired at <code>ImportSheet.jsx:581</code>' },
+
+      { id:'a', tag:'Chosen', name:'Rail + spinner, plain language', cost:'~25 lines + a copy map', verdict:['cheap','Nearly free'],
+        note:'<p>Both, on purpose. The rail carries <strong>how far</strong>; the ring underneath carries <strong>still alive</strong>. A three-node rail alone goes visually static between stages — and Understanding is where the long waits happen. The spinner covers that gap, then retires at <em>Plated up.</em> when the checkmarks land.</p>'
+          + '<p><strong>Stage names stay.</strong> Fetching / Understanding / Polishing, unchanged.</p>'
+          + '<p><strong>The chip becomes provenance, not plumbing.</strong> <code>CHIP_RULES</code> emits <code>Apify</code>, <code>JSON-LD</code>, <code>Gemini</code> — and those strings <em>are</em> asserted by the corpus. So leave <code>mapProgress</code> alone and humanize at the render boundary, the same split <code>importCopy.js</code> already uses. The chip then answers a question people actually have: where did this come from.</p>'
+          + '<table class="copytable"><thead><tr><th>Chip today</th><th>Shows as</th></tr></thead><tbody>'
+          + '<tr><td>Apify · IG data · Embed</td><td>from the post</td></tr>'
+          + '<tr><td>JSON-LD · SpiceHub server</td><td>from the page</td></tr>'
+          + '<tr><td>Reddit</td><td>from the thread</td></tr>'
+          + '<tr><td>Video audio</td><td>from the video</td></tr>'
+          + '<tr><td>Gemini</td><td><em>no chip</em></td></tr></tbody></table>'
+          + '<p>Dropping the Gemini chip is deliberate: it names a step, not a source, and a badge reading &ldquo;AI&rdquo; over someone’s dinner invites a question the screen can’t answer.</p>'
+          + '<p><strong>Cancel is always there</strong> — a real footer button, not just the corner ✕. Press <em>Show discard</em> to see what back or ✕ raises.</p>'
+          + '<p><strong>Two real leaks to close.</strong> The photo and transcribe paths pass the raw engine string straight to <code>setProgressMsg</code> — only the URL path is humanized — and two messages hardcode the word <em>transcribing</em>.</p>',
+        anchor:'<b>Ships independent of the engine slices</b><br><b>ImportSheet.jsx:614, 822, 902</b> — raw <code>msg</code>, needs <code>humanizeImportStatus()</code><br><b>ImportSheet.jsx:608, 895</b> — hardcoded &ldquo;transcribing video audio&rdquo;' },
+
+      { id:'b', tag:'Parked', name:'Evidence receipt', cost:'Lands with Slice 4', verdict:['mid','Waits on the pack'],
+        note:'<p>Stop narrating stages, start showing the ContextPack fill up. Caption, cover photo, comments, spoken steps — each ticks over with what it actually got.</p><p><strong>Dependency:</strong> the forks have to emit into one pack before the pack can be displayed. Today <code>acquireInstagramPack</code> returns a pack and the parser immediately shreds it into thirteen locals. This is the visible payoff of Task 4.</p>',
+        anchor:'<b>Blocked by</b> plan Task 4 — &ldquo;the pack survives&rdquo;<br><b>recipeParser.js:5059</b> — pack drained into 13 <code>captured*</code> locals' },
+
+      { id:'c', tag:'Parked', name:'Quiet line, background by default', cost:'Needs a chip surface', verdict:['mid','New infrastructure'],
+        note:'<p>One sentence, one dot, and a real way out. Press Play — the chip appears at step 4, which is where the current design starts losing people.</p><p><strong>The cost is not the visual.</strong> A background chip must survive tab switches and Capacitor backgrounding, and be noticeable enough that a finished import isn’t silently lost.</p>',
+        anchor:'<b>New:</b> persistent chip + abort plumbing<br>Pairs with the <code>AbortSignal</code> threading in plan Task 4' }
+    ]},
+
+    miss:{ opts:[
+      { id:'current', tag:'Ships today', name:'Recovery textarea', cost:'—', current:true, verdict:['bug','Discards the edit'],
+        note:'<p>The copy invites an edit — <em>&ldquo;edit it or try again&rdquo;</em> — then throws it away.</p><p><strong>Try again</strong> calls <code>setRecoveryText(\'\')</code> and re-runs <code>handleUrlImport(importUrl)</code> against the same URL. Whatever was typed is never read. Worse, the retry hits the 7-day cache, which was written <em>even though the quality gate failed</em> — so the second attempt returns the same nothing, faster.</p><p>There is also no discard here: the only way out is the corner ✕.</p>',
+        anchor:'<b>ImportSheet.jsx:1305–1315</b> — clears then re-runs the URL<br><b>recipeParser.js:5302, 5536–5571</b> — <code>setCachedImport</code> fires after a failed gate' },
+
+      { id:'b', tag:'Chosen', name:'Diagnosed ask', cost:'Slice 7 + gate reasons', verdict:['mid','Best ceiling'],
+        note:'<p>The gate already knows <em>why</em> it came up empty. Spend that: one sentence naming the cause, and one pre-focused field matching it. A link-in-bio miss asks for the blog URL — not for the caption you already have and already can’t use.</p>'
+          + '<p><strong>Four variants to write and keep true:</strong> recipe is on their blog · the post has no caption at all · the photo was too dark to read · you’re offline, it’s queued. A wrong diagnosis is worse than a generic one, so this only lands once <code>gateRecipe()</code> returns real reasons instead of today’s log strings.</p>'
+          + '<p>Pasting the text stays available as the secondary — it works for every source and never opens a second importer. <strong>Give up on this one</strong> is the third way out, so no one is stuck on a dead end.</p>'
+          + '<p>Build order: ship the plumbing with one reason (link-in-bio, the most common Instagram miss), then add the other three as the gate learns to name them.</p>',
+        anchor:'<b>Needs</b> <code>gateRecipe()</code> reasons from plan Task 7<br>Never mounts BrowserAssist — Miss stays one surface' },
+
+      { id:'a', tag:'Parked', name:'Paste-first, generic', cost:'Slice 7', verdict:['cheap','Fixes the bug only'],
+        note:'<p>The minimum honest fix: the button says <strong>Use this text</strong> and actually sends <code>{ text: recoveryText }</code> through the engine.</p><p>Superseded by the diagnosed ask, but worth keeping in view — it is the fallback for any reason the gate <em>can’t</em> name, and it is the first commit either way.</p>',
+        anchor:'<b>Plan Task 7, step 7</b><br>Also requires the gate to stop caching on <code>empty</code>' }
+    ]},
+
+    review:{ opts:[
+      { id:'current', tag:'Ships today', name:'One review for everything', cost:'—', current:true, verdict:['bug','Saves bait'],
+        note:'<p>The two-tab layout is the app’s own and it stays. What doesn’t work is that Review looks identical whether the extraction was excellent or barely a recipe — no trust line, no flags, and the primary button says <strong>Save</strong> either way.</p>'
+          + '<p><code>schemaQualityGate</code> would catch the thin ones — it flags <code>ingredients:2</code> and <code>no-directions</code> — but it only logs, and it runs at exactly two call sites, both inside the Instagram cascade. Photo, paste, Pinterest and the generic website path have never been gated at all.</p>'
+          + '<p><strong>The destination grid is gone entirely.</strong> Not trimmed to two — removed. Kind already decides the shelf, and the code has always known it: <code>review-type-correction</code> flips <code>itemType</code> and calls <code>setDest()</code> in the same handler. A separate picker offered a choice that was never real, and let the two disagree.</p>'
+          + '<p>What replaces it is the small kind chip, top-left — tap it. The menu names the consequence (<em>Saves to Meal Library</em>) and the footer button follows. Correction stays possible, which is the whole point of that affordance; it just stops pretending to be a routing decision.</p>',
+        anchor:'<b>importGuards.js:127</b> — returns <code>{pass, reasons}</code>, log-only<br><b>recipeParser.js:5291, 5525</b> — the only two call sites<br><b>ImportReview.jsx:1296–1302</b> — delete <code>.review-destination</code> grid<br><b>ImportReview.jsx:962–1000</b> — kind correction already calls <code>setDest()</code>' },
+
+      { id:'a', tag:'Chosen', name:'Salvage opens on the weak part', cost:'Slice 7', verdict:['cheap','Gate does the work'],
+        note:'<p>Same two tabs, same rows, same drag handles. The gate verdict just decides how it opens.</p>'
+          + '<p><strong>Salvage lands on Steps</strong> with the amber dot on the tab, the &ldquo;slipped into the steps&rdquo; banner already showing, and the offending row tagged. Tap Ingredients to see <em>parmesan</em> flagged <code>no amount</code>. Nothing new is invented here — <code>flaggedSteps</code> and <code>moveAllFlaggedToIngredients</code> are already in the component.</p>'
+          + '<p><strong>The trust line is a sentence, not a score.</strong> <em>&ldquo;Pieced together from the caption and 3 comments — worth a quick look.&rdquo;</em> <code>73%</code> tells nobody anything they can act on; this points at the exact thing to check.</p>'
+          + '<p><strong>Every row is still a live field.</strong> The tabs shrank to 42px rectangles; nothing else was taken away. Type into a line and it grows — that is <code>autoExpandTextarea.js</code>, shared with AddEditMeal. Tap <strong>⋯</strong> on any row for the full menu: move up, move down, move to the other list, move to Notes, move to a sauce or a new one, remove.</p>'
+            + '<p><strong>Discard sits beside Save.</strong> On a salvage the odds of wanting out are high enough that the exit shouldn’t hide in the corner. Press <em>Show discard</em> for the confirm.</p>',
+        anchor:'<b>Plan Task 7, step 6</b> — verdict maps to surface<br><code>pass</code> → Review · <code>salvage</code> → this · <code>empty</code> → Miss<br><b>ImportReview.jsx:1033–1045, 1127–1133</b> — tabs + slipped banner exist' }
+    ]}
+  };
+
+  /* ── state ───────────────────────────────────────────────── */
+  var surface='working', choice='current', timer=null, showDiscard=false;
+  var elOpts=document.getElementById('opts'), elScreen=document.getElementById('screen'),
+      elNote=document.getElementById('note'), elPlay=document.getElementById('play'),
+      elApp=document.getElementById('apptheme'), elDisc=document.getElementById('discard');
+
+  function renderOpts(){
+    elOpts.innerHTML = DATA[surface].opts.map(function(o){
+      return '<button class="opt' + (o.current ? ' is-current' : '') + '" type="button" data-opt="' + o.id + '"'
+        + ' aria-pressed="' + (o.id === choice) + '"><span class="opt-id">' + esc(o.tag) + '</span>'
+        + '<span class="opt-name">' + esc(o.name) + '</span>'
+        + '<span class="opt-cost">' + esc(o.cost) + '</span></button>';
+    }).join('');
+  }
+  function renderNote(){
+    var o = DATA[surface].opts.filter(function(x){ return x.id === choice; })[0];
+    elNote.innerHTML = '<p class="verdict"><span class="tag ' + o.verdict[0] + '">' + esc(o.verdict[1])
+      + '</span></p><h3>' + esc(o.name) + '</h3>' + o.note + '<p class="anchor">' + o.anchor + '</p>';
+  }
+  function renderScreen(){
+    var fn = RENDER[surface + ':' + choice];
+    elScreen.innerHTML = fn ? fn() : '';
+    Array.prototype.forEach.call(elScreen.querySelectorAll('.ogta'), grow);
+  }
+  function renderAll(){
+    renderOpts(); renderNote(); renderScreen();
+    elPlay.disabled = (surface !== 'working');
+  }
+
+  elOpts.addEventListener('click', function(e){
+    var b = e.target.closest('[data-opt]'); if(!b) return;
+    choice = b.getAttribute('data-opt'); showDiscard = false;
+    openRow = null; kindOpen = false; syncDisc(); renderAll();
+  });
+  elScreen.addEventListener('click', function(e){
+    var t = e.target.closest('[data-rvtab]');
+    if(t){ rvTab = t.getAttribute('data-rvtab'); openRow = null; renderScreen(); return; }
+    var k = e.target.closest('[data-kind]');
+    if(k){ rvKind = k.getAttribute('data-kind'); kindOpen = false; renderScreen(); return; }
+    if(e.target.closest('#kindchip')){ kindOpen = !kindOpen; openRow = null; renderScreen(); return; }
+    var r = e.target.closest('[data-row]');
+    if(r){ var id = r.getAttribute('data-row');
+      openRow = (openRow === id) ? null : id; kindOpen = false; renderScreen(); return; }
+    if(!e.target.closest('.rowmenu') && !e.target.closest('.kindmenu')){
+      if(openRow || kindOpen){ openRow = null; kindOpen = false; renderScreen(); }
+    }
+  });
+  /* autoExpandTextarea.js, in miniature */
+  function grow(el){ el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }
+  elScreen.addEventListener('input', function(e){
+    if(e.target.classList.contains('ogta')) grow(e.target);
+  });
+
+  Array.prototype.forEach.call(document.querySelectorAll('.surf'), function(t){
+    t.addEventListener('click', function(){
+      Array.prototype.forEach.call(document.querySelectorAll('.surf'), function(x){
+        x.setAttribute('aria-selected', String(x === t)); });
+      surface = t.getAttribute('data-surface');
+      choice = 'current'; rvTab = 'ingredients'; showDiscard = false;
+      openRow = null; kindOpen = false;
+      stop(); syncDisc(); renderAll();
+    });
+  });
+
+  elApp.addEventListener('click', function(){
+    var dark = elScreen.getAttribute('data-app') === 'dark';
+    elScreen.setAttribute('data-app', dark ? 'light' : 'dark');
+    elApp.setAttribute('aria-pressed', String(!dark));
+    elApp.textContent = dark ? 'Dark' : 'Light';
+  });
+  function syncDisc(){ elDisc.setAttribute('aria-pressed', String(showDiscard));
+    elDisc.textContent = showDiscard ? 'Hide discard' : 'Show discard'; }
+  elDisc.addEventListener('click', function(){ showDiscard = !showDiscard; syncDisc(); renderScreen(); });
+
+  function stop(){ if(timer){ clearInterval(timer); timer = null; } elPlay.textContent = 'Play progress'; }
+  elPlay.addEventListener('click', function(){
+    if(timer){ stop(); return; }
+    if(window.matchMedia('(prefers-reduced-motion: reduce)').matches){
+      step = STEPS.length - 1; renderScreen(); return;
+    }
+    step = 0; renderScreen(); elPlay.textContent = 'Stop';
+    timer = setInterval(function(){
+      step++;
+      if(step >= STEPS.length){ step = STEPS.length - 1; renderScreen(); stop(); return; }
+      renderScreen();
+    }, 1500);
+  });
+
+  var modes = ['auto','light','dark'], mi = 0, pt = document.getElementById('pagetheme');
+  pt.addEventListener('click', function(){
+    mi = (mi + 1) % 3;
+    if(modes[mi] === 'auto') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', modes[mi]);
+    pt.textContent = 'Page: ' + modes[mi];
+  });
+
+  syncDisc(); renderAll();
+})();
+</script>

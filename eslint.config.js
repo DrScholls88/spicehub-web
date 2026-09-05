@@ -13,7 +13,7 @@ export default defineConfig([
   // else's minified code, telling us nothing about our own source.
   // 'src/lib/photoswipe' is the same story — vendored minified PhotoSwipe
   // gallery build, imported as opaque JS, never hand-edited.
-  globalIgnores(['dist', 'dist-verify*', 'public/tesseract', 'src/lib/photoswipe', 'scratch']),
+  globalIgnores(['dist', 'dist-verify*', 'public/tesseract', 'src/lib/photoswipe', 'scratch', '_import_backup_2026-09-04']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [
@@ -76,6 +76,22 @@ export default defineConfig([
       // if this rule fires outside a comment, it's a real signal worth
       // looking at, not more of the same noise.
       'no-irregular-whitespace': ['error', { skipComments: true }],
+      // The import engine's public surface is src/import/index.js. Reaching
+      // past it into the recipeParser monolith is what let the previous
+      // refactor's barrel sit unused; this keeps the seam greppable.
+      'no-restricted-imports': ['error', {
+        patterns: [{
+          group: ['**/recipeParser', '**/recipeParser.js'],
+          message: 'Import from src/import/index.js — the engine barrel — not recipeParser directly.',
+        }],
+      }],
+      // no-restricted-imports does not see dynamic import(), and this repo
+      // already uses `await import(...)` as a cycle-dodge idiom — so close
+      // that hole explicitly or the seam rots through it.
+      'no-restricted-syntax': ['error', {
+        selector: "ImportExpression[source.value=/(^|\/)recipeParser(\.js)?$/]",
+        message: 'Import from src/import/index.js — the engine barrel — not recipeParser directly.',
+      }],
     },
   },
   // Node-context files: the Vite/Vitest config, Express server, /api
@@ -97,5 +113,33 @@ export default defineConfig([
         ...globals.node,
       },
     },
+  },
+  {
+    // Exempt from the barrel rule, each for a different reason:
+    //   index.js       — the barrel itself; it must import the monolith.
+    //   BrowserAssist  — its UI phase is commented out (ImportSheet.jsx ~1341)
+    //                    but the module is still imported and bundled. It pulls
+    //                    seven symbols the barrel does not export, so repointing
+    //                    would mean widening the barrel with monolith internals
+    //                    for a consumer nobody can reach. Leave until it is deleted.
+    //   photoImportEngine — the barrel re-exports FROM it, so importing the
+    //                    barrel here would be a genuine cycle.
+    //   db.js          — imports buildStructuredFields, a schema helper rather
+    //                    than engine surface, and sits in a pre-existing static
+    //                    cycle with recipeParser (recipeParser.js:11 imports
+    //                    ./db.js). Adding the barrel as a third hop inside that
+    //                    cycle risks init order in a Dexie upgrade closure.
+    // Tests import the monolith directly so they keep passing while the spine
+    // moves behind the barrel. Consequence: nothing currently imports through
+    // the barrel in a test, so barrel/monolith drift is not covered.
+    files: [
+      'src/import/index.js',
+      'src/components/BrowserAssist.jsx',
+      'src/lib/photoImportEngine.js',
+      'src/db.js',
+      'tests/**',
+      'src/**/__tests__/**',
+    ],
+    rules: { 'no-restricted-imports': 'off', 'no-restricted-syntax': 'off' },
   },
 ])

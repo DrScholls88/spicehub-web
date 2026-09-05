@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
-import { Martini, Heart, Grid2x2, Grid3x3, List, Tag, Plus, Pencil, Check, Trash2 } from 'lucide-react';
-import { motion, AnimatePresence, Reorder } from 'framer-motion';
+import { Martini, Heart, Grid2x2, Grid3x3, List, Tag, Plus, Pencil, Check, Trash2, MoreVertical, X, Share2, Users, Sparkles, Camera, UtensilsCrossed, Play } from 'lucide-react';
+import { motion, AnimatePresence, Reorder, useReducedMotion } from 'framer-motion';
 import db from '../db';
 import {
   getBarInventory, clearInstagramCache,
@@ -8,6 +8,7 @@ import {
   setDrinkTags, bulkSetDrinkTags,
 } from '../db';
 import SafeMediaImage from './SafeMediaImage';
+import RecipeMediaCarousel from './RecipeMediaCarousel';
 import ReExtractSheet from './ReExtractSheet';
 import useBackHandler from '../hooks/useBackHandler';
 import useSwipeDismiss from '../hooks/useSwipeDismiss';
@@ -242,6 +243,8 @@ export default function BarLibrary({
   const [selectedIds, setSelectedIds]         = useState(new Set());
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [quickPreview, setQuickPreview]       = useState(null);
+  const [qpMenuOpen, setQpMenuOpen]           = useState(false); // ⋯ menu on the expandable card
+  const prefersReducedMotion                  = useReducedMotion();
   const [confirmDelete, setConfirmDelete]     = useState(null);
   const [showMenu, setShowMenu]               = useState(false);
   const [menuAnimation, setMenuAnimation]     = useState(false);
@@ -637,6 +640,23 @@ export default function BarLibrary({
     setShowCategoryPicker(false);
     exitSelectMode();
   }, [selectedIds, onReload, onToast, exitSelectMode]);
+
+  // Photo add/remove from the quick-peek carousel. Same shape as
+  // handleSetCategory below: write, reload the list, and patch the open
+  // snapshot in place — a modal rendered from a snapshot taken at open time
+  // won't otherwise reflect the write until it's closed and reopened
+  // (design.md §4e). Rethrows so the carousel can toast the failure itself.
+  const handleUpdateMedia = useCallback(async (drinkId, patch) => {
+    if (!drinkId || !patch) return;
+    try {
+      await db.drinks.update(drinkId, patch);
+      onReload?.();
+      setQuickPreview(prev => (prev && prev.id === drinkId ? { ...prev, ...patch } : prev));
+    } catch (err) {
+      onToast?.('Could not update photos: ' + err.message, 'error');
+      throw err;
+    }
+  }, [onReload, onToast]);
 
   // ── Inline category assignment (single drink, from quick preview) ─────────
   const handleSetCategory = useCallback(async (drink, newCategory) => {
@@ -1252,7 +1272,17 @@ export default function BarLibrary({
       {/* ── Expandable card (tap a tile, long-press is select, or ⋯ button) ──
             Shared-element morph: the tapped tile's image + title carry the same
             layoutId as this card's hero + title, so the tile grows into the modal
-            and shrinks back on close (Aceternity "expandable card" pattern). */}
+            and shrinks back on close (Aceternity "expandable card" pattern).
+
+            2026-09-03: brought to parity with the Meal Library quick-peek. The
+            action area used to be an eleven-button grid (View/Edit/Share/
+            Favorite/Send/Play/Improve/Re-import/Find Photo/Move to Meals/
+            Delete) — the same "admin-mode bleed" the meal card shed on
+            2026-08-28. Browsing actions (Favorite, Play) are 44px icon buttons
+            next to one primary CTA; everything else moved into the ⋯ menu. The
+            hero is the shared RecipeMediaCarousel now, so a drink imported with
+            a carousel or a Reel gets the same swipeable photos, inline video
+            and add/remove-photo controls the meal card has. */}
       <AnimatePresence>
       {quickPreview && (
         <motion.div
@@ -1262,21 +1292,139 @@ export default function BarLibrary({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.22 }}
+          transition={{ duration: prefersReducedMotion ? 0.01 : 0.22 }}
         >
-          {/* Floating close button (Aceternity-style), outside the card surface */}
-          <motion.button
-            key="bl-qp-close"
-            className="bl-qp-close"
-            aria-label="Close"
-            onClick={() => setQuickPreview(null)}
-            initial={{ opacity: 0, scale: 0.6 }}
-            animate={{ opacity: 1, scale: 1, transition: { delay: 0.08 } }}
-            exit={{ opacity: 0, scale: 0.6, transition: { duration: 0.05 } }}
-            whileTap={{ scale: 0.88 }}
-          >
-            ✕
-          </motion.button>
+          {/* Floating chrome, outside the card surface so it never scrolls with
+              the sheet's own content. Kebab first (admin actions), close second. */}
+          <div className="bl-qp-float-row">
+            <motion.button
+              key="bl-qp-menu-btn"
+              className="bl-qp-close bl-qp-menu-btn"
+              aria-label="More options"
+              aria-expanded={qpMenuOpen}
+              onClick={e => { e.stopPropagation(); hapticLight(); setQpMenuOpen(v => !v); }}
+              initial={{ opacity: 0, scale: 0.6 }}
+              animate={{ opacity: 1, scale: 1, transition: { delay: prefersReducedMotion ? 0 : 0.08 } }}
+              exit={{ opacity: 0, scale: 0.6, transition: { duration: 0.05 } }}
+              whileTap={{ scale: 0.88 }}
+            >
+              <MoreVertical size={18} strokeWidth={2.25} />
+            </motion.button>
+            <motion.button
+              key="bl-qp-close"
+              className="bl-qp-close"
+              aria-label="Close"
+              onClick={() => setQuickPreview(null)}
+              initial={{ opacity: 0, scale: 0.6 }}
+              animate={{ opacity: 1, scale: 1, transition: { delay: prefersReducedMotion ? 0 : 0.08 } }}
+              exit={{ opacity: 0, scale: 0.6, transition: { duration: 0.05 } }}
+              whileTap={{ scale: 0.88 }}
+            >
+              <X size={18} strokeWidth={2.25} />
+            </motion.button>
+          </div>
+
+          {/* Admin/kebab menu — Edit, Share, Send to Friend, Improve,
+              Re-import, Find Photo, Move to Meals, Delete. */}
+          <AnimatePresence>
+            {qpMenuOpen && (
+              <motion.div
+                key="bl-qp-menu-scrim"
+                className="bl-qp-menu-scrim"
+                onClick={e => { e.stopPropagation(); setQpMenuOpen(false); }}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.12 }}
+              />
+            )}
+          </AnimatePresence>
+          <AnimatePresence>
+            {qpMenuOpen && (
+              <motion.div
+                key="bl-qp-menu"
+                className="bl-qp-menu"
+                role="menu"
+                style={{ transformOrigin: 'top right' }}
+                onClick={e => e.stopPropagation()}
+                initial={{ opacity: 0, scale: 0.9, y: -6 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: -6 }}
+                transition={prefersReducedMotion ? { duration: 0.01 } : { type: 'spring', stiffness: 420, damping: 32 }}
+              >
+                <button type="button" role="menuitem" onClick={() => { setQpMenuOpen(false); setQuickPreview(null); onEdit?.(quickPreview); }}>
+                  <Pencil size={15} strokeWidth={2} /> Edit
+                </button>
+                <button type="button" role="menuitem" onClick={() => { setQpMenuOpen(false); onShare?.(quickPreview); }}>
+                  <Share2 size={15} strokeWidth={2} /> Share
+                </button>
+                {isFriendsEnabled() && (
+                  <button type="button" role="menuitem" onClick={() => { setQpMenuOpen(false); setQuickPreview(null); setFriendShareDrink(quickPreview); }}>
+                    <Users size={15} strokeWidth={2} /> Send to Friend
+                  </button>
+                )}
+                {isImprovable(quickPreview) && (
+                  <button type="button" role="menuitem" onClick={() => { setQpMenuOpen(false); hapticLight(); setReExtractDrink(quickPreview); setQuickPreview(null); }}>
+                    <Sparkles size={15} strokeWidth={2} /> Improve
+                  </button>
+                )}
+                {(quickPreview.link || quickPreview.sourceUrl) && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      const url = quickPreview.link || quickPreview.sourceUrl;
+                      setQpMenuOpen(false);
+                      hapticLight();
+                      setQuickPreview(null);
+                      if (window.__spicehubTriggerImport) {
+                        window.__spicehubTriggerImport(url);
+                      } else {
+                        navigator.clipboard.writeText(url).catch(() => {});
+                        onToast?.('Link copied — open Import to re-import this drink.');
+                      }
+                    }}
+                  >
+                    <RefreshCw size={15} strokeWidth={2} /> Re-import
+                  </button>
+                )}
+                {(quickPreview.link || quickPreview.sourceUrl) && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => { setQpMenuOpen(false); handleReimportPhoto(quickPreview); setQuickPreview(null); }}
+                    disabled={reimportingPhotoId === quickPreview.id}
+                  >
+                    <Camera size={15} strokeWidth={2} />
+                    {reimportingPhotoId === quickPreview.id
+                      ? 'Searching…'
+                      : quickPreview.imageUrl
+                      ? 'Find Better Photo'
+                      : 'Find Photo'}
+                  </button>
+                )}
+                {onMoveToMeals && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => { setQpMenuOpen(false); hapticLight(); onMoveToMeals(quickPreview); setQuickPreview(null); }}
+                    title="Move this to the Meal Library — for a recipe that got imported as a drink by mistake"
+                  >
+                    <UtensilsCrossed size={15} strokeWidth={2} /> Move to Meals
+                  </button>
+                )}
+                <div className="bl-qp-menu-divider" />
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="bl-qp-menu-danger"
+                  onClick={() => { setQpMenuOpen(false); setQuickPreview(null); setConfirmDelete(quickPreview.id); }}
+                >
+                  <Trash2 size={15} strokeWidth={2} /> Delete
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <motion.div
             ref={sheetRef}
@@ -1285,24 +1433,28 @@ export default function BarLibrary({
             initial={{ opacity: 0, scale: 0.96, y: 18 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.96, y: 18, transition: { duration: 0.16 } }}
-            transition={{ type: 'spring', stiffness: 320, damping: 34 }}
+            transition={prefersReducedMotion ? { duration: 0.01 } : { type: 'spring', stiffness: 320, damping: 34 }}
             onTouchStart={handleSheetTouchStart}
             onTouchMove={handleSheetTouchMove}
             onTouchEnd={handleSheetTouchEnd}
             onTouchCancel={handleSheetTouchEnd}
           >
             <div className="bl-qp-handle" />
+            <div className="bl-qp-scroll-body">
+            {/* Shared hero: same carousel, video slide, PhotoSwipe lightbox and
+                add/remove-photo controls as the recipe card. Was a lone static
+                <img>, which is why a drink imported from a Reel or an IG
+                carousel looked single-photo and had no way to play the clip
+                without leaving the card. */}
             <motion.div className="bl-qp-hero" layoutId={`bl-card-img-${quickPreview.id}`}>
-              {quickPreview.imageUrl ? (
-                <SafeMediaImage
-                  src={quickPreview.imageUrl}
-                  alt={quickPreview.name || 'Drink'}
-                  style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                  fallbackEmoji="&#127865;"
-                />
-              ) : (
-                <div className="bl-qp-hero-empty" aria-hidden="true">&#127864;</div>
-              )}
+              <RecipeMediaCarousel
+                key={quickPreview.id ?? quickPreview.name}
+                item={quickPreview}
+                variant="peek"
+                onPopOutVideo={onPlayVideo ? (d) => { onPlayVideo(d); setQuickPreview(null); } : null}
+                onUpdateMedia={(patch) => handleUpdateMedia(quickPreview.id, patch)}
+                onToast={onToast}
+              />
             </motion.div>
             <div className="bl-qp-body">
               <motion.h3 className="bl-qp-title" layoutId={`bl-card-title-${quickPreview.id}`}>
@@ -1316,7 +1468,7 @@ export default function BarLibrary({
               )}
 
               {drinkEngineLabel(quickPreview._structuredVia) && (
-                <div style={{ fontSize: '0.72rem', color: 'var(--text-tertiary)', marginBottom: 8 }}>
+                <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginBottom: 8 }}>
                   Parsed by {drinkEngineLabel(quickPreview._structuredVia)}
                   {typeof quickPreview.confidence === 'number'
                     ? ' · ' + Math.round(quickPreview.confidence * 100) + '%'
@@ -1352,83 +1504,41 @@ export default function BarLibrary({
                   </ul>
                 </div>
               )}
+            </div>
 
-              <div className="bl-qp-actions">
-                <button className="bl-qp-btn" onClick={() => { setQuickPreview(null); onViewDetail?.(quickPreview); }}>View</button>
-                <button className="bl-qp-btn" onClick={() => { setQuickPreview(null); onEdit?.(quickPreview); }}>Edit</button>
-                <button className="bl-qp-btn" onClick={() => { setQuickPreview(null); onShare?.(quickPreview); }}>Share</button>
+            {/* In-flow footer at the end of the scrolled content — never
+                overlays the drink. See .bl-qp-actions in BarLibrary.css. */}
+            <div className="bl-qp-actions">
+              <button
+                type="button"
+                className="bl-qp-primary-btn"
+                onClick={() => { setQuickPreview(null); onViewDetail?.(quickPreview); }}
+              >
+                View Full Drink
+              </button>
+              <div className="bl-qp-icon-actions">
                 {onToggleFavorite && (
-                  <button className="bl-qp-btn" onClick={() => { hapticLight(); onToggleFavorite(quickPreview); setQuickPreview(null); }}>
-                    {quickPreview.isFavorite ? '💔 Unfavorite' : '❤️ Favorite'}
+                  <button
+                    type="button"
+                    className={'bl-qp-icon-btn' + (quickPreview.isFavorite ? ' bl-qp-icon-btn-fav-active' : '')}
+                    aria-label={quickPreview.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                    onClick={() => { hapticLight(); onToggleFavorite(quickPreview); }}
+                  >
+                    <Heart size={19} strokeWidth={2} fill={quickPreview.isFavorite ? 'currentColor' : 'none'} />
                   </button>
-                )}
-                {isFriendsEnabled() && (
-                  <button className="bl-qp-btn" onClick={() => { setQuickPreview(null); setFriendShareDrink(quickPreview); }}>👤 Send to Friend</button>
                 )}
                 {onPlayVideo && getMealVideoSource(quickPreview) && (
                   <button
-                    className="bl-qp-btn"
+                    type="button"
+                    className="bl-qp-icon-btn"
+                    aria-label={`Play video (${getMealVideoSource(quickPreview).label})`}
                     onClick={() => { hapticLight(); onPlayVideo(quickPreview); setQuickPreview(null); }}
                   >
-                    🎥 Play ({getMealVideoSource(quickPreview).label})
+                    <Play size={19} strokeWidth={2} />
                   </button>
                 )}
-                {isImprovable(quickPreview) && (
-                  <button
-                    className="bl-qp-btn"
-                    onClick={() => { hapticLight(); setReExtractDrink(quickPreview); setQuickPreview(null); }}
-                  >
-                    ✨ Improve
-                  </button>
-                )}
-                {(quickPreview.link || quickPreview.sourceUrl) && (
-                  <button
-                    className="bl-qp-btn"
-                    onClick={() => {
-                      const url = quickPreview.link || quickPreview.sourceUrl;
-                      hapticLight();
-                      setQuickPreview(null);
-                      if (window.__spicehubTriggerImport) {
-                        window.__spicehubTriggerImport(url);
-                      } else {
-                        navigator.clipboard.writeText(url).catch(() => {});
-                        onToast?.('Link copied — open Import to re-import this drink.');
-                      }
-                    }}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
-                  >
-                    <RefreshCw size={15} strokeWidth={1.75} /> Re-import
-                  </button>
-                )}
-                {(quickPreview.link || quickPreview.sourceUrl) && (
-                  <button
-                    className="bl-qp-btn"
-                    onClick={() => { handleReimportPhoto(quickPreview); setQuickPreview(null); }}
-                    disabled={reimportingPhotoId === quickPreview.id}
-                  >
-                    {reimportingPhotoId === quickPreview.id
-                      ? '⏳ Searching…'
-                      : quickPreview.imageUrl
-                      ? '📸 Find Better Photo'
-                      : '📸 Find Photo'}
-                  </button>
-                )}
-                {onMoveToMeals && (
-                  <button
-                    className="bl-qp-btn"
-                    onClick={() => { hapticLight(); onMoveToMeals(quickPreview); setQuickPreview(null); }}
-                    title="Move this to the Meal Library — for a recipe that got imported as a drink by mistake"
-                  >
-                    🍽️ Move to Meals
-                  </button>
-                )}
-                <button
-                  className="bl-qp-btn bl-qp-btn-danger"
-                  onClick={() => { setQuickPreview(null); setConfirmDelete(quickPreview.id); }}
-                >
-                  Delete
-                </button>
               </div>
+            </div>
             </div>
           </motion.div>
         </motion.div>

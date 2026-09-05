@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
-import { X, Share2, Copy, Check, Heart, Star, RefreshCw, Flame, UtensilsCrossed, ChefHat, Martini, FileDown, Play, Images, Pencil, UserPlus, MoreVertical, Tag, Clock, Globe, Leaf, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Utensils, Salad } from 'lucide-react';
-import PhotoGallery from './PhotoGallery';
+import { X, Share2, Copy, Check, Heart, Star, RefreshCw, Flame, ChefHat, Martini, FileDown, Play, Pencil, UserPlus, MoreVertical, Tag, Clock, Globe, Leaf, ChevronDown, ChevronUp, Utensils, Salad } from 'lucide-react';
+import RecipeMediaCarousel from './RecipeMediaCarousel';
 import { NUTRITION_LABELS } from '../recipeSchema';
 import { formatNutritionValue, formatIngredientLine } from '../utils/displayFormatter';
 import { getMealVideoSource } from '../lib/videoSource';
@@ -50,7 +50,7 @@ function CopyLinkButton({ url }) {
   );
 }
 
-export default function MealDetail({ meal, onClose, onShare, onExport, onToggleFavorite, onRate, onStartCook, onStartMix, onToggleRotation, isDrink = false, onMoveToBar, onPlayVideo, onEdit, onSendToFriend, fridgeInventory = [] }) {
+export default function MealDetail({ meal, onClose, onShare, onExport, onToggleFavorite, onRate, onStartCook, onStartMix, onToggleRotation, isDrink = false, onMoveToBar, onPlayVideo, onEdit, onSendToFriend, onUpdateMedia, onToast, fridgeInventory = [] }) {
   // ── Drag-down-to-dismiss ──
   const sheetRef = useRef(null);
   const dragControls = useDragControls();
@@ -170,11 +170,8 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
   // ── Overflow menu ──
   const [overflowOpen, setOverflowOpen] = useState(false);
 
-  // ── PhotoSwipe lightbox ──
-  const [lightboxOpen, setLightboxOpen] = useState(false);
-  const [lightboxIndex, setLightboxIndex] = useState(0);
-
-  const localImageUrl = meal.imageUrl || null;
+  // The hero (carousel, video slide, PhotoSwipe lightbox, add/remove photo)
+  // lives in RecipeMediaCarousel now — see that file for the media model.
   const sourceUrl = meal.link || meal.sourceUrl || null;
 
   // ── Re-import ──
@@ -188,89 +185,6 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
       alert('Link copied — open Import to re-import this recipe.');
     }
   }, [sourceUrl, onClose]);
-
-  // ── Photo gallery ──
-  const galleryImages = useMemo(() => {
-    const list = [];
-    const seen = new Set();
-    const push = (src) => {
-      if (!src || seen.has(src)) return;
-      seen.add(src);
-      list.push({ src, title: meal.name });
-    };
-    push(localImageUrl);
-
-    if (Array.isArray(meal._scanPages)) {
-      for (const src of meal._scanPages) push(src);
-    }
-
-    const carouselRawUrls = new Set();
-    if (Array.isArray(meal._carouselImages)) {
-      for (const c of meal._carouselImages) {
-        if (c?.url) carouselRawUrls.add(c.url);
-        push(c?.dataUrl || c?.url);
-      }
-    }
-
-    if (Array.isArray(meal._igCarouselImages)) {
-      for (const src of meal._igCarouselImages) {
-        if (carouselRawUrls.has(src)) continue;
-        push(src);
-      }
-    }
-
-    return list;
-  }, [localImageUrl, meal._scanPages, meal._carouselImages, meal._igCarouselImages, meal.name]);
-
-  const hasGallery = galleryImages.length > 1;
-  const useDots = hasGallery && galleryImages.length <= 8;
-
-  const openLightboxAt = useCallback((idx) => {
-    setLightboxIndex(idx);
-    setLightboxOpen(true);
-  }, []);
-
-  // ── Swipeable hero carousel ──
-  const heroScrollRef = useRef(null);
-  const [activeSlide, setActiveSlide] = useState(0);
-  const heroRafRef = useRef(null);
-
-  const handleHeroScroll = useCallback(() => {
-    if (heroRafRef.current) return;
-    heroRafRef.current = requestAnimationFrame(() => {
-      heroRafRef.current = null;
-      const el = heroScrollRef.current;
-      if (!el || !el.clientWidth) return;
-      const idx = Math.round(el.scrollLeft / el.clientWidth);
-      setActiveSlide(prev => (prev !== idx ? idx : prev));
-    });
-  }, []);
-
-  useEffect(() => () => { if (heroRafRef.current) cancelAnimationFrame(heroRafRef.current); }, []);
-
-  const scrollToSlide = useCallback((idx) => {
-    const el = heroScrollRef.current;
-    if (!el) return;
-    el.scrollTo({ left: idx * el.clientWidth, behavior: 'smooth' });
-    setActiveSlide(idx);
-  }, []);
-
-  // Carousel arrow navigation
-  const goPrev = useCallback(() => {
-    setActiveSlide(prev => {
-      const next = Math.max(0, prev - 1);
-      scrollToSlide(next);
-      return next;
-    });
-  }, [scrollToSlide]);
-
-  const goNext = useCallback(() => {
-    setActiveSlide(prev => {
-      const next = Math.min(galleryImages.length - 1, prev + 1);
-      scrollToSlide(next);
-      return next;
-    });
-  }, [scrollToSlide, galleryImages.length]);
 
   // ── PiP: floating video player ──
   const videoSource = useMemo(() => (onPlayVideo ? getMealVideoSource(meal) : null), [onPlayVideo, meal]);
@@ -328,97 +242,21 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
         />
 
         <div className="detail-scroll-body">
-        {/* ══════════════ HERO CAROUSEL ══════════════ */}
-        <div className={`detail-image-wrap${videoSource ? ' detail-image-wrap-video' : ''}`}>
-          {hasGallery ? (
-            <div className="detail-hero-carousel" ref={heroScrollRef} onScroll={handleHeroScroll}>
-              {galleryImages.map((img, i) => (
-                <img
-                  key={img.src.slice(0, 80) + i}
-                  src={img.src}
-                  alt={i === 0 ? meal.name : `${meal.name} — photo ${i + 1} of ${galleryImages.length}`}
-                  className="detail-hero-slide"
-                  onClick={() => openLightboxAt(i)}
-                  onError={e => { e.target.style.display = 'none'; }}
-                />
-              ))}
-            </div>
-          ) : localImageUrl ? (
-            <img
-              src={localImageUrl}
-              alt={meal.name}
-              className="detail-image"
-              style={{ cursor: 'zoom-in' }}
-              onClick={() => openLightboxAt(0)}
-              onError={e => { e.target.style.display = 'none'; }}
-            />
-          ) : (
-            <div className="detail-image-placeholder"><UtensilsCrossed size={32} strokeWidth={1.75} /></div>
-          )}
-          {galleryImages.length > 0 && (
-            <PhotoGallery
-              images={galleryImages}
-              index={lightboxIndex}
-              open={lightboxOpen}
-              onClose={() => setLightboxOpen(false)}
-            />
-          )}
-
-          {/* Carousel arrows — only for multi-photo galleries */}
-          {hasGallery && activeSlide > 0 && (
-            <button className="detail-hero-arrow detail-hero-arrow--left" onClick={goPrev} aria-label="Previous photo">
-              <ChevronLeft size={20} strokeWidth={2.5} />
-            </button>
-          )}
-          {hasGallery && activeSlide < galleryImages.length - 1 && (
-            <button className="detail-hero-arrow detail-hero-arrow--right" onClick={goNext} aria-label="Next photo">
-              <ChevronRight size={20} strokeWidth={2.5} />
-            </button>
-          )}
-
-          {/* Hero gradient + play control */}
-          {videoSource && (
-            <div className="detail-hero-gradient" onClick={() => onPlayVideo(meal)}>
-              <button
-                className="detail-play-btn"
-                aria-label={`Play ${videoSource.label} video in floating player`}
-                title={`Play video (${videoSource.label})`}
-                onClick={(e) => { e.stopPropagation(); onPlayVideo(meal); }}
-              >
-                <Play size={18} fill="#fff" color="#fff" aria-hidden="true" />
-              </button>
-              <span className="detail-hero-video-label">{videoSource.label} video</span>
-            </div>
-          )}
-
-          {/* Dot pagination */}
-          {useDots && (
-            <div className="detail-hero-dots" role="tablist" aria-label={`${galleryImages.length} photos`}>
-              {galleryImages.map((_, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  role="tab"
-                  aria-selected={i === activeSlide}
-                  aria-label={`Photo ${i + 1} of ${galleryImages.length}`}
-                  className="detail-hero-dot"
-                  onClick={() => scrollToSlide(i)}
-                >
-                  <span className={`detail-hero-dot-inner${i === activeSlide ? ' is-active' : ''}`} />
-                </button>
-              ))}
-            </div>
-          )}
-          {hasGallery && !useDots && (
-            <button
-              className="detail-photo-count"
-              onClick={() => openLightboxAt(activeSlide)}
-              aria-label={`View all ${galleryImages.length} photos — swipe to browse`}
-              title="Swipe to view all photos"
-            >
-              <Images size={13} strokeWidth={2} aria-hidden="true" /> {activeSlide + 1}/{galleryImages.length}
-            </button>
-          )}
+        {/* ══════════════ HERO MEDIA ══════════════
+            One shared surface for the video slide, the photo carousel, the
+            PhotoSwipe lightbox and add/remove-photo — see
+            RecipeMediaCarousel.jsx. The library quick-peek renders the same
+            component with variant="peek", so the two cards can no longer
+            drift apart the way they had. */}
+        <div className="detail-image-wrap">
+          <RecipeMediaCarousel
+            key={meal.id ?? meal.name}
+            item={meal}
+            variant="detail"
+            onPopOutVideo={onPlayVideo || null}
+            onUpdateMedia={onUpdateMedia ? (patch) => onUpdateMedia(meal, patch) : null}
+            onToast={onToast}
+          />
         </div>
 
         {/* ══════════════ TITLE ROW — tighter, name + heart + overflow + close ══════════════ */}
@@ -888,13 +726,13 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
           </div>
         )}
 
-        </div>
-
-        {/* ── Sticky bottom action bar ── */}
+        {/* ── Bottom action bar — an ordinary block at the end of the
+             scroller (it used to be position:fixed over the recipe; see
+             .detail-action-bar in MealDetail.css for why that went). ── */}
         {(scaleOptions.length > 0 || onToggleRotation || (onStartCook && meal.directions?.length > 0) || (onStartMix && meal.directions?.length > 0)) && (
-          <div className="detail-sticky-bar">
-            <div className="detail-sticky-scale">
-              <span className="detail-sticky-scale-label">Scale</span>
+          <div className="detail-action-bar">
+            <div className="detail-action-scale">
+              <span className="detail-action-scale-label">Scale</span>
               <div className="scale-selector">
                 {scaleOptions.map(opt => (
                   <button
@@ -907,7 +745,7 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
                 ))}
               </div>
             </div>
-            <div className="detail-sticky-actions">
+            <div className="detail-action-buttons">
               {onToggleRotation && (
                 <button
                   className={`rotation-toggle-btn ${meal.inRotation ? 'in-rotation' : ''}`}
@@ -936,6 +774,7 @@ export default function MealDetail({ meal, onClose, onShare, onExport, onToggleF
             </div>
           </div>
         )}
+        </div>
       </motion.div>
     </div>
   );

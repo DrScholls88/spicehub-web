@@ -5,7 +5,7 @@
 // monolith is dismantled (spec build-order step 5+), implementations migrate
 // behind this barrel without touching consumers.
 //
-//   import { importRecipeFromUrl, structurePack, JUNK_PATTERNS } from '@/import';
+//   import { importRecipeFromUrl, structurePack, JUNK_PATTERNS } from '../import/index.js';
 // ─────────────────────────────────────────────────────────────────────────────
 
 // The seam
@@ -77,4 +77,13 @@ export {
   isSocialMediaUrl,
   transcribeVideoForRecipe,
   transcribeFileForRecipe,
+  scoreExtractionConfidence,
+  getSocialPlatform,
+  extractMultipleUrls,
 } from '../recipeParser.js';
+
+// Photo/PDF import entry point. Re-exported here so callers reach the whole
+// import surface through one module; photoImportEngine itself still imports
+// recipeParser directly (see the exemption list in eslint.config.js) because
+// routing it through this barrel would create a cycle.
+export { importRecipeFromPages, PhotoImportError } from '../lib/photoImportEngine.js';

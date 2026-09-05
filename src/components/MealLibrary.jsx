@@ -6,6 +6,7 @@ import { toggleRotation, bulkSetRotation, getUserTags, addUserTag, deleteUserTag
 import db from '../db';
 import useBackHandler from '../hooks/useBackHandler';
 import SafeMediaImage from './SafeMediaImage';
+import RecipeMediaCarousel from './RecipeMediaCarousel';
 import ReExtractSheet from './ReExtractSheet';
 import DiscoverRecipes from './DiscoverRecipes';
 import { hapticLight, hapticSuccess } from '../haptics';
@@ -465,6 +466,12 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
 
   // ── Swipe-to-dismiss on quickPreview sheet ────────────────────────────────
   const handleSheetTouchStart = useCallback((e) => {
+    // A touch that began inside the hero carousel's horizontal strip belongs
+    // to that strip — see the matching guard in useSwipeDismiss.js.
+    if (e.target?.closest?.('.rmc-track')) {
+      sheetDragStartY.current = null;
+      return;
+    }
     sheetDragStartY.current = e.touches[0].clientY;
     sheetCurrentDragY.current = 0;
     if (sheetRef.current) sheetRef.current.style.transition = 'none';
@@ -555,6 +562,23 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
   };
 
   // ── Single-meal type change (quick-preview) ────────────────────────────
+  // Photo add/remove from the quick-peek carousel. Same shape as
+  // handleSetMealType below: write, reload the list, and patch the open
+  // snapshot in place — a modal rendered from a snapshot taken at open time
+  // won't otherwise reflect the write until it's closed and reopened
+  // (design.md §4e).
+  const handleUpdateMedia = useCallback(async (mealId, patch) => {
+    if (!mealId || !patch) return;
+    try {
+      await db.meals.update(mealId, patch);
+      onReload?.();
+      setQuickPreview(prev => (prev && prev.id === mealId ? { ...prev, ...patch } : prev));
+    } catch (err) {
+      onToast?.('Could not update photos: ' + err.message, 'error');
+      throw err;
+    }
+  }, [onReload, onToast]);
+
   const handleSetMealType = useCallback(async (mealId, newType) => {
     try {
       await db.meals.update(mealId, { category: newType });
@@ -1539,19 +1563,19 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
           >
             <div className="ml-qp-handle" />
             <div className="ml-qp-scroll-body">
+            {/* Shared hero: same carousel, video slide, PhotoSwipe lightbox
+                and add/remove-photo controls as the full recipe card. This
+                used to be a lone static <img>, which is why a multi-photo
+                import looked single-photo until you opened the full card. */}
             <motion.div className="ml-qp-hero" layoutId={`ml-card-img-${quickPreview.id}`}>
-              {quickPreview.imageUrl ? (
-                <SafeMediaImage
-                  src={quickPreview.imageUrl}
-                  alt={quickPreview.name || "Recipe"}
-                  style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
-                  fallbackEmoji="🍽️"
-                />
-              ) : (
-                <div className="ml-qp-hero-empty">
-                  <UtensilsCrossed size={40} strokeWidth={1.5} style={{ opacity: 0.35 }} />
-                </div>
-              )}
+              <RecipeMediaCarousel
+                key={quickPreview.id ?? quickPreview.name}
+                item={quickPreview}
+                variant="peek"
+                onPopOutVideo={onPlayVideo ? (m) => { onPlayVideo(m); setQuickPreview(null); } : null}
+                onUpdateMedia={(patch) => handleUpdateMedia(quickPreview.id, patch)}
+                onToast={onToast}
+              />
             </motion.div>
             <div className="ml-qp-body">
               <motion.h3 className="ml-qp-title" layoutId={`ml-card-title-${quickPreview.id}`}>
@@ -1764,8 +1788,10 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                 </div>
               )}
             </div>
-            </div>
 
+            {/* In-flow footer at the end of the scrolled content — it used to
+                be position:fixed over the card. See .ml-qp-actions in
+                MealLibrary.css. */}
             <div className="ml-qp-actions">
               <button
                 type="button"
@@ -1804,6 +1830,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                   </button>
                 )}
               </div>
+            </div>
             </div>
           </motion.div>
         </motion.div>

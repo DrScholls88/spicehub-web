@@ -1,0 +1,494 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   RecipeMediaCarousel — shared hero media surface
+   ═══════════════════════════════════════════════════════════════════════════
+   Used by MealDetail (variant "detail") and MealLibrary's quick-peek popup
+   (variant "peek"). Self-contained: every rule is namespaced `rmc-`, so this
+   file can be imported from either component in any order without colliding
+   with .detail-* or .ml-qp-* rules.
+
+   THEME CONTRACT (design.md §1/§5): all chrome that sits ON the media —
+   arrows, chips, dots, scrims — is white-on-translucent-black. That is a
+   self-paired, deliberately theme-invariant combination (§5): the partner
+   background is baked into the same rule and is dark in both themes, because
+   what actually sits behind it is a photograph, not a themed surface. Every
+   rule that touches a themed surface (the empty placeholder, the track's
+   backing colour) uses tokens.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.rmc-wrap {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  background: var(--surface-2);
+  /* The track scrolls horizontally; nothing here should ever be able to push
+     the sheet itself sideways. */
+  max-width: 100%;
+}
+
+/* Full recipe card: a 4:3 frame keeps portrait Instagram shots readable
+   without the 16:9 crop eating the top and bottom of the plate. */
+.rmc-wrap--detail {
+  aspect-ratio: 4 / 3;
+  max-height: 320px;
+}
+
+/* …unless there's a video, which gets the 16:9 frame it was shot in. */
+.rmc-wrap--detail.rmc-wrap--video {
+  aspect-ratio: 16 / 9;
+  max-height: 300px;
+}
+
+/* Quick-peek: fills the shared-element hero box (130px) that the library
+   tile morphs into, so the morph target keeps its exact geometry. */
+.rmc-wrap--peek {
+  height: 100%;
+  aspect-ratio: auto;
+  border-radius: inherit;
+}
+
+/* ── Scroll-snap track ─────────────────────────────────────────────────── */
+.rmc-track {
+  display: flex;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+
+.rmc-track::-webkit-scrollbar { display: none; }
+
+.rmc-slide {
+  position: relative;
+  flex: 0 0 100%;
+  width: 100%;
+  height: 100%;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  /* .rmc-slide--photo is a <button>; strip the UA chrome so it reads as an
+     image, not a control (design.md §4b — the explicit color below is what
+     keeps any inherited icon from falling back to the system ButtonText). */
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: var(--surface-2);
+  color: var(--text-light);
+  display: block;
+  overflow: hidden;
+}
+
+.rmc-slide--photo {
+  cursor: zoom-in;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.rmc-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+.rmc-placeholder {
+  width: 100%;
+  height: 100%;
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  color: var(--text-muted);
+}
+
+/* ── Video slide ───────────────────────────────────────────────────────── */
+.rmc-slide--video {
+  background: #000;
+}
+
+.rmc-video-poster {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: #000;
+  color: #fff;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.rmc-video-poster-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  /* Slightly knocked back so the play control reads as the primary target
+     rather than competing with a busy food photo. */
+  filter: brightness(0.82);
+}
+
+.rmc-video-poster-fill {
+  position: absolute;
+  inset: 0;
+  display: block;
+  background: linear-gradient(135deg, #241f1b 0%, #0d0b09 100%);
+}
+
+.rmc-video-scrim {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 55%;
+  display: block;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.75), rgba(0, 0, 0, 0));
+  pointer-events: none;
+}
+
+.rmc-video-play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 62px;
+  height: 62px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.5);
+  border: 2px solid rgba(255, 255, 255, 0.92);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  /* Nudge the triangle optically centred inside the circle. */
+  padding-left: 4px;
+  transition: transform 0.16s var(--ease-spring, cubic-bezier(0.32, 0.72, 0, 1)),
+              background 0.16s;
+}
+
+.rmc-video-poster:hover .rmc-video-play {
+  background: rgba(0, 0, 0, 0.66);
+  transform: translate(-50%, -50%) scale(1.06);
+}
+
+.rmc-video-poster:active .rmc-video-play {
+  transform: translate(-50%, -50%) scale(0.94);
+}
+
+.rmc-video-label {
+  position: absolute;
+  left: 14px;
+  bottom: 12px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+.rmc-video-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: #000;
+}
+
+.rmc-video-controls {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 3;
+  display: flex;
+  gap: 6px;
+}
+
+/* ── Shared translucent chip button (video controls + edit row) ─────────── */
+.rmc-chip-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  /* Theme-invariant by design (design.md §5): the partner surface is a
+     photograph, and the text/icon colour is fixed in this same rule. */
+  background: rgba(0, 0, 0, 0.58);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  transition: background 0.15s, transform 0.1s, border-color 0.15s;
+}
+
+.rmc-chip-btn--label {
+  padding: 0 10px;
+}
+
+.rmc-chip-btn:hover { background: rgba(0, 0, 0, 0.72); }
+
+.rmc-chip-btn:active { transform: scale(0.94); }
+
+.rmc-chip-btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.rmc-chip-btn--danger {
+  background: var(--danger, #d32f2f);
+  border-color: rgba(255, 255, 255, 0.5);
+  color: #fff;
+}
+
+.rmc-chip-btn--danger:hover {
+  background: var(--danger, #d32f2f);
+  filter: brightness(1.08);
+}
+
+.rmc-spin {
+  animation: rmc-spin 0.9s linear infinite;
+}
+
+@keyframes rmc-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Arrows ────────────────────────────────────────────────────────────── */
+.rmc-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 3;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.rmc-arrow:hover { background: rgba(0, 0, 0, 0.68); }
+
+.rmc-arrow:active { transform: translateY(-50%) scale(0.92); }
+
+.rmc-arrow--left { left: 8px; }
+
+.rmc-arrow--right { right: 8px; }
+
+/* ── Counter pill ──────────────────────────────────────────────────────── */
+.rmc-count {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 20px;
+  border: none;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  transition: background 0.15s, transform 0.1s;
+}
+
+.rmc-count:active { transform: scale(0.94); }
+
+/* ── Dots ──────────────────────────────────────────────────────────────── */
+.rmc-dots {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  border-radius: 20px;
+  background: rgba(0, 0, 0, 0.35);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  z-index: 3;
+}
+
+.rmc-dot {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: #fff;
+  padding: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.rmc-dot-inner {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.55);
+  transition: background 0.2s ease, width 0.2s ease, border-radius 0.2s ease;
+  display: block;
+}
+
+/* The video slide's dot is a short bar even when inactive, so "there is a
+   clip on slide one" is legible before you swipe to it. */
+.rmc-dot-inner.is-video {
+  width: 11px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.rmc-dot-inner.is-active {
+  width: 16px;
+  border-radius: 3px;
+  background: var(--primary);
+}
+
+.rmc-dot-inner.is-video.is-active {
+  width: 18px;
+}
+
+/* ── Add / Remove photo row ────────────────────────────────────────────── */
+.rmc-edit-row {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  z-index: 4;
+  display: flex;
+  gap: 6px;
+}
+
+.rmc-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  overflow: hidden;
+}
+
+/* Peek variant runs at ~130px tall — shrink the chrome so it doesn't bury
+   the photo it is sitting on. */
+.rmc-wrap--peek .rmc-video-play {
+  width: 46px;
+  height: 46px;
+}
+
+.rmc-wrap--peek .rmc-video-label {
+  left: 10px;
+  bottom: 8px;
+  font-size: 11.5px;
+}
+
+.rmc-wrap--peek .rmc-arrow {
+  width: 28px;
+  height: 28px;
+}
+
+.rmc-wrap--peek .rmc-dots {
+  bottom: 6px;
+  padding: 3px 5px;
+}
+
+.rmc-wrap--peek .rmc-dot {
+  width: 18px;
+  height: 18px;
+}
+
+.rmc-wrap--peek .rmc-edit-row {
+  right: 6px;
+  bottom: 6px;
+}
+
+.rmc-wrap--peek .rmc-chip-btn {
+  height: 26px;
+  font-size: 11.5px;
+}
+
+/* The quick-peek's floating close/kebab row sits at top:16px right:16px over
+   the card — pull the counter pill left of it so the two never overlap. */
+.rmc-wrap--peek .rmc-count {
+  top: 6px;
+  left: 6px;
+  right: auto;
+}
+
+/* Short landscape phones: the hero is the first thing that should give up
+   vertical room, same convention as the tab bar and the Import preview. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .rmc-wrap--detail {
+    aspect-ratio: auto;
+    height: 150px;
+    max-height: 150px;
+  }
+
+  .rmc-wrap--detail.rmc-wrap--video {
+    aspect-ratio: auto;
+    height: 170px;
+    max-height: 170px;
+  }
+
+  .rmc-wrap--peek {
+    height: 100%;
+  }
+
+  .rmc-video-play {
+    width: 46px;
+    height: 46px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rmc-track {
+    scroll-behavior: auto;
+  }
+
+  .rmc-video-play,
+  .rmc-chip-btn,
+  .rmc-arrow,
+  .rmc-count,
+  .rmc-dot-inner {
+    transition: none;
+  }
+
+  .rmc-spin {
+    animation: none;
+  }
+}

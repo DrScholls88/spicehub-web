@@ -700,10 +700,12 @@
    animate={{...}} element AND the target of a manual swipe-to-dismiss
    transform (handleSheetTouchMove writes sheetRef.current.style.transform
    directly) — so it always carries a live transform. It only clips to the
-   rounded corners now; .ml-qp-scroll-body below does the actual scrolling,
-   and .ml-qp-actions is position:fixed against THIS box (see that rule) so
-   neither one is a position:sticky descendant of a transformed scrolling
-   container — the combination that was making the action row "roll". */
+   rounded corners; .ml-qp-scroll-body below does the actual scrolling.
+   Keep it that way: a position:sticky descendant of a transformed scrolling
+   container glitches in Chrome/WebView, which is the bug the split was made
+   to fix. Nothing inside is sticky or fixed any more — .ml-qp-actions is an
+   ordinary in-flow footer at the end of the scroller (2026-09-03) — so
+   there is nothing left to recompute on scroll at all. */
 .ml-qp-sheet {
   background: var(--card);
   border-radius: 20px;
@@ -734,9 +736,10 @@
      without scrolling at all; overflow-y:auto above stays as a safety net
      for long ingredient lists, just visually hidden per the Gemini UX pass. */
   scrollbar-width: none;
-  /* Room for the fixed .ml-qp-actions bar so the last section never sits
-     underneath it. */
-  padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+  /* 2026-09-03: the 84px reserve for a floating .ml-qp-actions is gone —
+     that row is an ordinary block at the end of this scroller now, so it
+     takes its own space and nothing sits underneath it. */
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .ml-qp-scroll-body::-webkit-scrollbar {
@@ -761,13 +764,9 @@
   border-radius: 16px 16px 0 0;
 }
 
-.ml-qp-hero-empty {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+/* .ml-qp-hero-empty was the no-photo placeholder for the old single <img>
+   hero. RecipeMediaCarousel renders its own placeholder (.rmc-placeholder),
+   so the rule went with the markup. */
 
 /* Floating close button (Aceternity-faithful) */
 /* Floating chrome row (Aceternity-faithful): kebab-menu trigger + close,
@@ -917,24 +916,22 @@
   color: var(--primary);
 }
 
-/* position:fixed against .ml-qp-sheet (its nearest transformed ancestor —
-   see the comment on that rule) instead of sitting in normal flow at the
-   end of the scrollable content. Always visible without scrolling, and
-   rides along as one rigid piece with the sheet during the swipe-to-
-   dismiss gesture instead of lagging/glitching behind it. */
+/* 2026-09-03: was position:fixed against .ml-qp-sheet, floating over the
+   card's own content — which forced an 84px bottom reserve on the scroller,
+   covered a big slice of a short landscape card, and needed sub-44px
+   buttons to stay tolerable there. Ordinary block at the end of
+   .ml-qp-scroll-body now: glued to the bottom of the content, occluding
+   nothing, no reserve, no landscape exception. The top border and the
+   card's own background keep it reading as a footer rather than as one
+   more section. */
 .ml-qp-actions {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+  margin-top: 12px;
+  padding: 12px 16px calc(16px + env(safe-area-inset-bottom, 0px));
   background: var(--card);
   border-top: 1px solid var(--border);
-  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
-  z-index: 4;
 }
 
 .ml-qp-primary-btn {
@@ -997,31 +994,16 @@
   background: rgba(224, 123, 79, 0.1);
 }
 
-/* Short landscape phones — same treatment as MealDetail's sticky bar
-   (.detail-sticky-bar's @media (max-height:500px) and (orientation:
-   landscape) block): the quick-view is already a tight glance-card, but
-   on a rotated short viewport its hero + fixed action bar can still eat
-   an outsized share of the little vertical room available, so both
-   shrink further here — a deliberate, scoped exception to the 44px
-   touch-target minimum for this cramped case only, matching the
-   precedent already set on the full recipe card. */
+/* Short landscape phones. 2026-09-03: this block used to shrink the action
+   row's buttons below the 44px touch-target minimum, because that row was
+   position:fixed and therefore covering part of an already-short card for
+   the entire scroll range. It is in-flow now and only occupies room once
+   the content above it has ended, so the exception is retired and the
+   buttons keep their full size in every orientation. The hero still gives
+   up height — it is the one element with room to spare here. */
 @media (max-height: 500px) and (orientation: landscape) {
 .ml-qp-hero {
     height: 90px;
-  }
-
-.ml-qp-actions {
-    padding: 8px 16px calc(10px + env(safe-area-inset-bottom, 0px));
-    gap: 6px;
-  }
-
-.ml-qp-primary-btn {
-    min-height: 38px;
-  }
-
-.ml-qp-icon-btn {
-    width: 38px;
-    height: 38px;
   }
 }
 

@@ -1239,6 +1239,15 @@ export function mergeRecipeData(existing, incoming) {
     _carouselImages: mergePhotoArrays(existing._carouselImages, incoming._carouselImages),
     _igCarouselImages: mergePhotoArrays(existing._igCarouselImages, incoming._igCarouselImages),
     _scanPages: mergePhotoArrays(existing._scanPages, incoming._scanPages),
+    // 2026-09-03: photos the user added by hand from the recipe card's hero
+    // carousel, and the suppression list of import-sourced photos they
+    // removed there. Both are user intent, so a re-import must never clear
+    // them: userPhotos unions the same way the gathered-photo arrays above
+    // do, and hiddenPhotos carries forward so a deleted carousel frame does
+    // not come back the next time the source URL is re-scraped (the same
+    // rule as _userEdited above, applied to photos instead of text).
+    userPhotos: mergePhotoArrays(existing.userPhotos, incoming.userPhotos),
+    hiddenPhotos: mergePhotoArrays(existing.hiddenPhotos, incoming.hiddenPhotos),
     updatedAt: new Date().toISOString(),
   };
 }

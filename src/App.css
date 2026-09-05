@@ -371,33 +371,6 @@ body::before {
 }
 
 /* ── Header build badge (dev version indicator) ── */
-.app-build-badge {
-  flex: 0 0 auto;
-  margin-left: 2px;
-  padding: 2px 8px;
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.16);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.2px;
-  line-height: 1.4;
-  cursor: pointer;
-  -webkit-backdrop-filter: blur(4px);
-  backdrop-filter: blur(4px);
-  transition: background 0.15s ease, transform 0.1s ease;
-}
-
-.app-build-badge:hover {
-  background: rgba(255, 255, 255, 0.28);
-}
-
-.app-build-badge:active {
-  transform: scale(0.94);
-}
-
 .subtitle {
   font-size: 11px;
   opacity: 0.85;
@@ -469,11 +442,13 @@ body::before {
     padding: 4px 4px;
   }
 
-  /* Icon glyph is an inline-styled <span> (fontSize:18 set in App.jsx), so an
-     inline style beats a normal rule here — !important is the deliberate,
-     narrow exception, matching existing usage elsewhere in this file. */
-  .tab-bar button:not(.tab-bar-capture) span:first-child {
-    font-size: 15px !important;
+  /* Icons are Lucide <svg> now, not inline-styled emoji spans, so the old
+     `span:first-child { font-size: … !important }` hack retires with them —
+     width/height simply override the svg's own attributes, no specificity
+     fight and no !important. */
+  .tab-bar-icon {
+    width: 17px;
+    height: 17px;
   }
 
   /* Capture control: shrink to match the tighter bar without letting the
@@ -485,11 +460,14 @@ body::before {
   .tab-bar-capture-glyph {
     width: 30px;
     height: 30px;
-    font-size: 21px;
-    padding-bottom: 2px;
   }
 
-  .tab-bar button span:not(:first-child) {
+  .tab-bar-capture-glyph svg {
+    width: 21px;
+    height: 21px;
+  }
+
+  .tab-bar-label {
     font-size: 10px;
   }
 }
@@ -524,6 +502,17 @@ body::before {
 .tab-bar button.active {
   color: var(--primary);
   border-top-color: var(--primary);
+}
+
+/* Lucide strokes inherit the button's colour, so active/inactive keep working
+   exactly as they did for the emoji they replaced. */
+.tab-bar-icon {
+  flex: 0 0 auto;
+}
+
+.tab-bar-label {
+  font-size: 11px;
+  line-height: 1.2;
 }
 
 .tab-bar button:active {
@@ -562,12 +551,8 @@ body::before {
   border-radius: 50%;
   background: var(--primary);
   color: #fff;
-  font-size: 27px;
-  font-weight: 300;
-  line-height: 1;
-  /* Optical centering — the "+" glyph's ink sits high of the em box centre in
-     the system stack at this size. */
-  padding-bottom: 2px;
+  /* Holds a Lucide <Plus/>. The typographic "+" this replaced needed an
+     optical-centring nudge; the svg centres itself, so that hack is gone. */
   box-shadow: 0 2px 8px rgba(230, 81, 0, 0.32);
   transition: transform 0.15s var(--ease-spring, ease), box-shadow 0.15s ease;
 }
@@ -3639,29 +3624,15 @@ body::before {
   border-color: var(--primary);
   color: #fff;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-}/* .detail-sticky-bar below is `position: sticky; bottom: 0` INSIDE this
-   same scrolling sheet (.modal-content), with a negative bottom margin that
-   cancels .modal-content's own 32px+safe-area bottom padding so the bar can
-   span edge-to-edge. That means .modal-content reserves ZERO extra room for
-   the bar's actual rendered height (~110-120px: scale row + gap + action
-   row + the bar's own vertical padding) — so once the sheet is scrolled to
-   its end, the last Direction step(s) and the Source section sit UNDER the
-   sticky bar instead of above it. Reserve real room for it here, scoped to
-   this component only (double-class beats the single-class .modal-content
-   rule regardless of source order, so this can't silently lose a future
-   reorder of the stylesheet). */
+}
 
-
-/* ── Landscape on phone: this bar is `position: sticky` inside the same
-   scrolling sheet as the title/ingredients/directions above it — on a full
-   -height portrait screen there's plenty of room for it to sit below the
-   fold until scrolled into view, but on a short rotated viewport the
-   sheet's whole scrollable area can be barely taller than the bar itself,
-   so it ends up pinned over the title/header for most of the scroll range
-   instead of only appearing near the bottom. Shrinking it measurably
-   reduces how much of that short screen it permanently covers. Same
-   (max-height: 500px) and (orientation: landscape) convention as the tab
-   bar and Import preview screen. */
+/* 2026-09-03: two comment blocks describing the Meal Detail bottom bar used
+   to sit here, documenting a bottom-padding reserve and a landscape shrink
+   that were needed while that bar floated over the recipe. The bar is an
+   ordinary in-flow block at the end of the sheet now (see
+   .detail-action-bar in styles/screens/MealDetail.css), so it reserves its
+   own space and neither workaround exists any more. .btn-scale above is
+   still shared by that bar and by CookMode, which is why it stays here. */
 
 
 .btn-scaler {
@@ -5104,6 +5075,30 @@ body::before {
   background: rgba(255, 255, 255, 0.05);
 }
 
+/* Inline "Copy URL" affordance inside the iOS Shortcut instructions. That URL
+   carries a literal [Shortcut Input] token which iOS substitutes at run time,
+   so it has to be transcribed exactly — retyping it from a <code> block on a
+   phone is where the setup was losing people. */
+.stg-inline-copy {
+  margin-top: 6px;
+  padding: 5px 12px;
+  min-height: var(--touch-min-size, 44px);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s, transform 0.15s;
+}
+
+.stg-inline-copy:active {
+  transform: scale(0.96);
+  background: var(--surface-hover, var(--card));
+}
+
 .stg-row-icon {
   font-size: 19px;
   line-height: 1;
@@ -5350,23 +5345,91 @@ body::before {
 }
 
 .hdr-btn {
+  position: relative;             /* badge anchor */
   min-width: var(--touch-min-size, 44px);
   min-height: var(--touch-min-size, 44px);
-  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.15));
-  background: var(--surface-overlay, rgba(255, 255, 255, 0.12));
   border-radius: 12px;
-  font-size: 18px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   -webkit-tap-highlight-color: transparent;
   transition: background-color 0.15s, color 0.15s, border-color 0.15s, box-shadow 0.15s, opacity 0.15s, transform 0.15s;
+
+  /* These three were `var(--surface-overlay, rgba(255,255,255,0.12))` and
+     friends, written for the fallback — but those tokens ARE defined, so the
+     fallback never applied: --surface-overlay is #ffffff in light and #282830
+     in dark, i.e. solid white chips on one theme and near-black on the other,
+     both sitting on the same orange header. Harmless while the glyphs were
+     emoji (they carry their own colour); fatal now that they are Lucide
+     strokes painted in currentColor — white-on-white.
+
+     The header gradient runs to --primary-light (#ff833a) and these buttons
+     sit at that end, where plain white ink measures only 2.45:1. Darkening the
+     chip 18% lifts the icon to ~3.6:1, clearing the 3:1 that WCAG 1.4.11 asks
+     of non-text graphics. Hard-coded rather than tokenised because the header
+     is this same gradient in BOTH themes. */
+  color: #fff;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.22);
 }
 
 .hdr-btn:active {
   transform: scale(0.92);
-  background: var(--surface-hover, rgba(255, 255, 255, 0.25));
+  background: rgba(0, 0, 0, 0.28);
+}
+
+/* Build stamp beside the wordmark. Non-interactive (see App.jsx), so it has no
+   touch-target minimum and can be genuinely small — its only job is to be
+   readable when someone is checking which build a device is running.
+
+   Dark chip rather than the old rgba(255,255,255,0.16): at 9.5px this counts as
+   small text and needs 4.5:1, and white on the header's --primary end is only
+   3.79:1. Darkening 24% takes it to 5.98:1. Same treatment as .hdr-btn, so the
+   header reads as one surface. */
+.app-build-badge {
+  flex: 0 0 auto;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.24);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2px;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+/* Current destination. Shop has no bottom tab any more, so the cart is the
+   only "you are here" the Shop screen gets. */
+.hdr-btn-active {
+  background: rgba(0, 0, 0, 0.34);
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+/* Shared by the cart and friends counters. Was an inline style on each, using
+   var(--primary) — an orange pill on an orange header. White pill instead, and
+   #a63b00 rather than --primary (#e65100) for the numeral: at this size it is
+   small text, so it needs 4.5:1, and #e65100 on white is only 3.79:1. This is
+   6.47:1. */
+.hdr-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: #fff;
+  color: #a63b00;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
 
 /* Cook mode launch button */

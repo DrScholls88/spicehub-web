@@ -1,11 +1,11 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ScanLine, Upload, X, Check, Loader2 } from 'lucide-react';
+import { Camera, Upload, X, Check, Loader2 } from 'lucide-react';
 import { getDetectionLabel } from './SourcePill';
 import { isPdfFile, pdfToPageDataUrls } from '../lib/pdfPages.js';
 import { MAX_PAGES } from '../lib/photoImportEngine.js';
 import { hapticLight, hapticError } from '../haptics';
-import DocumentScanner from './DocumentScanner';
+import PageAligner from './PageAligner';
 
 /* ── Constants ──────────────────────────────────────────────────────────── */
 const FIRST_VISIT_KEY = 'spicehub_hasUsedImport';
@@ -19,15 +19,20 @@ function looksLikeUrl(s) {
  * ImportInput — Quiet Field design.
  *
  * One unified field that accepts URLs, text, photos, screenshots, or PDFs.
- * Auto-detects input type. Two icon actions cover photo intake: Upload
- * (primary — file/gallery picker, accepts images and PDFs, the common
- * path for screenshots and cookbook scans) and Scan (secondary — the
- * least-used of the two; opens the live DocumentScanner — auto-centering
- * quad, perspective flatten on capture — instead of a raw camera snap,
- * which is what actually teaches the causal line: line it up, we flatten
- * it, then we read it. Falls back to the system camera app if the live
- * feed can't open). DetectionChip shows platform recognition. Photo
- * thumbnail replaces field content once a page has been added.
+ * Auto-detects input type. Two separate, single-purpose actions cover
+ * photo intake — kept distinct so it's always obvious which one to reach
+ * for: Upload opens the phone's own file/gallery browser (images or
+ * PDFs); Take Photo opens the system camera app for one snap. Neither
+ * relies on a live in-browser camera feed, so both work even where
+ * getUserMedia is blocked. Every raw photo either one produces — camera
+ * or gallery — then runs through PageAligner, a static-image "Genius
+ * Scan"-style step: auto-detect the page edges once, let the person drag
+ * the four corners to fit, flatten + auto-level on confirm. That's the
+ * causal line: line it up, we flatten it, then we read it — it just no
+ * longer requires a perfectly-framed shot at capture time. PDFs skip
+ * alignment (already flat, rendered pages). DetectionChip shows platform
+ * recognition. Photo thumbnail replaces field content once a page has
+ * been added.
  */
 export default function ImportInput({
   url,
@@ -47,7 +52,10 @@ export default function ImportInput({
   const [dragOver, setDragOver] = useState(false);
   const [pdfBusy, setPdfBusy] = useState('');
   const [notice, setNotice] = useState('');
-  const [scannerOpen, setScannerOpen] = useState(false);
+  // Photos awaiting the alignment step, in capture/pick order. queue[0] is
+  // the one currently shown in PageAligner; PDFs skip this queue entirely
+  // and go straight into scanPages.
+  const [queue, setQueue] = useState([]);
   const [isFirstVisit, setIsFirstVisit] = useState(() => {
     try { return !localStorage.getItem(FIRST_VISIT_KEY); } catch { return false; }
   });
@@ -66,6 +74,7 @@ export default function ImportInput({
   const hasPhoto = scanPages && scanPages.length > 0;
   const hasContent = hasUrl || hasText || hasPhoto;
   const isPdfBatch = hasPhoto && scanPages.every((p) => p.source === 'pdf');
+  const currentAlign = queue[0] || null; // item awaiting the alignment step, if any
 
   // ── Detection ─────────────────────────────────────────────────────────
   const detectionLabel = useMemo(() => {
@@ -99,8 +108,9 @@ export default function ImportInput({
     if (!files.length) return;
     setNotice('');
 
-    const room = () => MAX_PAGES - (scanPages?.length || 0) - collected.length;
-    const collected = [];
+    const pdfCollected = [];
+    const imageCollected = [];
+    const room = () => MAX_PAGES - (scanPages?.length || 0) - queue.length - pdfCollected.length - imageCollected.length;
     let truncated = false;
 
     for (const file of files) {
@@ -113,7 +123,7 @@ export default function ImportInput({
             onProgress: (n, total) => setPdfBusy(`Rendering page ${n} of ${total}…`),
           });
           pdfPages.forEach((dataUrl) => {
-            collected.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, dataUrl, source: 'pdf' });
+            pdfCollected.push({ id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, dataUrl, source: 'pdf' });
           });
           if (pdfTruncated) truncated = true;
         } catch (err) {
@@ -123,22 +133,24 @@ export default function ImportInput({
           setPdfBusy('');
         }
       } else if (/^image\//.test(file.type)) {
-        collected.push({
-          file,
-          dataUrl: URL.createObjectURL(file),
+        // Raw photo — queued for the alignment step rather than added
+        // straight to scanPages, so both Upload and Take Photo get a
+        // chance to fix the framing before it's counted as a page.
+        imageCollected.push({
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          source: 'gallery',
+          dataUrl: URL.createObjectURL(file),
         });
       }
     }
 
-    if (!collected.length) return;
+    if (!pdfCollected.length && !imageCollected.length) return;
     if (truncated) setNotice(`Only ${MAX_PAGES} pages per import — kept the first ${MAX_PAGES}.`);
-    setScanPages((prev) => [...prev, ...collected]);
+    if (pdfCollected.length) setScanPages((prev) => [...prev, ...pdfCollected]);
+    if (imageCollected.length) setQueue((prev) => [...prev, ...imageCollected]);
     // Clear URL/text when photos are added
     setUrl('');
     setPasteText('');
-  }, [scanPages, setScanPages, setUrl, setPasteText]);
+  }, [scanPages, queue, setScanPages, setUrl, setPasteText]);
 
   const handlePaste = useCallback((e) => {
     // Check clipboard for files first (smart paste)
@@ -175,22 +187,31 @@ export default function ImportInput({
 
   const handleCameraClick = useCallback(() => {
     hapticLight();
-    setScannerOpen(true);
+    cameraInputRef.current?.click();
   }, []);
 
-  // DocumentScanner capture -> same scanPages shape everything else uses.
-  const handleScanCapture = useCallback((dataUrl) => {
+  // The item currently shown in PageAligner is always queue[0]; confirming
+  // or cancelling advances the queue by one. Revoking the blob URL here
+  // (rather than in PageAligner) keeps PageAligner unaware of how the
+  // photo arrived.
+  const handleAlignConfirm = useCallback((flattenedDataUrl) => {
+    setQueue((prev) => {
+      const [current, ...rest] = prev;
+      if (current) { try { URL.revokeObjectURL(current.dataUrl); } catch { /* not a blob URL */ } }
+      return rest;
+    });
     setScanPages((prev) => {
       if (prev.length >= MAX_PAGES) return prev;
-      return [...prev, { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, dataUrl, source: 'scan' }];
+      return [...prev, { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, dataUrl: flattenedDataUrl, source: 'scan' }];
     });
   }, [setScanPages]);
 
-  // Fallback out of the live scanner: close it and fall back to the
-  // system camera app via the existing hidden capture=environment input.
-  const handleUseSystemCamera = useCallback(() => {
-    setScannerOpen(false);
-    cameraInputRef.current?.click();
+  const handleAlignCancel = useCallback(() => {
+    setQueue((prev) => {
+      const [current, ...rest] = prev;
+      if (current) { try { URL.revokeObjectURL(current.dataUrl); } catch { /* not a blob URL */ } }
+      return rest;
+    });
   }, []);
 
   const handleFileChange = useCallback((e) => {
@@ -204,14 +225,16 @@ export default function ImportInput({
   // ── Clear ─────────────────────────────────────────────────────────────
   const handleClear = useCallback(() => {
     // Revoke blob URLs to prevent memory leaks (no-op for PDF data: URLs)
-    scanPages.forEach(p => { try { URL.revokeObjectURL(p.dataUrl); } catch (_) {} });
+    scanPages.forEach(p => { try { URL.revokeObjectURL(p.dataUrl); } catch { /* not a blob URL */ } });
+    queue.forEach(q => { try { URL.revokeObjectURL(q.dataUrl); } catch { /* not a blob URL */ } });
     setUrl('');
     setPasteText('');
     setScanPages([]);
+    setQueue([]);
     setNotice('');
     setPdfBusy('');
     inputRef.current?.focus();
-  }, [setUrl, setPasteText, setScanPages, scanPages]);
+  }, [setUrl, setPasteText, setScanPages, scanPages, queue]);
 
   // ── Drop zone ─────────────────────────────────────────────────────────
   const handleDragOver = useCallback((e) => {
@@ -355,11 +378,11 @@ export default function ImportInput({
             <button
               className="import-input-field-action camera"
               onClick={handleCameraClick}
-              aria-label="Scan a page with your camera"
-              title="Scan a page"
+              aria-label="Take a photo with your camera"
+              title="Take Photo"
               type="button"
             >
-              <ScanLine size={20} strokeWidth={1.8} />
+              <Camera size={20} strokeWidth={1.8} />
             </button>
           </div>
         )}
@@ -434,17 +457,19 @@ export default function ImportInput({
         <p className="import-input-hint">or drop a photo, screenshot, or PDF of a recipe</p>
       )}
 
-      {/* Live document scanner — line it up, we flatten it, then we read it.
-         Stays open across captures; each page lands in scanPages via
-         handleScanCapture, same shape Upload/paste/drop already produce. */}
+      {/* Static alignment step — Genius-Scan-style crop/flatten. Both
+         Take Photo and Upload route every raw photo through here: auto-
+         detect the page edges once, let the person drag the four corners
+         to fix framing, flatten + auto-level on confirm. Keyed by id so
+         each queued photo gets a fresh detection pass. */}
       <AnimatePresence>
-        {scannerOpen && (
-          <DocumentScanner
-            remaining={MAX_PAGES - scanPages.length}
+        {currentAlign && (
+          <PageAligner
+            key={currentAlign.id}
+            imageSrc={currentAlign.dataUrl}
             pageCount={scanPages.length}
-            onCapture={handleScanCapture}
-            onClose={() => setScannerOpen(false)}
-            onUseSystemCamera={handleUseSystemCamera}
+            onConfirm={handleAlignConfirm}
+            onCancel={handleAlignCancel}
           />
         )}
       </AnimatePresence>
