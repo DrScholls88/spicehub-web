@@ -62,6 +62,7 @@ export function packFromCaption({
   acquiredVia = '',
   confidence = 0.5,
   author = '',
+  provenance = null,
 } = {}) {
   const imgs = Array.isArray(images)
     ? images
@@ -76,6 +77,7 @@ export function packFromCaption({
     caption: caption && caption.trim() ? caption : null,
     transcript: transcript && String(transcript).trim() ? transcript : null,
     images: imgs,
+    provenance: Array.isArray(provenance) ? provenance : [],
     acquiredVia: acquiredVia || (sourceType === 'instagram' ? 'caption' : 'text'),
     confidence,
   });

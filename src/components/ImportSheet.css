@@ -849,10 +849,94 @@
 /* 1.2: type-guess disagreement — same "worth a look" tone as review-flag-banner,
    deliberately not an error color since keeping the user's choice is correct. */
 .review-type-disagreement {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--sh-fs-xs);
+  line-height: 1.4;
+  color: #b8860b;
+}
+.review-type-disagreement svg { flex-shrink: 0; color: #b8860b; }
+[data-theme="dark"] .review-type-disagreement { color: #e8b860; }
+[data-theme="dark"] .review-type-disagreement svg { color: #e8b860; }
+
+/* Kind chip + dropdown — replaces the old pair of correction buttons and
+   the destination grid. One control, names the consequence. */
+.review-kind-row {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   margin: 8px 12px 0;
+}
+.review-kind-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1.5px solid var(--sh-border);
+  background: var(--sh-bg);
+  color: var(--sh-text);
+  font-size: var(--sh-fs-xs);
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  font-family: inherit;
+}
+.review-kind-chip:active { opacity: 0.8; }
+.review-kind-chevron {
+  transition: transform 150ms;
+}
+.review-kind-chevron.open {
+  transform: rotate(180deg);
+}
+.review-kind-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  min-width: 220px;
+  background: var(--sh-bg);
+  border: 1px solid var(--sh-border);
+  border-radius: var(--sh-radius-sm);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  overflow: hidden;
+}
+[data-theme="dark"] .review-kind-menu {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.review-kind-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 14px;
+  border: none;
+  background: transparent;
+  color: var(--sh-text);
+  font-size: var(--sh-fs-sm);
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+.review-kind-option:active { background: var(--sh-accent-bg); }
+.review-kind-option.active {
+  font-weight: 700;
+  color: var(--sh-accent);
+}
+.review-kind-option + .review-kind-option {
+  border-top: 1px solid var(--sh-border);
+}
+.review-kind-consequence {
+  font-weight: 400;
+  color: var(--sh-text-muted);
+}
+
+/* Salvage trust line */
+.review-salvage-trust {
+  margin: 6px 12px 0;
   padding: 8px 12px;
   border-radius: var(--sh-radius-sm);
   background: #fff7e6;
@@ -861,36 +945,11 @@
   line-height: 1.4;
   color: #7a5a1e;
 }
-.review-type-disagreement svg { flex-shrink: 0; color: #b8860b; }
-[data-theme="dark"] .review-type-disagreement {
+[data-theme="dark"] .review-salvage-trust {
   background: rgba(178, 106, 0, 0.15);
   border-color: rgba(178, 106, 0, 0.4);
   color: #e8b860;
 }
-[data-theme="dark"] .review-type-disagreement svg { color: #e8b860; }
-
-/* 1.8: meal→drink one-tap correction — a real button (not a passive banner),
-   since it changes state on tap. Sized well above the 44px iOS touch-target
-   floor per the Phase 1 iOS checklist. */
-.review-type-correction {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: calc(100% - 24px);
-  margin: 8px 12px 0;
-  padding: 12px 14px;
-  min-height: 44px;
-  border-radius: var(--sh-radius-sm);
-  border: 1px dashed var(--sh-accent-bg-strong);
-  background: var(--sh-accent-bg);
-  color: var(--sh-accent);
-  font-size: var(--sh-fs-sm);
-  font-weight: 700;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-.review-type-correction:active { opacity: 0.8; }
 
 /* Creator's note — the short friendly intro/story preserved from a social
    caption (recipeSchema `intro`). Quietly attributed; never fabricated. */
@@ -1346,71 +1405,7 @@
 }
 
 /* ── Save destination grid ──────────────────────────────────────────────── */
-.review-destination {
-  margin-top: 12px;
-}
 
-.review-destination-label {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--sh-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin: 0 0 8px;
-}
-
-.review-destination-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-.review-destination-grid.two-col { grid-template-columns: 1fr 1fr; }
-.review-destination-grid.three-col { grid-template-columns: 1fr 1fr 1fr; }
-
-.review-dest-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  border: 1.5px solid var(--sh-border);
-  border-radius: var(--sh-radius-sm);
-  padding: 14px 8px;
-  text-align: center;
-  cursor: pointer;
-  background: var(--sh-bg);
-  color: var(--sh-text);
-  transition: all 150ms;
-  min-height: 60px;
-  font: inherit;
-}
-.review-dest-card:hover { border-color: var(--sh-text-muted); }
-
-.review-dest-card.active {
-  border-color: var(--sh-accent);
-  background: var(--sh-accent-bg);
-  color: var(--sh-accent-text);
-}
-
-.review-dest-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--sh-text-secondary);
-}
-.review-dest-card.active .review-dest-icon {
-  color: var(--sh-accent-text);
-}
-
-.review-dest-label {
-  display: block;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--sh-text);
-}
-.review-dest-card.active .review-dest-label {
-  color: var(--sh-accent-text);
-}
 
 /* ── BrowserAssist inline mode ──────────────────────────────────────────── */
 .browser-assist-inline .browser-assist-header,
@@ -2068,6 +2063,57 @@
   padding: 0;
 }
 .import-sheet-recovery-retry:hover {
+  color: var(--sh-text-secondary);
+}
+.import-sheet-recovery-retry:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.import-sheet-recovery-msg-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--sh-text);
+  margin-bottom: 4px;
+}
+
+.import-sheet-recovery-url {
+  width: 100%;
+  border: 1px solid var(--sh-border);
+  border-radius: var(--sh-radius-sm);
+  background: var(--sh-surface);
+  color: var(--sh-text);
+  font: inherit;
+  font-size: 14px;
+  padding: 12px 14px;
+  box-sizing: border-box;
+}
+.import-sheet-recovery-url:focus {
+  outline: none;
+  border-color: var(--sh-accent);
+  box-shadow: 0 0 0 3px var(--sh-accent-ring);
+}
+@supports (-webkit-touch-callout: none) {
+  .import-sheet-recovery-url { font-size: 16px; }
+}
+
+.import-sheet-recovery-alt {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-top: 4px;
+  border: none;
+  background: none;
+  color: var(--sh-text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.import-sheet-recovery-alt:hover {
   color: var(--sh-text-secondary);
 }
 

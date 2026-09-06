@@ -103,3 +103,14 @@ export function chipFromVia(via = '') {
 }
 
 export const INITIAL_TIMELINE = Object.freeze({ stage: 0, chip: null });
+
+// ── Chip display labels ─────────────────────────────────────────────────────
+// Internal tier id → what a person reads. null = show no chip.
+const CHIP_LABELS = {
+  'Apify': 'from the post', 'IG data': 'from the post', 'Embed': 'from the post',
+  'JSON-LD': 'from the page', 'Microdata': 'from the page', 'SpiceHub server': 'from the page',
+  'Caption': 'from the post', 'Reddit': 'from the thread', 'Video audio': 'from the video',
+  'On-device': 'from the page',
+  'Gemini': null,
+};
+export function chipLabel(chip) { return CHIP_LABELS[chip] || null; }

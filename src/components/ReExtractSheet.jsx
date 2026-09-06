@@ -176,6 +176,7 @@ export default function ReExtractSheet({ meal, onClose, onSaved }) {
       const result = source === 'audio'
         ? await transcribeVideoForRecipe(videoSource.originalUrl, {
             type: itemType,
+            kindLocked: true,
             imageUrl: meal.imageUrl || '',
             model: getPreferredWhisperModel(),
           })
@@ -184,6 +185,7 @@ export default function ReExtractSheet({ meal, onClose, onSaved }) {
             imageUrl: meal.imageUrl || '',
             sourceUrl: meal.link || meal.sourceUrl || '',
             type: itemType,
+            kindLocked: true,
           });
       if (abortRef.current) return;
       const normalized = result ? normalizeForReview(result, itemType) : null;

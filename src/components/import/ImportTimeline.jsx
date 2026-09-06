@@ -16,7 +16,7 @@
 import React from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { Check } from 'lucide-react';
-import { STAGES } from '../../import/progressMap.js';
+import { STAGES, chipLabel } from '../../import/progressMap.js';
 import './ImportTimeline.css';
 
 const SPRING = { type: 'spring', stiffness: 210, damping: 26 };
@@ -76,6 +76,8 @@ function ImportTimeline({ stage = 0, chip = null, statusMsg = '', slow = false, 
   // Rail fill: 0 → 50 → 100% as stages complete; the active stage shows a
   // half-step so the rail visibly reaches the breathing node.
   const fillPct = error ? Math.min(stage, 2) * 50 : Math.min(stage * 50 + 18, 100);
+  const allDone = stage >= STAGES.length;
+  const displayChip = chip ? chipLabel(chip) : null;
 
   return (
     <div className={`itl${error ? ' itl--error' : ''}`} role="status" aria-live="polite">
@@ -100,18 +102,22 @@ function ImportTimeline({ stage = 0, chip = null, statusMsg = '', slow = false, 
         </div>
       </div>
 
+      {!allDone && (
+        <div className="itl-spin"><div className="ring-spinner" aria-hidden="true" /></div>
+      )}
+
       <div className="itl-status-row">
         <AnimatePresence mode="popLayout" initial={false}>
-          {chip && !error && (
+          {displayChip && !error && (
             <motion.span
-              key={chip}
+              key={displayChip}
               className="itl-chip"
               initial={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.9, y: 4 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95 }}
               transition={SPRING}
             >
-              via {chip}
+              {displayChip}
             </motion.span>
           )}
         </AnimatePresence>
@@ -129,7 +135,7 @@ function ImportTimeline({ stage = 0, chip = null, statusMsg = '', slow = false, 
             </motion.p>
           </AnimatePresence>
           {slow && !error && (
-            <span className="itl-subtext">Still working — some sites are slow to share…</span>
+            <span className="itl-subtext">Still going — some posts hide the recipe well.</span>
           )}
         </div>
       </div>

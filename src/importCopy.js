@@ -10,17 +10,18 @@
 
 /** Ordered regex → friendly copy. First match wins. */
 const STATUS_MAP = [
-  [/subtitle|transcript|asr|audio/i, 'Listening for a spoken recipe…'],
-  [/photo|vision|ocr|analyzing image/i, 'Reading your photo…'],
-  [/structur|gemini|\bai\b|markdown|parse/i, 'Sorting ingredients from instructions…'],
-  [/multiple extraction|deeper|another method|retry/i, 'Trying another way to read it…'],
-  [/caption|embed|oembed|instagram|reel|tiktok|scanning/i, 'Grabbing the recipe caption…'],
-  [/browser|server|yt-dlp|puppeteer|headless|proxy|fetching page|page text|page content/i, 'Reading the recipe page…'],
-  [/json|endpoint|structured data|schema|metadata/i, 'Looking for recipe details…'],
-  [/start|import/i, 'Getting your recipe…'],
+  [/subtitle|transcript|asr|audio|whisper/i, 'Not much written down \u2014 having a listen'],
+  [/photo|vision|ocr|analyzing image/i,      'Reading your photo\u2026'],
+  [/structur|gemini|\bai\b|markdown|parse/i, 'Sorting ingredients from steps\u2026'],
+  [/multiple extraction|deeper|another method|retry/i, 'Trying another way in\u2026'],
+  [/comment/i,                               'Reading the caption, comments and all'],
+  [/caption|embed|oembed|instagram|reel|tiktok|scanning/i, 'Got the post \u2014 lifting the words out'],
+  [/browser|server|yt-dlp|puppeteer|headless|proxy|fetching page|page text|page content/i, 'Reading the recipe page\u2026'],
+  [/json|endpoint|structured data|schema|metadata/i, 'Looking for the recipe\u2026'],
+  [/start|import/i,                          'Sniffing out the recipe\u2026'],
 ];
 
-const DEFAULT_STATUS = 'Working on your recipe…';
+const DEFAULT_STATUS = 'Working on your recipe\u2026';
 
 /**
  * Translate a raw engine progress message into user-friendly copy.

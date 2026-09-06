@@ -181,8 +181,8 @@ const _inFlight = new Map();
  * @param {() => Promise<any>} fn  The actual import work
  * @returns {Promise<any>}
  */
-export function deduplicateImport(url, fn) {
-  const key = normalizeImportUrl(url);
+export function deduplicateImport(url, kind, fn) {
+  const key = normalizeImportUrl(url) + '::' + (kind || 'meal');
   if (_inFlight.has(key)) {
     console.log(`[importGuards] Dedup hit — sharing in-flight import for ${key}`);
     return _inFlight.get(key);

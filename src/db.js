@@ -1,6 +1,6 @@
 import Dexie from 'dexie';
 import { buildStructuredFields } from './recipeParser';
-import { upgradeRecipeIngredients, cleanImportedTitle, normalizeMealCategory } from './recipeSchema';
+import { upgradeRecipeIngredients, cleanImportedTitle, normalizeMealCategory, ENGINE_PROMPT_VERSION } from './recipeSchema';
 import { categorizeBottle } from './lib/barMatch';
 
 const db = new Dexie('SpiceHubDB');
@@ -1650,7 +1650,7 @@ const INSTAGRAM_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 // still a plain string (`url, cachedAt` — no schema/version bump needed; a
 // longer composite string is still just a string).
 function cacheKey(url, type = 'meal') {
-  return `${url}::${type || 'meal'}`;
+  return `${url}::${type || 'meal'}::${ENGINE_PROMPT_VERSION}`;
 }
 
 export async function getCachedInstagramRecipe(url, type = 'meal') {
@@ -1700,7 +1700,13 @@ export async function clearInstagramCache() {
 export async function invalidateCachedImport(url) {
   if (!url) return;
   try {
+    // Delete current-version keys for both kinds
     await db.instagramCache.bulkDelete([cacheKey(url, 'meal'), cacheKey(url, 'drink')]);
+    // Also purge any stale keys from older prompt versions (prefix scan)
+    const staleKeys = await db.instagramCache
+      .where('url').startsWith(url + '::')
+      .primaryKeys();
+    if (staleKeys.length) await db.instagramCache.bulkDelete(staleKeys);
   } catch (e) {
     console.warn('[SpiceHub DB] instagramCache invalidate failed:', e);
   }

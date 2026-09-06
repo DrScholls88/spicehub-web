@@ -32,6 +32,9 @@ export {
 // Acquisition
 export { acquireWebsitePack, packFromExtractResponse, extractEndpoint } from './acquire/website.js';
 export { acquireInstagramPack, instagramShortcode } from './acquire/instagram.js';
+export { acquirePhotoPack } from './acquire/photo.js';
+export { acquireBlogPack } from './acquire/blog.js';
+export { acquireRedditPack } from './acquire/reddit.js';
 
 // Images
 export {
@@ -68,8 +71,6 @@ export {
   structureDeterministic,
   structureRecipeFromImage,
   enforceDeterministicRules,
-  cleanSocialCaption,
-  isCaptionWeak,
   parseCaption,
   parseHtml,
   detectImportType,
@@ -87,3 +88,15 @@ export {
 // recipeParser directly (see the exemption list in eslint.config.js) because
 // routing it through this barrel would create a cycle.
 export { importRecipeFromPages, PhotoImportError } from '../lib/photoImportEngine.js';
+
+// The thin import spine — detect → acquire → structure → gate → return.
+// New callers should use importRequest() instead of reaching into
+// recipeParser.js directly.
+export { importRequest, restructure, detectAcquireFork } from './engine.js';
+
+// Source detection (distinct from detectImportType which detects kind).
+export { detectSource, extractUrl } from './detectSource.js';
+// Caption cleaning + weakness detection (extracted from recipeParser)
+export { cleanSocialCaption, isCaptionWeak } from './clean/socialCaption.js';
+
+export { gateRecipe } from './gate.js';

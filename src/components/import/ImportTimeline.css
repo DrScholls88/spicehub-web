@@ -167,3 +167,26 @@
     animation: none;
   }
 }
+
+/* Spinner under the rail — carries "still alive" while the rail is static */
+.itl-spin {
+  display: flex;
+  justify-content: center;
+  padding: 2px 0 0;
+}
+.itl-spin .ring-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border-soft, rgba(120, 113, 108, 0.18));
+  border-top-color: var(--accent, #e0733d);
+  border-radius: 50%;
+  animation: itl-ring-spin 0.8s linear infinite;
+}
+@keyframes itl-ring-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .itl-spin .ring-spinner {
+    animation-duration: 2s;
+  }
+}

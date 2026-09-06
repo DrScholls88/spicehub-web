@@ -31,11 +31,15 @@ import { stripJunkLines, isJunkLine, BAIT_ONLY_RE, countQuantityLines } from './
 import { acquireWebsitePack } from './import/acquire/website.js';
 import { acquireInstagramPack } from './import/acquire/instagram.js';
 import { acquirePinterestPack } from './import/acquire/pinterest.js';
+import { acquireVideoAudio } from './import/acquire/videoAudio.js';
 import { selectHeroImage, persistCarousel } from './import/images.js';
 import { packHasCompleteCandidate, createContextPack, packFromCaption } from './import/contextPack.js';
 import { structurePack, serverStructurePack } from './import/structure/gemini.js';
+import { cleanSocialCaption, isCaptionWeak } from './import/clean/socialCaption.js';
+export { cleanSocialCaption, isCaptionWeak };  // re-export for legacy consumers
 import { GEMINI_PRIMARY_MODEL, GEMINI_FLAGSHIP_MODEL, GEMINI_VISION_MODEL } from './lib/importConfig.js';
 import { tryBlogLinkExtraction, assessCaptionQuality } from './lib/blogLinkFollower.js';
+import { detectVideoSource } from './lib/videoSource.js';
 // 2026-08-09: shared HTML->recipe extraction engine (JSON-LD/microdata/CSS
 // heuristics + the decode/image/instruction helpers it depends on) — moved
 // out of this file so blogLinkFollower.js's blog-link-follow path uses the
@@ -359,77 +363,7 @@ function isDirectionsHeader(lower) {
   return DIRECTIONS_HEADERS.some(h => cleaned === h || cleaned.startsWith(h + ':') || cleaned.startsWith(h + ' -') || lower === h || lower.startsWith(h + ':') || lower.startsWith(h + ' -'));
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ ReciME-style aggressive social caption cleaner Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-// Strips hashtags, @mentions, engagement bait, timestamps, sponsor phrases,
-// and platform UI chrome before feeding text to Gemini.
-export function cleanSocialCaption(text) {
-  if (!text || typeof text !== 'string') return '';
-  let t = text;
-
-  // 1. Strip trailing hashtag blocks (3+ hashtags at end of post)
-  t = t.replace(/(\n\s*)(#[\w.]+\s*){3,}[\s\S]*$/m, '');
-
-  // 2. Strip engagement bait whole lines
-  const BAIT_LINES = [
-    /^(save|bookmark|share|pin|tag|repost|retweet|like|follow|subscribe|hit the bell|turn on notifications|comment below|double tap|tap the heart|let me know in the comments?).{0,80}$/im,
-    /^(link in bio|full recipe in bio|recipe (is |in |below|at)|check (my )?bio|bio link|swipe up).{0,80}$/im,
-    /^(#?ad\b|advertisement|sponsored|collab|partnership|gifted|#sponsored|#partner|#collab).{0,80}$/im,
-    /^(use code|discount code|promo code|coupon|affiliate|shop now|buy now|purchase).{0,80}$/im,
-    /^(follow (?:me|us|@\w+)?|follow for more|more recipes on|find me on|join me on|new video|new post).{0,80}$/im,
-    /^(music:|song:|audio:|outfit:|shop my|wearing:|featuring:|soundtrack:|ft\.|prod\. by).{0,80}$/im,
-    /^[Ã°Å¸â€â€”Ã°Å¸â€˜â€¡Ã¢Â¬â€¡Ã¯Â¸ÂÃ°Å¸â€œÂ²Ã°Å¸â€™Å’Ã°Å¸â€œÂ©Ã°Å¸â€â€Ã°Å¸â€œÅ’Ã°Å¸ÂÂ·Ã¯Â¸Â].{0,80}$/m,
-  ];
-  for (const re of BAIT_LINES) t = t.replace(new RegExp(re.source, re.flags + 'g'), '');
-
-  // 2.5 Zero-junk contract: drop whole lines that carry strong promo junk
-  // ANYWHERE in the line (mid-caption "use code X ... link in bio" prose that
-  // the anchored BAIT_LINES above cannot catch). Lines with real recipe
-  // signals (quantities/cooking verbs) are always preserved.
-  t = stripJunkLines(t);
-
-  // 3. Strip "See more" / "Ã¢â‚¬Â¦ more" truncation artifacts
-  t = t.replace(/\.{3,}\s*(more|see more|read more)\s*$/im, '');
-  t = t.replace(/\s*[Ã¢â‚¬Â¦]\s*(more|see more)?\s*$/im, '');
-
-  // 4. Strip Instagram OG engagement prefix (e.g. "13K likes, 213 comments - user on Jan 1, 2025: ")
-  t = t.replace(/^[\d,.]+[kKmM]?\s*likes?,\s*[\d,.]+[kKmM]?\s*comments?\s*[-Ã¢â‚¬â€œÃ¢â‚¬â€]\s*\S+\s+on\s+[^:]+:\s*[""]?/im, '');
-  t = t.replace(/^[\d,.]+[kKmM]?\s*(likes?|comments?|views?|shares?|saves?)\s*[,Ã‚Â·Ã¢â‚¬Â¢|]+\s*/im, '');
-
-  // 5. Strip video timestamps (e.g. "2:30 - Add the garlic")
-  t = t.replace(/^\d{1,2}:\d{2}(?::\d{2})?\s*[-Ã¢â‚¬â€œÃ¢â‚¬â€:]\s*/gm, '');
-  t = t.replace(/\bat\s+\d{1,2}:\d{2}(?::\d{2})?\s*/gi, '');
-
-  // 6. Strip inline @mentions (keep rest of line)
-  t = t.replace(/@[\w.]+/g, '');
-
-  // 7. Strip inline #hashtags (keep rest of line so recipe text survives)
-  t = t.replace(/#[\w.]+/g, '');
-
-  // 8. Strip bare URLs
-  t = t.replace(/https?:\/\/\S+/g, '');
-
-  // 9. Strip Instagram/TikTok UI chrome that leaks into scraped text
-  t = t.replace(/^(verified|view profile|follow|following|message|share profile|send message)\s*$/gim, '');
-  t = t.replace(/verified\s*[Ã‚Â·Ã¢â‚¬Â¢]\s*(view\s+profile|follow)/gi, '');
-  t = t.replace(/^\d+[\s,]*(likes?|followers?|following|comments?|views?|saves?)\s*$/gim, '');
-
-  // 10. Strip soft CTA lines ("watch the full video", "see recipe below", etc.)
-  // Ã¢Å¡Â Ã¯Â¸Â  Be surgical: only strip if the line is CLEARLY a CTA, not cooking narration.
-  //     "watch the garlic", "see how it thickens" should survive.
-  //     Match only when the line starts with a CTA trigger AND ends with a CTA-shaped phrase.
-  t = t.replace(/^(watch the full (video|reel|recipe)|see (the )?(full |original )?recipe|check (out )?(the )?(full |my )?recipe|full recipe (is |in |at |below|on)|recipe (is |in |at |below|available)|swipe (up|left|right) for|tap (the )?(link|here)|link in bio for).{0,80}$/gim, '');
-
-  // 11. Normalize whitespace
-  // Instagram embed captions often encode original newlines as 3+ spaces (because
-  // the embed HTML strips <br> tags to spaces during extraction). Convert them to
-  // real newlines first so parseCaption can split sections correctly.
-  t = t.replace(/[ \t]{3,}/g, '\n');
-  t = t.replace(/[ \t]{2,}/g, ' ');
-  t = t.replace(/\n{3,}/g, '\n\n');
-  t = t.replace(/^[\s,;|Ã‚Â·Ã¢â‚¬Â¢Ã¢â‚¬â€œÃ¢â‚¬â€]+$/gm, '');
-
-  return t.trim();
-}
+// cleanSocialCaption — moved to import/clean/socialCaption.js
 
 function isSocialCaptionProse(line) {
   const value = String(line || '').trim();
@@ -457,54 +391,7 @@ function cleanStructuredSocialRecipe(recipe) {
   return { ...recipe, ingredients, directions };
 }
 
-/**
- * isCaptionWeak Ã¢â‚¬â€ returns true if the caption is too thin to contain a full
- * recipe on its own. Triggers yt-dlp subtitle / AI fallback in BrowserAssist.
- *
- * CB-01: Signal detection now runs BEFORE length checks so that short but
- *        valid recipes (TikTok cards, metric-only captions) are not rejected.
- * CB-03: Compact metric notation (250g, 200ml, 1.5kg) detected separately since
- *        UNITS_RE requires a word boundary before 'g'/'ml' that breaks on "250g".
- */
-export function isCaptionWeak(text) {
-  // Raw junk check Ã¢â‚¬â€ raw (uncleaned) text below 20 chars is never a recipe
-  if (!text || text.trim().length < 20) return true;
-  const cleaned = cleanSocialCaption(text);
-
-  // CB-03: Compact metric units (e.g. "250g", "200ml", "1.5kg", "180Ã‚Â°C")
-  // UNITS_RE misses these because \b requires a word boundary BEFORE 'g'/'ml',
-  // but a digit is a word char, so "250g" has no boundary between '0' and 'g'.
-  const hasMetricUnit = /\d+\s*(?:g|ml|kg|cl|dl|l|Ã‚Â°[CF])\b/i.test(cleaned);
-
-  // CB-01: Detect recipe signals BEFORE applying length penalties
-  const hasIngredientSignal = hasMetricUnit || UNITS_RE.test(cleaned) || FOOD_RE.test(cleaned);
-  const hasDirectionSignal = COOKING_VERBS_RE.test(cleaned) || SPOKEN_DIRECTION_RE.test(cleaned);
-
-  // Tier 1 (revised): Junk only if both short AND signal-free
-  // Old behaviour rejected all cleaned < 50 Ã¢â‚¬â€ too aggressive for "2 cups flour\nMix and fry"
-  if (cleaned.length < 50 && !hasIngredientSignal && !hasDirectionSignal) return true;
-
-  // Tier 1.5 (bait override): "full recipe on the blog / link in bio" means the
-  // recipe is NOT here. A stray food word must not rescue a bait caption —
-  // require at least 2 quantified ingredient lines to overrule the bait phrase.
-  if (BAIT_ONLY_RE.test(text) && countQuantityLines(cleaned) < 2) return true;
-
-  // Tier 2: Strong Ã¢â‚¬â€ both ingredient AND direction signals Ã¢â€ â€™ always good
-  if (hasIngredientSignal && hasDirectionSignal) return false;
-
-  // Tier 3 (lowered 80Ã¢â€ â€™60): One signal + sufficient length Ã¢â€ â€™ accept
-  // 60 chars covers TikTok ingredient cards and terse metric recipes
-  if ((hasIngredientSignal || hasDirectionSignal) && cleaned.length >= 60) return false;
-
-  // Tier 4 (new): Ingredient-only captions at Ã¢â€°Â¥ 40 chars Ã¢â€ â€™ accept
-  // Common pattern: creator lists ingredients in caption, shows technique in video
-  if (hasIngredientSignal && cleaned.length >= 40) return false;
-
-  // No usable recipe signal Ã¢â€ â€™ definitely weak
-  if (!hasIngredientSignal && !hasDirectionSignal) return true;
-
-  return false;
-}
+// isCaptionWeak — moved to import/clean/socialCaption.js
 
 // Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Caption Parser wrapper (used by BrowserImport) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 export function parseManualCaption(captionText, sourceUrl) {
@@ -1249,7 +1136,7 @@ function _applyCaptionCrossCheck(result, textForAI, type, kindLocked = false) {
   return result;
 }
 
-export async function captionToRecipe(captionText, { title = '', imageUrl = '', sourceUrl = '', type = 'meal', transcript = null, sourceType = 'text', author = '', kindLocked = false } = {}) {
+export async function captionToRecipe(captionText, { title = '', imageUrl = '', sourceUrl = '', type = 'meal', transcript = null, sourceType = 'text', author = '', kindLocked = false, images = null, acquiredVia = '', confidence, provenance = null } = {}) {
   const hasCaption = !!(captionText && captionText.trim().length >= 20);
   const hasTranscript = !!(transcript && String(transcript).trim().length >= 20);
   if (!hasCaption && !hasTranscript) return null;
@@ -1263,7 +1150,7 @@ export async function captionToRecipe(captionText, { title = '', imageUrl = '', 
   // single labeled ContextPack. On empty/failure it falls through to the legacy
   // structureWithAI path below, so this is strictly additive. ──
   try {
-    const pack = packFromCaption({ caption: textForAI, transcript, title, sourceUrl, imageUrl, sourceType });
+    const pack = packFromCaption({ caption: textForAI, transcript, title, sourceUrl, imageUrl, images, sourceType, acquiredVia, confidence, provenance });
     const structured = await structurePack(pack, { type, kindLocked });
     if (structured?.isRecipe) {
       const packRecipe = finalizeAIRecipe(thinFromStructured(structured), {
@@ -1768,99 +1655,6 @@ function cleanTitle(title) {
 //   - Dict-indexed objects { "0": { text: "..." }, "1": { text: "..." } }
 // 2026-08-09: superseded by the imported parseInstructionsFlexible from
 // lib/recipeHtmlExtraction.js (module-scope import shadows this old local
-// clone's name at every call site in this file — see import block up top).
-// Renamed instead of deleted: this function's body contains a few comment
-// lines with byte-corrupted mojibake (pre-existing, unrelated to this
-// change) that the text-editing tool cannot reliably match/delete safely.
-// It is dead code from here down — nothing in this file calls this name.
-function _DEAD_parseInstructionsFlexible(inst) {
-  if (!inst) return [];
-
-  // String Ã¢â‚¬â€ could be newline-separated or a JSON string
-  if (typeof inst === 'string') {
-    const trimmed = inst.trim();
-    if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
-      try { return parseInstructionsFlexible(JSON.parse(trimmed)); }
-      catch { /* fall through to split */ }
-    }
-    return trimmed.split(/[\n\r]+/).map(s => sanitizeInstruction(s)).filter(Boolean);
-  }
-
-  // Dict-indexed (e.g. { "0": { text: "..." }, "1": { text: "..." } })
-  if (inst && typeof inst === 'object' && !Array.isArray(inst)) {
-    const keys = Object.keys(inst);
-    if (keys.length > 0 && keys.every(k => /^\d+$/.test(k))) {
-      return parseInstructionsFlexible(keys.sort((a, b) => +a - +b).map(k => inst[k]));
-    }
-    // Single object with text
-    const txt = inst.text || inst.name || '';
-    return txt ? [sanitizeInstruction(txt.toString())] : [];
-  }
-
-  if (!Array.isArray(inst)) return [];
-
-  const directions = [];
-  for (const step of inst) {
-    if (typeof step === 'string') {
-      const clean = sanitizeInstruction(step);
-      if (clean) directions.push(clean);
-    } else if (step && typeof step === 'object') {
-      const t = [].concat(step['@type'] || step.type || []).join(' ').toLowerCase();
-
-      // HowToSection Ã¢â‚¬â€ flatten nested itemListElement
-      if (t.includes('howtosection') && Array.isArray(step.itemListElement)) {
-        for (const sub of step.itemListElement) {
-          const txt = (sub.text || sub.name || '').toString().trim();
-          if (txt) directions.push(sanitizeInstruction(txt));
-        }
-      } else {
-        const txt = (step.text || step.name || '').toString().trim();
-        if (txt) directions.push(sanitizeInstruction(txt));
-      }
-    }
-  }
-  return directions.filter(Boolean);
-}
-
-/**
- * Iterative instruction sanitization:
- * Strip HTML, decode entities, collapse whitespace Ã¢â‚¬â€ loop until stable.
- */
-// 2026-08-09: superseded by the imported sanitizeInstruction — see note above
-// _DEAD_parseInstructionsFlexible. Dead code from here down.
-function _DEAD_sanitizeInstruction(text) {
-  if (!text || typeof text !== 'string') return '';
-  let clean = text.trim();
-  let prev = '';
-  for (let i = 0; i < 5 && clean !== prev; i++) {
-    prev = clean;
-    clean = decodeHtml(clean.replace(/<[^>]+>/g, ' ').replace(/\xa0/g, ' ').replace(/ +/g, ' ')).trim();
-  }
-  return clean;
-}
-
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ JSON-LD extraction Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-// 2026-08-09: superseded by the imported findJsonLdRecipes — see note above
-// _DEAD_parseInstructionsFlexible. Dead code from here down (extractRecipeFromJsonLd
-// and parseRecipeNode below are only called from this dead function, so they're
-// dead too — left in place for the same mojibake-matching reason).
-function _DEAD_findJsonLdRecipes(html) {
-  const results = [];
-  const re = /<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
-  let m;
-  while ((m = re.exec(html)) !== null) {
-    try {
-      // eslint-disable-next-line no-control-regex -- intentional: strips
-      // stray control bytes some sites embed in JSON-LD blocks, which would
-      // otherwise throw a silent JSON.parse failure.
-      const data = JSON.parse(m[1].replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, ' ').trim());
-      const recipe = extractRecipeFromJsonLd(Array.isArray(data) ? data : [data]);
-      if (recipe) results.push(recipe);
-    } catch { /* skip malformed JSON */ }
-  }
-  return results;
-}
-
 function extractRecipeFromJsonLd(items) {
   for (const item of items) {
     if (!item || typeof item !== 'object') continue;
@@ -2911,16 +2705,16 @@ async function persistRedditImages(structured) {
  *      or { _error: true, reason } on failure
  *      or null if completely failed
  */
-export async function parseFromUrl(url, onProgress, { type = 'meal', signal, kindLocked = false } = {}) {
+export async function parseFromUrl(url, onProgress, { type = 'meal', signal, kindLocked = false, requestBudget } = {}) {
   // Backwards compatibility alias
-  return await importRecipeFromUrl(url, onProgress, { type, signal, kindLocked });
+  return await importRecipeFromUrl(url, onProgress, { type, signal, kindLocked, requestBudget });
 }
 
-export async function importRecipeFromUrl(url, onProgress, { type = 'meal', signal, kindLocked = false } = {}) {
-  return _importRecipeFromUrlOuter(url, onProgress, { type, signal, kindLocked });
+export async function importRecipeFromUrl(url, onProgress, { type = 'meal', signal, kindLocked = false, requestBudget } = {}) {
+  return _importRecipeFromUrlOuter(url, onProgress, { type, signal, kindLocked, requestBudget });
 }
 
-async function _importRecipeFromUrlOuter(url, onProgress, { type = 'meal', signal, kindLocked = false } = {}) {
+async function _importRecipeFromUrlOuter(url, onProgress, { type = 'meal', signal, kindLocked = false, requestBudget: parentBudget } = {}) {
   const DEFAULT_TIMEOUT_MS = 45_000;
   const MAX_TIMEOUT_MS = 90_000;
   const startedAt = Date.now();
@@ -2950,6 +2744,8 @@ async function _importRecipeFromUrlOuter(url, onProgress, { type = 'meal', signa
     currentDeadlineMs = cappedWanted;
     clearTimeout(timer);
     timer = setTimeout(() => resolveTimeout(timeoutStub()), remaining);
+    // Extend the parent's budget too (Reddit link-post recursion)
+    parentBudget?.(wantedTotalMs);
   };
 
   try {
@@ -2965,7 +2761,7 @@ async function _importRecipeFromUrlOuter(url, onProgress, { type = 'meal', signa
     // instead of duplicating it, regardless of how many outer races come and
     // go against it.
     return await Promise.race([
-      deduplicateImport(url, () => _importRecipeFromUrlInner(url, onProgress, { type, signal, requestBudget, kindLocked })),
+      deduplicateImport(url, type, () => _importRecipeFromUrlInner(url, onProgress, { type, signal, requestBudget, kindLocked })),
       timeoutPromise,
     ]);
   } finally {
@@ -2990,7 +2786,9 @@ async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signa
         console.log(`[SpiceHub] Reddit link post Ã¢â‚¬â€ redirecting to: ${redditData.externalUrl}`);
         if (onProgress) onProgress('Following Reddit link to recipe site...');
         // Recursively parse the external URL (without Reddit wrapper)
-        const externalRecipe = await parseFromUrl(redditData.externalUrl, onProgress);
+        const externalRecipe = await parseFromUrl(redditData.externalUrl, onProgress, {
+          type, signal, kindLocked, requestBudget,
+        });
         if (externalRecipe && !externalRecipe._error) {
           // Attach Reddit metadata
           return {
@@ -3102,7 +2900,7 @@ async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signa
         imageUrl: c.imageUrl || serverPack.images[0]?.url || '',
         link: url,
         confidence: serverPack.confidence,
-        _contextPack: { provenance: serverPack.provenance, acquiredVia: serverPack.acquiredVia },
+        _contextPack: serverPack,
         _extractedVia: 'extract:' + serverPack.acquiredVia,
       };
     }
@@ -3119,11 +2917,11 @@ async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signa
           });
           if (hasRecipeContent(packRecipe)) {
             packRecipe._contextPack = {
+              ...serverPack,
               provenance: [
                 ...serverPack.provenance,
                 ...(Array.isArray(structured.provenance) ? structured.provenance.map(p => ({ ...p, via: 'model:' + p.via })) : []),
               ],
-              acquiredVia: serverPack.acquiredVia,
             };
             return packRecipe;
           }
@@ -3279,255 +3077,12 @@ export function parseHtml(html, sourceUrl) {
 // parseHtmlStructured() import. Renamed rather than deleted because several
 // of its comment lines carry pre-existing byte-corrupted mojibake (unrelated
 // to this change) that this text-editing tool cannot reliably match/delete.
-function _DEAD_oldParseHtml(html, sourceUrl) {
-  // Aggressive image extraction Ã¢â‚¬â€ tries every known source, returns first non-empty.
-  // Order: caller-provided Ã¢â€ â€™ JSON-LD (via selectBestImage) Ã¢â€ â€™ og:image Ã¢â€ â€™ twitter:image
-  //        Ã¢â€ â€™ schema itemprop="image" Ã¢â€ â€™ video poster Ã¢â€ â€™ largest recipe-context <img>.
-  // Designed so "recipe blogs missing the main image" becomes nearly impossible.
-  const _pickImage = (...preferred) => {
-    for (const p of preferred) {
-      if (p && typeof p === 'string' && p.trim()) return p.trim();
-    }
-    const og = extractMeta(html, 'og:image') || extractMeta(html, 'og:image:secure_url');
-    if (og) return og;
-    const tw = extractMeta(html, 'twitter:image') || extractMeta(html, 'twitter:image:src');
-    if (tw) return tw;
-    const itempropM = /<(?:meta|link)[^>]+itemprop\s*=\s*["']image["'][^>]+(?:content|href)\s*=\s*["']([^"']+)["']/i.exec(html);
-    if (itempropM) return itempropM[1];
-    const posterM = /<video[^>]*poster\s*=\s*["']([^"']+)["']/i.exec(html);
-    if (posterM) return posterM[1];
-    // Last resort: first reasonably-large <img> with "recipe" in alt/class/src.
-    const imgRe = /<img[^>]+src\s*=\s*["']([^"']+)["'][^>]*>/gi;
-    let m;
-    while ((m = imgRe.exec(html)) !== null) {
-      const tag = m[0];
-      const src = m[1];
-      if (!src || src.startsWith('data:') || /\.(svg|gif)(\?|$)/i.test(src)) continue;
-      if (/(recipe|food|dish|hero|wp-post-image|featured)/i.test(tag)) return src;
-    }
-    return '';
-  };
-
-  // 1. JSON-LD (best, most reliable)
-  // IMPORTANT: Only accept if it has at least a title + some content (ingredients OR directions).
-  // Many sites have a Recipe JSON-LD schema stub with empty arrays Ã¢â‚¬â€ falling through lets CSS
-  // extraction (WPRM, Tasty, Feast, Mediavine Create, etc.) find the actual content.
-  const [jsonLdRecipe] = findJsonLdRecipes(html);
-  if (jsonLdRecipe) {
-    const hasContent = jsonLdRecipe.ingredients?.length > 0 || jsonLdRecipe.directions?.length > 0;
-    if (hasContent) {
-      // Always reinforce imageUrl with aggressive fallbacks Ã¢â‚¬â€ many JSON-LD stubs lack an image.
-      return { ...jsonLdRecipe, link: sourceUrl, imageUrl: _pickImage(jsonLdRecipe.imageUrl) };
-    }
-    // Has a name but no content Ã¢â‚¬â€ continue to CSS/microdata for the actual recipe data.
-    // We'll merge the JSON-LD name/image back in at the end if CSS finds content.
-    console.log('[SpiceHub] JSON-LD Recipe found but empty content Ã¢â‚¬â€ falling through to CSS extraction');
-  }
-
-  // 2. Microdata (itemprop/itemtype)
-  const microdataRecipe = extractMicrodataFromHtml(html);
-  if (microdataRecipe) {
-    // Merge in JSON-LD title/image if better
-    const name = (jsonLdRecipe?.name && !microdataRecipe.name) ? jsonLdRecipe.name : microdataRecipe.name;
-    const imageUrl = _pickImage(microdataRecipe.imageUrl, jsonLdRecipe?.imageUrl);
-    return { ...microdataRecipe, name, imageUrl, link: sourceUrl };
-  }
-
-  // 3. Heuristic CSS class matching (WPRM, Tasty, Feast, Mediavine Create, etc.)
-  const heuristicRecipe = extractRecipeByCSS(html);
-  if (heuristicRecipe) {
-    // Merge JSON-LD title/image if CSS didn't find them
-    const name = heuristicRecipe.name || jsonLdRecipe?.name || '';
-    const imageUrl = _pickImage(heuristicRecipe.imageUrl, jsonLdRecipe?.imageUrl);
-    return { ...heuristicRecipe, name, imageUrl, link: sourceUrl };
-  }
-
-  // 4. Meta tags fallback
-  let title = extractMeta(html, 'og:title') || extractMeta(html, 'twitter:title');
-  let description = extractMeta(html, 'og:description') || extractMeta(html, 'twitter:description');
-  let imageUrl = _pickImage();
-
-  if (!title) return null;
-  title = cleanTitle(title);
-
-  // Strip social media prefix from description
-  description = stripSocialMetaPrefix(description || '');
-
-  let ingredients = [];
-  let directions = [];
-
-  if (description) {
-    const parsed = parseCaption(description);
-    if (parsed.ingredients.length > 0) ingredients = parsed.ingredients;
-    if (parsed.directions.length > 0) directions = parsed.directions;
-    if (parsed.title) title = parsed.title;
-  }
-
-  return { name: title, ingredients, directions, link: sourceUrl, imageUrl };
-}
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ Client-side Microdata extraction Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 // 2026-08-09: superseded by the imported extractMicrodataFromHtml — see note
-// above _DEAD_parseInstructionsFlexible. Dead code from here down.
-function _DEAD_extractMicrodataFromHtml(html) {
-  if (!html.includes('schema.org/Recipe')) return null;
-
-  const stripTags = (s) => s.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-
-  // Name
-  const nameRe = /<[^>]*itemprop\s*=\s*["']name["'][^>]*>([^<]+)/i;
-  const nameM = nameRe.exec(html);
-  const name = nameM ? decodeHtml(nameM[1].trim()) : '';
-  if (!name) return null;
-
-  // Ingredients
-  const ingredients = [];
-  const ingRe = /<[^>]*itemprop\s*=\s*["']recipeIngredient["'][^>]*>([\s\S]*?)<\/(?:li|span|div|p)>/gi;
-  let m;
-  while ((m = ingRe.exec(html)) !== null) {
-    const text = stripTags(decodeHtml(m[1]));
-    if (text && text.length > 2) ingredients.push(text);
-  }
-
-  // Instructions
-  const directions = [];
-  const instRe = /<[^>]*itemprop\s*=\s*["']recipeInstructions["'][^>]*>([\s\S]*?)<\/(?:li|div|ol|section)>/gi;
-  while ((m = instRe.exec(html)) !== null) {
-    const text = stripTags(decodeHtml(m[1]));
-    if (text && text.length > 5) directions.push(text);
-  }
-
-  if (ingredients.length === 0 && directions.length === 0) return null;
-
-  const imageUrl = extractMeta(html, 'og:image') || '';
-
-  return {
-    name,
-    ingredients: ingredients.length ? ingredients : [],
-    directions: directions.length ? directions : [],
-    imageUrl,
-  };
-}
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ Client-side heuristic CSS class extraction Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 // 2026-08-09: superseded by the imported extractRecipeByCSS — see note above
-// _DEAD_parseInstructionsFlexible. Dead code from here down.
-function _DEAD_extractRecipeByCSS(html) {
-  const stripTags = (s) => s.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-
-  // Look for popular recipe plugin patterns
-  // WPRM, Tasty, Mediavine Create, Feast Plugin, AdThrive, NYT Cooking, Allrecipes, etc.
-  const ingPatterns = [
-    // WP Recipe Maker (most popular)
-    /class\s*=\s*["'][^"']*wprm-recipe-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
-    // Tasty Recipes
-    /class\s*=\s*["'][^"']*tasty-recipe[s]?-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
-    // Mediavine Create (mv-create-*)
-    /class\s*=\s*["'][^"']*mv-create-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div|p)>/gi,
-    /class\s*=\s*["'][^"']*mv-recipe-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
-    /class\s*=\s*["'][^"']*mv-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
-    // Feast Plugin (used by many food blogs)
-    /class\s*=\s*["'][^"']*recipe-card-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
-    /class\s*=\s*["'][^"']*ingredients__ingredient[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
-    // AdThrive / Raptive
-    /class\s*=\s*["'][^"']*at-recipe-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
-    /class\s*=\s*["'][^"']*adthrive-recipe-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
-    // Generic recipe ingredient patterns
-    /class\s*=\s*["'][^"']*recipe__ingredient[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
-    /class\s*=\s*["'][^"']*ingredient-item[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
-    /class\s*=\s*["'][^"']*recipe-ingred_txt[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|span|div)>/gi,
-    /class\s*=\s*["'][^"']*structured-ingredients__list-item[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
-    /class\s*=\s*["'][^"']*ingredient-list__item[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
-    /class\s*=\s*["'][^"']*recipe-ingredients__item[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
-    // NYT Cooking, Serious Eats
-    /class\s*=\s*["'][^"']*o-Ingredient__a-Name[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|span|div)>/gi,
-    /class\s*=\s*["'][^"']*ingredient__quantity[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|span|div)>/gi,
-    // Broad fallbacks
-    /class\s*=\s*["'][^"']*recipe-ingredient[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
-    /class\s*=\s*["'][^"']*ingredient-text[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|span|div)>/gi,
-    // schema.org recipeIngredient inside any tag
-    /itemprop\s*=\s*["']recipeIngredient["'][^>]*>([^<]{3,200})/gi,
-  ];
-
-  const ingredients = [];
-  for (const re of ingPatterns) {
-    let m;
-    while ((m = re.exec(html)) !== null) {
-      const text = stripTags(decodeHtml(m[1]));
-      if (text && text.length > 2 && text.length < 200) ingredients.push(text);
-    }
-    if (ingredients.length > 0) break;
-  }
-
-  const dirPatterns = [
-    // WP Recipe Maker
-    /class\s*=\s*["'][^"']*wprm-recipe-instruction[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
-    // Tasty Recipes
-    /class\s*=\s*["'][^"']*tasty-recipe[s]?-instruction[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
-    // Mediavine Create (mv-create-*)
-    /class\s*=\s*["'][^"']*mv-create-instruction[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div|p)>/gi,
-    /class\s*=\s*["'][^"']*mv-create-step[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div|p)>/gi,
-    /class\s*=\s*["'][^"']*mv-recipe-instruction[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
-    /class\s*=\s*["'][^"']*mv-instruction[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
-    // Feast Plugin
-    /class\s*=\s*["'][^"']*recipe-card-step[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div|p)>/gi,
-    /class\s*=\s*["'][^"']*instructions__instruction[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
-    // AdThrive / Raptive
-    /class\s*=\s*["'][^"']*at-recipe-instruction[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
-    /class\s*=\s*["'][^"']*adthrive-recipe-instruction[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
-    // Generic patterns
-    /class\s*=\s*["'][^"']*recipe__step[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
-    /class\s*=\s*["'][^"']*step-item[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
-    /class\s*=\s*["'][^"']*recipe-directions__item[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
-    /class\s*=\s*["'][^"']*structured-project__step[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
-    /class\s*=\s*["'][^"']*recipe-step__text[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div|p)>/gi,
-    // NYT Cooking, Serious Eats
-    /class\s*=\s*["'][^"']*o-Method__m-Step[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
-    // Gutenberg blocks
-    /class\s*=\s*["'][^"']*wp-block-list-item[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div)>/gi,
-    // Broad fallbacks
-    /class\s*=\s*["'][^"']*recipe-instruction[^"']*["'][^>]*>([\s\S]*?)<\/li>/gi,
-    /class\s*=\s*["'][^"']*step-text[^"']*["'][^>]*>([\s\S]*?)<\/(?:li|div|p)>/gi,
-    // schema.org recipeInstructions inside <li>
-    /itemprop\s*=\s*["'](?:recipeInstructions|step)["'][^>]*>([\s\S]*?)<\/(?:li|div|section)>/gi,
-  ];
-
-  const directions = [];
-  for (const re of dirPatterns) {
-    let m;
-    while ((m = re.exec(html)) !== null) {
-      const text = stripTags(decodeHtml(m[1]));
-      if (text && text.length > 5) directions.push(text);
-    }
-    if (directions.length > 0) break;
-  }
-
-  if (ingredients.length === 0 && directions.length === 0) return null;
-
-  // Get title from recipe plugin or OG
-  let name = '';
-  const titlePatterns = [
-    /class\s*=\s*["'][^"']*wprm-recipe-name[^"']*["'][^>]*>([^<]+)/i,
-    /class\s*=\s*["'][^"']*tasty-recipes-title[^"']*["'][^>]*>([^<]+)/i,
-    /class\s*=\s*["'][^"']*mv-create-title[^"']*["'][^>]*>([^<]+)/i,
-    /class\s*=\s*["'][^"']*recipe-card-title[^"']*["'][^>]*>([^<]+)/i,
-    /class\s*=\s*["'][^"']*recipe[_-]?name[^"']*["'][^>]*>([^<]+)/i,
-    /class\s*=\s*["'][^"']*recipe[_-]?title[^"']*["'][^>]*>([^<]+)/i,
-  ];
-  for (const re of titlePatterns) {
-    const m = re.exec(html);
-    if (m) { name = decodeHtml(m[1].trim()); break; }
-  }
-  if (!name) name = extractMeta(html, 'og:title') || 'Imported Recipe';
-  name = cleanTitle(name);
-
-  return {
-    name,
-    ingredients: ingredients.length ? ingredients : [],
-    directions: directions.length ? directions : [],
-    imageUrl: extractMeta(html, 'og:image') || '',
-  };
-}
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ Extract recipe from DOM (used by BrowserAssist for visible page content) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
 /**
@@ -5002,23 +4557,19 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   let capturedCaption   = '';
   let capturedRawCaption = '';  // pre-cleaning caption — preserves URLs for blog link discovery
   let capturedImageUrl  = '';
-  let capturedTitle     = '';   // best title found across all phases
-  let capturedAuthor    = '';   // creator handle/name (oEmbed author_name / Apify owner*) — attribution only
-  let capturedSource    = '';   // which extraction method won (apify/oembed/ig-json/embed/browser)
+  let capturedTitle     = '';   // best title found across video/embed/agent phases; igPack?.title is fallback
+  let capturedAuthor    = '';   // embed-path fallback only; primary author is igPack?.author
+  let igPack = null;            // hoisted: the acquired ContextPack survives the whole function
+  let capturedSource    = '';   // embed/browser fallback only; primary is igPack?.acquiredVia
   let videoRecipe       = null; // yt-dlp/server resource helper result
 
   // Track raw page text from embed as last-resort Gemini input
   let capturedRawPageText = '';
   // Step 4: carousel image candidates captured across phases (persisted later)
-  let capturedImages = [];
   // Blog link follower discovery surface (Phase 0.5B hypercharge)
-  let capturedComments = [];
-  let capturedOwnerUsername = '';
   // profileBioUrl (harden-ideas-audit-2026-08-06.md §2): best-effort, see the
   // defensive-extraction comment in api/proxy.js's instagram-apify mode —
   // stays '' when the actor response doesn't happen to expose it.
-  let capturedProfileBioUrl = '';
-  let capturedIsVideo = false;
 
   const persistCapturedImage = async (imageUrl = capturedImageUrl) => {
     if (!imageUrl || imageUrl.startsWith('data:')) return imageUrl || '';
@@ -5056,26 +4607,16 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
     // Apify ∥ oEmbed ∥ ig-json plus the server /api/extract embed fallback,
     // returning a ContextPack with raw caption + carousel candidates.
     try {
-      const igPack = await acquireInstagramPack(url, { signal });
+      igPack = await acquireInstagramPack(url, { signal });
       if (igPack?.caption) {
-        capturedRawCaption = igPack.caption;   // preserve URLs for blog link discovery
-        capturedCaption = cleanSocialCaption(igPack.caption);
-        capturedSource = igPack.acquiredVia;
-        capturedImages = igPack.images.map((im) => im.url).filter(Boolean);
-        if (!capturedImageUrl && capturedImages[0]) {
-          capturedImageUrl = capturedImages[0];
+        if (!capturedImageUrl && igPack.images[0]?.url) {
+          capturedImageUrl = igPack.images[0].url;
           if (igPack.acquiredVia === 'apify') {
-            try { const p = await downloadImageAsDataUrl(capturedImages[0], { timeoutMs: 15000 }); if (p) capturedImageUrl = p; } catch { /* keep raw url */ }
+            try { const p = await downloadImageAsDataUrl(igPack.images[0].url, { timeoutMs: 15000 }); if (p) capturedImageUrl = p; } catch { /* keep raw url */ }
           }
         }
-        if (igPack.title && !capturedTitle) capturedTitle = igPack.title;
-        if (igPack.author && !capturedAuthor) capturedAuthor = igPack.author;
         // Blog link follower discovery surface
-        if (igPack.latestComments?.length) capturedComments = igPack.latestComments;
-        if (igPack.ownerUsername) capturedOwnerUsername = igPack.ownerUsername;
-        if (igPack.profileBioUrl) capturedProfileBioUrl = igPack.profileBioUrl;
-        if (igPack.isVideo) capturedIsVideo = true;
-        progress(1, 'done', capturedSource + ': caption (' + capturedCaption.length + ' chars)');
+        progress(1, 'done', igPack.acquiredVia + ': caption (' + igPack.caption.length + ' chars)');
       } else {
         progress(1, 'done', 'Quick extraction failed — trying embed…');
       }
@@ -5083,6 +4624,11 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
       progress(1, 'done', 'Quick extraction failed — trying embed…');
     }
   }
+
+  // Memoized clean caption from igPack — available for explicit reads;
+  // seeded into capturedCaption so downstream phase accumulators see it.
+  const igCleanCaption = igPack?.caption ? cleanSocialCaption(igPack.caption) : '';
+  if (igCleanCaption && !capturedCaption) capturedCaption = igCleanCaption;
 
   // ── Phase 1: Instagram embed page (CORS proxy path — main workhorse) ────────
   if (!videoRecipe && !capturedCaption) {
@@ -5117,7 +4663,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
       if (embedData?.author && !capturedAuthor) capturedAuthor = embedData.author;
 
       if (embedData?.caption) {
-        if (embedData.caption.length > (capturedRawCaption || '').length) capturedRawCaption = embedData.caption;
+        if (embedData.caption.length > (igPack?.caption || '').length) capturedRawCaption = embedData.caption;
         const embedCaption = cleanSocialCaption(embedData.caption);
         if (embedCaption.length > capturedCaption.length) { capturedCaption = embedCaption; if (!capturedSource) capturedSource = 'embed'; }
 
@@ -5201,14 +4747,14 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   let blogPartial = null;
   const captionQuality = capturedCaption ? assessCaptionQuality(capturedCaption) : { class: 'weak', reason: 'empty' };
   // Detect blog URLs in the RAW caption (before cleanSocialCaption stripped them)
-  const rawHasUrl = capturedRawCaption && /https?:\/\/[^\s]+/i.test(capturedRawCaption);
+  const rawHasUrl = (capturedRawCaption || igPack?.caption) && /https?:\/\/[^\s]+/i.test(capturedRawCaption || igPack?.caption);
   const shouldTryBlogLink = (
     // Caption exists and is weak/incomplete
     (capturedCaption && (captionQuality.class === 'weak' || captionQuality.class === 'incomplete')) ||
     // Blog link present in raw caption — always worth trying even if caption is "strong"
     rawHasUrl ||
     // No caption at all but we have comments or bio that might contain blog links
-    (!capturedCaption && (capturedComments.length > 0 || capturedProfileBioUrl))
+    (!capturedCaption && (igPack?.latestComments?.length > 0 || igPack?.profileBioUrl))
   );
   if (shouldTryBlogLink) {
     try {
@@ -5219,11 +4765,11 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
           : 'Caption thin — checking for recipe blog links…');
       // Pass the RAW caption so discoverLinks() can find URLs that
       // cleanSocialCaption stripped. Falls back to cleaned caption if no raw.
-      const blogRecipe = await tryBlogLinkExtraction(capturedRawCaption || capturedCaption, capturedImageUrl, {
+      const blogRecipe = await tryBlogLinkExtraction(capturedRawCaption || igPack?.caption || capturedCaption, capturedImageUrl, {
         instagramUrl: url,
-        comments: capturedComments,
-        profileBioUrl: capturedProfileBioUrl,
-        carouselImages: capturedImages,
+        comments: igPack?.latestComments || [],
+        profileBioUrl: igPack?.profileBioUrl || '',
+        carouselImages: (igPack?.images || []).map(im => im.url).filter(Boolean),
         signal,
       });
 
@@ -5233,7 +4779,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
         const { url: resolvedImageUrl, status: imageStatus } =
           await resolveDisplayableImage(blogRecipe.image || capturedImageUrl || '', persistCapturedImage);
         let carouselImages = [];
-        try { carouselImages = await persistCarousel(capturedImages || [], persistCapturedImage); } catch { /* optional */ }
+        try { carouselImages = await persistCarousel(igPack?.images || [], persistCapturedImage); } catch { /* optional */ }
         // 2026-08-11: dual-source photo preservation. When both the blog and
         // Instagram have their own cover photo, the `||` above picks exactly
         // one as `imageUrl` — the loser was previously discarded outright
@@ -5253,8 +4799,8 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
           }
         }
         // PiP preservation: videoUrl always = IG URL when input was a reel/video
-        // capturedIsVideo covers /p/ posts that are videos (Apify flag)
-        const isReel = /\/(reel|tv)\//i.test(url) || capturedIsVideo;
+        // igPack.isVideo covers /p/ posts that are videos (Apify flag)
+        const isReel = /\/(reel|tv)\//i.test(url) || !!igPack?.isVideo;
         const finalRecipe = {
           name: blogRecipe.name || generateTitleFromIngredients(blogRecipe.ingredients, type),
           // 2026-08-11: was `.join('\n')` (a single string) — every other
@@ -5299,7 +4845,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
           domain: domainForTelemetry(blogRecipe.link || url), extractionSource: 'blog_link_follower',
           ms: 0, url,
         });
-        try { await setCachedImport(url, finalRecipe, type); } catch { /* non-fatal */ }
+        if (gate.verdict !== 'empty') { try { await setCachedImport(url, finalRecipe, type); } catch { /* non-fatal */ } }
         return finalRecipe;
 
       } else if (blogRecipe?._isPartial && blogRecipe._articleText) {
@@ -5353,41 +4899,30 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   // ImportSheet.jsx) know not to immediately retry the exact same
   // transcription on the exact same URL — a second attempt right after a
   // failed one won't yield a different result, just double the wait.
-  const isVideoPostForAsr = wouldExitEmpty && /\/(reel|tv)\//i.test(url);
+  const isVideoPostForAsr = wouldExitEmpty && !!detectVideoSource(url);
 
   if (isVideoPostForAsr) {
     // Pull the outer import deadline out to cover a real transcription run —
     // the default 45s budget is sized for text-only extraction and would
     // otherwise silently orphan this attempt (see importRecipeFromUrl).
-    const ASR_OUTER_BUDGET_MS = 90_000;
-    const ASR_INNER_TIMEOUT_MS = 40_000;
-    requestBudget?.(ASR_OUTER_BUDGET_MS);
+    requestBudget?.(90_000);
 
     progress(3, 'running', 'No usable caption — transcribing video audio…');
-    const asrController = new AbortController();
-    if (signal) {
-      if (signal.aborted) asrController.abort();
-      else signal.addEventListener('abort', () => asrController.abort(), { once: true });
-    }
-    const asrTimer = setTimeout(() => asrController.abort(), ASR_INNER_TIMEOUT_MS);
-    try {
-      const transcription = await transcribeFromUrl(url, {
-        onProgress: (_tier, msg) => progress(3, 'running', msg || 'Transcribing video audio…'),
-        signal: asrController.signal,
+    const asrResult = await acquireVideoAudio(
+      { sourceUrl: url },
+      {
+        signal,
         model: getPreferredWhisperModel(),
-      });
-      if (transcription?.transcript && transcription.transcript.trim().length >= 20) {
-        whisperTranscript = transcription.transcript.trim();
-        whisperExtractedVia = transcription.extractedVia || 'whisper';
-        progress(3, 'done', `Audio transcript captured (${whisperTranscript.length} chars, ${whisperExtractedVia})`);
-      } else {
-        progress(3, 'failed', 'No usable audio transcript found');
-      }
-    } catch (e) {
-      console.log('[SpiceHub] Pre-exit ASR attempt failed:', e?.message || e);
-      progress(3, 'failed', 'Audio transcription failed');
-    } finally {
-      clearTimeout(asrTimer);
+        onProgress: (_tier, msg) => progress(3, 'running', msg || 'Transcribing video audio…'),
+        budgetMs: 40_000,
+      },
+    );
+    if (asrResult.transcript) {
+      whisperTranscript = asrResult.transcript;
+      whisperExtractedVia = asrResult.via;
+      progress(3, 'done', `Audio transcript captured (${whisperTranscript.length} chars, ${whisperExtractedVia})`);
+    } else if (asrResult.attempted) {
+      progress(3, 'failed', 'No usable audio transcript found');
     }
   }
 
@@ -5400,7 +4935,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
       _asrAttempted: isVideoPostForAsr,
       capturedCaption: capturedCaption || '',
       capturedImageUrl: capturedImageUrl || '',
-      capturedTitle: capturedTitle || '',
+      capturedTitle: capturedTitle || igPack?.title || '',
       sourceUrl: url,
     };
   }
@@ -5438,13 +4973,17 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
             ? igTranscript
             : null);
       const recipe = cleanStructuredSocialRecipe(await captionToRecipe(textForGemini, {
-        title: capturedTitle,
+        title: capturedTitle || igPack?.title || '',
         imageUrl: capturedImageUrl,
-        sourceUrl: url,
+        images: igPack?.images,
+        acquiredVia: igPack?.acquiredVia,
+        confidence: igPack?.confidence,
+        provenance: igPack?.provenance,
+        sourceUrl: igPack?.sourceUrl || url,
         type,
         sourceType: 'instagram',
         transcript: igTranscriptForPack,
-        author: capturedAuthor,
+        author: igPack?.author || capturedAuthor,
         kindLocked,
       }));
       if (recipe && whisperExtractedVia) {
@@ -5461,9 +5000,9 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
         // the display proxy so the <img> still renders instead of 403-ing.
         // Step 4: vision-gated hero selection when the post gave us no direct
         // image (video-only reels). Heuristics are free; at most ONE vision call.
-        if (!capturedImageUrl && capturedImages.length) {
+        if (!capturedImageUrl && igPack?.images?.length) {
           try {
-            const hero = await selectHeroImage(capturedImages, { persistFn: persistCapturedImage, useVision: !!videoRecipe });
+            const hero = await selectHeroImage(igPack?.images || [], { persistFn: persistCapturedImage, useVision: !!videoRecipe });
             if (hero) capturedImageUrl = hero.dataUrl || hero.url;
           } catch { /* resolveDisplayableImage still runs below */ }
         }
@@ -5472,8 +5011,8 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
         // Step 4: persist the whole carousel (≤6, data URLs) so the review
         // screen can offer a cover picker and nothing 403s later.
         let carouselImages = [];
-        try { carouselImages = await persistCarousel(capturedImages, persistCapturedImage); } catch { /* optional */ }
-        const isReel = /\/(reel|tv)\//i.test(url) || capturedIsVideo;
+        try { carouselImages = await persistCarousel(igPack?.images || [], persistCapturedImage); } catch { /* optional */ }
+        const isReel = /\/(reel|tv)\//i.test(url) || !!igPack?.isVideo;
         const finalRecipe = {
           ...recipe,
           name: recipe.name && recipe.name.trim() && !/^(recipe|imported|untitled)$/i.test(recipe.name.trim())
@@ -5482,7 +5021,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
           imageUrl: resolvedImageUrl,
           _imageStatus: imageStatus,
           _carouselImages: carouselImages,
-          _extractionSource: capturedSource || (videoRecipe ? 'video' : ''),
+          _extractionSource: igPack?.acquiredVia || capturedSource || (videoRecipe ? 'video' : ''),
           extractedVia: videoRecipe ? 'yt-dlp+ai' : 'caption-ai',
           sourceUrl: url,
           importedAt: new Date().toISOString(),
@@ -5533,7 +5072,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
           domain: domainForTelemetry(url), extractionSource: finalRecipe._extractionSource || '',
           ms: 0, url,
         });
-        try { await setCachedImport(url, finalRecipe, type); } catch { /* cache write failure is non-fatal */ }
+        if (gate.verdict !== 'empty') { try { await setCachedImport(url, finalRecipe, type); } catch { /* cache write failure is non-fatal */ } }
         return finalRecipe;
       }
       // Gemini returned partial — try merge with yt-dlp if available
@@ -5601,7 +5140,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
     _needsBrowserAssist: true,
     capturedCaption: capturedCaption || '',
     capturedImageUrl: capturedImageUrl || '',
-    capturedTitle: capturedTitle || '',
+    capturedTitle: capturedTitle || igPack?.title || '',
     sourceUrl: url,
   };
 }
@@ -5680,7 +5219,7 @@ export function detectImportType(url = '', initialText = '') {
  * @returns {Promise<object|null>} Structured recipe or null
  */
 export async function transcribeVideoForRecipe(url, opts = {}) {
-  const { onProgress, signal, type = 'meal', imageUrl = '', model } = opts;
+  const { onProgress, signal, type = 'meal', kindLocked = false, imageUrl = '', model } = opts;
 
   onProgress?.('transcribe', 'Starting video transcription…');
 
@@ -5703,6 +5242,7 @@ export async function transcribeVideoForRecipe(url, opts = {}) {
     imageUrl,
     sourceUrl: url,
     type,
+    kindLocked,
   });
 
   if (recipe) {

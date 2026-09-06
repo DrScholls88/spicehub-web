@@ -4,10 +4,11 @@
  *
  * Powers the Floating Picture-in-Picture player (Meal Library + Cook Mode).
  *
- * Supported platforms (MVP):
+ * Supported platforms:
  *   • YouTube  — full embed control (autoplay, playsinline) via youtube.com/embed
  *   • Instagram — Reels / posts / IGTV via the public /embed shell (plays, but
  *                 locked: no programmatic seek/scrub — by design on IG's side)
+ *   • TikTok   — video detection for ASR; embed available for /@user/video/ URLs
  *
  * Everything is pure + synchronous so it can run inside render and offline.
  */
@@ -25,6 +26,7 @@ function parseYouTubeId(url) {
     const m = url.match(rx);
     if (m && m[1]) return m[1];
   }
+
   return null;
 }
 
@@ -42,9 +44,25 @@ function parseInstagram(url) {
   return { type, code: m[2] };
 }
 
+
+// ── TikTok ───────────────────────────────────────────────────────────────────
+// Matches /@user/video/{id}, /t/{code}, and vm.tiktok.com/{code} short URLs.
+// TikTok's embed endpoint requires the video ID, which short URLs don't carry
+// without a redirect — embedUrl is best-effort (null for short-form URLs).
+const TK_VIDEO_RX = /tiktok\.com\/@[^/]+\/video\/(\d+)/i;
+const TK_SHORT_RX = /(?:vm\.tiktok\.com|tiktok\.com\/t)\/([A-Za-z0-9_-]+)/i;
+
+function parseTikTok(url) {
+  const vm = url.match(TK_VIDEO_RX);
+  if (vm) return { id: vm[1], hasVideoId: true };
+  const sm = url.match(TK_SHORT_RX);
+  if (sm) return { id: sm[1], hasVideoId: false };
+  return null;
+}
+
 /**
  * detectVideoSource(url) → null | {
- *   platform: 'youtube' | 'instagram',
+ *   platform: 'youtube' | 'instagram' | 'tiktok',
  *   label: string,            // human label e.g. "YouTube"
  *   icon: string,             // emoji affordance
  *   id: string,               // platform-native id/shortcode
@@ -90,6 +108,22 @@ export function detectVideoSource(url) {
       // Public embed shell — autoplays muted, no scrub control exposed.
       embedUrl: `https://www.instagram.com/${ig.type}/${ig.code}/embed/`,
       originalUrl: `https://www.instagram.com/${ig.type}/${ig.code}/`,
+      canControl: false,
+    };
+  }
+
+  const tk = parseTikTok(clean);
+  if (tk) {
+    return {
+      platform: 'tiktok',
+      label: 'TikTok',
+      icon: '▶',
+      id: tk.id,
+      // Embed requires the numeric video ID; short URLs only carry a redirect code.
+      embedUrl: tk.hasVideoId
+        ? `https://www.tiktok.com/embed/v2/${tk.id}`
+        : null,
+      originalUrl: clean,
       canControl: false,
     };
   }

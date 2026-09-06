@@ -26,8 +26,10 @@ async function processOne(item) {
   const detectedType = detectImportType(item.url, '');
 
   try {
+    const userLocked = !!item.itemTypeUserOverride;
     const result = await importRecipeFromUrl(item.url, () => {}, {
-      type: detectedType,
+      type: userLocked ? item.itemType : detectedType,
+      kindLocked: userLocked,
       signal: controller.signal,
     });
 

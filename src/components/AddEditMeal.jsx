@@ -187,7 +187,10 @@ export default function AddEditMeal({
     setImporting(true);
     setError('');
     try {
-      const result = await parseFromUrl(importUrl.trim());
+      const result = await parseFromUrl(importUrl.trim(), undefined, {
+        type: isMealMode ? 'meal' : 'drink',
+        kindLocked: true,
+      });
       if (!result) {
         setError('Could not extract recipe from that URL. The site may block automated access.');
       } else if (result._error) {
@@ -229,6 +232,7 @@ export default function AddEditMeal({
         [{ id: `aem-${Date.now()}`, dataUrl: imageDataUrl, source: 'gallery' }],
         {
           type: isMealMode ? 'meal' : 'drink',
+          kindLocked: true,
           onProgress: (_stage, msg) => setImportProgress(msg),
         },
       );

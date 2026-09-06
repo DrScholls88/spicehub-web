@@ -630,7 +630,7 @@ export async function transcribePagesOnline(uploadPages, { signal, onProgress } 
  *        _visionError (present only when cloud tiers failed before OCR ran)
  * @throws {PhotoImportError}
  */
-export async function importRecipeFromPages(pages, { type = 'meal', onProgress, signal } = {}) {
+export async function importRecipeFromPages(pages, { type = 'meal', kindLocked = false, sourceUrl = '', onProgress, signal, acquireOnly = false } = {}) {
   if (!Array.isArray(pages) || pages.length === 0) {
     throw new PhotoImportError('no-pages', 'No pages to import.');
   }
@@ -683,6 +683,23 @@ export async function importRecipeFromPages(pages, { type = 'meal', onProgress, 
     );
   }
 
+  // ── acquireOnly: return raw OCR data for acquire/photo.js ──────────────
+  // The engine structures; the fork acquires. When acquireOnly is set,
+  // skip Stage 3+4 and return the transcript + metadata as-is.
+  if (acquireOnly) {
+    return {
+      transcript,
+      uploadPages,
+      _visionEngine: contract.engine,
+      _ocrDraft: contract.engine === 'tesseract',
+      dishPhoto: contract.dishPhoto || null,
+      contentType: contract.contentType,
+      isDishPhotoOnly,
+      visionError: visionError || null,
+      _scanPageCount: pages.length,
+    };
+  }
+
   // Stage 3 — structure through the shared engine
   onProgress?.('structure', 'Organizing the recipe…');
   let recipe = null;
@@ -690,7 +707,7 @@ export async function importRecipeFromPages(pages, { type = 'meal', onProgress, 
     ? 'A photo of a finished dish with no visible recipe text.'
     : transcript;
   try {
-    recipe = await captionToRecipe(captionInput, { type });
+    recipe = await captionToRecipe(captionInput, { type, kindLocked, sourceUrl, sourceType: 'photo' });
   } catch (err) {
     console.warn('[PhotoImport] captionToRecipe failed:', err);
   }

@@ -5,14 +5,10 @@ import './ImportSheet.css';
 import useBackHandler from '../hooks/useBackHandler';
 import { hapticTap, hapticSuccess, hapticError } from '../haptics';
 import {
-  importRecipeFromUrl,
-  captionToRecipe,
+  importRequest,
   scoreExtractionConfidence,
-  transcribeVideoForRecipe,
-  importRecipeFromPages,
-  PhotoImportError,
+  detectSource,
 } from '../import/index.js';
-import { detectVideoSource } from '../lib/videoSource.js';
 import { getPreferredWhisperModel, setPreferredWhisperModel } from '../lib/transcriptionService.js';
 import { cleanUrl } from '../api.js';
 import { ENGINE_PROMPT_VERSION } from '../recipeSchema.js';
@@ -24,6 +20,7 @@ import ImportReview from './ImportReview';
 import BrowserAssist from './BrowserAssist';
 import SourcePill from './SourcePill.jsx';
 import { advanceTimeline, INITIAL_TIMELINE } from '../import/progressMap.js';
+import ImportTimeline from './import/ImportTimeline.jsx';
 
 /**
  * normalizeRecipeForReview — single contract adapter between the import
@@ -136,6 +133,8 @@ export default function ImportSheet({
   const [backgrounded, setBackgrounded] = useState(false);
   const [recipe, setRecipe] = useState(null);
   const [confidence, setConfidence] = useState(null);
+  const [gateVerdict, setGateVerdict] = useState(null);
+  const [gateReasons, setGateReasons] = useState([]);
   const [error, setError] = useState('');
   const [progressMsg, setProgressMsg] = useState('');
   const [importUrl, setImportUrl] = useState('');
@@ -328,7 +327,7 @@ export default function ImportSheet({
   // ── Auto-import from share target ────────────────────────────────────────
   useEffect(() => {
     if (sharedContent && sharedContent.url) {
-      handleUrlImport(sharedContent.url, initialItemType);
+      handleImport({ url: sharedContent.url });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -553,383 +552,144 @@ export default function ImportSheet({
     }
   }, [handleCloseRequest]);
 
-  // ── Execute URL Import ───────────────────────────────────────────────────
-  const executeUrlImport = useCallback(async (rawUrl, type, explicitOverride = false) => {
-    const cleanU = cleanUrl(rawUrl);
-    if (!cleanU) return;
 
+  // ── Unified import executor ──────────────────────────────────────────────
+  // All import paths (URL, paste, photo) funnel through this single function.
+  // It builds an ImportRequest, calls engine.importRequest, and handles the
+  // result uniformly. Replaces executeUrlImport, executePasteImport,
+  // executePhotoImport, and executeTranscribeImport.
+  const executeImport = useCallback(async ({ url: rawUrl, text, pages, type, explicitOverride, via }) => {
+    // Abort any in-flight import.
     if (abortRef.current) abortRef.current.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
-    // 1.2: explicit intent (Bar tab entry, or a manual chip tap this session)
-    // outranks the parser's kind guess outright — see normalizeRecipeForReview.
+    const effectiveType = type || initialItemType;
     const userChose = explicitOverride || manualTypeOverride || initialItemType === 'drink';
 
-    setImportUrl(cleanU);
-    setItemType(type || initialItemType);
+    // Build the ImportRequest for the engine.
+    const request = {
+      url: rawUrl ? cleanUrl(rawUrl) : undefined,
+      text,
+      pages,
+      kind: effectiveType,
+      kindLocked: userChose,
+      signal: controller.signal,
+      onProgress: (msg) => {
+        if (controller.signal.aborted) return;
+        setProgressMsg(typeof msg === 'string' ? humanizeImportStatus(msg) : msg);
+        if (typeof msg === 'string') setTimeline(t => advanceTimeline(t, msg));
+      },
+      via: via || 'sheet',
+      whisperModel,
+    };
+
+    const source = detectSource(request);
+
+    // ── Set initial UI state based on source type ──
+    setItemType(effectiveType);
     setPhase('loading');
     setError('');
     setLoadingImage('');
-    setProgressMsg('Getting your recipe…');
-    setTimeline(INITIAL_TIMELINE);
+
+    if (source === 'photo') {
+      const count = Array.isArray(pages) ? pages.length : 0;
+      setDraftSessionId(`photo-import:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+      setProgressMsg(count > 1 ? `Reading ${count} pages…` : 'Reading your photo…');
+      setTimeline({ stage: 0, chip: count > 1 ? `${count} pages` : 'Photo scan' });
+    } else if (source === 'text') {
+      setDraftSessionId(`pasted-text:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+      setProgressMsg('Sorting ingredients from instructions…');
+      setTimeline({ stage: 2, chip: null });
+      setCapturedText(text);
+    } else {
+      // URL-based source
+      const resolvedUrl = request.url || '';
+      setImportUrl(resolvedUrl);
+      setProgressMsg(via === 'transcribe' ? 'Having a listen to the video…' : 'Getting your recipe…');
+      setTimeline(via === 'transcribe' ? { stage: 0, chip: 'Video audio' } : INITIAL_TIMELINE);
+    }
 
     try {
-      const result = await importRecipeFromUrl(
-        cleanU,
-        (msg, metadata) => {
-          if (controller.signal.aborted) return;
-          setProgressMsg(humanizeImportStatus(msg));
-          // One mapper for every source type — raw message → stage + tier chip.
-          setTimeline(t => advanceTimeline(t, msg));
-          if (metadata?.imageUrl) setLoadingImage(metadata.imageUrl);
-        },
-        { type: type || initialItemType, signal: controller.signal, kindLocked: userChose },
-      );
-
+      const { recipe: result, pack, gate: verdict, reasons: gateReasonsResult = [] } = await importRequest(request);
       if (controller.signal.aborted) return;
 
-      // ── Video transcription fallback ────────────────────────────────────
-      // When the standard caption/scrape pipeline fails on a video URL,
-      // try speech-to-text transcription before falling through to
-      // browserAssist or error. This catches recipe reels/shorts where the
-      // recipe is spoken, not written in the caption.
-      const isVideo = detectVideoSource(cleanU);
-      const captionWeak =
-        (result && result._needsBrowserAssist && result._emptyCaption) ||
-        (!result || (!result.title && !result.name && !(result.ingredients || []).length));
-      // recipeParser.js's Instagram cascade already tries ASR itself before
-      // giving up (Phase E.3 pre-exit, 2026-07-20) — result._asrAttempted
-      // means that already ran and failed on this exact URL. Retrying the
-      // identical transcription here wouldn't produce a different result,
-      // just double the wait on an already-failed import.
-      const alreadyTriedAsr = !!result?._asrAttempted;
-
-      if (isVideo && captionWeak && !alreadyTriedAsr && !controller.signal.aborted) {
-        setProgressMsg('No caption found — transcribing video audio…');
-        setTimeline(t => ({ stage: Math.max(t.stage, 1), chip: 'Video audio' }));
-
-        try {
-          const transcribeResult = await transcribeVideoForRecipe(cleanU, {
-            onProgress: (tier, msg) => {
-              if (!controller.signal.aborted) setProgressMsg(msg);
-            },
-            signal: controller.signal,
-            type: type || initialItemType,
-            kindLocked: userChose,
-            imageUrl: result?.capturedImageUrl || '',
-            model: whisperModel,
-          });
-
-          if (controller.signal.aborted) return;
-
-          if (transcribeResult) {
-            const tNorm = normalizeRecipeForReview(transcribeResult, type || initialItemType, { userChose });
-            if (tNorm && (tNorm.title || tNorm.ingredients.length)) {
-              setTimeline(t => ({ ...t, stage: 2 }));
-              setRecipe(tNorm);
-              setConfidence(computeReviewConfidence(tNorm));
-              setPhase('review');
-              return;
-            }
-          }
-        } catch (tErr) {
-          if (tErr.name === 'AbortError') return;
-          console.warn('[ImportSheet] Transcription fallback failed:', tErr.message);
+      if (result && (result.title || result.name || (result.ingredients || []).length)) {
+        const normalized = normalizeRecipeForReview(result, effectiveType, { userChose });
+        if (controller.signal.aborted) return;
+        if (normalized && (normalized.title || normalized.ingredients.length)) {
+          setRecipe(normalized);
+          setConfidence(computeReviewConfidence(normalized));
+          setGateVerdict(verdict || null);
+          setGateReasons(gateReasonsResult);
+          setProgressMsg('Plated up.');
+          setPhase('review');
+          return;
         }
-        // Transcription didn't yield a recipe — fall through to normal fallback
       }
 
-      // 2026-07-14: BrowserAssist (the in-app iframe "browser assist" fallback)
-      // is disabled — commented out below, not deleted. It confused users as an
-      // unexplained second import surface, and its own fallback is structurally
-      // blocked for non-Instagram/YouTube sources by the app's CSP frame-src
-      // allowlist, so it could never succeed there anyway. Route straight to
-      // the same graceful "paste it yourself" recovery its own onError already
-      // used, instead of opening a surface that's disabled.
-      if (result && result._needsBrowserAssist) {
+      // No recipe — check for caption recovery.
+      const caption = pack?.caption || '';
+      if (caption.trim()) {
         hapticError();
-        const captured = result.capturedCaption || '';
-        setCapturedText(captured);
-        setImportUrl(cleanU);
-        if (captured.trim().length > 0) {
-          setRecoveryText(captured);
-          setPhase('recovery');
-        } else {
-          setError("We couldn't read a recipe from this.");
-          setPhase('input');
-        }
-        return;
-      }
-
-      const normalized = normalizeRecipeForReview(result, type || initialItemType, { userChose });
-      if (normalized && (normalized.title || normalized.ingredients.length)) {
-        setRecipe(normalized);
-        setConfidence(computeReviewConfidence(normalized));
-        setPhase('review');
+        setCapturedText(caption);
+        setImportUrl(request.url || '');
+        setRecoveryText(caption);
+        setGateVerdict(verdict || 'empty');
+        setGateReasons(gateReasonsResult);
+        setPhase('recovery');
       } else {
         hapticError();
-        // Check if capturedText was set by the import pipeline. result may
-        // carry the captured caption even when it isn't flagged
-        // _needsBrowserAssist (e.g. a weak/empty structured parse) — prefer
-        // that over the possibly-stale capturedText state (setState is async,
-        // so a value set earlier in this same pipeline run may not have
-        // committed yet).
-        const ct = result?.capturedCaption || capturedText;
-        if (ct && ct.trim().length > 0) {
-          setCapturedText(ct);
-          setImportUrl(cleanU);
-          setRecoveryText(ct);
-          setPhase('recovery');
-        } else {
-          setError("We couldn't read a recipe from this.");
-          setPhase('input');
-        }
+        setError(source === 'photo'
+          ? "We couldn't read a recipe in that photo. Try a clearer shot."
+          : source === 'text'
+            ? "That text didn't look like a recipe. Try adding the ingredients or steps."
+            : "We couldn't read a recipe from this.");
+        setPhase('input');
       }
     } catch (err) {
-      if (err.name === 'AbortError') return;
-      console.error('[ImportSheet] URL import error:', err);
+      if (err?.name === 'AbortError' || err?.code === 'aborted') return;
+      console.error('[ImportSheet] Import error:', err);
       hapticError();
       setError(err.message || 'Import failed.');
       setPhase('input');
     }
   }, [initialItemType, whisperModel, manualTypeOverride]);
 
-  const handleUrlImport = useCallback(async (rawUrl, type, explicitOverride = false) => {
-    if (!navigator.onLine) {
+  // ── Unified import handler (confirm-dialog guard) ────────────────────────
+  // All public-facing import triggers go through here. If a review is already
+  // showing, the user gets a "replace?" confirmation before re-importing.
+  const handleImport = useCallback(async (input) => {
+    // Offline guard for URL imports.
+    const hasUrl = input.url || (input.text && /https?:\/\//i.test(input.text));
+    const hasPages = Array.isArray(input.pages) && input.pages.length > 0;
+    if (hasUrl && !hasPages && !navigator.onLine) {
       hapticError();
-      // Link imports need a live connection to fetch the page — we can't queue a
-      // bare URL for later (the offline queue only re-runs already-parsed recipes
-      // and on-device photo scans). Point the user at the path that works offline.
       setError("You're offline — link imports need a connection. Paste the recipe text and we'll sort it right now.");
       return;
     }
+
     if (phase === 'review' || lastReviewRef.current) {
       setConfirmImport({
         fn: () => {
           lastReviewRef.current = null;
           setConfirmImport(null);
-          executeUrlImport(rawUrl, type, explicitOverride);
+          executeImport(input);
         },
-        message: "This will replace the recipe you're reviewing."
+        message: "This will replace the recipe you're reviewing.",
       });
     } else {
-      executeUrlImport(rawUrl, type, explicitOverride);
+      executeImport(input);
     }
-  }, [phase, executeUrlImport]);
+  }, [phase, executeImport]);
 
-  // ── Execute Paste Import ──────────────────────────────────────────────────
-  const executePasteImport = useCallback(async (text, type, explicitOverride = false) => {
-    if (!text || !text.trim()) return;
-
-    // Fresh unique draft key for this session — see draftSessionId's comment.
-    setDraftSessionId(`pasted-text:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-
-    // 2026-08-14: this used to abort any prior controller and then null out
-    // abortRef instead of assigning a fresh one, unlike executeUrlImport/
-    // executePhotoImport/executeTranscribeImport which all keep a live
-    // controller here. That meant the shared Cancel button's `abortRef.current
-    // ?.abort()` was a no-op for a paste import in flight, AND there was no
-    // `controller.signal.aborted` guard before the post-await setState calls
-    // below — so cancelling just flipped the phase back to 'input' while the
-    // captionToRecipe() promise kept running, and its eventual resolution
-    // still pulled the user into a review screen for content they'd already
-    // cancelled (or clobbered a newer import's in-progress state). captionToRecipe
-    // itself has no signal param to truly interrupt the network call, but
-    // guarding every setState after the await is what actually matters here —
-    // it's what stops a cancelled/superseded result from ever reaching the UI.
-    if (abortRef.current) abortRef.current.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    // 1.2: explicit intent outranks the parser's kind guess — see executeUrlImport.
-    const userChose = explicitOverride || manualTypeOverride || initialItemType === 'drink';
-
-    setItemType(type || initialItemType);
-    setPhase('loading');
-    setTimeline({ stage: 2, chip: null });
-    setError('');
-    setLoadingImage('');
-    setProgressMsg('Sorting ingredients from instructions…');
-
-    // The pasted text IS the caption — stash it so a re-extraction can re-run
-    // it later from the saved recipe (I-5) without any re-scrape.
-    setCapturedText(text);
-
-    try {
-      const result = await captionToRecipe(text, { type: type || initialItemType, kindLocked: userChose });
-      if (controller.signal.aborted) return;
-      const normalized = normalizeRecipeForReview(result, type || initialItemType, { userChose });
-      if (controller.signal.aborted) return;
-      if (normalized && (normalized.title || normalized.ingredients.length)) {
-        setRecipe(normalized);
-        setConfidence(computeReviewConfidence(normalized));
-        setPhase('review');
-      } else {
-        hapticError();
-        setError("That text didn't look like a recipe. Try adding the ingredients or steps.");
-        setPhase('input');
-      }
-    } catch (err) {
-      if (controller.signal.aborted) return;
-      console.error('[ImportSheet] Paste import error:', err);
-      hapticError();
-      setError(err.message || 'Import failed.');
-      setPhase('input');
-    }
-  }, [initialItemType, manualTypeOverride]);
-
-  const handlePasteImport = useCallback(async (text, type, explicitOverride = false) => {
-    if (phase === 'review' || lastReviewRef.current) {
-      setConfirmImport({
-        fn: () => {
-          lastReviewRef.current = null;
-          setConfirmImport(null);
-          executePasteImport(text, type, explicitOverride);
-        },
-        message: "This will replace the recipe you're reviewing."
-      });
-    } else {
-      executePasteImport(text, type, explicitOverride);
-    }
-  }, [phase, executePasteImport]);
-
-  // ── Execute Photo Import (multi-page, tiered vision pipeline) ────────────
-  const executePhotoImport = useCallback(async (pages, type) => {
-    if (!Array.isArray(pages) || pages.length === 0) return;
-
-    // Fresh unique draft key for this session — see draftSessionId's comment.
-    setDraftSessionId(`photo-import:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-
-    if (abortRef.current) abortRef.current.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    const effectiveType = type || initialItemType;
-    // 1.2: explicit intent outranks the parser's kind guess — see executeUrlImport.
-    const userChose = manualTypeOverride || initialItemType === 'drink';
-    setItemType(effectiveType);
-    setPhase('loading');
-    setError('');
-    setLoadingImage('');
-    setProgressMsg(pages.length > 1 ? `Reading ${pages.length} pages…` : 'Reading your photo…');
-    setTimeline({ stage: 0, chip: pages.length > 1 ? `${pages.length} pages` : 'Photo scan' });
-
-    // Map engine stages onto the unified timeline:
-    // prep/transcribe = Fetching(0)+Understanding(1), structure/photo = Polishing(2).
-    const stageIndex = { prep: 0, transcribe: 1, structure: 2, photo: 2 };
-    const onProgress = (stage, msg) => {
-      if (controller.signal.aborted) return;
-      setProgressMsg(msg);
-      const idx = stageIndex[stage] ?? 0;
-      setTimeline(t => ({ ...t, stage: Math.max(t.stage, idx) }));
-    };
-
-    try {
-      const result = await importRecipeFromPages(pages, {
-        type: effectiveType,
-        kindLocked: userChose,
-        onProgress,
-        signal: controller.signal,
-      });
-      if (controller.signal.aborted) return;
-
-      const normalized = normalizeRecipeForReview(result, effectiveType, { userChose });
-      if (normalized && (normalized.title || normalized.ingredients.length)) {
-        setTimeline(t => ({ ...t, stage: 2 }));
-        setRecipe(normalized);
-        setConfidence(computeReviewConfidence(normalized));
-        setPhase('review');
-      } else {
-        hapticError();
-        setError("We couldn't read a recipe in that photo. Try a clearer shot.");
-        setPhase('input');
-      }
-    } catch (err) {
-      if (err?.code === 'aborted' || err?.name === 'AbortError') return;
-      console.error('[ImportSheet] Photo import error:', err);
-      hapticError();
-      setError(
-        err instanceof PhotoImportError
-          ? err.message
-          : err.message || 'Photo import failed.',
-      );
-      setPhase('input');
-    }
-  }, [initialItemType, manualTypeOverride]);
-
-  // Accepts either the scan-session pages array or a single data URL (legacy
-  // drop/paste and share paths) — normalizes to the pages shape.
+  // Legacy compatibility: handlePhotoImport normalizes single data URLs to pages.
   const handlePhotoImport = useCallback(async (pagesOrDataUrl, type) => {
     const pages = typeof pagesOrDataUrl === 'string'
       ? [{ id: `p-${Date.now()}`, dataUrl: pagesOrDataUrl, source: 'share' }]
       : pagesOrDataUrl;
-    if (phase === 'review' || lastReviewRef.current) {
-      setConfirmImport({
-        fn: () => {
-          lastReviewRef.current = null;
-          setConfirmImport(null);
-          executePhotoImport(pages, type);
-        },
-        message: "This will replace the recipe you're reviewing."
-      });
-    } else {
-      executePhotoImport(pages, type);
-    }
-  }, [phase, executePhotoImport]);
-
-  // ── Execute Transcribe Import (standalone, for retry/button) ────────────
-  const executeTranscribeImport = useCallback(async (videoUrl, type) => {
-    const cleanU = cleanUrl(videoUrl || importUrl);
-    if (!cleanU) return;
-
-    if (abortRef.current) abortRef.current.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    // 1.2: explicit intent outranks the parser's kind guess — see executeUrlImport.
-    const userChose = manualTypeOverride || initialItemType === 'drink';
-
-    setPhase('loading');
-    setError('');
-    setLoadingImage('');
-    setProgressMsg('Transcribing video audio…');
-    setTimeline({ stage: 0, chip: 'Video audio' });
-
-    try {
-      const result = await transcribeVideoForRecipe(cleanU, {
-        onProgress: (tier, msg) => {
-          if (controller.signal.aborted) return;
-          setProgressMsg(msg);
-          setTimeline(t => advanceTimeline(t, msg));
-        },
-        signal: controller.signal,
-        type: type || itemType || initialItemType,
-        kindLocked: userChose,
-        model: whisperModel,
-      });
-
-      if (controller.signal.aborted) return;
-
-      const normalized = normalizeRecipeForReview(result, type || itemType || initialItemType, { userChose });
-      if (normalized && (normalized.title || normalized.ingredients.length)) {
-        setTimeline(t => ({ ...t, stage: 2 }));
-        setRecipe(normalized);
-        setConfidence(computeReviewConfidence(normalized));
-        setPhase('review');
-      } else {
-        hapticError();
-        setError('Transcription finished but no recipe was found in the audio. Try pasting the recipe text instead.');
-        setPhase('input');
-      }
-    } catch (err) {
-      if (err.name === 'AbortError') return;
-      console.error('[ImportSheet] Transcribe import error:', err);
-      hapticError();
-      setError(err.message || 'Transcription failed.');
-      setPhase('input');
-    }
-  }, [importUrl, itemType, initialItemType, whisperModel, manualTypeOverride]);
+    handleImport({ pages, type });
+  }, [handleImport]);
 
   // ── BrowserAssist recipe callback ────────────────────────────────────────
   const handleBrowserAssistRecipe = useCallback((extractedRecipe) => {
@@ -1166,7 +926,7 @@ export default function ImportSheet({
                     setPasteText={setPasteText}
                     scanPages={scanPages}
                     setScanPages={setScanPages}
-                    onImport={(u) => handleUrlImport(u, itemType)}
+                    onImport={(u) => handleImport({ url: u })}
                     disabled={false}
                     errorMsg={error || null}
                   />
@@ -1255,28 +1015,13 @@ export default function ImportSheet({
                     )}
                   </AnimatePresence>
 
-                  {/* Ring spinner */}
-                  <div className={`import-sheet-ring-spinner${loadingImage ? ' over-image' : ''}`}>
-                    <div className="ring-spinner" aria-hidden="true" />
-                  </div>
-
-                  {/* Status text */}
-                  <div className="import-sheet-status-text" aria-live="polite">
-                    <p className="import-sheet-status-primary">{progressMsg || 'Reading the post…'}</p>
-                    {/* Slow message after 8 seconds */}
-                    <AnimatePresence>
-                      {elapsedTime >= 8 && (
-                        <motion.p
-                          className="import-sheet-status-slow"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          transition={{ duration: 0.3 }}
-                        >
-                          This one's taking a moment — trying another way.
-                        </motion.p>
-                      )}
-                    </AnimatePresence>
-                  </div>
+                  {/* Three-stage import timeline */}
+                  <ImportTimeline
+                    stage={timeline.stage}
+                    chip={timeline.chip}
+                    statusMsg={progressMsg || 'Reading the post…'}
+                    slow={elapsedTime >= 8}
+                  />
                 </motion.div>
               )}
 
@@ -1289,31 +1034,65 @@ export default function ImportSheet({
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.2 }}
                 >
-                  <p className="import-sheet-recovery-msg">
-                    We got the post, but couldn't turn it into a recipe.
-                    The text is below — edit it or try again.
-                  </p>
-
-                  <textarea
-                    className="import-sheet-recovery-textarea"
-                    value={recoveryText}
-                    onChange={(e) => setRecoveryText(e.target.value)}
-                    aria-label="Captured recipe text"
-                    rows={6}
-                  />
+                  {gateReasons.includes('bait-caption') ? (
+                    <>
+                      <p className="import-sheet-recovery-msg import-sheet-recovery-msg-title">
+                        The recipe's on their blog.
+                      </p>
+                      <p className="import-sheet-recovery-msg">
+                        The post just points at "link in bio" — there's nothing here to cook from yet.
+                      </p>
+                      <input
+                        className="import-sheet-recovery-url"
+                        type="url"
+                        placeholder="Paste the blog URL here"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && e.target.value.trim()) {
+                            handleImport({ url: e.target.value.trim() });
+                          }
+                        }}
+                        ref={(el) => el && setTimeout(() => el.focus(), 100)}
+                      />
+                      <button
+                        type="button"
+                        className="import-sheet-recovery-alt"
+                        onClick={() => {
+                          setPhase('input');
+                          setActiveTab('paste');
+                          setPasteText(recoveryText);
+                        }}
+                      >
+                        Paste the recipe text instead
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <p className="import-sheet-recovery-msg">
+                        We got the post, but couldn't turn it into a recipe.
+                        The text is below — edit it and try again.
+                      </p>
+                      <textarea
+                        className="import-sheet-recovery-textarea"
+                        value={recoveryText}
+                        onChange={(e) => setRecoveryText(e.target.value)}
+                        aria-label="Captured recipe text"
+                        rows={6}
+                      />
+                    </>
+                  )}
 
                   <button
                     type="button"
                     className="import-sheet-recovery-retry"
                     onClick={() => {
-                      setPhase('input');
-                      setRecoveryText('');
-                      if (importUrl) {
-                        handleUrlImport(importUrl, itemType);
+                      if (recoveryText.trim()) {
+                        handleImport({ text: recoveryText });
                       }
                     }}
+                    disabled={!recoveryText.trim()}
                   >
-                    Try again
+                    Use this text
                   </button>
                 </motion.div>
               )}
@@ -1334,6 +1113,7 @@ export default function ImportSheet({
                     destination={destination}
                     setDestination={setDestination}
                     scanPages={scanPages}
+                    gate={gateVerdict}
                   />
                 </motion.div>
               )}
@@ -1342,7 +1122,7 @@ export default function ImportSheet({
                   "secondary importer" that confused users, and whose own iframe
                   fallback is structurally blocked by CSP frame-src for anything
                   but Instagram/YouTube). The phase === 'browserAssist' transition
-                  is no longer triggered anywhere (see handleUrlImport / the removed
+                  is no longer triggered anywhere (see handleImport / the removed
                   "Try in browser" button above) — kept commented, not deleted, in
                   case it's worth reviving with a narrower, explained scope later.
               {phase === 'browserAssist' && (
@@ -1427,11 +1207,11 @@ export default function ImportSheet({
                     onClick={() => {
                       // Route based on content type
                       if (scanPages.length > 0) {
-                        handlePhotoImport(scanPages, itemType);
+                        handleImport({ pages: scanPages });
                       } else if (url.trim()) {
-                        handleUrlImport(url, itemType);
+                        handleImport({ url });
                       } else if (pasteText.trim()) {
-                        handlePasteImport(pasteText, itemType);
+                        handleImport({ text: pasteText });
                       }
                     }}
                     aria-disabled={!url.trim() && !pasteText.trim() && scanPages.length === 0}
@@ -1451,7 +1231,7 @@ export default function ImportSheet({
                         // URL/photo stays in the field — don't clear
                       }}
                     >
-                      Cancel
+                      Cancel import
                     </button>
                     <button
                       className="import-sheet-btn import-sheet-btn-background"
@@ -1462,24 +1242,46 @@ export default function ImportSheet({
                   </>
                 )}
                 {phase === 'recovery' && (
-                  <button
-                    className="import-sheet-btn import-sheet-btn-primary"
-                    onClick={() => {
-                      setPasteText(recoveryText);
-                      handlePasteImport(recoveryText, itemType);
-                    }}
-                    disabled={!recoveryText.trim()}
-                  >
-                    Import from text
-                  </button>
+                  <>
+                    <button
+                      className="import-sheet-btn import-sheet-btn-ghost"
+                      onClick={() => {
+                        setPhase('input');
+                        setRecoveryText('');
+                        setError('');
+                        setGateReasons([]);
+                      }}
+                    >
+                      Give up on this one
+                    </button>
+                    <button
+                      className="import-sheet-btn import-sheet-btn-primary"
+                      onClick={() => {
+                        handleImport({ text: recoveryText });
+                      }}
+                      disabled={!recoveryText.trim()}
+                    >
+                      Use this text
+                    </button>
+                  </>
                 )}
                 {phase === 'review' && (
-                  <button
-                    className="import-sheet-btn import-sheet-btn-primary"
-                    onClick={() => { hapticTap(); handleSave(recipe); }}
-                  >
-                    Save to {destination === 'library' ? 'Library' : destination === 'week' ? 'This Week' : destination === 'grocery' ? 'Grocery' : 'Bar'}
-                  </button>
+                  <>
+                    {gateVerdict === 'salvage' && (
+                      <button
+                        className="import-sheet-btn import-sheet-btn-ghost"
+                        onClick={() => setShowDiscardConfirm(true)}
+                      >
+                        Discard
+                      </button>
+                    )}
+                    <button
+                      className="import-sheet-btn import-sheet-btn-primary"
+                      onClick={() => { hapticTap(); handleSave(recipe); }}
+                    >
+                      Save to {destination === 'bar' ? 'Bar Library' : 'Meal Library'}
+                    </button>
+                  </>
                 )}
               </>
             )}

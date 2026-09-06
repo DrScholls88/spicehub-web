@@ -11,6 +11,7 @@ import {
   STAGES,
   STAGE,
   INITIAL_TIMELINE,
+  chipLabel,
 } from '../../src/import/progressMap.js';
 
 describe('progressMap — stage classification', () => {
@@ -103,5 +104,19 @@ describe('progressMap — advanceTimeline (forward-only)', () => {
   it('unknown messages keep both stage and chip', () => {
     const t = advanceTimeline({ stage: 1, chip: 'Apify' }, 'zzz nonsense zzz');
     expect(t).toEqual({ stage: 1, chip: 'Apify' });
+  });
+});
+
+describe('progressMap — chip display labels', () => {
+  it('never shows a tool name', () => {
+    expect(chipLabel('Apify')).toBe('from the post');
+    expect(chipLabel('IG data')).toBe('from the post');
+    expect(chipLabel('Embed')).toBe('from the post');
+    expect(chipLabel('JSON-LD')).toBe('from the page');
+    expect(chipLabel('SpiceHub server')).toBe('from the page');
+    expect(chipLabel('Reddit')).toBe('from the thread');
+    expect(chipLabel('Video audio')).toBe('from the video');
+    expect(chipLabel('Gemini')).toBeNull();   // a step, not a source
+    expect(chipLabel('')).toBeNull();
   });
 });

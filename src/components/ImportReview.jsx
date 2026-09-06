@@ -4,8 +4,6 @@ import {
   Carrot,
   ClipboardList,
   Library,
-  CalendarDays,
-  ShoppingCart,
   Wine,
   Martini,
   AlertTriangle,
@@ -389,20 +387,39 @@ function ListItem({
  *   onSave      — callback with final recipe + destination
  *   confidence  — extraction confidence score (0-1)
  */
-export default function ImportReview({ recipe, onChange, onSave, confidence, destination, setDestination, scanPages = null }) {
+export default function ImportReview({ recipe, onChange, onSave, confidence, destination, setDestination, scanPages = null, gate = null }) {
   // Manual dish-photo re-crop (photo imports only — needs the original pages)
   const [showCropper, setShowCropper] = useState(false);
+  const [showKindMenu, setShowKindMenu] = useState(false);
+  const kindMenuRef = useRef(null);
   // destination / setDestination are controlled from ImportSheet;
   // fall back to local state when used standalone
   const [localDestination, setLocalDestination] = useState('library');
   const destValue = destination !== undefined ? destination : localDestination;
   const setDest = setDestination !== undefined ? setDestination : setLocalDestination;
   // F.6: sticky tab-basket hybrid — one list visible at a time
-  const [activeTab, setActiveTab] = useState('ingredients'); // 'ingredients' | 'directions'
+  const [activeTab, setActiveTab] = useState(() => {
+    // Salvage: open on the tab carrying flagged items (Step 7)
+    if (gate === 'salvage') {
+      const steps = recipe?.directions || [];
+      if (steps.some(looksMisplacedIngredient)) return 'directions';
+    }
+    return 'ingredients';
+  }); // 'ingredients' | 'directions'
   const [tabDragOver, setTabDragOver] = useState(null); // tab key being hovered during cross-list drag
   const [rowDragging, setRowDragging] = useState(false); // a row handle is mid-drag → cue the other tab as a drop target
 
   const isDrink = recipe?.type === 'drink' || recipe?.itemType === 'drink';
+
+  // Close kind-chip menu on click-outside
+  useEffect(() => {
+    if (!showKindMenu) return;
+    const close = (e) => {
+      if (kindMenuRef.current && !kindMenuRef.current.contains(e.target)) setShowKindMenu(false);
+    };
+    document.addEventListener('pointerdown', close);
+    return () => document.removeEventListener('pointerdown', close);
+  }, [showKindMenu]);
 
   // Refs to the tab buttons, used for hit-testing during cross-list drag (Fix 1)
   const ingredientsTabRef = useRef(null);
@@ -681,18 +698,6 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
   const confLabel = hasFlags ? 'Give this a look'
     : confidence >= 0.7 ? 'Looks good' : confidence >= 0.4 ? 'Worth a check' : 'Worth a review';
 
-  // ── Save destinations ────────────────────────────────────────────────────
-  const destinations = isDrink
-    ? [
-        { key: 'library', label: 'Library', icon: <Library size={22} strokeWidth={2} /> },
-        { key: 'bar', label: 'Bar', icon: <Wine size={22} strokeWidth={2} /> },
-      ]
-    : [
-        { key: 'library', label: 'Library', icon: <Library size={22} strokeWidth={2} /> },
-        { key: 'week', label: 'This Week', icon: <CalendarDays size={22} strokeWidth={2} /> },
-        { key: 'grocery', label: 'Grocery', icon: <ShoppingCart size={22} strokeWidth={2} /> },
-      ];
-
   const handleSave = useCallback(() => {
     // Spec D: persist any aliases the user taught us this session, and apply them
     // immediately to the in-memory map so the rest of this session benefits.
@@ -940,69 +945,65 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
         </p>
       )}
 
-      {/* 1.2: honest disagreement instead of a silent override — the user
-          picked a type explicitly (Bar tab or chip tap) and the parser guessed
-          differently. We keep the user's choice, but say so, so misclassification
-          stays visible instead of vanishing (bar-library-parity-plan-2026-08-07.md I-1). */}
-      {recipe._typeDisagreement && (
-        <p className="review-type-disagreement">
-          <AlertTriangle size={13} strokeWidth={2} />
-          You chose {recipe._typeDisagreement.userChose === 'drink' ? 'Drink' : 'Meal'}; the parser guessed{' '}
-          {recipe._typeDisagreement.modelGuess === 'drink' ? 'Drink' : 'Meal'} — keeping {recipe._typeDisagreement.userChose === 'drink' ? 'Drink' : 'Meal'}.
+      {/* Kind chip — single control for meal/drink with dropdown menu naming
+          the consequence. Replaces the old pair of one-tap correction buttons
+          and the destination grid. */}
+      <div className="review-kind-row" ref={kindMenuRef}>
+        <button
+          type="button"
+          className="review-kind-chip"
+          onClick={() => setShowKindMenu((v) => !v)}
+        >
+          {isDrink ? <Wine size={13} strokeWidth={2} /> : <Utensils size={13} strokeWidth={2} />}
+          {isDrink ? 'Drink' : 'Meal'}
+          <ChevronDown size={12} strokeWidth={2.5} className={`review-kind-chevron${showKindMenu ? ' open' : ''}`} />
+        </button>
+        {recipe._typeDisagreement && (
+          <span className="review-type-disagreement">
+            <AlertTriangle size={13} strokeWidth={2} />
+            Parser guessed {recipe._typeDisagreement.modelGuess === 'drink' ? 'Drink' : 'Meal'}
+          </span>
+        )}
+        {showKindMenu && (
+          <div className="review-kind-menu">
+            <button
+              type="button"
+              className={`review-kind-option${!isDrink ? ' active' : ''}`}
+              onClick={() => {
+                hapticLight();
+                onChange({ ...recipe, itemType: 'meal', type: 'meal', _type: 'meal' });
+                setDest('library');
+                invalidateCachedImport(recipe.link || recipe.sourceUrl);
+                setShowKindMenu(false);
+              }}
+            >
+              <Utensils size={14} strokeWidth={2} />
+              <span>Meal <span className="review-kind-consequence">— Saves to Meal Library</span></span>
+            </button>
+            <button
+              type="button"
+              className={`review-kind-option${isDrink ? ' active' : ''}`}
+              onClick={() => {
+                hapticLight();
+                onChange({ ...recipe, itemType: 'drink', type: 'drink', _type: 'drink' });
+                setDest('bar');
+                invalidateCachedImport(recipe.link || recipe.sourceUrl);
+                setShowKindMenu(false);
+              }}
+            >
+              <Wine size={14} strokeWidth={2} />
+              <span>Drink <span className="review-kind-consequence">— Saves to Bar Library</span></span>
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Salvage trust line — only on thin extractions that passed the gate
+          as salvageable rather than clean. */}
+      {gate === 'salvage' && (
+        <p className="review-salvage-trust">
+          Pieced together from what was on the page — worth a quick look.
         </p>
-      )}
-
-      {/* 1.8: one-tap meal→drink correction, no re-import required. Mainly for
-          the iOS share-target path — sharing a reel from the Instagram app
-          skips ImportInput's Meal/Drink chip entirely, so a misclassified
-          cocktail otherwise has no in-review way to fix itself short of
-          starting over (bar-library-parity-plan-2026-08-07.md 1.6a/1.8). Shown
-          whenever the recipe currently reads as a Meal — cheap enough to leave
-          on for every import path, not just share-target. */}
-      {!isDrink && !recipe._typeDisagreement && (
-        <button
-          type="button"
-          className="review-type-correction"
-          onClick={() => {
-            hapticLight();
-            onChange({ ...recipe, itemType: 'drink', type: 'drink', _type: 'drink' });
-            setDest('bar');
-            // Otherwise the cached structure keeps re-serving the wrong kind
-            // on every re-import of this link for the rest of the 7-day TTL.
-            invalidateCachedImport(recipe.link || recipe.sourceUrl);
-          }}
-        >
-          <Wine size={13} strokeWidth={2} />
-          Actually, this is a Drink → Bar
-        </button>
-      )}
-
-      {/* 2026-08-14: symmetric correction for the opposite miss. detectKindHeuristic()
-          (recipeSchema.js) runs unconditionally whenever the user didn't explicitly
-          pick a type (Bar tab / manual chip) — it's meant as a content hint, but a
-          savory recipe that happens to call for wine/bourbon/rum plus an oz
-          measurement or a "glass" mention can score high enough to read as a
-          cocktail. Because there's no explicit user pick to disagree with in that
-          case, _typeDisagreement never fires and the misroute to Bar was previously
-          silent — this button gives the same one-tap fix the meal→drink case
-          already had, so a real meal doesn't have to be re-imported after landing
-          on the wrong shelf. */}
-      {isDrink && !recipe._typeDisagreement && (
-        <button
-          type="button"
-          className="review-type-correction"
-          onClick={() => {
-            hapticLight();
-            onChange({ ...recipe, itemType: 'meal', type: 'meal', _type: 'meal' });
-            setDest('library');
-            // Otherwise the cached structure keeps re-serving the wrong kind
-            // on every re-import of this link for the rest of the 7-day TTL.
-            invalidateCachedImport(recipe.link || recipe.sourceUrl);
-          }}
-        >
-          <UtensilsCrossed size={13} strokeWidth={2} />
-          Actually, this is a Meal → Library
-        </button>
       )}
 
       {/* Creator's note — the short friendly intro/story the extraction engine
@@ -1292,27 +1293,6 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
           rows={3}
         />
       </AccordionSection>
-
-      {/* Save destination grid */}
-      <div className="review-destination">
-        <p className="review-destination-label">Save to</p>
-        <div className={`review-destination-grid${isDrink ? ' two-col' : ' three-col'}`}>
-          {destinations.map((d) => (
-            <motion.button
-              key={d.key}
-              className={`review-dest-card${destValue === d.key ? ' active' : ''}`}
-              onClick={() => setDest(d.key)}
-              whileTap={{ scale: 0.95 }}
-              transition={{ duration: 0.1 }}
-            >
-              <span className="review-dest-icon">
-                {d.icon}
-              </span>
-              <span className="review-dest-label">{d.label}</span>
-            </motion.button>
-          ))}
-        </div>
-      </div>
     </div>
   );
 }
