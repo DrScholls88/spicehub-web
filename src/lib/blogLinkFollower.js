@@ -23,7 +23,7 @@ import { findJsonLdRecipes, extractMicrodataFromHtml, extractRecipeByCSS } from 
 const WEAK_CAPTION_THRESHOLD = 120;
 const MIN_RECIPE_WORDS = 3;
 
-const RECIPE_SIGNAL_WORDS = [
+export const RECIPE_SIGNAL_WORDS = [
   'cup', 'cups', 'tbsp', 'tsp', 'tablespoon', 'teaspoon',
   'ounce', 'oz', 'pound', 'lb', 'gram', 'kg',
   'preheat', 'bake', 'saute', 'simmer', 'boil', 'fry',

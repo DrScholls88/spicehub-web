@@ -39,6 +39,7 @@ import { cleanSocialCaption, isCaptionWeak } from './import/clean/socialCaption.
 export { cleanSocialCaption, isCaptionWeak };  // re-export for legacy consumers
 import { GEMINI_PRIMARY_MODEL, GEMINI_FLAGSHIP_MODEL, GEMINI_VISION_MODEL } from './lib/importConfig.js';
 import { tryBlogLinkExtraction, assessCaptionQuality } from './lib/blogLinkFollower.js';
+import { tryCommentRecipeExtraction } from './lib/commentRecipeFollower.js';
 import { detectVideoSource } from './lib/videoSource.js';
 // 2026-08-09: shared HTML->recipe extraction engine (JSON-LD/microdata/CSS
 // heuristics + the decode/image/instruction helpers it depends on) — moved
@@ -4745,6 +4746,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   //   (b) also trigger when the raw caption contains a URL even if the cleaned
   //       caption rates as "strong" — the blog is the recipe of record
   let blogPartial = null;
+  let commentRecipeMatch = null;
   const captionQuality = capturedCaption ? assessCaptionQuality(capturedCaption) : { class: 'weak', reason: 'empty' };
   // Detect blog URLs in the RAW caption (before cleanSocialCaption stripped them)
   const rawHasUrl = (capturedRawCaption || igPack?.caption) && /https?:\/\/[^\s]+/i.test(capturedRawCaption || igPack?.caption);
@@ -4860,6 +4862,29 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
       }
     } catch (e) {
       console.log('[BlogLinkFollower] Phase 0.5B error:', e?.message);
+    }
+  }
+
+  // ── Phase 0.5C: Comment Recipe Follower ───────────────────────
+  // Sibling to Phase 0.5B: handles captions that point INWARD ("recipe in
+  // comments") instead of to an outbound blog link. Only runs when the blog
+  // link follower found nothing (blogPartial unset) so the two paths never
+  // fight over the same caption. Merges the best-scoring comment straight
+  // into capturedCaption; Phase 3's Gemini call structures the merged text.
+  if (!blogPartial && igPack?.latestComments?.length) {
+    try {
+      const commentSourceCaption = capturedRawCaption || igPack?.caption || capturedCaption;
+      const match = tryCommentRecipeExtraction(commentSourceCaption, igPack.latestComments);
+      if (match) {
+        progress(3, 'running', 'Checking the pinned comment for the recipe…');
+        commentRecipeMatch = match;
+        capturedCaption = capturedCaption?.trim()
+          ? `${capturedCaption}\n\n${match.commentText}`
+          : match.commentText;
+        console.log(`[CommentRecipeFollower] Merged comment (score=${match.score.toFixed(1)}) into caption`);
+      }
+    } catch (e) {
+      console.log('[CommentRecipeFollower] Phase 0.5C error:', e?.message);
     }
   }
 
@@ -5059,6 +5084,15 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
             videoUrl: isReel ? url : '',
           };
           finalRecipe._discoveredDomain = blogPartial._discoveredDomain || '';
+        }
+        if (commentRecipeMatch) {
+          finalRecipe._extractionSource = 'comment_recipe_follower+ai';
+          finalRecipe.extractedVia = 'comment-recipe+ai';
+          finalRecipe._sources = {
+            primary: 'comment+ai',
+            instagramUrl: url,
+            videoUrl: isReel ? url : '',
+          };
         }
         // Schema quality gate + finalize telemetry (harden-ideas §7)
         const gate = schemaQualityGate(finalRecipe);

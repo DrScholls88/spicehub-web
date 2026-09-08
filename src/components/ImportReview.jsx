@@ -814,6 +814,7 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
     apify: 'Instagram', oembed: 'Instagram', 'ig-json': 'Instagram', embed: 'Instagram',
     browser: 'Web page', video: 'Video', photo: 'Photo',
     blog_link_follower: 'Blog + Instagram', 'blog_link_follower+ai': 'Blog + AI',
+    'comment_recipe_follower+ai': 'Comment + AI',
   };
   const VISION_LABELS = { gemini: 'read in the cloud', mistral: 'read in the cloud', tesseract: 'read on your device' };
   let sourceLabel = recipe._extractionSource ? (SOURCE_LABELS[recipe._extractionSource] || null) : null;

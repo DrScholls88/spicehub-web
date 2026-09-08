@@ -29,6 +29,10 @@ export function normalizeInstagramUrl(url) {
     const u = new URL(url);
     // Strip tracking params
     ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','igshid','igsh','hl','ref'].forEach(p => u.searchParams.delete(p));
+    // Drop any fragment too — share-sheet links don't need one and Graph's
+    // oEmbed endpoint has been seen rejecting a dirty/double-encoded igsh
+    // value outright with a 400 (2026-09-08 dirty-URL fix).
+    u.hash = '';
     // Normalize hostname
     u.hostname = 'www.instagram.com';
     // Normalize path — strip trailing slash
@@ -369,7 +373,7 @@ export async function fetchInstagramViaApify(url, { signal: externalSignal } = {
     return null;
   }
 
-  const cleanedUrl = cleanUrl(url);
+  const cleanedUrl = normalizeInstagramUrl(cleanUrl(url));
   const proxyUrl = `/api/proxy?mode=instagram-apify&url=${encodeURIComponent(cleanedUrl)}`;
 
   // One bounded retry on TRANSIENT failures (network throw / 5xx / timeout).
@@ -833,7 +837,7 @@ export async function downloadImageAsDataUrl(imageUrl, opts = {}) {
 export async function fetchInstagramOEmbed(url, { signal: externalSignal } = {}) {
   try {
     if (externalSignal?.aborted) return null;
-    const cleanedUrl = cleanUrl(url);
+    const cleanedUrl = normalizeInstagramUrl(cleanUrl(url));
     const proxyUrl = `/api/proxy?mode=instagram-oembed&url=${encodeURIComponent(cleanedUrl)}`;
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), CLIENT_OEMBED_MS);

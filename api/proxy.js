@@ -111,6 +111,83 @@ function cleanUrl(input = '') {
   return url.replace(/\/https?:\/\/.+$/i, '').replace(/[)\],.;]+$/, '').replace(/\/$/, '');
 }
 
+// Instagram share-sheet links carry tracking params (igsh, igshid, utm_*) and
+// sometimes a #fragment that Graph's oEmbed endpoint and the Apify actor both
+// reject outright with a 400 — strip them and reduce to the bare permalink
+// before any Instagram-bound call. (2026-09-08 dirty-URL 400/500/502 fix —
+// see project memory for the failing-reel investigation.)
+const INSTAGRAM_TRACKING_PARAMS = ['igsh', 'igshid', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term', 'hl', 'ref'];
+
+function stripInstagramTracking(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    INSTAGRAM_TRACKING_PARAMS.forEach((p) => u.searchParams.delete(p));
+    u.hash = '';
+    return u.toString().replace(/\/$/, '');
+  } catch {
+    return rawUrl;
+  }
+}
+
+// Extract the /p/, /reel/, /reels/, or /tv/ shortcode from any Instagram URL
+// shape (mirrors src/import/acquire/instagram.js's instagramShortcode()).
+function instagramShortcode(url = '') {
+  const m = /\/(p|reel|reels|tv)\/([A-Za-z0-9_-]+)/.exec(url || '');
+  return m ? m[2] : null;
+}
+
+// Instagram serves a given post under either /p/ or /reel/ regardless of
+// which one the share link actually used — build both canonical permalinks
+// so oEmbed/JSON can try the "other" shape too instead of dying on a single
+// guess when the share-sheet link's own path type doesn't resolve.
+function instagramPermalinks(rawUrl) {
+  const cleaned = stripInstagramTracking(cleanUrl(rawUrl));
+  const shortcode = instagramShortcode(cleaned);
+  if (!shortcode) return cleaned ? [cleaned] : [];
+  return [
+    `https://www.instagram.com/p/${shortcode}/`,
+    `https://www.instagram.com/reel/${shortcode}/`,
+  ];
+}
+
+// Decode the handful of HTML entities IG's embed markup actually uses.
+// (Not a general HTML-entity decoder — deliberately narrow, edge runtime has
+// no DOM/textarea trick available to do this properly.)
+function decodeIgHtmlEntities(s) {
+  return String(s || '')
+    .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#0?39;/g, "'")
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&nbsp;/g, ' ');
+}
+
+// Best-effort caption/image extraction from Instagram's public embed page
+// (`/{p,reel}/{code}/embed/captioned/`), used only when the __a=1 JSON
+// endpoint is login-walled. CONFIRMED against a live embed page fetch
+// (2026-09-08): this page carries NO og:description/og:image meta tags at
+// all (an earlier version of this fix assumed it did — wrong, verified
+// live). The actual caption lives in a `<div class="Caption">` node —
+// username link, then the caption text with inline `<br>`s and hashtag
+// `<a>` tags, followed by a `<div class="CaptionComments">` sibling that
+// marks where the caption content ends. The post image is a
+// `<img class="EmbeddedMediaImage" ... src="...">`.
+function extractCaptionFromEmbedHtml(html) {
+  if (!html) return '';
+  const block = /<div class="Caption">([\s\S]*?)<div class="CaptionComments">/i.exec(html);
+  if (!block) return '';
+  let inner = block[1];
+  // Drop the leading "<a class="CaptionUsername">username</a>" — it's the
+  // poster's handle, not part of the caption text.
+  inner = inner.replace(/^\s*<a class="CaptionUsername"[^>]*>[\s\S]*?<\/a>/i, '');
+  inner = inner.replace(/<br\s*\/?>/gi, '\n');
+  inner = inner.replace(/<[^>]+>/g, ''); // strip remaining tags (hashtag <a>s), keep their text
+  return decodeIgHtmlEntities(inner).trim();
+}
+
+function extractImageFromEmbedHtml(html) {
+  if (!html) return '';
+  const img = /<img\s+class="EmbeddedMediaImage"[^>]*\ssrc="([^"]+)"/i.exec(html);
+  return decodeIgHtmlEntities(img?.[1] || '');
+}
+
 /**
  * Build realistic browser-like headers for a given URL.
  * This is critical — Allrecipes, NYTimes, etc. reject requests with bot-like headers.
@@ -176,35 +253,58 @@ export default async function handler(req) {
   const mode = searchParams.get('mode');
 
   if (mode === 'instagram-oembed') {
-    const igUrl = cleanUrl(searchParams.get('url') || '');
-    if (!igUrl || (!igUrl.startsWith('https://www.instagram.com/') && !igUrl.startsWith('https://instagram.com/'))) {
+    const permalinks = instagramPermalinks(searchParams.get('url') || '');
+    if (permalinks.length === 0) {
       return new Response(JSON.stringify({ error: 'Invalid Instagram URL' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
     }
-    try {
-      const token = process.env.FB_APP_TOKEN || null; // should be APP_ID|APP_SECRET
-      // Start with tokenless
-      let oEmbedUrl = `https://graph.facebook.com/${GRAPH_API_VERSION}/instagram_oembed?url=${encodeURIComponent(igUrl)}&fields=html,thumbnail_url,author_name`;
-      // Prefer token if available (more reliable / richer in some cases)
-      if (token) {
-        oEmbedUrl += `&access_token=${token}`;
+    const token = process.env.FB_APP_TOKEN || null; // should be APP_ID|APP_SECRET
+    let lastStatus = 502;
+    let lastText = JSON.stringify({ error: 'oEmbed fetch failed' });
+
+    // 1) Graph oEmbed — the share-sheet URL is dirty (igsh/utm_* query params,
+    // sometimes a #fragment) and Graph rejects that outright with a 400, so
+    // permalinks here are already stripped to the bare /p/ or /reel/ form.
+    // Try both permalink shapes since a share link's own path type doesn't
+    // always match what Graph expects.
+    for (const permalink of permalinks) {
+      try {
+        let oEmbedUrl = `https://graph.facebook.com/${GRAPH_API_VERSION}/instagram_oembed?url=${encodeURIComponent(permalink)}&fields=html,thumbnail_url,author_name`;
+        if (token) oEmbedUrl += `&access_token=${token}`;
+        const resp = await fetch(oEmbedUrl, { signal: AbortSignal.timeout(SERVER_OEMBED_MS) });
+        const text = await resp.text();
+        if (resp.ok) {
+          return new Response(text, {
+            status: 200,
+            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+          });
+        }
+        lastStatus = resp.status;
+        lastText = text;
+      } catch (e) {
+        lastStatus = 502;
+        lastText = JSON.stringify({ error: 'oEmbed fetch failed' });
       }
-      const resp = await fetch(oEmbedUrl, {
-        signal: AbortSignal.timeout(SERVER_OEMBED_MS),
-      });
-      const text = await resp.text();
-      return new Response(text, {
-        status: resp.ok ? 200 : resp.status,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      });
-    } catch (e) {
-      return new Response(JSON.stringify({ error: 'oEmbed fetch failed' }), {
-        status: 502,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      });
     }
+
+    // NOTE (2026-09-08, verified live): a "public tokenless oEmbed" fallback
+    // used to live here (`www.instagram.com/oembed/?url=...` /
+    // `api.instagram.com/oembed?url=...`). Both now just 200 with Instagram's
+    // full HTML web-app shell instead of oEmbed JSON — Meta appears to have
+    // fully retired the unauthenticated oEmbed response, not just tightened
+    // it. Returning that HTML as if it were a successful 200 JSON response
+    // would silently poison the client parser (JSON.parse throws, caught,
+    // treated as "no caption" — not a crash, but a dishonest 200 and a
+    // wasted round trip for zero benefit), so this tier was removed rather
+    // than kept as dead weight. If Graph fails on both permalinks, the real
+    // Graph error is what gets returned below.
+
+    return new Response(lastText, {
+      status: lastStatus,
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+    });
   }
 
   if (mode === 'image-data-url') {
@@ -274,38 +374,74 @@ export default async function handler(req) {
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       });
     }
-    try {
-      const jsonUrl = `https://www.instagram.com/p/${shortcode}/?__a=1&__d=dis`;
-      const resp = await fetch(jsonUrl, {
-        headers: buildHeaders(jsonUrl),
-        signal: AbortSignal.timeout(SERVER_IG_JSON_MS),
-      });
-      const text = await resp.text();
-      // Instagram sometimes returns an HTML login/block page with HTTP 200.
-      // Detect this and return 403 so the client can distinguish "blocked"
-      // from "genuinely no caption" instead of dying on JSON.parse('<html...').
-      const trimmed = text.trimStart();
-      if (trimmed.startsWith('<') || trimmed.startsWith('<!')) {
-        return new Response(JSON.stringify({ error: 'instagram-blocked', detail: 'HTML block page received instead of JSON' }), {
-          status: 403,
+
+    // 1) __a=1 JSON — try both /p/ and /reel/ path shapes. This endpoint has
+    // been increasingly login-walled from datacenter (incl. Vercel) IPs
+    // regardless of URL shape, so a failure here is expected, not fatal.
+    for (const kind of ['p', 'reel']) {
+      try {
+        const jsonUrl = `https://www.instagram.com/${kind}/${shortcode}/?__a=1&__d=dis`;
+        const resp = await fetch(jsonUrl, {
+          headers: buildHeaders(jsonUrl),
+          signal: AbortSignal.timeout(SERVER_IG_JSON_MS),
+        });
+        const text = await resp.text();
+        // Instagram sometimes returns an HTML login/block page with HTTP 200.
+        const trimmed = text.trimStart();
+        const blocked = trimmed.startsWith('<') || trimmed.startsWith('<!');
+        if (!blocked && resp.ok) {
+          return new Response(text, {
+            status: 200,
+            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+          });
+        }
+      } catch (e) {
+        // try the other path shape / fall through to the embed-page scrape
+      }
+    }
+
+    // 2) __a=1 is blocked on both path shapes — scrape the public embed page
+    // (still served unauthenticated) and reshape its og:description caption
+    // into the graphql.shortcode_media envelope parseInstagramMediaJson()
+    // (src/api.js) already knows how to read, so the client parser needs no
+    // changes for this fallback to work.
+    for (const kind of ['p', 'reel']) {
+      try {
+        const embedUrl = `https://www.instagram.com/${kind}/${shortcode}/embed/captioned/`;
+        const resp = await fetch(embedUrl, {
+          headers: buildHeaders(embedUrl),
+          signal: AbortSignal.timeout(SERVER_IG_JSON_MS),
+        });
+        if (!resp.ok) continue;
+        const html = await resp.text();
+        const caption = extractCaptionFromEmbedHtml(html);
+        if (!caption) continue;
+        const shaped = {
+          graphql: {
+            shortcode_media: {
+              caption: { text: caption },
+              display_url: extractImageFromEmbedHtml(html),
+            },
+          },
+        };
+        return new Response(JSON.stringify(shaped), {
+          status: 200,
           headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
         });
+      } catch (e) {
+        // try the other path shape
       }
-      return new Response(text, {
-        status: resp.ok ? 200 : resp.status,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      });
-    } catch (e) {
-      return new Response(JSON.stringify({ error: e.message }), {
-        status: 502,
-        headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
-      });
     }
+
+    return new Response(JSON.stringify({ error: 'instagram-blocked', detail: 'HTML block page received instead of JSON' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+    });
   }
 
   if (mode === 'instagram-apify') {
-    const igUrl = cleanUrl(searchParams.get('url') || '');
-    if (!igUrl) {
+    const permalink = stripInstagramTracking(cleanUrl(searchParams.get('url') || ''));
+    if (!permalink) {
       return new Response(JSON.stringify({ error: 'Missing url parameter' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
@@ -324,22 +460,43 @@ export default async function handler(req) {
       const actorVersion = process.env.APIFY_ACTOR_VERSION || '';
       const versionParam = actorVersion ? `&build=${encodeURIComponent(actorVersion)}` : '';
       const apiUrl = `https://api.apify.com/v2/acts/${APIFY_ACTOR_ID}/run-sync-get-dataset-items?token=${apifyToken}&timeout=${SERVER_APIFY_TIMEOUT_S}${versionParam}`;
-      const resp = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(SERVER_APIFY_FETCH_MS),
-        body: JSON.stringify({
-          username: [igUrl],
-          resultsLimit: 1,
-          dataDetailLevel: 'basicData',
-        }),
-      });
-      if (!resp.ok) {
-        return new Response(JSON.stringify({ error: `Apify returned ${resp.status}` }), {
-          status: 502,
-          headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+
+      // The actor 400s on a few input shapes it's picky about — retry with
+      // progressively plainer bodies before giving up. A real (final) 400 is
+      // passed straight through as 400, NOT remapped to 502 — the client's
+      // circuit breaker only treats >=500 as retryable, so a blanket 502 here
+      // used to make it retry-bill Apify for a request that would just 400
+      // again (2026-09-08 dirty-URL fix).
+      const attemptBodies = [
+        { username: [permalink], resultsLimit: 1, dataDetailLevel: 'basicData' },
+        { username: [permalink], resultsLimit: 1 },
+        { directUrls: [permalink], resultsLimit: 1 },
+      ];
+
+      let resp = null;
+      for (let i = 0; i < attemptBodies.length; i += 1) {
+        resp = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(SERVER_APIFY_FETCH_MS),
+          body: JSON.stringify(attemptBodies[i]),
         });
+        if (resp.ok) break;
+        const isLastAttempt = i === attemptBodies.length - 1;
+        if (resp.status !== 400 || isLastAttempt) {
+          // Non-400 (5xx / rate-limit) is transient — surface as 502 so the
+          // client's circuit breaker can retry. A 400 that survives every
+          // body shape is a real rejection — surface it as 400 so the
+          // breaker does NOT retry-bill.
+          const passthroughStatus = resp.status === 400 ? 400 : 502;
+          return new Response(JSON.stringify({ error: `Apify returned ${resp.status}` }), {
+            status: passthroughStatus,
+            headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
+          });
+        }
+        // resp.status === 400 and more body shapes left to try — fall through.
       }
+
       const items = await resp.json();
       if (!Array.isArray(items) || items.length === 0) {
         return new Response(JSON.stringify({ error: 'No data returned from Apify' }), {
