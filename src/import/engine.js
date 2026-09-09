@@ -178,6 +178,8 @@ async function structure(pack, { kind = 'meal', kindLocked = false, signal, onPr
         ...thin,
         isRecipe: structured.isRecipe,
         _structureMode: structured._structureMode,
+        imageUrl: thin.imageUrl || pack.images?.[0]?.url || '',
+        _extractedVia: 'gemini-pack:' + (pack.acquiredVia || pack.sourceType || 'unknown'),
         _contextPack: {
           ...pack,
           provenance: [
@@ -212,7 +214,7 @@ function gate(recipe, pack) {
 // ── Legacy wrappers (strangler-fig seams — removed as forks land) ─────────
 
 /**
- * Text import via captionToRecipe (legacy).
+ * Text import via captionToRecipe (legacy file).
  * Task 6+ replaces with a proper text acquire fork.
  */
 async function importFromText(request) {
