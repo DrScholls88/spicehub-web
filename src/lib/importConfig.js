@@ -18,9 +18,23 @@ export const GRAPH_API_VERSION = 'v21.0';
 export const APIFY_ACTOR_ID = 'apify~instagram-post-scraper';
 
 // ─── Gemini models ──────────────────────────────────────────────
-export const GEMINI_PRIMARY_MODEL = 'gemini-1.5-flash'; // Stable, fast flash model
-export const GEMINI_FLAGSHIP_MODEL = 'gemini-2.0-flash'; // Current 2.0 stable flash identifier
-export const GEMINI_VISION_MODEL = 'gemini-1.5-flash';
+// 2026-09-09: live-verified against the real Gemini API (models.list +
+// a real generateContent call, using the actual prod key from .env.local) —
+// gemini-1.5-flash, gemini-2.0-flash, gemini-2.5-flash, AND
+// gemini-2.5-flash-lite (the values this file had cycled through in the
+// two commits before this one) ALL now 404. Google's own error body names
+// the exact replacement for each: "This model models/gemini-2.5-flash-lite
+// is no longer available to new users. Please update your code to use
+// models/gemini-3.5-flash-lite" (same message, pointing at
+// models/gemini-3.6-flash, for both gemini-2.5-flash and gemini-2.0-flash).
+// Both replacements confirmed live with a real 200 + generated response
+// before landing here. See project_gemini_model_404_fix_2026_09_09.md for
+// the full incident writeup — READ IT before changing these three lines
+// again; picking a plausible-looking model NAME without live-testing it
+// against generateContent is exactly how this broke twice in a row.
+export const GEMINI_PRIMARY_MODEL = 'gemini-3.5-flash-lite'; // fast/cheap tier
+export const GEMINI_FLAGSHIP_MODEL = 'gemini-3.6-flash'; // escalation tier
+export const GEMINI_VISION_MODEL = 'gemini-3.5-flash-lite';
 
 // ─── Browser identity ──────────────────────────────────────────────────────
 // Update quarterly.  Stale UA strings are the #1 signal bot-walls key on.
