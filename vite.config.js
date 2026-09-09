@@ -47,7 +47,28 @@ if (isProduction) {
 // semver. Zero-padded so the header badge keeps a stable width.
 const APP_MAJOR = 2;
 const BUILD_VERSION = `${APP_MAJOR}.${String(buildNum).padStart(3, '0')}`;
-console.log(`\n  SpiceHub v${BUILD_VERSION}  (build #${buildNum})\n`);
+
+// ── Authoritative build identifier for update-detection (2026-09-09) ─────────
+// buildNum/BUILD_VERSION above (the "v2.034" badge) come from buildNumber.json,
+// a plain file a human increments-and-commits locally. CI (.github/workflows/
+// deploy.yaml -> vercel build) increments its OWN copy in an ephemeral
+// checkout and never pushes that change back to git, so the committed
+// counter has no reliable relationship to what's actually live — git log on
+// this file shows it jump 613 -> 13 -> 32 -> 33 -> 1 across recent commits.
+// Two consecutive real Vercel deploys can easily bake in the SAME buildNum
+// if nobody happens to commit a local increment in between, which silently
+// breaks any "is a newer build live" comparison keyed on it (this is very
+// likely why Settings > Check for Updates confirmed no update while the
+// device was 2 real deploys behind).
+//
+// BUILD_TIME is wall-clock ms at build time — needs no coordination, no
+// file to keep in sync, and is monotonic by construction across real
+// deploys (a later deploy always has a later timestamp). main.jsx and
+// SettingsSheet.jsx compare THIS field, not buildNum, when deciding
+// whether a newer version is live — see src/lib/pwaUpdateSignal.js.
+const BUILD_TIME = Date.now();
+
+console.log(`\n  SpiceHub v${BUILD_VERSION}  (build #${buildNum}, ${new Date(BUILD_TIME).toISOString()})\n`);
 
 // ── Deferred main stylesheet (2026-08-24, PageSpeed remediation) ─────────────
 // Vite injects the bundled CSS as a plain <link rel="stylesheet">, which blocks
@@ -84,9 +105,38 @@ function deferMainStylesheet() {
   };
 }
 
+// ── Runtime version manifest (2026-09-09, iOS update-detection fix) ────────
+// Emits dist/version.json — {"build", "version", "buildTime"} — on every
+// production build. buildTime (Date.now() at build) is the field actually
+// compared for update detection — see the BUILD_TIME comment above for why
+// buildNum/version alone can't be trusted for this. main.jsx polls this
+// file (cache: 'no-store') as a
+// fallback update signal that does NOT depend on the SW `updatefound` /
+// `controllerchange` events iOS/WebKit is documented to drop for standalone
+// (home-screen) PWAs — see src/lib/pwaUpdateSignal.js for why. A build
+// number climbing is sufficient proof a new version shipped, whether or not
+// this session's service worker ever told us so.
+//
+// vercel.json must serve this with the same no-store headers as /sw.js, or a
+// CDN/browser cache defeats the entire point.
+function emitVersionManifest() {
+  return {
+    name: 'spicehub-emit-version-manifest',
+    apply: 'build',
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'version.json',
+        source: JSON.stringify({ build: buildNum, version: BUILD_VERSION, buildTime: BUILD_TIME }),
+      });
+    },
+  };
+}
+
 export default defineConfig({
   define: {
     '__SPICEHUB_BUILD__': JSON.stringify(buildNum),
+    '__SPICEHUB_BUILD_TIME__': JSON.stringify(BUILD_TIME),
     '__SPICEHUB_VERSION__': JSON.stringify(BUILD_VERSION),
     '__SPICEHUB_SERVER__': JSON.stringify(process.env.VITE_SERVER_URL || 'http://localhost:3001'),
   },
@@ -107,6 +157,7 @@ export default defineConfig({
   plugins: [
     react(),
     deferMainStylesheet(),
+    emitVersionManifest(),
 VitePWA({
       registerType: 'autoUpdate',
       // 2026-08-24: was the plugin default ('auto'), which injects

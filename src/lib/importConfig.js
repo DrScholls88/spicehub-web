@@ -2,7 +2,7 @@
 // Import pipeline — centralized constants.
 //
 // One file to grep, one file to update when Meta sunsets an API version,
-// Apify renames an actor, or Chrome ships a new major.
+// Apify renames an actor, or Chrome ships a new major. boost
 //
 // Consumed by:  api/proxy.js  ·  api/extract.js  ·  api/structure.js  ·
 //               api/vision.js  ·  src/api.js  ·  src/import/acquire/instagram.js  ·

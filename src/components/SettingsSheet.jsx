@@ -22,6 +22,7 @@ import useSwipeDismiss from '../hooks/useSwipeDismiss';
 import { isFriendsEnabled } from '../lib/supabaseClient';
 import { clearInstagramCache } from '../db.js';
 import { hapticLight } from '../haptics';
+import { isNewerBuild } from '../lib/pwaUpdateSignal.js';
 
 export default function SettingsSheet({
   onClose,
@@ -100,7 +101,25 @@ export default function SettingsSheet({
       } else if (reg.installing) {
         showToast?.('New version found — installing…', 'success', 3000);
       } else {
-        showToast?.(`You're on the latest version (v${__SPICEHUB_VERSION__})`, 'success', 3000);
+        // reg.update() found nothing — but iOS/WebKit is documented to drop
+        // the updatefound/statechange events this whole check leans on for
+        // standalone (home-screen) installs, so a byte-identical result here
+        // isn't proof there's no newer build (see src/lib/pwaUpdateSignal.js).
+        // Cross-check the build-stamped manifest before telling the user
+        // they're current — it's a plain static file, unaffected by any of
+        // that SW-lifecycle flakiness.
+        let newerBuildLive = false;
+        try {
+          const res = await fetch('/version.json', { cache: 'no-store' });
+          const data = res.ok ? await res.json() : null;
+          newerBuildLive = isNewerBuild(data?.buildTime, __SPICEHUB_BUILD_TIME__);
+        } catch { /* treat as no newer build known */ }
+        if (newerBuildLive) {
+          setUpdateReady?.(true);
+          showToast?.('New version ready — tap Refresh above', 'success', 3000);
+        } else {
+          showToast?.(`You're on the latest version (v${__SPICEHUB_VERSION__})`, 'success', 3000);
+        }
       }
     } catch {
       showToast?.('Could not check for updates — check your connection', 'error', 3000);

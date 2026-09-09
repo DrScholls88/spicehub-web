@@ -9,6 +9,7 @@ import App from './App.jsx'
 import ThemeProvider from './components/ThemeProvider.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { registerBackgroundSync } from './backgroundSync.js'
+import { isUpdateContext, isNewerBuild } from './lib/pwaUpdateSignal.js'
 
 // ── Adopt the deferred main stylesheet (2026-08-24) ──────────────────────────
 // The production build ships the bundled CSS as `media="print"` so it does not
@@ -92,6 +93,24 @@ wireShareTarget();
 
 // Register service worker with background sync support
 if ('serviceWorker' in navigator) {
+  // ── Durable "not a first install" signal (2026-09-09) ────────────
+  // See src/lib/pwaUpdateSignal.js for the full rationale: iOS/WebKit is
+  // documented to null out navigator.serviceWorker.controller across a
+  // resumed standalone-app session even when a worker is genuinely active,
+  // which silently swallowed every one of this file's controller-gated
+  // update checks below — the app just never showed the "Downloading new
+  // version…" bar on iOS, with no error to point at. A localStorage flag
+  // set on first load is a second, durable signal that survives that —
+  // read BEFORE writing, so this launch reflects prior launches, not itself.
+  let hasLaunchedBefore = false;
+  try {
+    hasLaunchedBefore = localStorage.getItem('spicehub-app-launched-before') === '1';
+    localStorage.setItem('spicehub-app-launched-before', '1');
+  } catch {
+    // Private browsing / storage disabled — falls back to controller-only
+    // detection, same behavior as before this existed.
+  }
+
   window.addEventListener('load', async () => {
     try {
       const registration = await navigator.serviceWorker.register('/sw.js')
@@ -134,7 +153,7 @@ if ('serviceWorker' in navigator) {
         // !updateAnnounced: a waiting worker found at startup has already put
         // the bar in its ready state, and narrating a check underneath that
         // would be describing work whose answer is already on screen.
-        if (announce && navigator.serviceWorker.controller && !updateAnnounced) {
+        if (announce && isUpdateContext({ hasController: !!navigator.serviceWorker.controller, hasLaunchedBefore }) && !updateAnnounced) {
           setUpdatePhase('checking');
           // update() settles when the whole job finishes: immediately when
           // sw.js came back byte-identical, or only AFTER install when it did
@@ -149,21 +168,23 @@ if ('serviceWorker' in navigator) {
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') {
           checkForUpdate();
+          pollVersionManifest();
           // Re-surface prompt if user dismissed but waiting worker still exists
-          if (registration.waiting && navigator.serviceWorker.controller) {
+          if (registration.waiting && isUpdateContext({ hasController: !!navigator.serviceWorker.controller, hasLaunchedBefore })) {
             announceUpdateReady();
           }
         }
       });
       // Wrapped rather than passed directly: as a listener it would receive the
       // FocusEvent as `announce`, which is truthy.
-      window.addEventListener('focus', () => { checkForUpdate(); });
+      window.addEventListener('focus', () => { checkForUpdate(); pollVersionManifest(); });
 
       // iOS bfcache / Home Screen resume — visibilitychange sometimes
       // doesn't fire on iOS standalone, but pageshow always does.
       window.addEventListener('pageshow', () => {
         checkForUpdate();
-        if (registration.waiting && navigator.serviceWorker.controller) {
+        pollVersionManifest();
+        if (registration.waiting && isUpdateContext({ hasController: !!navigator.serviceWorker.controller, hasLaunchedBefore })) {
           announceUpdateReady();
         }
       });
@@ -171,14 +192,14 @@ if ('serviceWorker' in navigator) {
       // Periodic check while in foreground (every 60 min) — catches deploys
       // that happen while the user keeps the app open for extended sessions.
       setInterval(() => {
-        if (document.visibilityState === 'visible') checkForUpdate();
+        if (document.visibilityState === 'visible') { checkForUpdate(); pollVersionManifest(); }
       }, 60 * 60 * 1000);
 
       // ── Handle a waiting worker that already exists at startup ──────────
       // If a previous visit installed a new SW but it wasn't applied
       // (e.g. user closed the app before tapping Refresh, or the
       // updatefound event was missed), announce immediately.
-      if (registration.waiting && navigator.serviceWorker.controller) {
+      if (registration.waiting && isUpdateContext({ hasController: !!navigator.serviceWorker.controller, hasLaunchedBefore })) {
         announceUpdateReady();
       }
 
@@ -197,9 +218,9 @@ if ('serviceWorker' in navigator) {
         // seconds on a phone. A controller already existing is what makes it
         // an UPDATE rather than a first install, and only an update is worth
         // narrating — nobody needs to be told their first visit is loading.
-        if (navigator.serviceWorker.controller) setUpdatePhase('downloading');
+        if (isUpdateContext({ hasController: !!navigator.serviceWorker.controller, hasLaunchedBefore })) setUpdatePhase('downloading');
         installing.addEventListener('statechange', () => {
-          if (installing.state === 'installed' && navigator.serviceWorker.controller) {
+          if (installing.state === 'installed' && isUpdateContext({ hasController: !!navigator.serviceWorker.controller, hasLaunchedBefore })) {
             announceUpdateReady();
           } else if (installing.state === 'redundant') {
             // Install failed — went offline mid-download, quota, bad response.
@@ -215,6 +236,13 @@ if ('serviceWorker' in navigator) {
       // foreground would otherwise report nothing at all. Deliberately placed
       // after the updatefound listener so the event cannot fire unobserved.
       checkForUpdate(true);
+
+      // ── Early version-poll fallback (2026-09-09) ─────────────────────
+      // A few seconds after load, independent of whether any SW event has
+      // fired this session. Covers the iOS launches where updatefound /
+      // controllerchange never happen at all — see
+      // src/lib/pwaUpdateSignal.js for why.
+      setTimeout(() => { pollVersionManifest(); }, 4000);
     } catch (error) {
       console.warn('Service Worker registration failed:', error)
     }
@@ -248,10 +276,27 @@ if ('serviceWorker' in navigator) {
   // check that comes back empty in a few hundred milliseconds, never puts a
   // single pixel on screen or costs a layout shift.
   let updatePhase = 'idle';
+  let downloadingWatchdog = null;
   function setUpdatePhase(next) {
     if (updatePhase === next) return;
     updatePhase = next;
     window.dispatchEvent(new CustomEvent('spicehub:update-phase', { detail: { phase: next } }));
+
+    if (downloadingWatchdog) { clearTimeout(downloadingWatchdog); downloadingWatchdog = null; }
+    if (next === 'downloading') {
+      // Precaching a new build normally finishes well inside this window (the
+      // update bar's own comment in App.jsx cites ~10s as the slow end on a
+      // phone). Still 'downloading' after 20s means something in the SW
+      // install sequence stalled — a known risk on iOS, where WebKit has been
+      // seen to skip or reorder the installing → installed → activating
+      // statechange sequence this whole flow depends on. Reach for the
+      // version-poll fallback rather than leaving a shimmering bar with no
+      // way out.
+      downloadingWatchdog = setTimeout(() => {
+        downloadingWatchdog = null;
+        pollVersionManifest({ resetIfStuck: true });
+      }, 20000);
+    }
   }
 
   function applyUpdate() {
@@ -275,6 +320,41 @@ if ('serviceWorker' in navigator) {
       window.dispatchEvent(new CustomEvent('spicehub:update-ready'));
     }
   }
+
+  // ── Version-poll fallback (2026-09-09, iOS update-detection) ────────────
+  // Does not depend on updatefound / controllerchange / statechange ever
+  // firing — see src/lib/pwaUpdateSignal.js for why those are exactly the
+  // events iOS/WebKit is documented to drop for standalone (home-screen)
+  // PWAs. Polls the tiny build-stamped file vite.config.js's
+  // spicehub-emit-version-manifest plugin emits fresh on every build and
+  // compares its buildTime (a build-time Date.now(), NOT the human build
+  // counter — see src/lib/pwaUpdateSignal.js for why that counter can't be
+  // trusted for this). A climbing buildTime is on its own enough proof a
+  // new version is live, so it drives the exact same announceUpdateReady()
+  // path the SW events use — same banner, same Refresh button, same
+  // dismiss/re-prompt behavior.
+  async function pollVersionManifest({ resetIfStuck = false } = {}) {
+    if (updateAnnounced) return;
+    try {
+      const res = await fetch('/version.json', { cache: 'no-store' });
+      if (!res.ok) throw new Error(`version.json ${res.status}`);
+      const data = await res.json();
+      if (isNewerBuild(data?.buildTime, __SPICEHUB_BUILD_TIME__)) {
+        announceUpdateReady();
+        return;
+      }
+    } catch {
+      // Offline, blocked, or malformed — no worse off than before this
+      // fallback existed.
+    }
+    if (resetIfStuck && updatePhase === 'downloading') {
+      // The watchdog's call: genuinely stuck, not just a slow fetch. Release
+      // the bar instead of shimmering forever over an install that isn't
+      // going to finish.
+      setUpdatePhase('idle');
+    }
+  }
+
   // When the user dismisses the banner, allow re-prompt on next
   // visibilitychange/pageshow if a waiting worker still exists.
   window.addEventListener('spicehub:update-dismissed', () => {
