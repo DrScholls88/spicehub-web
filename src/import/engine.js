@@ -6,13 +6,14 @@
  * This file is pure flow control. No platform-specific logic, no AI prompts,
  * no DOM scraping. Each concern lives in the module it was extracted to:
  *
- *   acquire/instagram.js   — IG pack acquisition (Apify, oEmbed, ig-json)
- *   acquire/website.js     — server-side /api/extract
- *   acquire/pinterest.js   — Pinterest oEmbed + pin scrape
- *   acquire/videoAudio.js  — yt-dlp / ASR transcript extraction
- *   structure/gemini.js    — Gemini structuring + reconciliation
- *   contextPack.js         — ContextPack shape, provenance helpers
- *   images.js              — image persistence + hero selection
+ *   acquire/instagram.js         — IG pack acquisition (Apify, oEmbed, ig-json)
+ *   acquire/instagramFollowers.js — grounded blog/comment recipe follow-up
+ *   acquire/website.js           — server-side /api/extract
+ *   acquire/pinterest.js         — Pinterest oEmbed + pin scrape
+ *   acquire/videoAudio.js        — yt-dlp / ASR transcript extraction
+ *   structure/gemini.js          — Gemini structuring + reconciliation
+ *   contextPack.js               — ContextPack shape, provenance helpers
+ *   images.js                    — image persistence + hero selection
  *
  * Hard cap: 400 lines. If this file grows past that, acquire logic has
  * leaked in — move it back out to a fork.
@@ -35,6 +36,7 @@ import { acquireRedditPack } from './acquire/reddit.js';
 import { acquireBlogPack } from './acquire/blog.js';
 import { isRedditUrl } from '../scrapers/redditDiscovery.js';
 import { gateRecipe } from './gate.js';
+import { tryInstagramFollowerEnrichment } from './acquire/instagramFollowers.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -341,6 +343,22 @@ export async function importRequest(request) {
   const pack = await acquire(fork, resolvedUrl, { signal, onProgress });
   if (!pack) {
     return { recipe: null, pack: null, gate: 'empty', reasons: ['acquisition failed'] };
+  }
+
+  // Instagram-only: grounded blog/comment followers before a weak/bait
+  // caption reaches Gemini (see acquire/instagramFollowers.js for why).
+  if (fork === 'instagram') {
+    const followerRecipe = await tryInstagramFollowerEnrichment(pack, resolvedUrl, { signal, onProgress });
+    if (followerRecipe) {
+      pack.kind = kind;
+      const { gate: followerVerdict, reasons: followerReasons } = gate(followerRecipe, pack);
+      if (followerVerdict === 'pass') {
+        return { recipe: followerRecipe, pack, gate: followerVerdict, reasons: followerReasons };
+      }
+      // Didn't clear the gate on its own (e.g. thin ingredients) — fall
+      // through to normal Gemini structuring on the (possibly enriched) pack
+      // instead of returning a shaky result.
+    }
   }
 
   const recipe = await structure(pack, { kind, kindLocked, signal, onProgress });
