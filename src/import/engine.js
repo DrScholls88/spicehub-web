@@ -20,7 +20,7 @@
  * @module import/engine
  */
 
-import { detectSourcePlatform } from '../recipeSchema.js';
+import { detectSourcePlatform, thinFromStructured } from '../recipeSchema.js';
 import { acquireInstagramPack } from './acquire/instagram.js';
 import { acquireWebsitePack } from './acquire/website.js';
 import { acquirePinterestPack } from './acquire/pinterest.js';
@@ -162,8 +162,22 @@ async function structure(pack, { kind = 'meal', kindLocked = false, signal, onPr
       sourceType: pack.sourceType,
     });
     if (structured?.isRecipe) {
+      // thinFromStructured flattens the raw RECIPE_SCHEMA shape
+      // (ingredientGroups + directions:[{text,ingredientRefs}]) into the flat
+      // ingredients/directions string[] the UI (normalizeRecipeForReview,
+      // scoreExtractionConfidence in ImportSheet.jsx/recipeParser.js) expects.
+      // Skipping this was the cause of "TypeError: g.trim is not a function"
+      // — scoreExtractionConfidence's dirs.filter(d => d.trim()...) choked on
+      // raw {text,ingredientRefs} direction objects that were never
+      // flattened to strings. recipeParser.js's legacy paths always ran
+      // thinFromStructured on this exact structurePack() output; this
+      // engine.js path — the one ImportSheet.jsx actually calls — never did.
+      // 2026-09-09.
+      const thin = thinFromStructured(structured);
       return {
-        ...structured,
+        ...thin,
+        isRecipe: structured.isRecipe,
+        _structureMode: structured._structureMode,
         _contextPack: {
           ...pack,
           provenance: [
