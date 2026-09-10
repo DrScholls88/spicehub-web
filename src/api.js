@@ -421,6 +421,62 @@ export async function fetchInstagramViaApify(url, { signal: externalSignal } = {
   return null;
 }
 
+/**
+ * fetchInstagramCommentsViaApify — targeted comments-only fetch.
+ *
+ * The primary acquire race (fetchInstagramViaApify above) always uses
+ * Apify's fast/cheap 'basicData' detail level, which never returns
+ * latestComments at all (live-verified 2026-09-10 — the field is absent
+ * from the response even when commentsCount is in the hundreds). This is a
+ * SEPARATE, opt-in call requesting 'detailedData' (~8s slower, more Apify
+ * compute) — only worth paying for when the caption specifically points at
+ * a comment ("comment RECIPE and I'll send you the details!"). Called from
+ * acquire/instagramFollowers.js, not from the main race.
+ *
+ * @param {string} url
+ * @param {{ signal?: AbortSignal }} [opts]
+ * @returns {Promise<string[]|null>} up to MAX_LATEST_COMMENTS comment texts, or null
+ */
+export async function fetchInstagramCommentsViaApify(url, { signal: externalSignal } = {}) {
+  if (_apifyCB.isOpen()) {
+    console.log('[fetchInstagramCommentsViaApify] Circuit breaker open, skipping');
+    return null;
+  }
+
+  const cleanedUrl = normalizeInstagramUrl(cleanUrl(url));
+  const proxyUrl = `/api/proxy?mode=instagram-apify&detail=full&url=${encodeURIComponent(cleanedUrl)}`;
+
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), CLIENT_APIFY_MS);
+    if (externalSignal) {
+      if (externalSignal.aborted) { clearTimeout(timer); return null; }
+      externalSignal.addEventListener('abort', () => ctrl.abort(), { once: true });
+    }
+    const resp = await fetch(proxyUrl, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (!resp.ok) {
+      const errData = await resp.json().catch(() => ({}));
+      console.log('[fetchInstagramCommentsViaApify] Failed:', resp.status, errData.error || '');
+      if (resp.status >= 500) _apifyCB.recordFailure();
+      return null;
+    }
+    const data = await resp.json();
+    if (!data.ok || !Array.isArray(data.latestComments) || !data.latestComments.length) {
+      console.log('[fetchInstagramCommentsViaApify] No comments in response');
+      return null;
+    }
+    _apifyCB.recordSuccess();
+    console.log(`[fetchInstagramCommentsViaApify] Got ${data.latestComments.length} comment(s)`);
+    return data.latestComments;
+  } catch (e) {
+    if (externalSignal?.aborted) return null;
+    console.log('[fetchInstagramCommentsViaApify] Error:', e.message);
+    _apifyCB.recordFailure();
+    return null;
+  }
+}
+
 // ── Instagram embed extraction (client-side, no server needed) ────────────────
 
 function extractInstagramShortcode(url) {

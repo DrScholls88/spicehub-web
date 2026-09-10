@@ -461,6 +461,22 @@ export default async function handler(req) {
       const versionParam = actorVersion ? `&build=${encodeURIComponent(actorVersion)}` : '';
       const apiUrl = `https://api.apify.com/v2/acts/${APIFY_ACTOR_ID}/run-sync-get-dataset-items?token=${apifyToken}&timeout=${SERVER_APIFY_TIMEOUT_S}${versionParam}`;
 
+      // 2026-09-10: 'detail=full' asks the actor for dataDetailLevel
+      // 'detailedData' instead of the default 'basicData'. Live-verified
+      // against the real actor (apify~instagram-post-scraper): 'basicData'
+      // NEVER returns latestComments at all — the field is entirely absent
+      // from the response, not just empty, even on a post with commentsCount
+      // in the hundreds. That's why the comment-recipe-follower feature
+      // always whiffed — it had zero comment data to search, regardless of
+      // how good its matching logic was. 'detailedData' is ~8s slower
+      // (live-measured) and costs more Apify compute, so it stays opt-in:
+      // only the weak-caption follower path
+      // (src/import/acquire/instagramFollowers.js) requests it, and only for
+      // posts whose caption specifically points at the comments. Every other
+      // call — the primary acquire race included — keeps the fast/cheap
+      // 'basicData' default untouched.
+      const detailLevel = searchParams.get('detail') === 'full' ? 'detailedData' : 'basicData';
+
       // The actor 400s on a few input shapes it's picky about — retry with
       // progressively plainer bodies before giving up. A real (final) 400 is
       // passed straight through as 400, NOT remapped to 502 — the client's
@@ -468,7 +484,7 @@ export default async function handler(req) {
       // used to make it retry-bill Apify for a request that would just 400
       // again (2026-09-08 dirty-URL fix).
       const attemptBodies = [
-        { username: [permalink], resultsLimit: 1, dataDetailLevel: 'basicData' },
+        { username: [permalink], resultsLimit: 1, dataDetailLevel: detailLevel },
         { username: [permalink], resultsLimit: 1 },
         { directUrls: [permalink], resultsLimit: 1 },
       ];

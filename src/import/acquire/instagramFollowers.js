@@ -25,7 +25,8 @@
 // never replaced by a blind Gemini re-guess.
 // ─────────────────────────────────────────────────────────────────────────────
 import { tryBlogLinkExtraction, assessCaptionQuality } from '../../lib/blogLinkFollower.js';
-import { tryCommentRecipeExtraction } from '../../lib/commentRecipeFollower.js';
+import { tryCommentRecipeExtraction, captionReferencesComments } from '../../lib/commentRecipeFollower.js';
+import { fetchInstagramCommentsViaApify } from '../../api.js';
 
 const noop = () => {};
 
@@ -51,7 +52,14 @@ export async function tryInstagramFollowerEnrichment(pack, url, { signal, onProg
 
   const quality = assessCaptionQuality(pack.caption);
   const captionHasUrl = /https?:\/\/[^\s]+/i.test(pack.caption);
-  const hasFollowerSignal = !!(pack.profileBioUrl || pack.latestComments?.length || captionHasUrl);
+  // 2026-09-10: captionReferencesComments ("comment RECIPE and I'll send you
+  // the details!") is its own signal — that caption has NO bio URL, NO
+  // caption URL, and (live-verified) an always-empty pack.latestComments
+  // from the primary acquire race. Without this, a pure comment-gated post
+  // never even reached the blog/comment attempts below — it failed this
+  // gate and returned null immediately, which is the "still whiffing" bug.
+  const pointsToComments = captionReferencesComments(pack.caption);
+  const hasFollowerSignal = !!(pack.profileBioUrl || pack.latestComments?.length || captionHasUrl || pointsToComments);
   if (quality.class === 'strong' && !captionHasUrl) return null; // caption's already good
   if (!hasFollowerSignal) return null; // nothing to follow — don't spend the budget
 
@@ -90,6 +98,21 @@ export async function tryInstagramFollowerEnrichment(pack, url, { signal, onProg
   } catch (err) {
     if (err?.name === 'AbortError') throw err;
     // Best-effort — fall through to comment follower / normal structuring.
+  }
+
+  // 2026-09-10: the primary acquire race never populates pack.latestComments
+  // (Apify's default 'basicData' detail level omits the field entirely —
+  // live-verified against the real actor). When the caption itself points
+  // at a comment, pay for one targeted 'detailedData' Apify call — comments
+  // only — instead of silently having nothing to search.
+  if (!pack.latestComments?.length && pointsToComments) {
+    try {
+      const comments = await fetchInstagramCommentsViaApify(url, { signal });
+      if (comments?.length) pack.latestComments = comments;
+    } catch (err) {
+      if (err?.name === 'AbortError') throw err;
+      // Best-effort — fall through with whatever comments (if any) we have.
+    }
   }
 
   if (pack.latestComments?.length) {

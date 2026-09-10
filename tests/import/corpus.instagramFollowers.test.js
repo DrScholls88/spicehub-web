@@ -49,6 +49,7 @@ vi.mock('../../src/api.js', async (importOriginal) => {
   return {
     ...actual,
     fetchHtmlViaProxy: vi.fn(async (url) => (url === BLOG_URL ? BLOG_HTML : null)),
+    fetchInstagramCommentsViaApify: vi.fn(async () => null),
   };
 });
 
@@ -128,5 +129,54 @@ describe('acquire/instagramFollowers — grounded blog/comment fallback', () => 
     expect(result).toBeNull();
     // pack.caption is untouched — no follower source found to merge in.
     expect(pack._followerSource).toBeUndefined();
+  });
+
+  it('fetches comments and follows a real recipe hiding in one when the primary race had none (the reported "whiffing" bug)', async () => {
+    const { fetchInstagramCommentsViaApify } = await import('../../src/api.js');
+    const recipeComment =
+      'Ingredients: 2 cups flour, 1 cup sugar, 1 tsp baking soda, 2 eggs. ' +
+      'Directions: preheat oven to 350, mix dry ingredients, fold in eggs, bake 25 minutes.';
+    fetchInstagramCommentsViaApify.mockResolvedValueOnce(['love this!!', recipeComment]);
+
+    const pack = {
+      // No bio URL, no caption URL, and — matching the real, live-verified
+      // production behavior — the primary race left latestComments empty.
+      caption: 'Full recipe in the comments! 👇',
+      images: [],
+      latestComments: [],
+      profileBioUrl: '',
+      title: '',
+    };
+
+    const result = await tryInstagramFollowerEnrichment(pack, 'https://www.instagram.com/reel/DFakeReel5/', {});
+
+    expect(fetchInstagramCommentsViaApify).toHaveBeenCalledTimes(1);
+    // Comment-follower enriches the caption for Gemini rather than returning
+    // a recipe directly (a comment is plain text, not structured HTML).
+    expect(result).toBeNull();
+    expect(pack.caption).toContain('Ingredients');
+    expect(pack._followerSource).toBe('comment-recipe');
+    expect(pack.latestComments).toEqual(['love this!!', recipeComment]);
+  });
+
+  it('fetches comments but stays honest when the real comments are just bait replies ("Recipe", "Recipe", ...) — matches the live consciouschris case', async () => {
+    const { fetchInstagramCommentsViaApify } = await import('../../src/api.js');
+    fetchInstagramCommentsViaApify.mockClear();
+    fetchInstagramCommentsViaApify.mockResolvedValueOnce(['Recipe', 'Recipe', 'love this!!']);
+
+    const pack = {
+      caption: 'Full recipe in the comments! 👇',
+      images: [],
+      latestComments: [],
+      profileBioUrl: '',
+      title: '',
+    };
+
+    const result = await tryInstagramFollowerEnrichment(pack, 'https://www.instagram.com/reel/DFakeReel6/', {});
+
+    expect(fetchInstagramCommentsViaApify).toHaveBeenCalledTimes(1);
+    expect(result).toBeNull();
+    expect(pack._followerSource).toBeUndefined();
+    expect(pack.caption).toBe('Full recipe in the comments! 👇'); // untouched
   });
 });
