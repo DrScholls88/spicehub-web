@@ -1578,7 +1578,7 @@ function saloonReducer(state, action) {
 // ══════════════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ══════════════════════════════════════════════════════════════════════════════
-export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAddToGrocery, onExitToMyBar, onOpenPantry }) {
+export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onOpenDiscover, onAddToGrocery, onExitToMyBar, onOpenPantry }) {
   // ── Reducer for discrete mode transitions ──────────────────────────────────
   const [saloon, dispatch] = useReducer(saloonReducer, initialSaloonState);
 
@@ -2868,6 +2868,17 @@ export default function BarShelf({ drinks, onViewDetail, onClose, onImport, onAd
                     <span className="bs-tools-item-icon" aria-hidden="true">📜</span>
                     <span>FILL SHELF</span>
                     <span className="bs-tools-item-hint">quest top 3</span>
+                  </button>
+                )}
+                {onOpenDiscover && (
+                  <button
+                    className="bs-tools-item"
+                    role="menuitem"
+                    onClick={() => { onOpenDiscover(); setShowTools(false); }}
+                  >
+                    <span className="bs-tools-item-icon" aria-hidden="true">🧭</span>
+                    <span>DISCOVER</span>
+                    <span className="bs-tools-item-hint">cocktail blogs</span>
                   </button>
                 )}
               </motion.div>

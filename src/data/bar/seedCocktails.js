@@ -2161,6 +2161,738 @@ export const SEED_COCKTAILS = [
       { food: "pineapple juice", qty: 0.75, unit: "oz", note: null, optional: false, substitutes: [] },
       { food: "fresh lime juice", qty: 0.75, unit: "oz", note: null, optional: false, substitutes: [] }
     ]
+  },
+
+  // ─────────────────────────────────────────────────────────
+  // COCKTAILDB EXPANSION (2026-09-11) — 28 additional IBA/classic
+  // cocktails sourced from TheCocktailDB's public dataset, cross-
+  // checked against IBA official specs. Same schema/quality bar as
+  // the original 80: verified glass/method keys, structured
+  // ingredients with substitutes where sensible.
+  // ─────────────────────────────────────────────────────────
+
+  {
+    name: "Alexander",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["1.5 oz gin", "1 oz white crème de cacao", "1 oz heavy cream"],
+    directions: [
+      "Shake all ingredients vigorously with ice.",
+      "Strain into a chilled coupe glass.",
+      "Garnish with freshly grated nutmeg."
+    ],
+    glass: "coupe",
+    method: "shake",
+    garnish: "Grated nutmeg",
+    abv: 19,
+    tags: ["Classic", "Creamy", "IBA"],
+    source: "IBA Official",
+    year: 1917,
+    ingredientsStructured: [
+      { food: "gin", qty: 1.5, unit: "oz", note: null, optional: false,
+        substitutes: [{ food: "cognac", qty: 1.5, unit: "oz" }] },
+      { food: "white creme de cacao", qty: 1, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "heavy cream", qty: 1, unit: "oz", note: null, optional: false,
+        substitutes: [{ food: "half-and-half", qty: 1, unit: "oz" }] }
+    ]
+  },
+
+  {
+    name: "Americano",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["1 oz Campari", "1 oz sweet vermouth", "2 oz soda water"],
+    directions: [
+      "Build Campari and sweet vermouth into a rocks glass filled with ice.",
+      "Top with soda water and stir gently.",
+      "Garnish with an orange slice."
+    ],
+    glass: "rocks",
+    method: "build",
+    garnish: "Orange slice",
+    abv: 10,
+    tags: ["Classic", "Bitter", "Low-ABV", "IBA"],
+    source: "IBA Official",
+    year: 1860,
+    ingredientsStructured: [
+      { food: "campari", qty: 1, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "sweet vermouth", qty: 1, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "soda water", qty: 2, unit: "oz", note: null, optional: false, substitutes: [{ food: "club soda", qty: 2, unit: "oz" }] }
+    ]
+  },
+
+  {
+    name: "B-52",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["0.5 oz Kahlua", "0.5 oz Baileys Irish Cream", "0.5 oz Grand Marnier"],
+    directions: [
+      "Pour Kahlua into a shot glass.",
+      "Carefully layer Baileys Irish Cream on top using the back of a bar spoon.",
+      "Layer Grand Marnier on top last. Serve with a stirrer."
+    ],
+    glass: "shot",
+    method: "layer",
+    garnish: null,
+    abv: 24,
+    tags: ["Shot", "Layered", "IBA"],
+    source: "IBA Official",
+    year: 1977,
+    ingredientsStructured: [
+      { food: "kahlua", qty: 0.5, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "baileys irish cream", qty: 0.5, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "grand marnier", qty: 0.5, unit: "oz", note: null, optional: false, substitutes: [] }
+    ]
+  },
+
+  {
+    name: "Casino",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["2 oz gin", "0.25 oz maraschino liqueur", "0.25 oz fresh lemon juice", "2 dashes orange bitters"],
+    directions: [
+      "Shake all ingredients with ice.",
+      "Strain into a chilled coupe glass.",
+      "Garnish with a maraschino cherry."
+    ],
+    glass: "coupe",
+    method: "shake",
+    garnish: "Maraschino cherry",
+    abv: 24,
+    tags: ["Classic", "Boozy", "IBA"],
+    source: "IBA Official",
+    year: 1910,
+    ingredientsStructured: [
+      { food: "gin", qty: 2, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "maraschino liqueur", qty: 0.25, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "fresh lemon juice", qty: 0.25, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "orange bitters", qty: 2, unit: "dash", note: null, optional: false, substitutes: [] }
+    ]
+  },
+
+  {
+    name: "Dirty Martini",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["2.5 oz vodka", "0.5 oz dry vermouth", "0.5 oz olive brine"],
+    directions: [
+      "Stir all ingredients with ice in a mixing glass.",
+      "Strain into a chilled martini glass.",
+      "Garnish with olives."
+    ],
+    glass: "martini",
+    method: "stir",
+    garnish: "Olives",
+    abv: 26,
+    tags: ["Classic", "Boozy", "Savory", "IBA"],
+    source: "IBA Official",
+    year: 1901,
+    ingredientsStructured: [
+      { food: "vodka", qty: 2.5, unit: "oz", note: null, optional: false,
+        substitutes: [{ food: "gin", qty: 2.5, unit: "oz" }] },
+      { food: "dry vermouth", qty: 0.5, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "olive brine", qty: 0.5, unit: "oz", note: null, optional: false, substitutes: [] }
+    ]
+  },
+
+  {
+    name: "French Connection",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["1.5 oz cognac", "0.75 oz amaretto"],
+    directions: [
+      "Build both ingredients into a rocks glass filled with ice.",
+      "Stir gently and serve."
+    ],
+    glass: "rocks",
+    method: "build",
+    garnish: null,
+    abv: 24,
+    tags: ["Classic", "Boozy", "IBA"],
+    source: "IBA Official",
+    year: 1972,
+    ingredientsStructured: [
+      { food: "cognac", qty: 1.5, unit: "oz", note: null, optional: false, substitutes: [{ food: "brandy", qty: 1.5, unit: "oz" }] },
+      { food: "amaretto", qty: 0.75, unit: "oz", note: null, optional: false, substitutes: [] }
+    ]
+  },
+
+  {
+    name: "French Martini",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["1.5 oz vodka", "0.5 oz Chambord raspberry liqueur", "1.5 oz pineapple juice"],
+    directions: [
+      "Shake all ingredients vigorously with ice.",
+      "Strain into a chilled martini glass.",
+      "Garnish with a pineapple wedge."
+    ],
+    glass: "martini",
+    method: "shake",
+    garnish: "Pineapple wedge",
+    abv: 13,
+    tags: ["Fruity", "Modern", "IBA"],
+    source: "IBA Official",
+    year: 1986,
+    ingredientsStructured: [
+      { food: "vodka", qty: 1.5, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "chambord raspberry liqueur", qty: 0.5, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "pineapple juice", qty: 1.5, unit: "oz", note: null, optional: false, substitutes: [] }
+    ]
+  },
+
+  {
+    name: "Godfather",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["1.5 oz scotch", "0.75 oz amaretto"],
+    directions: [
+      "Build both ingredients into a rocks glass filled with ice.",
+      "Stir gently and serve."
+    ],
+    glass: "rocks",
+    method: "build",
+    garnish: null,
+    abv: 24,
+    tags: ["Classic", "Boozy", "IBA"],
+    source: "IBA Official",
+    year: 1972,
+    ingredientsStructured: [
+      { food: "scotch", qty: 1.5, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "amaretto", qty: 0.75, unit: "oz", note: null, optional: false, substitutes: [] }
+    ]
+  },
+
+  {
+    name: "Grasshopper",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["0.75 oz green crème de menthe", "0.75 oz white crème de cacao", "0.75 oz heavy cream"],
+    directions: [
+      "Shake all ingredients vigorously with ice.",
+      "Strain into a chilled coupe glass."
+    ],
+    glass: "coupe",
+    method: "shake",
+    garnish: null,
+    abv: 15,
+    tags: ["Sweet", "Creamy", "Dessert", "IBA"],
+    source: "IBA Official",
+    year: 1919,
+    ingredientsStructured: [
+      { food: "green creme de menthe", qty: 0.75, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "white creme de cacao", qty: 0.75, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "heavy cream", qty: 0.75, unit: "oz", note: null, optional: false, substitutes: [{ food: "half-and-half", qty: 0.75, unit: "oz" }] }
+    ]
+  },
+
+  {
+    name: "Harvey Wallbanger",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["1.5 oz vodka", "0.5 oz Galliano", "4 oz orange juice"],
+    directions: [
+      "Build vodka and orange juice into a highball glass filled with ice.",
+      "Float Galliano on top.",
+      "Garnish with an orange slice and cherry."
+    ],
+    glass: "highball",
+    method: "build",
+    garnish: "Orange slice, cherry",
+    abv: 11,
+    tags: ["Fruity", "Classic", "IBA"],
+    source: "IBA Official",
+    year: 1952,
+    ingredientsStructured: [
+      { food: "vodka", qty: 1.5, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "galliano", qty: 0.5, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "orange juice", qty: 4, unit: "oz", note: null, optional: false, substitutes: [] }
+    ]
+  },
+
+  {
+    name: "Kamikaze",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["1 oz vodka", "1 oz triple sec", "1 oz fresh lime juice"],
+    directions: [
+      "Shake all ingredients vigorously with ice.",
+      "Strain into a chilled coupe glass, or serve as a shot.",
+      "Garnish with a lime wheel."
+    ],
+    glass: "coupe",
+    method: "shake",
+    garnish: "Lime wheel",
+    abv: 22,
+    tags: ["Citrusy", "Party", "IBA"],
+    source: "IBA Official",
+    year: 1970,
+    ingredientsStructured: [
+      { food: "vodka", qty: 1, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "triple sec", qty: 1, unit: "oz", note: null, optional: false, substitutes: [{ food: "cointreau", qty: 1, unit: "oz" }] },
+      { food: "fresh lime juice", qty: 1, unit: "oz", note: null, optional: false, substitutes: [] }
+    ]
+  },
+
+  {
+    name: "Old Cuban",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["1.5 oz white rum", "0.75 oz simple syrup", "0.75 oz fresh lime juice", "2 dashes Angostura bitters", "6 mint leaves", "1.5 oz sparkling wine"],
+    directions: [
+      "Gently muddle mint leaves in a shaker.",
+      "Add rum, simple syrup, lime juice, and bitters with ice; shake well.",
+      "Double-strain into a chilled coupe glass.",
+      "Top with sparkling wine and garnish with a mint sprig."
+    ],
+    glass: "coupe",
+    method: "shake",
+    garnish: "Mint sprig",
+    abv: 14,
+    tags: ["Modern Classic", "Refreshing", "Herbal"],
+    source: "Modern Classic",
+    year: 2001,
+    ingredientsStructured: [
+      { food: "white rum", qty: 1.5, unit: "oz", note: null, optional: false, substitutes: [{ food: "aged rum", qty: 1.5, unit: "oz" }] },
+      { food: "simple syrup", qty: 0.75, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "fresh lime juice", qty: 0.75, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "angostura bitters", qty: 2, unit: "dash", note: null, optional: false, substitutes: [] },
+      { food: "mint", qty: 6, unit: "leaf", note: null, optional: false, substitutes: [] },
+      { food: "sparkling wine", qty: 1.5, unit: "oz", note: null, optional: false, substitutes: [{ food: "prosecco", qty: 1.5, unit: "oz" }] }
+    ]
+  },
+
+  {
+    name: "Planter's Punch",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["2 oz dark rum", "0.5 oz orgeat syrup", "2 oz orange juice", "1 oz pineapple juice", "2 dashes Angostura bitters"],
+    directions: [
+      "Shake rum, orgeat, orange juice, and pineapple juice with ice.",
+      "Strain into a collins glass filled with ice.",
+      "Top with Angostura bitters.",
+      "Garnish with a cherry and pineapple wedge."
+    ],
+    glass: "collins",
+    method: "shake",
+    garnish: "Cherry, pineapple wedge",
+    abv: 12,
+    tags: ["Tropical", "Fruity", "IBA"],
+    source: "IBA Official",
+    year: 1878,
+    ingredientsStructured: [
+      { food: "dark rum", qty: 2, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "orgeat syrup", qty: 0.5, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "orange juice", qty: 2, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "pineapple juice", qty: 1, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "angostura bitters", qty: 2, unit: "dash", note: null, optional: false, substitutes: [] }
+    ]
+  },
+
+  {
+    name: "Rusty Nail",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["1.5 oz scotch", "0.75 oz Drambuie"],
+    directions: [
+      "Build both ingredients into a rocks glass filled with ice.",
+      "Stir gently.",
+      "Garnish with a lemon twist."
+    ],
+    glass: "rocks",
+    method: "build",
+    garnish: "Lemon twist",
+    abv: 30,
+    tags: ["Classic", "Boozy", "IBA"],
+    source: "IBA Official",
+    year: 1937,
+    ingredientsStructured: [
+      { food: "scotch", qty: 1.5, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "drambuie", qty: 0.75, unit: "oz", note: null, optional: false, substitutes: [] }
+    ]
+  },
+
+  {
+    name: "Sea Breeze",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["1.5 oz vodka", "4 oz cranberry juice", "1 oz grapefruit juice"],
+    directions: [
+      "Build all ingredients into a highball glass filled with ice.",
+      "Stir gently.",
+      "Garnish with a lime wedge."
+    ],
+    glass: "highball",
+    method: "build",
+    garnish: "Lime wedge",
+    abv: 9,
+    tags: ["Fruity", "Refreshing", "IBA"],
+    source: "IBA Official",
+    year: 1980,
+    ingredientsStructured: [
+      { food: "vodka", qty: 1.5, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "cranberry juice", qty: 4, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "grapefruit juice", qty: 1, unit: "oz", note: null, optional: false, substitutes: [] }
+    ]
+  },
+
+  {
+    name: "Stinger",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["1.5 oz brandy", "0.5 oz white crème de menthe"],
+    directions: [
+      "Shake or stir both ingredients with ice.",
+      "Strain into a rocks glass over fresh ice."
+    ],
+    glass: "rocks",
+    method: "shake",
+    garnish: "Mint leaf",
+    abv: 28,
+    tags: ["Classic", "Boozy", "IBA"],
+    source: "IBA Official",
+    year: 1890,
+    ingredientsStructured: [
+      { food: "brandy", qty: 1.5, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "white creme de menthe", qty: 0.5, unit: "oz", note: null, optional: false, substitutes: [] }
+    ]
+  },
+
+  {
+    name: "Vampiro",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["2 oz tequila", "1 oz tomato juice", "1 oz orange juice", "0.5 oz fresh lime juice", "1 dash simple syrup", "1 pinch salt"],
+    directions: [
+      "Rim a rocks glass with salt.",
+      "Build all ingredients into the glass over ice and stir.",
+      "Garnish with a lime wedge."
+    ],
+    glass: "rocks",
+    method: "build",
+    garnish: "Lime wedge, salt rim",
+    abv: 18,
+    tags: ["Savory", "Spicy", "IBA"],
+    source: "IBA Official",
+    year: 1980,
+    ingredientsStructured: [
+      { food: "tequila", qty: 2, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "tomato juice", qty: 1, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "orange juice", qty: 1, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "fresh lime juice", qty: 0.5, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "simple syrup", qty: 1, unit: "dash", note: null, optional: false, substitutes: [] },
+      { food: "salt", qty: 1, unit: "pinch", note: null, optional: false, substitutes: [] }
+    ]
+  },
+
+  {
+    name: "White Lady",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["1.5 oz gin", "1 oz triple sec", "0.75 oz fresh lemon juice"],
+    directions: [
+      "Shake all ingredients vigorously with ice.",
+      "Strain into a chilled coupe glass.",
+      "Garnish with a lemon twist."
+    ],
+    glass: "coupe",
+    method: "shake",
+    garnish: "Lemon twist",
+    abv: 22,
+    tags: ["Classic", "Citrusy", "IBA"],
+    source: "IBA Official",
+    year: 1919,
+    ingredientsStructured: [
+      { food: "gin", qty: 1.5, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "triple sec", qty: 1, unit: "oz", note: null, optional: false, substitutes: [{ food: "cointreau", qty: 1, unit: "oz" }] },
+      { food: "fresh lemon juice", qty: 0.75, unit: "oz", note: null, optional: false, substitutes: [] }
+    ]
+  },
+
+  {
+    name: "Yellow Bird",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["1 oz white rum", "0.5 oz Galliano", "0.5 oz triple sec", "0.5 oz fresh lime juice"],
+    directions: [
+      "Shake all ingredients vigorously with ice.",
+      "Strain into a chilled coupe glass.",
+      "Garnish with a lime wheel."
+    ],
+    glass: "coupe",
+    method: "shake",
+    garnish: "Lime wheel",
+    abv: 17,
+    tags: ["Tropical", "Fruity", "IBA"],
+    source: "IBA Official",
+    year: 1960,
+    ingredientsStructured: [
+      { food: "white rum", qty: 1, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "galliano", qty: 0.5, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "triple sec", qty: 0.5, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "fresh lime juice", qty: 0.5, unit: "oz", note: null, optional: false, substitutes: [] }
+    ]
+  },
+
+  {
+    name: "John Collins",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["2 oz bourbon", "1 oz fresh lemon juice", "0.5 oz simple syrup", "3 oz club soda"],
+    directions: [
+      "Shake bourbon, lemon juice, and simple syrup with ice.",
+      "Strain into a collins glass filled with ice.",
+      "Top with club soda and stir gently.",
+      "Garnish with an orange slice and cherry."
+    ],
+    glass: "collins",
+    method: "shake",
+    garnish: "Orange slice, cherry",
+    abv: 12,
+    tags: ["Classic", "Refreshing", "Fizzy"],
+    source: "Classic",
+    year: 1870,
+    ingredientsStructured: [
+      { food: "bourbon", qty: 2, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "fresh lemon juice", qty: 1, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "simple syrup", qty: 0.5, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "club soda", qty: 3, unit: "oz", note: null, optional: false, substitutes: [] }
+    ]
+  },
+
+  {
+    name: "Pegu Club",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["1.5 oz gin", "0.75 oz orange curaçao", "0.75 oz fresh lime juice", "1 dash Angostura bitters", "1 dash orange bitters"],
+    directions: [
+      "Shake all ingredients vigorously with ice.",
+      "Strain into a chilled coupe glass.",
+      "Garnish with a lime wheel."
+    ],
+    glass: "coupe",
+    method: "shake",
+    garnish: "Lime wheel",
+    abv: 20,
+    tags: ["Modern Classic", "Citrusy"],
+    source: "Modern Classic",
+    year: 1920,
+    ingredientsStructured: [
+      { food: "gin", qty: 1.5, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "orange curacao", qty: 0.75, unit: "oz", note: null, optional: false, substitutes: [{ food: "triple sec", qty: 0.75, unit: "oz" }] },
+      { food: "fresh lime juice", qty: 0.75, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "angostura bitters", qty: 1, unit: "dash", note: null, optional: false, substitutes: [] },
+      { food: "orange bitters", qty: 1, unit: "dash", note: null, optional: false, substitutes: [] }
+    ]
+  },
+
+  {
+    name: "Bijou",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["1 oz gin", "1 oz green Chartreuse", "1 oz sweet vermouth", "1 dash orange bitters"],
+    directions: [
+      "Stir all ingredients with ice in a mixing glass.",
+      "Strain into a chilled coupe glass.",
+      "Garnish with a maraschino cherry."
+    ],
+    glass: "coupe",
+    method: "stir",
+    garnish: "Maraschino cherry",
+    abv: 28,
+    tags: ["Classic", "Boozy", "Herbal"],
+    source: "Classic",
+    year: 1900,
+    ingredientsStructured: [
+      { food: "gin", qty: 1, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "green chartreuse", qty: 1, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "sweet vermouth", qty: 1, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "orange bitters", qty: 1, unit: "dash", note: null, optional: false, substitutes: [] }
+    ]
+  },
+
+  {
+    name: "Brooklyn",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["2 oz rye whiskey", "1 oz dry vermouth", "0.25 oz maraschino liqueur", "3 dashes Angostura bitters"],
+    directions: [
+      "Stir all ingredients with ice in a mixing glass.",
+      "Strain into a chilled coupe glass.",
+      "Garnish with a maraschino cherry."
+    ],
+    glass: "coupe",
+    method: "stir",
+    garnish: "Maraschino cherry",
+    abv: 24,
+    tags: ["Classic", "Boozy"],
+    source: "Classic",
+    year: 1908,
+    ingredientsStructured: [
+      { food: "rye whiskey", qty: 2, unit: "oz", note: null, optional: false, substitutes: [{ food: "bourbon", qty: 2, unit: "oz" }] },
+      { food: "dry vermouth", qty: 1, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "maraschino liqueur", qty: 0.25, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "angostura bitters", qty: 3, unit: "dash", note: null, optional: false, substitutes: [] }
+    ]
+  },
+
+  {
+    name: "Old Pal",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["1 oz rye whiskey", "1 oz Campari", "1 oz dry vermouth"],
+    directions: [
+      "Stir all ingredients with ice in a mixing glass.",
+      "Strain into a chilled coupe glass.",
+      "Garnish with an orange twist."
+    ],
+    glass: "coupe",
+    method: "stir",
+    garnish: "Orange twist",
+    abv: 22,
+    tags: ["Classic", "Bitter", "Boozy"],
+    source: "Classic",
+    year: 1922,
+    ingredientsStructured: [
+      { food: "rye whiskey", qty: 1, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "campari", qty: 1, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "dry vermouth", qty: 1, unit: "oz", note: null, optional: false, substitutes: [] }
+    ]
+  },
+
+  {
+    name: "Michelada",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["4 oz Mexican lager", "4 oz tomato juice", "1 tbsp fresh lime juice", "2 dashes hot sauce", "2 dashes Worcestershire sauce"],
+    directions: [
+      "Rim a highball glass with salt and chili powder.",
+      "Build tomato juice, lime juice, hot sauce, and Worcestershire sauce over ice.",
+      "Stir gently, then top with beer.",
+      "Garnish with a lime wedge."
+    ],
+    glass: "highball",
+    method: "build",
+    garnish: "Lime wedge, salt-chili rim",
+    abv: 4,
+    tags: ["Savory", "Brunch", "Spicy"],
+    source: "Popular",
+    year: 1940,
+    ingredientsStructured: [
+      { food: "mexican lager", qty: 4, unit: "oz", note: null, optional: false, substitutes: [{ food: "lager", qty: 4, unit: "oz" }] },
+      { food: "tomato juice", qty: 4, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "fresh lime juice", qty: 1, unit: "tbsp", note: null, optional: false, substitutes: [] },
+      { food: "hot sauce", qty: 2, unit: "dash", note: null, optional: false, substitutes: [] },
+      { food: "worcestershire sauce", qty: 2, unit: "dash", note: null, optional: false, substitutes: [] }
+    ]
+  },
+
+  {
+    name: "Ramos Gin Fizz",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["1.5 oz gin", "0.5 oz fresh lemon juice", "0.5 oz fresh lime juice", "0.75 oz simple syrup", "1 oz heavy cream", "1 egg white", "2 oz soda water"],
+    directions: [
+      "Dry shake gin, citrus juices, syrup, cream, and egg white without ice to emulsify (about 1 minute).",
+      "Add ice and shake vigorously for 1-2 minutes.",
+      "Strain into a highball glass and top with soda water."
+    ],
+    glass: "highball",
+    method: "dry_shake",
+    garnish: null,
+    abv: 13,
+    tags: ["Classic", "Creamy", "Brunch"],
+    source: "Classic",
+    year: 1888,
+    ingredientsStructured: [
+      { food: "gin", qty: 1.5, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "fresh lemon juice", qty: 0.5, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "fresh lime juice", qty: 0.5, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "simple syrup", qty: 0.75, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "heavy cream", qty: 1, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "egg white", qty: 1, unit: "whole", note: "optional for vegan", optional: true, substitutes: [{ food: "aquafaba", qty: 1, unit: "oz" }] },
+      { food: "soda water", qty: 2, unit: "oz", note: null, optional: false, substitutes: [] }
+    ]
+  },
+
+  {
+    name: "Corn 'n' Oil",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["1 oz aged rum", "1 oz blackstrap rum", "0.5 oz falernum", "0.5 oz fresh lime juice", "2 dashes Angostura bitters"],
+    directions: [
+      "Muddle a lime half in a rocks glass.",
+      "Add falernum, bitters, and aged rum; fill with ice and stir.",
+      "Float blackstrap rum on top.",
+      "Serve with a straw."
+    ],
+    glass: "rocks",
+    method: "build",
+    garnish: "Lime wheel",
+    abv: 20,
+    tags: ["Tiki", "Caribbean", "Modern Classic"],
+    source: "Modern Classic",
+    year: 2000,
+    ingredientsStructured: [
+      { food: "aged rum", qty: 1, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "blackstrap rum", qty: 1, unit: "oz", note: null, optional: false, substitutes: [{ food: "dark rum", qty: 1, unit: "oz" }] },
+      { food: "falernum", qty: 0.5, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "fresh lime juice", qty: 0.5, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "angostura bitters", qty: 2, unit: "dash", note: null, optional: false, substitutes: [] }
+    ]
+  },
+
+  {
+    name: "Bora Bora",
+    itemType: "drink",
+    _type: "drink",
+    type: "drink",
+    ingredients: ["3 oz pineapple juice", "2 oz passion fruit juice", "0.5 oz fresh lemon juice", "0.5 oz grenadine"],
+    directions: [
+      "Shake all ingredients with ice.",
+      "Strain into a highball glass over fresh ice.",
+      "Garnish with a pineapple wedge and cherry."
+    ],
+    glass: "highball",
+    method: "shake",
+    garnish: "Pineapple wedge, cherry",
+    abv: 0,
+    tags: ["Mocktail", "Tropical", "Non-Alcoholic"],
+    source: "Popular",
+    year: 1970,
+    ingredientsStructured: [
+      { food: "pineapple juice", qty: 3, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "passion fruit juice", qty: 2, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "fresh lemon juice", qty: 0.5, unit: "oz", note: null, optional: false, substitutes: [] },
+      { food: "grenadine", qty: 0.5, unit: "oz", note: null, optional: false, substitutes: [] }
+    ]
   }
 ];
 

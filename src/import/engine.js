@@ -36,6 +36,7 @@ import { acquireRedditPack } from './acquire/reddit.js';
 import { acquireBlogPack } from './acquire/blog.js';
 import { isRedditUrl } from '../scrapers/redditDiscovery.js';
 import { gateRecipe } from './gate.js';
+import { enrichDrinkFromCorpus } from './enrich.js';
 import { tryInstagramFollowerEnrichment } from './acquire/instagramFollowers.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -209,6 +210,7 @@ async function structure(pack, { kind = 'meal', kindLocked = false, signal, onPr
  * @returns {{ gate: 'pass'|'salvage'|'empty', reasons: string[] }}
  */
 function gate(recipe, pack) {
+  if (recipe && pack?.kind === 'drink' && pack?.kindLocked) enrichDrinkFromCorpus(recipe, pack);
   const { verdict, reasons } = gateRecipe(recipe, pack);
   return { gate: verdict, reasons };
 }
@@ -224,7 +226,7 @@ async function importFromText(request) {
   onProgress('Sorting ingredients from instructions…');
   try {
     const recipe = await captionToRecipe(text, { type: kind, kindLocked });
-    const pack = { caption: text, acquiredVia: 'caption', sourceType: 'text', kind };
+    const pack = { caption: text, acquiredVia: 'caption', sourceType: 'text', kind, kindLocked };
     const { gate: verdict, reasons } = gate(recipe, pack);
     return { recipe, pack, gate: verdict, reasons };
   } catch (err) {
@@ -246,7 +248,7 @@ async function importFromTranscribe(url, request) {
       onProgress: (_tier, msg) => onProgress(msg),
       signal, type: kind, kindLocked, model: whisperModel,
     });
-    const pack = { caption: recipe?._transcript || '', acquiredVia: 'transcript', sourceType: 'video', kind };
+    const pack = { caption: recipe?._transcript || '', acquiredVia: 'transcript', sourceType: 'video', kind, kindLocked };
     const { gate: verdict, reasons } = gate(recipe, pack);
     return { recipe, pack, gate: verdict, reasons };
   } catch (err) {
@@ -277,7 +279,7 @@ async function tryVideoFallback(url, existingPack, opts) {
     recipe._structuredVia = (recipe._structuredVia || 'unknown') + '+transcript';
     recipe.link = recipe.link || url;
 
-    const pack = { ...existingPack, caption: asr.transcript, acquiredVia: 'transcript', kind };
+    const pack = { ...existingPack, caption: asr.transcript, acquiredVia: 'transcript', kind, kindLocked };
     const { gate: verdict, reasons } = gate(recipe, pack);
     return { recipe, pack, gate: verdict, reasons };
   } catch (err) {
@@ -315,7 +317,7 @@ export async function importRequest(request) {
     const photoPack = await acquirePhotoPack(pages, { kind, kindLocked, signal, onProgress });
     if (!photoPack) return { recipe: null, pack: null, gate: 'empty', reasons: ['photo acquisition failed'] };
     const photoRecipe = await structure(photoPack, { kind, kindLocked, signal, onProgress });
-    photoPack.kind = kind;
+    photoPack.kind = kind; photoPack.kindLocked = kindLocked;
     const { gate: photoVerdict, reasons: photoReasons } = gate(photoRecipe, photoPack);
     return { recipe: photoRecipe, pack: photoPack, gate: photoVerdict, reasons: photoReasons };
   }
@@ -350,7 +352,7 @@ export async function importRequest(request) {
   if (fork === 'instagram') {
     const followerRecipe = await tryInstagramFollowerEnrichment(pack, resolvedUrl, { signal, onProgress });
     if (followerRecipe) {
-      pack.kind = kind;
+      pack.kind = kind; pack.kindLocked = kindLocked;
       const { gate: followerVerdict, reasons: followerReasons } = gate(followerRecipe, pack);
       if (followerVerdict === 'pass') {
         return { recipe: followerRecipe, pack, gate: followerVerdict, reasons: followerReasons };
@@ -362,7 +364,7 @@ export async function importRequest(request) {
   }
 
   const recipe = await structure(pack, { kind, kindLocked, signal, onProgress });
-  pack.kind = kind;
+  pack.kind = kind; pack.kindLocked = kindLocked;
   const { gate: verdict, reasons } = gate(recipe, pack);
 
   // Video fallback: video URL + weak/empty result → try ASR transcription.
@@ -389,7 +391,7 @@ export async function restructure(pack, { kind = 'meal', kindLocked = false, sig
   }
 
   const recipe = await structure(pack, { kind, kindLocked, signal, onProgress });
-  pack.kind = kind;
+  pack.kind = kind; pack.kindLocked = kindLocked;
   const { gate: verdict, reasons } = gate(recipe, pack);
 
   return { recipe, pack, gate: verdict, reasons };

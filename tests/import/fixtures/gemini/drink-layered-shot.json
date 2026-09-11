@@ -1,0 +1,30 @@
+{
+  "name": "recorded: fractional layered shot with minimal directions (b-52)",
+  "structured": {
+    "isRecipe": true,
+    "kind": "drink",
+    "title": "B-52",
+    "glass": "shot",
+    "garnish": null,
+    "method": "layered",
+    "ingredientGroups": [
+      { "section": "", "items": [
+        { "quantity": "1/3", "unit": "", "name": "Kahlua" },
+        { "quantity": "1/3", "unit": "", "name": "Baileys Irish Cream" },
+        { "quantity": "1/3", "unit": "", "name": "Grand Marnier" }
+      ] }
+    ],
+    "directions": [
+      "Layer ingredients into a shot glass in order, pouring gently over the back of a bar spoon so each stays separate."
+    ],
+    "confidence": 0.88
+  },
+  "expect": {
+    "minIngredients": 3,
+    "minDirections": 1,
+    "maxMoved": 0,
+    "drink": true,
+    "glass": "shot",
+    "ingredientMustMatch": "kahlua"
+  }
+}

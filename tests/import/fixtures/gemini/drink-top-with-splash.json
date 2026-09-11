@@ -1,0 +1,35 @@
+{
+  "name": "recorded: build-and-top phrasing with a copper mug (moscow mule)",
+  "structured": {
+    "isRecipe": true,
+    "kind": "drink",
+    "title": "Moscow Mule",
+    "glass": "copper_mug",
+    "garnish": "lime wedge",
+    "method": "built",
+    "ingredientGroups": [
+      { "section": "", "items": [
+        { "quantity": "2", "unit": "oz", "name": "vodka" },
+        { "quantity": "0.5", "unit": "oz", "name": "fresh lime juice" },
+        { "quantity": "4", "unit": "oz", "name": "ginger beer", "note": "top with, to taste" },
+        { "quantity": "1", "unit": "splash", "name": "soda water", "optional": true }
+      ] }
+    ],
+    "directions": [
+      "Fill a copper mug with ice.",
+      "Add vodka and lime juice.",
+      "Top with ginger beer and a splash of soda water, then stir gently.",
+      "Garnish with a lime wedge."
+    ],
+    "confidence": 0.9
+  },
+  "expect": {
+    "minIngredients": 3,
+    "minDirections": 4,
+    "maxMoved": 0,
+    "drink": true,
+    "glass": "copper_mug",
+    "garnish": "lime wedge",
+    "ingredientMustMatch": "ginger beer"
+  }
+}

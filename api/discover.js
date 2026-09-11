@@ -6,7 +6,8 @@
 // RSS is an open standard and every WordPress recipe blog publishes one.
 //
 // Query params:
-//   ?sources=budgetbytes,minimalistbaker  (comma-sep, default: all)
+//   ?kind=meals|drinks                    (default: meals — selects which source registry to use)
+//   ?sources=budgetbytes,minimalistbaker  (comma-sep, default: all in the selected kind)
 //   ?limit=30                             (per-source cap, default: 15)
 //   ?filter=strict|relaxed                (default: strict — only single-recipe posts)
 //
@@ -53,6 +54,21 @@ const SOURCES = {
   bonappetit:       { name: 'Bon Appétit',           feedUrl: 'https://www.bonappetit.com/feed/recipes-rss-feed/rss', emoji: '🇫🇷', tags: ['technique', 'comfort'] },
   foodnetwork:      { name: 'Food Network',          feedUrl: 'https://www.foodnetwork.com/fn-dish/recipes.rss',      emoji: '📺', tags: ['comfort', 'weeknight'] },
   nytcooking:       { name: 'NYT Cooking',           feedUrl: 'https://rss.nytimes.com/services/xml/rss/nyt/Cooking.xml', emoji: '📰', tags: ['technique', 'seasonal'] },
+};
+
+/**
+ * Registry of cocktail/spirits blog RSS feeds for Bar Discovery (?kind=drinks).
+ * Same shape as SOURCES above. Each feed was hand-verified to return valid
+ * RSS before being added here -- do the same check before adding more
+ * (curl the feedUrl, confirm <rss>/<channel>/<item> structure) rather than
+ * guessing a /feed suffix, since several cocktail sites (Kindred Cocktails,
+ * Difford's Guide) don't expose one at the obvious path.
+ */
+const SOURCES_DRINKS = {
+  punchdrink:       { name: 'PUNCH',                 feedUrl: 'https://punchdrink.com/feed/',            emoji: '🥊', tags: ['classic', 'technique'] },
+  vinepair:         { name: 'VinePair',               feedUrl: 'https://vinepair.com/feed/',              emoji: '🍇', tags: ['spirits', 'trends'] },
+  cocktailwonk:     { name: 'Cocktail Wonk',          feedUrl: 'https://cocktailwonk.com/feed',           emoji: '🥃', tags: ['tiki', 'spirits'] },
+  imbibemagazine:   { name: 'Imbibe Magazine',        feedUrl: 'https://imbibemagazine.com/feed/',        emoji: '🍹', tags: ['spirits', 'technique'] },
 };
 
 // ─── Minimal RSS parser ──────────────────────────────────────────────────────
@@ -147,8 +163,8 @@ function detectPostType(title, contentEncoded, link) {
 // ─── Hard-skip patterns (always removed regardless of filter mode) ───────────
 const HARD_SKIP_RX = /giveaway|sweepstakes|gift\s*card|announcement|sponsored/i;
 
-function parseRssFeed(xml, sourceKey, limit, filterMode) {
-  const source = SOURCES[sourceKey];
+function parseRssFeed(xml, sourceKey, limit, filterMode, sourceMap) {
+  const source = sourceMap[sourceKey];
   if (!source) return [];
 
   // Support both RSS (<item>) and Atom (<entry>) feeds
@@ -226,17 +242,19 @@ export default async function handler(req) {
   }
 
   const { searchParams } = new URL(req.url);
+  const kind = searchParams.get('kind') === 'drinks' ? 'drinks' : 'meals';
+  const sourceMap = kind === 'drinks' ? SOURCES_DRINKS : SOURCES;
   const requestedSources = searchParams.get('sources');
   const limit = Math.min(parseInt(searchParams.get('limit') || '15', 10), 50);
   const filterMode = searchParams.get('filter') === 'relaxed' ? 'relaxed' : 'strict';
 
   // Determine which sources to fetch
-  let sourceKeys = Object.keys(SOURCES);
+  let sourceKeys = Object.keys(sourceMap);
   if (requestedSources) {
     const requested = requestedSources.split(',').map(s => s.trim().toLowerCase());
     sourceKeys = sourceKeys.filter(k => requested.includes(k));
     if (sourceKeys.length === 0) {
-      return jsonResponse({ error: 'No valid sources specified', available: Object.keys(SOURCES) }, 400);
+      return jsonResponse({ error: 'No valid sources specified', available: Object.keys(sourceMap) }, 400);
     }
   }
 
@@ -244,7 +262,7 @@ export default async function handler(req) {
   // doesn't break the entire response
   const feedResults = await Promise.allSettled(
     sourceKeys.map(async (key) => {
-      const source = SOURCES[key];
+      const source = sourceMap[key];
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), FEED_TIMEOUT_MS);
       try {
@@ -258,7 +276,7 @@ export default async function handler(req) {
         clearTimeout(timer);
         if (!resp.ok) throw new Error(`${resp.status}`);
         const xml = await resp.text();
-        return { key, items: parseRssFeed(xml, key, limit, filterMode) };
+        return { key, items: parseRssFeed(xml, key, limit, filterMode, sourceMap) };
       } catch (err) {
         clearTimeout(timer);
         console.log(`[discover] Feed ${key} failed: ${err.message}`);
@@ -294,7 +312,7 @@ export default async function handler(req) {
   return jsonResponse({
     posts: merged,
     sources: Object.fromEntries(
-      Object.entries(SOURCES)
+      Object.entries(sourceMap)
         .filter(([k]) => sourceKeys.includes(k))
         .map(([k, v]) => [k, { name: v.name, emoji: v.emoji, tags: v.tags }])
     ),

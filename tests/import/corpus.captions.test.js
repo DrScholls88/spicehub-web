@@ -26,6 +26,27 @@ describe('golden corpus — caption weakness detection', () => {
   it('ig-sectioned: a sectioned recipe caption is NOT weak', () => {
     expect(isCaptionWeak(cap('ig-sectioned'))).toBe(false);
   });
+
+  // ── drink-aware measure-language coverage (CocktailDB corpus, 2026-09-11) ──
+  // Real-world cocktail phrasing that isn't covered by ig-cocktail-reel alone:
+  // equal-parts ratios, European cl measures, layered-shot fractions, and a
+  // cocktail-specific bait caption (mirrors ig-weak-caption but for drinks).
+
+  it('ig-cocktail-parts-ratio: equal-parts phrasing ("1 part X") is NOT weak', () => {
+    expect(isCaptionWeak(cap('ig-cocktail-parts-ratio'))).toBe(false);
+  });
+
+  it('ig-cocktail-metric: European cl measures are NOT weak', () => {
+    expect(isCaptionWeak(cap('ig-cocktail-metric'))).toBe(false);
+  });
+
+  it('ig-cocktail-layered-shot: fractional layered-shot phrasing is NOT weak', () => {
+    expect(isCaptionWeak(cap('ig-cocktail-layered-shot'))).toBe(false);
+  });
+
+  it('ig-cocktail-bait: "full cocktail recipe on the blog" bait is flagged weak', () => {
+    expect(isCaptionWeak(cap('ig-cocktail-bait'))).toBe(true);
+  });
 });
 
 describe('golden corpus — caption cleaning strips social chrome', () => {
@@ -81,6 +102,37 @@ describe('golden corpus — deterministic structuring (no-LLM tier)', () => {
     // "2 oz mezcal" must never be classified as a direction.
     expect(r.directions.join('\n')).not.toMatch(/^\s*2 oz mezcal/im);
     assertZeroJunk(r, 'ig-cocktail-reel');
+  });
+
+  it('ig-cocktail-parts-ratio: "1 part X" lines classify as ingredients, not directions', () => {
+    const r = structureDeterministic(cleanSocialCaption(cap('ig-cocktail-parts-ratio')), {
+      type: 'drink', sourceUrl: 'https://www.instagram.com/reel/CORPUS04/',
+    });
+    expect(r).toBeTruthy();
+    expect(r.ingredients.length).toBeGreaterThanOrEqual(3);
+    expect(r.ingredients.join('\n')).toMatch(/campari/i);
+    expect(r.directions.join('\n')).not.toMatch(/^\s*1 part gin/im);
+    assertZeroJunk(r, 'ig-cocktail-parts-ratio');
+  });
+
+  it('ig-cocktail-metric: European cl measures classify as ingredients', () => {
+    const r = structureDeterministic(cleanSocialCaption(cap('ig-cocktail-metric')), {
+      type: 'drink', sourceUrl: 'https://www.instagram.com/reel/CORPUS05/',
+    });
+    expect(r).toBeTruthy();
+    expect(r.ingredients.length).toBeGreaterThanOrEqual(3);
+    expect(r.ingredients.join('\n')).toMatch(/maraschino/i);
+    assertZeroJunk(r, 'ig-cocktail-metric');
+  });
+
+  it('ig-cocktail-layered-shot: fractional "1/3 X" lines classify as ingredients', () => {
+    const r = structureDeterministic(cleanSocialCaption(cap('ig-cocktail-layered-shot')), {
+      type: 'drink', sourceUrl: 'https://www.instagram.com/reel/CORPUS06/',
+    });
+    expect(r).toBeTruthy();
+    expect(r.ingredients.length).toBeGreaterThanOrEqual(3);
+    expect(r.ingredients.join('\n')).toMatch(/kahlua/i);
+    assertZeroJunk(r, 'ig-cocktail-layered-shot');
   });
 
   it('ig-sectioned: section headers are not swallowed as ingredients or steps', () => {

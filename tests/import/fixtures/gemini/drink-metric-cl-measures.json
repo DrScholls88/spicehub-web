@@ -1,0 +1,34 @@
+{
+  "name": "recorded: European cl measures on a shaken classic (aviation)",
+  "structured": {
+    "isRecipe": true,
+    "kind": "drink",
+    "title": "Aviation",
+    "glass": "coupe",
+    "garnish": "cherry",
+    "method": "shaken",
+    "ingredientGroups": [
+      { "section": "", "items": [
+        { "quantity": "4.5", "unit": "cl", "name": "gin" },
+        { "quantity": "1.5", "unit": "cl", "name": "lemon juice" },
+        { "quantity": "1.5", "unit": "cl", "name": "maraschino liqueur" },
+        { "quantity": "1", "unit": "cl", "name": "creme de violette", "optional": true }
+      ] }
+    ],
+    "directions": [
+      "Add all ingredients to a cocktail shaker filled with ice.",
+      "Shake well and strain into a chilled coupe glass.",
+      "Garnish with a cherry."
+    ],
+    "confidence": 0.91
+  },
+  "expect": {
+    "minIngredients": 3,
+    "minDirections": 3,
+    "maxMoved": 0,
+    "drink": true,
+    "glass": "coupe",
+    "garnish": "cherry",
+    "ingredientMustMatch": "maraschino"
+  }
+}

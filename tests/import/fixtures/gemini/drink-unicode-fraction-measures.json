@@ -1,0 +1,33 @@
+{
+  "name": "recorded: unicode fraction oz measures on a stirred classic (old fashioned)",
+  "structured": {
+    "isRecipe": true,
+    "kind": "drink",
+    "title": "Old Fashioned",
+    "glass": "rocks",
+    "garnish": "orange peel, cherry",
+    "method": "stirred",
+    "ingredientGroups": [
+      { "section": "", "items": [
+        { "quantity": "2", "unit": "oz", "name": "bourbon" },
+        { "quantity": "¼", "unit": "oz", "name": "simple syrup" },
+        { "quantity": "2", "unit": "dash", "name": "Angostura bitters" },
+        { "quantity": "1", "unit": "", "name": "sugar cube", "note": "optional, if not using syrup", "optional": true }
+      ] }
+    ],
+    "directions": [
+      "Add simple syrup and bitters to a rocks glass.",
+      "Add a large ice cube and the bourbon, then stir gently for 20 seconds.",
+      "Express an orange peel over the glass and drop it in, then garnish with a cherry."
+    ],
+    "confidence": 0.93
+  },
+  "expect": {
+    "minIngredients": 3,
+    "minDirections": 3,
+    "maxMoved": 0,
+    "drink": true,
+    "glass": "rocks",
+    "ingredientMustMatch": "bourbon"
+  }
+}

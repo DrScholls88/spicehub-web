@@ -79,6 +79,7 @@ const MealDetail = lazy(() => import('./components/MealDetail'));
 const AddEditMeal = lazy(() => import('./components/AddEditMeal'));
 const ImportSheet = lazy(() => import('./components/ImportSheet'));
 const DiscoverRecipes = lazy(() => import('./components/DiscoverRecipes'));
+const DiscoverDrinks = lazy(() => import('./components/DiscoverDrinks'));
 const SettingsSheet = lazy(() => import('./components/SettingsSheet'));
 const FriendsSheet = lazy(() => import('./components/FriendsSheet'));
 const SharePickerSheet = lazy(() => import('./components/SharePickerSheet'));
@@ -478,6 +479,7 @@ export default function App() {
     setTimeout(() => { setRoomTrip(null); roomTripBusy.current = false; }, 850);
   }, []);
   const [showDiscover, setShowDiscover] = useState(false); // Discover Recipes overlay (Landing entry point)
+  const [showDiscoverDrinks, setShowDiscoverDrinks] = useState(false); // Discover Cocktails overlay (Saloon entry point)
   const [showSpinner, setShowSpinner] = useState(false);
   const [cookingStats, setCookingStats] = useState({ streak: 0, totalCooked: 0, topMeal: null });
   const [queuedOps, setQueuedOps] = useState(0);
@@ -609,6 +611,7 @@ export default function App() {
   useBackHandler(showBarShelf, () => setShowBarShelf(false), 'bar-shelf');
   useBackHandler(showBarFridge, () => setShowBarFridge(false), 'bar-fridge');
   useBackHandler(showDiscover, () => setShowDiscover(false), 'discover-landing');
+  useBackHandler(showDiscoverDrinks, () => setShowDiscoverDrinks(false), 'discover-drinks');
   useBackHandler(!!cookModeMeal, () => setCookModeMeal(null), 'cook-mode');
   useBackHandler(!!pipVideo, () => setPipVideo(null), 'pip-video');
   useBackHandler(!!mixModeDrink, () => setMixModeDrink(null), 'mix-mode');
@@ -717,6 +720,19 @@ export default function App() {
     if (!url) return;
     setImportModalKey(k => k + 1);
     setShowImportFor('any');
+    setSharedContent({ mode: 'url', url, text: '', title: '', isShare: false });
+  }, []);
+
+  // Sibling to handleQuickImport, for Bar Discovery (DiscoverDrinks.jsx).
+  // Unlike the meal flow, this locks the import sheet to 'drinks' up front
+  // (mirrors BarShelf's own onImport handler below) rather than letting the
+  // engine auto-detect kind -- a cocktail blog post handed to the 'any'
+  // sheet has no reason to be mis-detected as a meal, but locking it removes
+  // the possibility entirely and matches what BarShelf's own Import button does.
+  const handleQuickImportDrink = useCallback((url) => {
+    if (!url) return;
+    setImportModalKey(k => k + 1);
+    setShowImportFor('drinks');
     setSharedContent({ mode: 'url', url, text: '', title: '', isShare: false });
   }, []);
 
@@ -2414,6 +2430,7 @@ useEffect(() => {
             onViewDetail={(drink) => { setShowBarShelf(false); openDetailItem(drink); }}
             onClose={() => setShowBarShelf(false)}
             onImport={() => { setImportModalKey(k => k + 1); setShowImportFor('drinks'); }}
+            onOpenDiscover={() => setShowDiscoverDrinks(true)}
             onAddToGrocery={handleAddToGrocery}
             onExitToMyBar={() => tripBetweenRooms('toMyBar')}
             onOpenPantry={() => { setShowBarShelf(false); setPantryStartOnMatches(false); setShowFridge(true); }}
@@ -2449,6 +2466,21 @@ useEffect(() => {
             onSelectUrl={(url) => {
               setShowDiscover(false);
               handleQuickImport(url);
+            }}
+          />
+        )}
+      </AnimatePresence>
+      </Suspense>
+      {/* ── Discover Cocktails (blog aggregator) — Saloon/BarShelf entry point ── */}
+      <Suspense fallback={null}>
+      <AnimatePresence>
+        {showDiscoverDrinks && (
+          <DiscoverDrinks
+            key="discover-drinks-saloon"
+            onClose={() => setShowDiscoverDrinks(false)}
+            onSelectUrl={(url) => {
+              setShowDiscoverDrinks(false);
+              handleQuickImportDrink(url);
             }}
           />
         )}

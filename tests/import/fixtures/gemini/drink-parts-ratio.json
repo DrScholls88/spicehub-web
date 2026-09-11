@@ -1,0 +1,33 @@
+{
+  "name": "recorded: equal-parts ratio units on a stirred classic (negroni)",
+  "structured": {
+    "isRecipe": true,
+    "kind": "drink",
+    "title": "Negroni",
+    "glass": "rocks",
+    "garnish": "orange peel",
+    "method": "stirred",
+    "ingredientGroups": [
+      { "section": "", "items": [
+        { "quantity": "1", "unit": "part", "name": "gin" },
+        { "quantity": "1", "unit": "part", "name": "Campari" },
+        { "quantity": "1", "unit": "part", "name": "sweet vermouth" }
+      ] }
+    ],
+    "directions": [
+      "Stir all ingredients with ice in a mixing glass.",
+      "Strain into a rocks glass over a large ice cube.",
+      "Garnish with an orange peel."
+    ],
+    "confidence": 0.95
+  },
+  "expect": {
+    "minIngredients": 3,
+    "minDirections": 3,
+    "maxMoved": 0,
+    "drink": true,
+    "glass": "rocks",
+    "garnish": "orange peel",
+    "ingredientMustMatch": "campari"
+  }
+}
