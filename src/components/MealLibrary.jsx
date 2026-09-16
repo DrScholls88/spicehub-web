@@ -15,6 +15,7 @@ import { buildPantryMatchIndex } from '../lib/pantryMatch.js';
 import SharePickerSheet from './SharePickerSheet';
 import SharedWithYouSection from './SharedWithYouSection';
 import { isFriendsEnabled } from '../lib/supabaseClient';
+import { syncPendingSharesToLocal } from '../lib/recipeShare';
 import { MEAL_TYPE_CATEGORIES, DIETARY_TAGS, CUISINE } from '../recipeSchema';
 import { getTotalMinutes, formatMinutes } from '../lib/recipeTime.js';
 
@@ -239,6 +240,28 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
   useEffect(() => { refreshTags(); }, [refreshTags]);
   // Also refresh tags when meals reload (parent may have changed them)
   useEffect(() => { refreshTags(); }, [meals, refreshTags]);
+
+  // 2026-09-16: pull pending recipe_shares on mount. SharedWithYouSection
+  // (rendered below) only ever reads the local Dexie `recipeShares` cache —
+  // it never hits the network — and that cache is otherwise only refilled
+  // at app cold-boot (useHomeGroup's one-time bootstrap effect) or via
+  // Realtime, which is gated to while the Friends sheet is open (see
+  // App.jsx `realtimeGrace`). A meal shared with the user while they were
+  // just browsing the library never showed up here until a full app
+  // reload. Re-syncing whenever this screen mounts closes that gap.
+  useEffect(() => {
+    if (!isFriendsEnabled()) return;
+    (async () => {
+      try {
+        await syncPendingSharesToLocal();
+        window.dispatchEvent(new CustomEvent('spicehub:shares-updated'));
+      } catch (err) {
+        // Best-effort — SharedWithYouSection just keeps showing whatever
+        // was already cached locally; syncPendingSharesToLocal already logs.
+        console.warn('[MealLibrary] pending-shares sync on mount failed:', err.message);
+      }
+    })();
+  }, []);
 
   // ── Filtered + sorted meal list ────────────────────────────────────────────
   const filtered = meals.filter(m => {

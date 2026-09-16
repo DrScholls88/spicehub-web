@@ -19,6 +19,7 @@ import SquigglyText from './SquigglyText';
 import SharePickerSheet from './SharePickerSheet';
 import SharedWithYouSection from './SharedWithYouSection';
 import { isFriendsEnabled } from '../lib/supabaseClient';
+import { syncPendingSharesToLocal } from '../lib/recipeShare';
 import { matchDrink, categorizeBottle } from '../lib/barMatch';
 import { getOneAwayDrinks, buildShoppingList, exportShoppingListText } from '../lib/barShopping';
 import { getStrengthTier } from '../lib/abvCalculator';
@@ -296,6 +297,22 @@ export default function BarLibrary({
   }, []);
   useEffect(() => { refreshTags(); }, [refreshTags]);
   useEffect(() => { refreshTags(); }, [drinks, refreshTags]);
+
+  // 2026-09-16: pull pending recipe_shares on mount — same gap as
+  // MealLibrary (see the comment there). SharedWithYouSection only reads
+  // the local Dexie cache, which otherwise only refills at app cold-boot or
+  // while the Friends sheet's Realtime channel happens to be open.
+  useEffect(() => {
+    if (!isFriendsEnabled()) return;
+    (async () => {
+      try {
+        await syncPendingSharesToLocal();
+        window.dispatchEvent(new CustomEvent('spicehub:shares-updated'));
+      } catch (err) {
+        console.warn('[BarLibrary] pending-shares sync on mount failed:', err.message);
+      }
+    })();
+  }, []);
 
   // ── Phase 3.2: "One Bottle Away" — the flagship differentiator (§3.2/4.1
   // of the plan). getOneAwayDrinks returns one row per drink; group by the

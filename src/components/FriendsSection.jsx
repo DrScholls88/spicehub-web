@@ -19,6 +19,7 @@ import {
   getLocalPendingOutbound, getLocalBlocked,
 } from '../lib/friends';
 import { isStatusFresh } from '../lib/cloudProfile';
+import { syncPendingSharesToLocal } from '../lib/recipeShare';
 import AvatarCircle from './AvatarCircle';
 import SetUsernameSheet from './SetUsernameSheet';
 import ShareHistorySheet from './ShareHistorySheet';
@@ -213,12 +214,24 @@ export default function FriendsSection({ isOnline, showToast }) {
   }, []);
 
   // ── Manual refresh ─────────────────────────────────────────────────────────
+  // 2026-09-16: also re-pull pending recipe_shares here, not just
+  // friendships. The Shared-with-you inbox (SharedWithYouSection, embedded
+  // in MealLibrary/BarLibrary) only ever reads the local Dexie cache — it
+  // never hits the network itself — and that cache is otherwise only
+  // refilled at app cold-boot or via Realtime, which is gated to while this
+  // Friends sheet is open (see App.jsx `realtimeGrace`). A share sent while
+  // the recipient had the sheet closed was invisible until a full app
+  // reload; hitting refresh here now catches it too.
   const handleManualRefresh = async () => {
     if (refreshing) return;
     setRefreshing(true);
     try {
-      await syncFriendsToLocal();
+      await Promise.all([
+        syncFriendsToLocal(),
+        syncPendingSharesToLocal(),
+      ]);
       await refreshLocal();
+      window.dispatchEvent(new CustomEvent('spicehub:shares-updated'));
     } catch (err) {
       showToast?.("Couldn't refresh — try again.", 'error', 2500);
       console.warn('[FriendsSection] manual refresh failed:', err.message);
