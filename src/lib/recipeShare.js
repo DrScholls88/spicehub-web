@@ -7,7 +7,7 @@
 import db from '../db';
 import { getSupabase, getCurrentUserId } from './supabaseClient';
 import { isPublicUrl } from './slotMapper';
-import { getProfile } from './profile';
+import { ensureProfile } from './profile';
 
 // ── Image compression for share payload ──────────────────────────────────
 
@@ -301,7 +301,11 @@ export async function saveShareToLibrary(shareId) {
   const share = await db.recipeShares.get(shareId);
   if (!share) return { success: false, error: 'Share not found.' };
 
-  const profile = await getProfile();
+  // ensureProfile() (not getProfile()) — a fresh install / reinstalled PWA
+  // never ran the v22 Dexie upgrade that used to be the only thing that
+  // created this row, so `profiles` can still be empty here even though the
+  // share itself loaded fine from the cloud. See profile.js.
+  const profile = await ensureProfile();
   if (!profile) return { success: false, error: 'No local profile.' };
 
   const { recipeData, itemType, fromUsername } = share;
