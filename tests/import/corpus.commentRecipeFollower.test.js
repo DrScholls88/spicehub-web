@@ -31,6 +31,34 @@ describe('CommentRecipeFollower', () => {
       expect(captionReferencesComments('')).toBe(false);
       expect(captionReferencesComments(null)).toBe(false);
     });
+
+    // 2026-09-21: the motivating bait phrase this feature was built for —
+    // "comment RECIPE and I'll send you the details!" — matched NONE of the
+    // original five patterns above (verified against the live production
+    // caption in tests/import/corpus.instagramFollowers.test.js, which used
+    // this exact phrase but never actually exercised the detail=full fetch
+    // path because it only ever ran with latestComments already populated).
+    it('detects the imperative "comment RECIPE" bait the feature is named for', () => {
+      expect(captionReferencesComments("comment RECIPE and I'll send you the details!")).toBe(true);
+      expect(captionReferencesComments('comment RECIPE and I will send you the details! 🧀')).toBe(true);
+    });
+
+    it('detects "comment \'recipe\'" with quotes around the keyword', () => {
+      expect(captionReferencesComments('Just comment "recipe" and I\'ll DM it to you')).toBe(true);
+    });
+
+    it('detects same-clause "recipe ... comments" and "comments ... recipe" the directional patterns miss', () => {
+      expect(captionReferencesComments("Recipe's in comments, y'all!")).toBe(true);
+      expect(captionReferencesComments('See comments — recipe is right there')).toBe(true);
+    });
+
+    it('does not flag a recipe caption that merely mentions comments in a different clause', () => {
+      expect(captionReferencesComments('Loved this recipe! Thanks for all the sweet comments today.')).toBe(false);
+    });
+
+    it('does not flag ordinary "type X below" engagement bait with no "recipe" keyword', () => {
+      expect(captionReferencesComments('type YUM below and I will DM you')).toBe(false);
+    });
   });
 
   describe('pickBestRecipeComment', () => {

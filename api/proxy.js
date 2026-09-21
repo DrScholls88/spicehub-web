@@ -483,11 +483,30 @@ export default async function handler(req) {
       // circuit breaker only treats >=500 as retryable, so a blanket 502 here
       // used to make it retry-bill Apify for a request that would just 400
       // again (2026-09-08 dirty-URL fix).
-      const attemptBodies = [
-        { username: [permalink], resultsLimit: 1, dataDetailLevel: detailLevel },
-        { username: [permalink], resultsLimit: 1 },
-        { directUrls: [permalink], resultsLimit: 1 },
-      ];
+      //
+      // 2026-09-21: the two "plainer" fallback bodies below used to drop
+      // dataDetailLevel entirely rather than just the username/directUrls
+      // shape they were actually meant to vary. That's harmless for a
+      // default ('basicData') call — Apify's own default is 'basicData' too
+      // — but for the comment-recipe-follower's opt-in ?detail=full call, a
+      // 400 on the first shape (any reason — dirty permalink, rate limit
+      // quirk, whatever) meant the retry that then succeeded silently came
+      // back as 'basicData' again, with latestComments absent, which is
+      // exactly the "comments vanish" failure this whole feature exists to
+      // avoid. Only the detailedData path is changed here — the default
+      // 'basicData' retry ladder every other caller hits is untouched, so
+      // this can't regress the primary (non-follower) acquire race.
+      const attemptBodies = detailLevel === 'detailedData'
+        ? [
+            { username: [permalink], resultsLimit: 1, dataDetailLevel: detailLevel },
+            { username: [permalink], resultsLimit: 1, dataDetailLevel: detailLevel },
+            { directUrls: [permalink], resultsLimit: 1, dataDetailLevel: detailLevel },
+          ]
+        : [
+            { username: [permalink], resultsLimit: 1, dataDetailLevel: detailLevel },
+            { username: [permalink], resultsLimit: 1 },
+            { directUrls: [permalink], resultsLimit: 1 },
+          ];
 
       let resp = null;
       for (let i = 0; i < attemptBodies.length; i += 1) {

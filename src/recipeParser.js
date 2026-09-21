@@ -7,7 +7,7 @@
  *   2. CORS PROXY    Ã¢â€ â€™ fallback if server unreachable (limited for social media)
  *   3. CAPTION TEXT  Ã¢â€ â€™ 4-pass heuristic parser (used internally on extracted captions)
  */
-import { cleanUrl, isInstagramCdnUrl, fetchHtmlViaProxy as fetchHtmlViaProxyFromApi, downloadImageAsDataUrl, proxyImageUrl } from './api.js';
+import { cleanUrl, isInstagramCdnUrl, fetchHtmlViaProxy as fetchHtmlViaProxyFromApi, downloadImageAsDataUrl, proxyImageUrl, fetchInstagramCommentsViaApify } from './api.js';
 import { getCachedImport, setCachedImport, logImportTelemetry, domainForTelemetry } from './db.js';
 import { transcribeFromUrl, transcribeFromFile, getPreferredWhisperModel } from './lib/transcriptionService.js';
 import { isRedditUrl, tryRedditJson } from './scrapers/redditDiscovery.js';
@@ -39,7 +39,7 @@ import { cleanSocialCaption, isCaptionWeak } from './import/clean/socialCaption.
 export { cleanSocialCaption, isCaptionWeak };  // re-export for legacy consumers
 import { GEMINI_PRIMARY_MODEL, GEMINI_FLAGSHIP_MODEL, GEMINI_VISION_MODEL } from './lib/importConfig.js';
 import { tryBlogLinkExtraction, assessCaptionQuality } from './lib/blogLinkFollower.js';
-import { tryCommentRecipeExtraction } from './lib/commentRecipeFollower.js';
+import { tryCommentRecipeExtraction, captionReferencesComments } from './lib/commentRecipeFollower.js';
 import { detectVideoSource } from './lib/videoSource.js';
 // 2026-08-09: shared HTML->recipe extraction engine (JSON-LD/microdata/CSS
 // heuristics + the decode/image/instruction helpers it depends on) — moved
@@ -4871,6 +4871,27 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
   // link follower found nothing (blogPartial unset) so the two paths never
   // fight over the same caption. Merges the best-scoring comment straight
   // into capturedCaption; Phase 3's Gemini call structures the merged text.
+  //
+  // 2026-09-21: mirrors the opportunistic detail=full fetch that
+  // acquire/instagramFollowers.js added 2026-09-10 for the live ImportSheet
+  // path. Without this, Phase 0.5C here was a permanent no-op: igPack comes
+  // from the same acquireInstagramPack() basicData race, which never
+  // returns latestComments, so `igPack?.latestComments?.length` was always
+  // falsy no matter how good the caption detector got. importFromInstagram
+  // is a second, real production path — BrowserAssist.jsx calls it
+  // directly, it is not dead legacy code — so it needs this fix too, not
+  // just the shared regex widening in commentRecipeFollower.js.
+  if (igPack && !blogPartial && !igPack.latestComments?.length) {
+    const commentDetectionCaption = capturedRawCaption || igPack.caption || capturedCaption;
+    if (captionReferencesComments(commentDetectionCaption)) {
+      try {
+        const comments = await fetchInstagramCommentsViaApify(url, { signal });
+        if (comments?.length) igPack.latestComments = comments;
+      } catch (e) {
+        console.log('[CommentRecipeFollower] detail=full fetch error:', e?.message);
+      }
+    }
+  }
   if (!blogPartial && igPack?.latestComments?.length) {
     try {
       const commentSourceCaption = capturedRawCaption || igPack?.caption || capturedCaption;

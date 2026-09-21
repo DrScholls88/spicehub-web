@@ -44,6 +44,27 @@ const COMMENT_REFERENCE_PATTERNS = [
   /\bcomments?\b[^.!\n]{0,20}\bfor\b[^.!\n]{0,10}\brecipe\b/i,
   // "[pinned/first] comment [has/with] the recipe"
   /\b(pinned|first)\b[^.!\n]{0,5}\bcomment\b[^.!\n]{0,20}\brecipe\b/i,
+
+  // 2026-09-21: the motivating bait phrase this feature was built for —
+  // "comment RECIPE and I'll send you the details!" — matched NONE of the
+  // five patterns above (verified: none require the imperative "comment
+  // <keyword>" shape). Widened without matching ordinary engagement bait
+  // ("comment below if you tried this!", which has no "recipe" anywhere).
+  //
+  // "comment RECIPE" / "comment 'recipe'" — imperative bait. Two
+  // consecutive words, so no proximity window needed: this exact adjacency
+  // essentially never occurs in organic prose.
+  /\bcomment(?:s|ed|ing)?\s+['"]?recipe['"]?\b/i,
+  // "recipe ... comments" within the same clause (stops at . / ! / newline,
+  // same guard the patterns above use) — catches phrasings none of the
+  // directional patterns above cover, e.g. "Recipe's in comments!",
+  // "This recipe — comments have the details" — without crossing a
+  // sentence boundary into an unrelated "loved this recipe! thanks for
+  // all the comments" caption.
+  /\brecipe\b[^.!\n]{0,24}\bcomments?\b/i,
+  // Same, reversed word order — "comments ... recipe" ("comments below
+  // have the recipe", "see comments, recipe's there").
+  /\bcomments?\b[^.!\n]{0,24}\brecipe\b/i,
 ];
 
 /**

@@ -179,4 +179,36 @@ describe('acquire/instagramFollowers — grounded blog/comment fallback', () => 
     expect(pack._followerSource).toBeUndefined();
     expect(pack.caption).toBe('Full recipe in the comments! 👇'); // untouched
   });
+
+  // 2026-09-21: the literal motivating case — "comment RECIPE and I'll send
+  // you the details!" — reproduced end-to-end. Every other test above that
+  // uses this exact caption text has profileBioUrl or a non-empty
+  // latestComments already set, so none of them actually exercise the
+  // pointsToComments -> fetchInstagramCommentsViaApify branch on this
+  // phrase. This one does: empty comments, no bio URL, no caption URL, so
+  // hasFollowerSignal is true ONLY because captionReferencesComments now
+  // recognizes the imperative "comment RECIPE" bait.
+  it('fetches comments for the literal "comment RECIPE and I\'ll send you the details!" bait caption', async () => {
+    const { fetchInstagramCommentsViaApify } = await import('../../src/api.js');
+    fetchInstagramCommentsViaApify.mockClear();
+    const recipeComment =
+      'Ingredients: 1 lb ground beef, 1 packet taco seasoning, 8 tortillas, 1 cup shredded cheese. ' +
+      'Directions: brown the beef, stir in seasoning and water, simmer 5 minutes, fill tortillas, top with cheese.';
+    fetchInstagramCommentsViaApify.mockResolvedValueOnce(['yum!!', recipeComment]);
+
+    const pack = {
+      caption: "comment RECIPE and I'll send you the details!",
+      images: [],
+      latestComments: [],
+      profileBioUrl: '',
+      title: '',
+    };
+
+    const result = await tryInstagramFollowerEnrichment(pack, 'https://www.instagram.com/reel/DFakeReel7/', {});
+
+    expect(fetchInstagramCommentsViaApify).toHaveBeenCalledTimes(1);
+    expect(result).toBeNull(); // merges into caption for Gemini, doesn't return a recipe directly
+    expect(pack.caption).toContain('Ingredients');
+    expect(pack._followerSource).toBe('comment-recipe');
+  });
 });

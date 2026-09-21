@@ -11,7 +11,13 @@
  * @property {string}  sourceUrl
  * @property {'instagram'|'website'|'reddit'|'video'|'text'} sourceType
  * @property {string}  title        best-known title hint
- * @property {string|null} caption  cleaned social caption
+ * @property {string|null} caption  RAW social/site caption — acquire modules
+ *   never clean it (see acquire/instagram.js's own comment: "recipeParser owns
+ *   cleanSocialCaption"). structure/gemini.js's structurePack() sends this
+ *   caption to Gemini as-is; only the legacy recipeParser.js deterministic
+ *   path calls cleanSocialCaption on it. Followers (blogLinkFollower.js,
+ *   commentRecipeFollower.js) depend on this staying raw — a cleaned caption
+ *   has its bare URLs stripped, which is what breaks blog-link discovery.
  * @property {string|null} transcript ASR / subtitle text
  * @property {string|null} markdown  Readability-isolated page content
  * @property {object|null} jsonLd    raw Schema.org Recipe node when found
