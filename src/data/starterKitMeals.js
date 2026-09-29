@@ -2,21 +2,22 @@
 // starterKitMeals.js — curated intro pack for new users
 // -----------------------------------------------------------------------------
 // Deployable seed source. Entries are reviewed, cookable recipes (not bulk
-// export dumps). Shape matches what the Import Engine saves after review.
+// export dumps). starterKitData.js holds only the hand-edited fields; this file
+// rebuilds the structured ingredient/direction data at seed time.
 //
-// Admin workflow (upgrade a recipe later):
-// 1. Re-run the recipe URL through the Import Engine.
-// 2. Review/fix it in ImportReview and save.
-// 3. Copy the saved meal from SpiceHubDB.meals (DevTools / export).
-// 4. Replace that entry in starterKitData.js after stripping local-only fields:
-//    id, status, jobId, sourceHash, createdAt, updatedAt, starterKit, importedAt.
+// Admin workflow (add or upgrade a recipe):
+// 1. Run the recipe URL through the Import Engine; review and fix it.
+// 2. Copy its name, times, ingredient lines and steps into a block in
+//    starterKitData.js (the header there lists the fields). Structured fields
+//    and local-only fields (id, jobId, createdAt, ...) are not copied.
+// 3. npm test -- StarterKitMeals  (the gates below, plus the 14-dinner launch gate)
 //
 // Quality bar for every meal:
-//   ≥4 ingredients, ≥2 directions, stable image URL, clear single dish.
+//   a dinner, ≥4 ingredients, ≥2 directions, stable https photo, one clear dish.
 // =============================================================================
 
 import { STARTER_KIT_RAW } from './starterKitData.js';
-import { upgradeRecipeIngredients } from '../recipeSchema';
+import { upgradeRecipeIngredients, normalizeMealCategory } from '../recipeSchema';
 
 const MIN_INGREDIENTS = 4;
 const MIN_DIRECTIONS = 2;
@@ -59,6 +60,23 @@ export function isStarterMealComplete(meal) {
   const ings = Array.isArray(meal.ingredients) ? meal.ingredients.filter(Boolean) : [];
   const dirs = Array.isArray(meal.directions) ? meal.directions.filter(Boolean) : [];
   return ings.length >= MIN_INGREDIENTS && dirs.length >= MIN_DIRECTIONS;
+}
+
+/**
+ * First-run gate (spec 2026-09-28 A2): every starter lands in The Rotation, and
+ * the spinner plans from The Rotation, so anything that is not a dinner with a
+ * photo would end up planned as dinner on a tester's first week. A missing
+ * category counts as Dinners, matching prepareStarterMeal's default.
+ */
+export function isStarterDinner(meal) {
+  const category = normalizeMealCategory(meal?.category || 'Dinners');
+  return category === 'Dinners' && /^https?:\/\//.test(meal?.imageUrl || '');
+}
+
+function passesStarterGates(meal) {
+  const ok = isStarterMealComplete(meal) && isStarterDinner(meal);
+  if (!ok && meal?.name) console.warn('[SpiceHub] Starter Kit skipped (not a complete dinner with a photo):', meal.name);
+  return ok;
 }
 
 /**
@@ -136,8 +154,8 @@ export function prepareStarterMeal(raw, now = new Date().toISOString()) {
   }
 }
 
-/** Static pack (completeness-filtered). Does not stamp starterKit. */
-export const STARTER_KIT_MEALS = STARTER_KIT_RAW.filter(isStarterMealComplete);
+/** Static pack (completeness + dinner/photo filtered). Does not stamp starterKit. */
+export const STARTER_KIT_MEALS = STARTER_KIT_RAW.filter(passesStarterGates);
 
 /**
  * Build meals ready for importSeedMeals / first-run seed.
@@ -148,7 +166,7 @@ export function buildStarterKitMeals(seedMeals = STARTER_KIT_MEALS, now = new Da
   return seedMeals
     .map((meal) => prepareStarterMeal(meal, now))
     .filter(Boolean)
-    .filter(isStarterMealComplete);
+    .filter(passesStarterGates);
 }
 
 export const STARTER_KIT_SEED_FLAG = 'spicehub-starter-kit-seeded';

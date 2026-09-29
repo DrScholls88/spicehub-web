@@ -40,7 +40,17 @@ import { ImportGraphic, PlanGraphic, GroceryGraphic, CookGraphic } from './stage
 // pre-built JSX) so React only mounts the active stage's graphic — the
 // prior stage's graphic component unmounts under AnimatePresence
 // mode="wait" below, which also stops its internal loop timers for free.
+// Planning leads (spec 2026-09-28 A1): slide 1 says the same sentence as the
+// Plan Card directly below the carousel; import is how your own recipes get in.
 const STAGES = [
+  {
+    id: 'spin',
+    icon: Dices,
+    title: 'Auto-plan your week',
+    subtitle: 'One spin fills your week with dinners and builds the grocery list.',
+    color: 'var(--primary)',
+    renderGraphic: (accent) => <PlanGraphic accent={accent} />,
+  },
   {
     id: 'import',
     icon: Download,
@@ -48,14 +58,6 @@ const STAGES = [
     subtitle: 'Instagram, TikTok, or any recipe link — auto-parsed in seconds.',
     color: '#6366f1',
     renderGraphic: (accent) => <ImportGraphic accent={accent} />,
-  },
-  {
-    id: 'spin',
-    icon: Dices,
-    title: 'Auto-plan your week',
-    subtitle: 'Spin up a full week of meals from your saved recipes.',
-    color: 'var(--primary)',
-    renderGraphic: (accent) => <PlanGraphic accent={accent} />,
   },
   {
     id: 'cook',

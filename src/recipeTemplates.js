@@ -34,7 +34,10 @@ function escapeHtml(s) {
 }
 
 function lookup(context, key) {
-  if (key === '.') return context;
+  // Sections expose the current item as ctx['.'] (see renderTemplate). Returning
+  // the whole ctx here printed "[object Object]" for every list item in every
+  // export format.
+  if (key === '.') return context != null && '.' in context ? context['.'] : context;
   // Support dotted paths like recipe.author.name without going wild.
   const parts = key.split('.');
   let cur = context;

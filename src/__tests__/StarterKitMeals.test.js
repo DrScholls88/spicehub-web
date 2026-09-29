@@ -2,14 +2,28 @@ import { describe, expect, it } from 'vitest';
 import {
   STARTER_KIT_MEALS,
   buildStarterKitMeals,
+  isStarterDinner,
   isStarterMealComplete,
   prepareStarterMeal,
 } from '../data/starterKitMeals.js';
+import { STARTER_KIT_RAW } from '../data/starterKitData.js';
+
+const seed = (over = {}) => ({
+  name: 'Gate Fixture',
+  ingredients: ['1 lb chicken', '1 onion', '2 cloves garlic', '1 tbsp oil'],
+  directions: ['Sear the chicken.', 'Add the rest and simmer.'],
+  imageUrl: 'https://example.com/dish.jpg',
+  category: 'Dinners',
+  ...over,
+});
 
 describe('StarterKitMeals seed pack', () => {
-  it('exports a curated cookable pack (8–12 meals)', () => {
-    expect(STARTER_KIT_MEALS.length).toBeGreaterThanOrEqual(8);
-    expect(STARTER_KIT_MEALS.length).toBeLessThanOrEqual(12);
+  // LAUNCH GATE (spec 2026-09-28 A2): Part A does not ship to testers until the
+  // curated pack is 14+ dinners and the gates skip nothing. Red until the pack
+  // is re-curated; that is the point.
+  it('LAUNCH GATE: 14+ starter dinners, none skipped by the gates', () => {
+    expect(STARTER_KIT_MEALS.map((m) => m.name)).toEqual(STARTER_KIT_RAW.map((m) => m.name));
+    expect(STARTER_KIT_MEALS.length).toBeGreaterThanOrEqual(14);
   });
 
   it('every meal meets the quality bar', () => {
@@ -21,7 +35,8 @@ describe('StarterKitMeals seed pack', () => {
       expect(meal.ingredients.length).toBeGreaterThanOrEqual(4);
       expect(Array.isArray(meal.directions)).toBe(true);
       expect(meal.directions.length).toBeGreaterThanOrEqual(2);
-      expect(Array.isArray(meal.notes)).toBe(true);
+      // notes / dietaryTags are optional in starterKitData.js; prepareStarterMeal defaults them.
+      if (meal.notes !== undefined) expect(Array.isArray(meal.notes)).toBe(true);
       expect(meal.sourceUrl).toMatch(/^https?:\/\//);
       expect(meal.imageUrl).toMatch(/^https?:\/\//);
       expect(meal.imageUrl).not.toMatch(/cdninstagram|fbcdn|scontent/i);
@@ -29,7 +44,7 @@ describe('StarterKitMeals seed pack', () => {
       expect(meal.id).toBeUndefined();
       expect(meal.jobId).toBeUndefined();
       expect(meal.category).toBeTruthy();
-      expect(Array.isArray(meal.dietaryTags)).toBe(true);
+      if (meal.dietaryTags !== undefined) expect(Array.isArray(meal.dietaryTags)).toBe(true);
     }
   });
 
@@ -40,12 +55,24 @@ describe('StarterKitMeals seed pack', () => {
     }
   });
 
-  it('covers dinner spin pool and breakfast variety', () => {
-    const cats = STARTER_KIT_MEALS.map((m) => m.category);
-    const dinners = cats.filter((c) => /dinner|pasta|casserole/i.test(c) || c === 'Dinners' || c === 'Pasta').length;
-    const breakfasts = cats.filter((c) => /breakfast/i.test(c)).length;
-    expect(dinners).toBeGreaterThanOrEqual(5);
-    expect(breakfasts).toBeGreaterThanOrEqual(1);
+  it('dinner gate: only Dinners (after alias normalizing) with a photo pass', () => {
+    expect(isStarterDinner(seed())).toBe(true);
+    expect(isStarterDinner(seed({ category: 'Main course' }))).toBe(true);
+    expect(isStarterDinner(seed({ category: '' }))).toBe(true);
+    expect(isStarterDinner(seed({ category: 'Breakfasts' }))).toBe(false);
+    expect(isStarterDinner(seed({ category: 'Tailgate' }))).toBe(false);
+    expect(isStarterDinner(seed({ category: 'Pasta' }))).toBe(false);
+    expect(isStarterDinner(seed({ imageUrl: '' }))).toBe(false);
+  });
+
+  it('buildStarterKitMeals drops non-dinners and photo-less rows, lands dinners in The Rotation', () => {
+    const built = buildStarterKitMeals([
+      seed({ name: 'Keeps' }),
+      seed({ name: 'Pancakes', category: 'Breakfasts' }),
+      seed({ name: 'No Photo', imageUrl: '' }),
+    ]);
+    expect(built.map((m) => m.name)).toEqual(['Keeps']);
+    expect(built[0].inRotation).toBe(true);
   });
 
   it('preserves high-quality import-engine fields while stamping starter metadata', () => {

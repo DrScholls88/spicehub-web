@@ -986,65 +986,95 @@
   font-style: italic;
 }
 
-.landing-empty {
-  background: var(--surface);
-  border: 1.5px dashed var(--border);
-  border-radius: var(--radius-sm);
+/* Home Plan Card (spec 2026-09-28). Replaced the old dashed "Nothing planned
+   yet" block that sat inside Next 5 Days. */
+.wpc {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
   padding: 20px 16px;
-  text-align: center;
   margin-bottom: 24px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.landing-empty-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg);
-  color: var(--text-muted, var(--text-light));
-  margin-bottom: 10px;
-}
-
-.landing-empty-text {
-  font-size: 14px;
-  font-weight: 600;
   color: var(--text);
+}
+
+.wpc-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
   margin-bottom: 4px;
 }
 
-.landing-empty-hint {
-  font-size: 13px;
-  color: var(--text-muted, var(--text-light));
-  margin-bottom: 14px;
+.wpc-title {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--text);
+}
+
+.wpc-body {
+  margin: 0 0 16px;
+  font-size: 14px;
   line-height: 1.5;
-  max-width: 260px;
+  color: var(--text-light);
 }
 
-.landing-empty-btn {
-  display: inline-block;
-  background: var(--primary);
-  color: #fff;
-  padding: 10px 16px;
+.wpc-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  margin-bottom: 16px;
+}
+
+.wpc-day {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  border: 1.5px dashed var(--border);
   border-radius: var(--radius-sm);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.wpc-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wpc-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 16px;
   border: none;
+  border-radius: var(--radius-sm);
+  background: var(--button-fill);
+  color: var(--on-button-fill);
+  font-size: 15px;
+  font-weight: 700;
   cursor: pointer;
-  transition: all 0.2s ease-out;
+  transition: transform 0.15s ease-out, filter 0.15s ease-out;
 }
 
-.landing-empty-btn:hover {
-  filter: brightness(1.1);
-  transform: translateY(-1px);
+.wpc-btn:active { transform: scale(0.98); }
+.wpc-btn:disabled { opacity: 0.6; cursor: default; transform: none; }
+
+.wpc-btn-secondary {
+  background: transparent;
+  color: var(--primary-ink);
+  border: 1px solid var(--border);
 }
 
-.landing-empty-btn:active {
-  transform: translateY(0);
+@media (prefers-reduced-motion: reduce) {
+  .wpc-btn { transition: none; }
 }
 
 .landing-tiles-grid {
@@ -1322,97 +1352,6 @@
     animation: none;
     display: none;
   }
-}
-
-/* ─────────────────────────────────────────────────────────────────────────────
-   Onboarding Coach
-   ───────────────────────────────────────────────────────────────────────────── */
-
-.onboarding-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 10000;
-}
-
-.onboarding-scrim {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  z-index: 10000;
-}
-
-.onboarding-tooltip {
-  background: var(--card);
-  border-radius: 16px;
-  padding: 18px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
-  border: 1px solid var(--border);
-}
-
-.onboarding-tooltip-title {
-  font-size: 16px;
-  font-weight: 800;
-  color: var(--text);
-  margin-bottom: 6px;
-}
-
-.onboarding-tooltip-desc {
-  font-size: 13px;
-  color: var(--text-muted, var(--text-light));
-  line-height: 1.5;
-  margin-bottom: 14px;
-}
-
-.onboarding-tooltip-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.onboarding-dots {
-  display: flex;
-  gap: 5px;
-}
-
-.onboarding-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--border);
-}
-
-.onboarding-dot.active {
-  background: var(--primary);
-}
-
-.onboarding-tooltip-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.onboarding-skip {
-  font-size: 12px;
-  color: var(--text-muted, var(--text-light));
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.onboarding-next {
-  font-size: 13px;
-  font-weight: 700;
-  background: var(--primary);
-  color: #fff;
-  border: none;
-  border-radius: 100px;
-  padding: 8px 16px;
-  cursor: pointer;
-}
-
-.onboarding-next:active {
-  transform: scale(0.96);
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────

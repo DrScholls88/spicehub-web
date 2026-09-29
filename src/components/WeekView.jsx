@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { X, Lock, LockKeyhole, LockKeyholeOpen, Star, BookOpen, UtensilsCrossed, ChevronDown, ChevronRight, MoreVertical, Plus, RefreshCw, CheckSquare, ShoppingCart, CalendarDays, List, GripVertical, Search, Share2 } from 'lucide-react';
 import { motion, AnimatePresence, useDragControls } from 'framer-motion';
 import MealSpinner from './MealSpinner';
+import MakeItYoursCard from './MakeItYoursCard';
 import useBackHandler from '../hooks/useBackHandler';
 import { filterMealsByConstraints, fridgeMatchRatio, mealTotalMinutes } from '../lib/weekPlanner';
 
@@ -638,6 +639,15 @@ export default function WeekView({
   onDeleteCustomDayTag,
   profileDisplayName,
   onToast,
+  // First-run Plan Card (spec 2026-09-28): a Home spin targets explicit dates,
+  // and its Keep shows the grocery link + Make it yours instead of the
+  // "Build your grocery list" button.
+  spinRequest = null,
+  showMakeItYours = false,
+  groceryCount = 0,
+  onOpenGrocery,
+  onMakeItYoursImport,
+  onDismissMakeItYours,
 }) {
   const today = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
   const currentWeekMonday = useMemo(() => getMonday(today), [today]);
@@ -867,10 +877,19 @@ export default function WeekView({
     onGenerate();
   }, [selectedDates, onGenerate]);
 
+  // A Plan Card spin arrives with its own dates; WeekView-initiated spins keep
+  // setting spinnerTargetDates themselves and take precedence.
+  const planCardDates = spinRequest?.dates?.length ? spinRequest.dates : null;
+  const planCardIndices = useMemo(
+    () => planCardDates ? planCardDates.map(d => (d.getDay() === 0 ? 6 : d.getDay() - 1)) : null,
+    [planCardDates],
+  );
+  const effectiveTargetDates = spinnerTargetDates && spinnerTargetDates.length > 0 ? spinnerTargetDates : planCardDates;
+
   const spinnerSlotDates = useMemo(() => {
-    if (spinnerTargetDates && spinnerTargetDates.length > 0) return spinnerTargetDates;
+    if (effectiveTargetDates && effectiveTargetDates.length > 0) return effectiveTargetDates;
     return [0,1,2,3,4,5,6].map(idx => addDays(currentWeekMonday, idx));
-  }, [spinnerTargetDates, currentWeekMonday]);
+  }, [effectiveTargetDates, currentWeekMonday]);
 
   const openPicker = useCallback((date) => {
     const dow = date.getDay() === 0 ? 6 : date.getDay() - 1;
@@ -1489,6 +1508,15 @@ export default function WeekView({
         </div>
       )}
 
+      {showMakeItYours && !showSpinner && (
+        <MakeItYoursCard
+          groceryCount={groceryCount}
+          onOpenGrocery={onOpenGrocery}
+          onImport={onMakeItYoursImport}
+          onDismiss={onDismissMakeItYours}
+        />
+      )}
+
       {grocerySelectMode && (
         <div className="grocery-mode-bar">
           <span><ShoppingCart size={13} strokeWidth={2.5} style={{ verticalAlign: 'middle', marginRight: 4 }} />Tap days to include in grocery list</span>
@@ -1927,16 +1955,21 @@ export default function WeekView({
           <MealSpinner
             meals={spinnerPools.all.pool}
             rotationMeals={spinnerPools.rotation.pool}
-            currentPlan={currentPlan}
+            /* Plan Card targets only empty days, possibly into next week, so
+               this week's locks must not be copied onto next week's same weekday. */
+            currentPlan={planCardDates && !spinnerTargetDates ? null : currentPlan}
             onComplete={(pickedMeals) => {
-              const targetDates = spinnerTargetDates && spinnerTargetDates.length > 0
-                ? spinnerTargetDates
+              const targetDates = effectiveTargetDates && effectiveTargetDates.length > 0
+                ? effectiveTargetDates
                 : [0,1,2,3,4,5,6].map(idx => addDays(currentWeekMonday, idx));
               const pairs = pickedMeals.map((meal, i) => ({ date: targetDates[i], meal }));
-              onSpinnerComplete(pairs);
+              const fromPlanCard = !!planCardDates && !spinnerTargetDates;
+              onSpinnerComplete(pairs, fromPlanCard ? { fromPlanCard: true } : undefined);
               setSpinnerSelectedIndices(null);
               setSpinnerTargetDates(null);
               setJustCompletedSpin(true);
+              // Land on the filled week, not wherever the timeline was scrolled.
+              if (fromPlanCard) timelineScrollRef.current?.scrollTo?.({ top: 0 });
             }}
             onClose={() => {
               onCloseSpinner();
@@ -1944,7 +1977,7 @@ export default function WeekView({
               setSpinnerTargetDates(null);
             }}
             recentlyUsedIds={recentlyUsedIds}
-            selectedDayIndices={spinnerSelectedIndices}
+            selectedDayIndices={spinnerSelectedIndices ?? planCardIndices}
             slotDates={spinnerSlotDates}
           />
         </div>
@@ -1957,7 +1990,7 @@ export default function WeekView({
           background: 'var(--card)',
           borderTop: '1px solid var(--border)',
         }}>
-          {justCompletedSpin && (
+          {justCompletedSpin && !showMakeItYours && (
             <button
               onClick={() => {
                 setJustCompletedSpin(false);

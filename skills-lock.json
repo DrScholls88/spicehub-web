@@ -21,6 +21,12 @@
       "sourceType": "github",
       "computedHash": "a543474e4ded36d5991abb2db6b50021442a23096144ef55622b27113c41c625"
     },
+    "brag-slim": {
+      "source": "latent-spaces/brag",
+      "sourceType": "github",
+      "skillPath": "skills/brag-slim/SKILL.md",
+      "computedHash": "bb21b91d59e00081d80b379e06fdb38526a6eadd70dec6c1c74c4f644edd7b19"
+    },
     "brandkit": {
       "source": "Leonxlnx/taste-skill",
       "sourceType": "github",
@@ -138,6 +144,12 @@
       "source": "pbakaus/impeccable",
       "sourceType": "github",
       "computedHash": "ca3bd07512cc763c4c41d13bb15e593b2cbc2a80471ad8685b93ed3b4d611c2e"
+    },
+    "ponytail": {
+      "source": "DietrichGebert/ponytail",
+      "sourceType": "github",
+      "skillPath": "skills/ponytail/SKILL.md",
+      "computedHash": "9e8d05cbbaf6dc38f0cffc924c09b3cbe76d94ba4ba0d09bde803da2f8c6b5a0"
     },
     "quieter": {
       "source": "pbakaus/impeccable",

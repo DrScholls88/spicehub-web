@@ -1,12 +1,12 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { Dices, GripVertical, EyeOff, Eye, Pencil, Check } from 'lucide-react';
+import { GripVertical, EyeOff, Eye, Pencil, Check } from 'lucide-react';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import { loadLandingLayout, saveLandingLayout } from '../lib/landingLayout.js';
 import { freshnessOf, categorizeKitchen } from '../lib/pantryDomain.js';
 import {
-  getMondayOfWeek,
   localDateKey,
-  addDays,
+  planForNextDays,
+  getPlanCardState,
   TILE_COLORS,
   PRIMARY_TILES,
   getSeasonInfo,
@@ -24,7 +24,7 @@ import DayPhotoCard from './landing/DayPhotoCard.jsx';
 import MealPreviewSheet from './landing/MealPreviewSheet.jsx';
 import { findPantryMatches } from '../lib/pantryMatch.js';
 import CookTonightCarousel from './landing/CookTonightCarousel.jsx';
-import OnboardingCoach from './landing/OnboardingCoach.jsx';
+import WeekPlanCard from './landing/WeekPlanCard.jsx';
 import ImportNudgeBanner from './landing/ImportNudgeBanner.jsx';
 import AppIntroHero from './landing/AppIntroHero.jsx';
 
@@ -77,6 +77,9 @@ export default function LandingPage({
   onAssignMeal = null,
   onCreateMealForDay = null,
   batchQueueCount = 0,
+  loading = false,
+  onImport = () => {},
+  onAddStarter = () => {},
 }) {
   const [previewDay, setPreviewDay] = useState(null); // { date, meal, isToday }
 
@@ -87,11 +90,6 @@ export default function LandingPage({
 
   // ── Sticky header visibility via IntersectionObserver ────────────────────
   const heroRef = useRef(null);
-  const ctaRef = useRef(null);
-  const myMealsRef = useRef(null);
-  const [showOnboarding] = useState(() => {
-    try { return !localStorage.getItem('sh_onboarding_v1'); } catch { return false; }
-  });
 
   // ── Intro hero retirement ─────────────────────────────────────────────────
   // AppIntroHero used to render unconditionally — a four-stage feature carousel
@@ -145,33 +143,17 @@ export default function LandingPage({
 
   const timeClass = useMemo(() => getTimeOfDayClass(), []);
 
-  // ── Build Next 5 Days ──────────────────────────────────────────────────────
+  // ── Build Next 5 Days (and the 7 the Plan Card spins) ─────────────────────
   const today = useMemo(() => { const d = new Date(); d.setHours(0,0,0,0); return d; }, []);
-  const currentWeekMonday = useMemo(() => getMondayOfWeek(today), [today]);
-
-  const next5Days = useMemo(() => {
-    return Array.from({ length: 5 }, (_, i) => {
-      const date = addDays(today, i);
-      const isToday = i === 0;
-      // Find meal: check current weekPlan first, then weekHistory
-      const weekMon = getMondayOfWeek(date);
-      const dow = date.getDay() === 0 ? 6 : date.getDay() - 1; // Mon-first index
-      let meal = null;
-      if (weekMon.getTime() === currentWeekMonday.getTime()) {
-        meal = weekPlan[dow] || null;
-      } else {
-        const key = localDateKey(weekMon);
-        const histEntry = weekHistory.find(hw => {
-          const hwMon = new Date(hw.weekStart); hwMon.setHours(0,0,0,0);
-          return localDateKey(hwMon) === key;
-        });
-        if (histEntry) meal = histEntry.meals?.[dow] || null;
-      }
-      return { date, meal, isToday };
-    });
-  }, [today, currentWeekMonday, weekPlan, weekHistory]);
+  const next7Days = useMemo(
+    () => planForNextDays(today, 7, weekPlan, weekHistory),
+    [today, weekPlan, weekHistory],
+  );
+  const next5Days = useMemo(() => next7Days.slice(0, 5), [next7Days]);
 
   const hasAnyMeal = next5Days.some(d => d.meal !== null);
+
+  const planCard = getPlanCardState({ loading, mealsCount: meals.length, rotationCount, days: next7Days });
 
   // ── Tiles ──────────────────────────────────────────────────────────────────
   const { totalCooked = 0 } = cookingStats || {};
@@ -338,6 +320,17 @@ export default function LandingPage({
         </div>
       )}
 
+      {/* Plan Card — whenever none of the next 7 days has a meal, including every
+          fresh install (spec 2026-09-28). Spins only the empty days. */}
+      <WeekPlanCard
+        plan={planCard}
+        days={next7Days}
+        onSpin={() => onGenerate({ dates: next7Days.filter(d => !d.meal).map(d => d.date), source: 'planCard' })}
+        onOpenMeals={() => onNavigate('library')}
+        onImport={onImport}
+        onAddStarter={onAddStarter}
+      />
+
       {/* Install banner — shown when PWA install is available */}
       <AnimatePresence>
         {canInstall && onInstallApp && (
@@ -369,7 +362,7 @@ export default function LandingPage({
           IntersectionObserver would bail on mount, and the sticky mini-header
           (with its Spin button) would never appear again. */}
       <div className="landing-next-days" ref={showIntroHero ? undefined : heroRef}>
-        <div className="landing-section-label">Next 5 Days</div>
+        {hasAnyMeal && <div className="landing-section-label">Next 5 Days</div>}
         {hasAnyMeal ? (
           <div className="landing-next-days-wrap">
             <motion.div
@@ -410,31 +403,7 @@ export default function LandingPage({
             </motion.div>
             <div className="landing-next-days-fade" aria-hidden="true" />
           </div>
-        ) : (
-          <motion.div
-            className="landing-empty"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, ease: [0.32, 0.72, 0, 1] }}
-          >
-            {/* Was a scale loop on repeat: Infinity. An element that never
-                stops moving is a permanent claim on attention, and this one had
-                nothing new to say after the first second — the parent already
-                animates the whole empty state in, and the CTA below is the
-                thing meant to draw the eye. */}
-            <div className="landing-empty-icon">
-              <Dices size={22} strokeWidth={1.75} />
-            </div>
-            <div className="landing-empty-text">Nothing planned yet</div>
-            <div className="landing-empty-hint">One tap picks meals for every empty day.</div>
-            <button
-              className="landing-empty-btn"
-              onClick={onGenerate}
-            >
-              Fill my week
-            </button>
-          </motion.div>
-        )}
+        ) : null}
       </div>
 
       {/* ── Widget dashboard (reorder / pin / hide, persisted local layout) ── */}
@@ -471,7 +440,6 @@ export default function LandingPage({
             return (
               <motion.button
                 key={tile.id}
-                ref={tile.id === 'myMeals' ? myMealsRef : undefined}
                 className={tileClasses}
                 onClick={() => { haptic(10); tile.onClick(); }}
                 variants={{ hidden: { opacity: 0, scale: 0.9 }, visible: { opacity: 1, scale: 1, transition: { type: "spring", stiffness: 300, damping: 24 } } }}
@@ -579,12 +547,6 @@ export default function LandingPage({
         )}
       </AnimatePresence>
 
-      {showOnboarding && meals.length === 0 && (
-        <OnboardingCoach
-          onComplete={() => { try { localStorage.setItem('sh_onboarding_v1', '1'); } catch {} }}
-          targets={{ cta: ctaRef, myMeals: myMealsRef }}
-        />
-      )}
     </div>
   );
 }

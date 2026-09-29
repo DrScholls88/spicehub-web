@@ -24,6 +24,41 @@ export function addDays(date, n) {
   return d;
 }
 
+// Meal planned on `date`: the current week lives in weekPlan (Mon-first),
+// every other week in weekHistory, same lookup useRotationEngine writes.
+export function mealOnDate(date, weekPlan = [], weekHistory = [], today = new Date()) {
+  const weekMon = getMondayOfWeek(date);
+  const dow = date.getDay() === 0 ? 6 : date.getDay() - 1;
+  if (weekMon.getTime() === getMondayOfWeek(today).getTime()) return weekPlan[dow] || null;
+  const key = localDateKey(weekMon);
+  const hist = weekHistory.find(hw => localDateKey(getMondayOfWeek(new Date(hw.weekStart))) === key);
+  return hist?.meals?.[dow] || null;
+}
+
+// The next `n` days starting today, each with whatever is planned on it.
+export function planForNextDays(today, n, weekPlan = [], weekHistory = []) {
+  const start = new Date(today); start.setHours(0, 0, 0, 0);
+  return Array.from({ length: n }, (_, i) => {
+    const date = addDays(start, i);
+    return { date, meal: mealOnDate(date, weekPlan, weekHistory, start), isToday: i === 0 };
+  });
+}
+
+// Home Plan Card state (spec 2026-09-28 A3). `days` = planForNextDays(today, 7).
+// Mirrors MealSpinner's pool: The Rotation when it has anything in it, else the
+// whole library; 5 needed either way.
+// rotationShort is deliberate even with a big library: a user who only imports
+// can sit at 1-4 in The Rotation, and the card's Open Meals button is how they
+// add more. Do not collapse it into `ready` — the spinner would refuse to spin.
+export function getPlanCardState({ loading, mealsCount = 0, rotationCount = 0, days = [] }) {
+  if (loading) return { state: 'loading' };
+  if (days.some(d => d.meal)) return { state: 'hidden' };
+  if (mealsCount === 0) return { state: 'emptyLibrary' };
+  if (rotationCount > 0 && rotationCount < 5) return { state: 'rotationShort', needed: 5 - rotationCount, pool: 'rotation' };
+  if (rotationCount === 0 && mealsCount < 5) return { state: 'rotationShort', needed: 5 - mealsCount, pool: 'library' };
+  return { state: 'ready' };
+}
+
 // Small, tolerant duration parser for the ticker's "Tonight: N min prep time"
 // line — doesn't need to be exhaustive (weekPlanner.js's parseTotalMinutes
 // already handles the authoritative case), just good enough for a status line.

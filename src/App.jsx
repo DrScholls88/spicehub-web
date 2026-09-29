@@ -32,6 +32,7 @@ import ConsentGate, { getStoredConsent } from './components/ConsentGate';
 import AgeGate, { isAgeVerified } from './components/AgeGate';
 import { parseLaunchIntent, intentFromShareEvent, scrubLaunchQuery, syncTabHash } from './lib/launchIntent';
 import { isIosSharePromptDismissed } from './components/landing/IosShareBanner.jsx';
+import { planForNextDays, DOW_SHORT } from './lib/landingHelpers.js';
 import LegalFooter from './components/LegalFooter';
 import useProfile from './hooks/useProfile';
 import useHomeGroup from './hooks/useHomeGroup';
@@ -586,8 +587,17 @@ export default function App() {
   const [showZipImport, setShowZipImport] = useState(false);
 
   // ── I-2 Post-share quick actions state ────────────────────────────────────
-  const [postImportActions, setPostImportActions] = useState(null); // { message, recipe }
+  const [postImportActions, setPostImportActions] = useState(null); // { message, recipe, dayPicker? }
   const isShareImportRef = useRef(false); // set true when current import came from share-target
+
+  // ── First-run Plan Card (spec 2026-09-28) ─────────────────────────────────
+  // spinRequest: { dates, source: 'planCard' } while a Plan Card spin is open.
+  // makeItYours: the Plan tab's post-spin grocery link + Make it yours card.
+  // importOrigin: 'makeItYours' while an import opened from that card is open,
+  // so its save shows the "Put it on a day" chips instead of the 8s strip.
+  const [spinRequest, setSpinRequest] = useState(null);
+  const [makeItYours, setMakeItYours] = useState(false);
+  const [importOrigin, setImportOrigin] = useState(null);
 
   // ── Swipe-down-to-dismiss for inline bottom sheets ──────────────────────────
   const storageSwipe = useSwipeDismiss(() => setShowStorageManager(false));
@@ -651,7 +661,8 @@ export default function App() {
 
   // ── I-2 Post-share quick action auto-dismiss (8s) ─────────────────────────
   useEffect(() => {
-    if (!postImportActions) return;
+    // The Make it yours day picker waits for a choice (spec 2026-09-28 A1).
+    if (!postImportActions || postImportActions.dayPicker) return;
     const t = setTimeout(() => setPostImportActions(null), 8000);
     return () => clearTimeout(t);
   }, [postImportActions]);
@@ -1179,7 +1190,10 @@ useEffect(() => {
 }, []);
 
   // ── Week plan ─────────────────────────────────────────────────────────────────
-  const generateWeek = useCallback(() => {
+  // Callers pass nothing, a click event (StickyHeader's onSpin), or
+  // { dates, source: 'planCard' } from the Home Plan Card.
+  const generateWeek = useCallback((options) => {
+    const planCardSpin = options?.source === 'planCard' && Array.isArray(options.dates) && options.dates.length > 0;
     // Gemini UX audit (2026-07-06): a blocking browser alert() with no next
     // step was the "0 meals → can't spin" trust-breaker. Route to the Library
     // instead, where the existing empty-state CTA ("Import a Recipe") already
@@ -1198,6 +1212,7 @@ useEffect(() => {
     }
     // MealSpinner only mounts inside WeekView — always switch to Plan first so
     // Home / sticky Spin actually opens the spinner (mom-speed path).
+    setSpinRequest(planCardSpin ? { dates: options.dates, source: 'planCard' } : null);
     navigateToTab('week');
     setShowSpinner(true);
   }, [meals, showToast, navigateToTab]);
@@ -1220,6 +1235,15 @@ useEffect(() => {
     // Post-spin "Build grocery list" — use the plan we just applied (state not flushed yet)
     if (options.buildGrocery && currentPlanApplied) {
       buildGroceryListRef.current?.(undefined, { plan: currentPlanApplied, merge: true });
+    }
+
+    // Plan Card spin: the grocery list covers exactly the days just filled (they
+    // can run into next week, which currentPlanApplied does not hold), and the
+    // user stays on Plan to see the week (spec 2026-09-28 A1).
+    if (options.fromPlanCard) {
+      buildGroceryListRef.current?.(undefined, { plan: pairs.map(p => p.meal), merge: true, stay: true });
+      setSpinRequest(null);
+      setMakeItYours(true);
     }
 
     // Sync current-week slots to home group
@@ -1604,7 +1628,7 @@ useEffect(() => {
     }
 
     setGroceryItems(next);
-    setTab('grocery');
+    if (!options.stay) setTab('grocery');
   }, [weekPlan, groceryItems, resolveIngredientCoverage, fuzzyStoreMemoryLookup]);
 
   // Keep the early-declared ref pointing at the latest buildGroceryList
@@ -1682,6 +1706,7 @@ useEffect(() => {
     // ── I-2: Capture and reset share-target flag before any state clears ────
     const wasShareMeal = isShareImportRef.current;
     isShareImportRef.current = false;
+    const fromMakeItYours = importOrigin === 'makeItYours';
 
     setShowImportFor(null);
     setSharedContent(null);
@@ -1793,9 +1818,11 @@ useEffect(() => {
       // write can never disagree about what this item is.
       const isDrinkItem = resolveItemType(r, target) === 'drink';
       try {
+        let savedId = null;
         if (isDrinkItem) { await saveMealDeduped(r, { table: 'drinks' }); anyDrink = true; }
-        else { await saveMealDeduped(r, { table: 'meals' }); anyMeal = true; }
-        savedItems.push(r);
+        else { savedId = (await saveMealDeduped(r, { table: 'meals' }))?.id ?? null; anyMeal = true; }
+        // Carry the Dexie id so post-save actions (day chips → Rotation) can find the row.
+        savedItems.push(savedId ? { ...r, id: savedId } : r);
       } catch (err) {
         console.error('[handleImport] DB write failed:', err);
         failures.push(r);
@@ -1829,13 +1856,42 @@ useEffect(() => {
     // ── I-2: Post-save quick actions for single-recipe share-target imports ──
     // Show an 8-second action strip with "Add to week" / "Add to grocery" instead
     // of the plain toast, so the clip→plan loop requires zero extra steps.
+    if (fromMakeItYours && anyMeal && !anyDrink && realSaved.length === 1 && realSaved[0].id) {
+      setPostImportActions({ message: `"${name}" saved`, recipe: realSaved[0], dayPicker: true });
+      return;
+    }
     if (wasShareMeal && target === 'meals' && realSaved.length === 1) {
       setPostImportActions({ message: `"${name}" saved`, recipe: realSaved[0] });
       return;
     }
 
     showToast(`Added ${name} to ${anyDrink && !anyMeal ? 'The Bar 🍸' : 'your library'}`);
-  }, [showImportFor, loadMeals, loadDrinks, showToast, setGroceryItems, setWeekPlan, setTab, setPostImportActions, syncGroceryAction]);
+  }, [showImportFor, importOrigin, loadMeals, loadDrinks, showToast, setGroceryItems, setWeekPlan, setTab, setPostImportActions, syncGroceryAction]);
+
+  // Make it yours: an origin only lives as long as its import sheet.
+  useEffect(() => { if (!showImportFor) setImportOrigin(null); }, [showImportFor]);
+
+  const openImport = useCallback((origin = null) => {
+    setImportOrigin(origin);
+    setImportModalKey(k => k + 1);
+    setShowImportFor('any');
+  }, []);
+
+  // "Put it on a day" chip (spec 2026-09-28 A1): replace that day, join The
+  // Rotation, rebuild the grocery list for the next 7 days, and say all three.
+  const handlePlaceImported = useCallback(async (date) => {
+    const recipe = postImportActions?.recipe;
+    if (!recipe?.id) return;
+    setPostImportActions(null);
+    const days = planForNextDays(new Date(), 7, weekPlan, weekHistory);
+    await handleSpinnerCompleteForDates([{ date, meal: recipe }]);
+    await toggleRotation(recipe.id, true);
+    await loadMeals();
+    const plan = days.map(d => (d.date.toDateString() === date.toDateString() ? recipe : d.meal));
+    buildGroceryList(undefined, { plan, merge: true, stay: true });
+    const dayName = date.toLocaleDateString(undefined, { weekday: 'long' });
+    showToast(`${dayName} is now ${recipe.name} · added to The Rotation · grocery list updated`, 'success', 4500);
+  }, [postImportActions, weekPlan, weekHistory, handleSpinnerCompleteForDates, loadMeals, buildGroceryList, showToast]);
 
   // ── Batch import: mark a batchQueue row 'saved' after ImportSheet save ────
   const handleBatchReviewSave = useCallback(async (imported, destination, opts = {}) => {
@@ -2162,6 +2218,9 @@ useEffect(() => {
             onAssignMeal={handleAssignMealToDay}
             onCreateMealForDay={handleCreateMealForDay}
             batchQueueCount={batchQueueCount}
+            loading={loading}
+            onImport={() => openImport(null)}
+            onAddStarter={handleAddStarterKit}
           />
         )}
         {tab === 'home' && <LegalFooter />}
@@ -2188,8 +2247,14 @@ useEffect(() => {
             onRestoreWeek={restoreWeek}
             rotationCount={rotationMeals.length}
             showSpinner={showSpinner}
-            onCloseSpinner={() => setShowSpinner(false)}
+            onCloseSpinner={() => { setShowSpinner(false); setSpinRequest(null); }}
             onSpinnerComplete={handleSpinnerCompleteForDates}
+            spinRequest={spinRequest}
+            showMakeItYours={makeItYours}
+            groceryCount={groceryToBuyCount}
+            onOpenGrocery={() => navigateToTab('grocery')}
+            onMakeItYoursImport={() => openImport('makeItYours')}
+            onDismissMakeItYours={() => setMakeItYours(false)}
             rotationMeals={rotationMeals}
             currentPlan={weekPlan}
             recentlyUsedIds={recentlyUsedIds}
@@ -2678,7 +2743,27 @@ useEffect(() => {
       )}
 
       {/* ── I-2 Post-share quick actions strip ── */}
-      {postImportActions && (
+      {postImportActions?.dayPicker && (
+        <div className="post-import-actions pia-day-picker" role="region" aria-label="Put the imported recipe on a day">
+          <p className="pia-message">{postImportActions.message}. Put it on a day (adds it to The Rotation):</p>
+          <div className="pia-days">
+            {planForNextDays(new Date(), 7, weekPlan, weekHistory).map(({ date, meal }) => (
+              <button
+                key={date.toDateString()}
+                type="button"
+                className="pia-day"
+                onClick={() => handlePlaceImported(date)}
+                aria-label={`${date.toLocaleDateString(undefined, { weekday: 'long' })}${meal?.name ? `, replaces ${meal.name}` : ''}`}
+              >
+                <span className="pia-day-name">{DOW_SHORT[date.getDay()]}</span>
+                <span className="pia-day-meal">{meal?.name || 'Empty'}</span>
+              </button>
+            ))}
+          </div>
+          <button type="button" className="pia-day-close" onClick={() => setPostImportActions(null)} aria-label="Dismiss">✕</button>
+        </div>
+      )}
+      {postImportActions && !postImportActions.dayPicker && (
         <div className="post-import-actions">
           <p className="pia-message">{postImportActions.message}</p>
           <div className="pia-btns">

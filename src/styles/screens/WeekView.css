@@ -1247,3 +1247,82 @@
   font-weight: 600;
   margin-top: 2px;
 }
+
+
+/* Post-spin grocery link + Make it yours (spec 2026-09-28 A1) */
+.miy {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+
+.miy-grocery {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--primary-ink);
+  font-size: 14px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.miy-grocery span { flex: 1; }
+
+.miy-card {
+  position: relative;
+  padding: 14px 14px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--text);
+}
+
+.miy-close {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-light);
+  cursor: pointer;
+}
+
+.miy-title {
+  margin: 0 40px 4px 0;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.miy-body {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text-light);
+}
+
+.miy-btn {
+  width: 100%;
+  min-height: 44px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--button-fill);
+  color: var(--on-button-fill);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}

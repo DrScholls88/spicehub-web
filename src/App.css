@@ -40,6 +40,11 @@
      also clears it at 7.26 but reads brown rather than orange at text sizes,
      which loses the brand note in the one place a new user first sees it. */
   --primary-ink: #b23c00;
+  /* Filled buttons that carry text (spec 2026-09-28). White on --primary is
+     3.79:1 and fails AA; the ink shade clears 5.93:1. Icon-only fills may
+     stay on --primary (3:1 non-text rule). */
+  --button-fill: var(--primary-ink);
+  --on-button-fill: #ffffff;
   --accent: #2e7d32;
   --bg: #fff8f0;
   --card: #ffffff;
@@ -4260,6 +4265,9 @@ body::before {
      future call site that switches to --primary-ink cannot accidentally become
      theme-blind. Changing this value would alter dark mode for no a11y gain. */
   --primary-ink: #66bb6a;
+  /* Dark: white on #66bb6a is 2.36:1, so filled buttons carry dark ink (7.29:1). */
+  --button-fill: var(--primary);
+  --on-button-fill: #1f1a16;
   --danger: #ef5350;
   --success: #66bb6a;
   --shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
@@ -4846,6 +4854,14 @@ body::before {
 [data-accent="winter"] {
   --primary: #42a5f5;
 }
+
+/* Light-theme seasonal button fills, each darkened until white text clears
+   4.5:1 (spring 4.66, summer 4.68, winter 4.62). Autumn keeps --primary-ink.
+   Dark keeps --button-fill: var(--primary) with dark ink, which passes for
+   every seasonal primary. */
+:root:not([data-theme="dark"]):not([data-system-dark="true"])[data-accent="spring"] { --button-fill: #e2175b; }
+:root:not([data-theme="dark"]):not([data-system-dark="true"])[data-accent="summer"] { --button-fill: #ad6100; }
+:root:not([data-theme="dark"]):not([data-system-dark="true"])[data-accent="winter"] { --button-fill: #0b77ce; }
 
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -10595,6 +10611,74 @@ details[open] .manual-pipeline-summary-toggle::before { content: '▼ '; }
 /* ── Compact layout on very small screens ── */
 @media (max-width: 360px) {
   .pia-btn { font-size: 11.5px; padding: 8px 7px; }
+}
+
+/* Make it yours "Put it on a day" variant (spec 2026-09-28 A1). Tokens only, so
+   it follows data-theme rather than the strip's prefers-color-scheme shell. */
+.post-import-actions.pia-day-picker {
+  width: min(400px, calc(100vw - 24px));
+  background: var(--card);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  color: var(--text);
+}
+
+.pia-day-picker .pia-message {
+  margin: 0 36px 0 0;
+  color: var(--text);
+  font-size: 14px;
+}
+
+.pia-days {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.pia-day {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 52px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pia-day:active { transform: scale(0.97); }
+
+.pia-day-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary-ink);
+}
+
+.pia-day-meal {
+  width: 100%;
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pia-day-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-light);
+  font-size: 16px;
+  cursor: pointer;
 }
 
 

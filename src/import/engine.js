@@ -364,6 +364,11 @@ export async function importRequest(request) {
   }
 
   const recipe = await structure(pack, { kind, kindLocked, signal, onProgress });
+  // Neither structure() branch (schema.org fast path, Gemini pack path) stamps
+  // the source link, so every website import used to save with no link at all
+  // (Discover Recipes/Drinks included). Stamp it here, before the gate, so the
+  // saved item carries its origin.
+  if (recipe && !recipe.link) recipe.link = resolvedUrl;
   pack.kind = kind; pack.kindLocked = kindLocked;
   const { gate: verdict, reasons } = gate(recipe, pack);
 
