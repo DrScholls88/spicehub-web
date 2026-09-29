@@ -70,7 +70,9 @@ export function isStarterMealComplete(meal) {
  */
 export function isStarterDinner(meal) {
   const category = normalizeMealCategory(meal?.category || 'Dinners');
-  return category === 'Dinners' && /^https?:\/\//.test(meal?.imageUrl || '');
+  // A photo is either a stable https URL or one bundled in public/starter-kit/
+  // by the Starter ZIP export (src/lib/starterPackExport.js).
+  return category === 'Dinners' && /^(https?:\/\/|\/starter-kit\/)/.test(meal?.imageUrl || '');
 }
 
 function passesStarterGates(meal) {

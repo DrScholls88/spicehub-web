@@ -19,5 +19,11 @@ describe('recipe export templates', () => {
     expect(out).not.toContain('[object Object]');
     expect(out).toContain('2 cups broccoli');
     expect(out).toContain('Stir-fry the vegetables.');
+    expect(out).not.toMatch(/\{\{[#^/]?[\w.]+\}\}/); // no template tags leak into output
+  });
+
+  it('print export shows category tags only when there are some', () => {
+    expect(renderRecipeExport({ ...recipe, categories: ['Dinners'] }, { format: 'print' })).toContain('recipe-category-tag');
+    expect(renderRecipeExport(recipe, { format: 'print' })).not.toContain('<div class="recipe-categories">');
   });
 });

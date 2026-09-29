@@ -10,7 +10,10 @@
 // src/__tests__/StarterKitMeals.test.js (the LAUNCH GATE needs 14+ with none
 // skipped):
 //   - category "Dinners" (aliases like "Dinner" / "Main course" also pass)
-//   - imageUrl: a stable https image — not an Instagram/Facebook CDN link
+//   - imageUrl: a stable https image, or /starter-kit/<file> bundled in
+//     public/starter-kit/ — never an Instagram/Facebook CDN link. The Meals
+//     "Starter ZIP" export (open the app once with ?admin=1, then Select)
+//     writes both the photo and a ready-to-paste block for imported recipes.
 //   - sourceUrl: https link back to the original recipe
 //   - 4+ ingredients, 2+ directions
 //

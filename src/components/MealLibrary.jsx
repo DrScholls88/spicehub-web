@@ -169,6 +169,8 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
   const [quickPreview, setQuickPreview] = useState(null); // meal object for popup
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
+  // Starter-pack admin tool; main.jsx sets sh_admin from ?admin=1.
+  const [starterTools] = useState(() => { try { return localStorage.getItem('sh_admin') === '1'; } catch { return false; } });
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [userTags, setUserTags] = useState([]);
   const [activeTags, setActiveTags] = useState([]); // active tag names for filtering
@@ -562,6 +564,27 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
     }
     onToast?.(`Deleted ${count} meal${count !== 1 ? 's' : ''}`);
     exitSelectMode();
+  };
+
+  const handleStarterZip = async () => {
+    const selected = meals.filter(m => selectedIds.has(m.id));
+    if (!selected.length) return;
+    onToast?.(`Building starter ZIP for ${selected.length} recipe${selected.length === 1 ? '' : 's'}…`, 'info');
+    try {
+      // Lazy: keeps JSZip out of the Meals chunk for everyone who never uses this.
+      const { buildStarterPackZip } = await import('../lib/starterPackExport.js');
+      const { blob, count, photos } = await buildStarterPackZip(selected);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `spicehub-starter-pack-${new Date().toISOString().slice(0, 10)}.zip`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      onToast?.(`Starter ZIP ready: ${count} recipe${count === 1 ? '' : 's'}, ${photos} photo${photos === 1 ? '' : 's'}`, 'success');
+    } catch (err) {
+      console.warn('[SpiceHub] Starter ZIP failed:', err);
+      onToast?.('Could not build the starter ZIP — try again', 'error');
+    }
   };
 
   const handleBatchShare = async () => {
@@ -1229,6 +1252,15 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
           >
             📤 Share
           </button>
+          {starterTools && (
+            <button
+              className="ml-select-toolbar-btn"
+              onClick={handleStarterZip}
+              disabled={selectedIds.size === 0}
+            >
+              📦 Starter ZIP
+            </button>
+          )}
           <button
             className="ml-select-toolbar-btn ml-select-delete"
             onClick={handleBatchDelete}

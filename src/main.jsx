@@ -11,6 +11,14 @@ import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { registerBackgroundSync } from './backgroundSync.js'
 import { isUpdateContext, isNewerBuild } from './lib/pwaUpdateSignal.js'
 
+// ?admin=1 turns on starter-pack tools (Meals → Select → Starter ZIP); ?admin=0
+// turns them off. Read here, before App scrubs the launch query.
+try {
+  const admin = new URLSearchParams(window.location.search).get('admin')
+  if (admin === '1') localStorage.setItem('sh_admin', '1')
+  else if (admin === '0') localStorage.removeItem('sh_admin')
+} catch { /* storage blocked: tools stay off */ }
+
 // ── Adopt the deferred main stylesheet (2026-08-24) ──────────────────────────
 // The production build ships the bundled CSS as `media="print"` so it does not
 // block the first paint of the boot skeleton in index.html (the swap is done by

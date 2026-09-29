@@ -49,7 +49,7 @@ function lookup(context, key) {
 }
 
 function isTruthyForSection(value) {
-  if (value == null || value === false || value === '') return false;
+  if (value == null || value === false || value === '' || value === 0) return false;
   if (Array.isArray(value) && value.length === 0) return false;
   return true;
 }
@@ -422,11 +422,14 @@ export const TEMPLATES = {
     '</div>',
     '{{#imageUrl}}<img class="recipe-image" src="{{{imageUrl}}}" alt="{{name}}" itemprop="image" />{{/imageUrl}}',
     '{{#rating_stars}}<div class="recipe-rating" itemprop="aggregateRating">{{rating_stars}}</div>{{/rating_stars}}',
-    '{{#categories}}',
+    // Outer guard is categories.length, not categories: the section regex is
+    // non-greedy, so a same-name nested section closed early and printed a
+    // stray "{{/categories}}" on every print export.
+    '{{#categories.length}}',
     '<div class="recipe-categories">',
     '  {{#categories}}<span class="recipe-category-tag">{{.}}</span>{{/categories}}',
     '</div>',
-    '{{/categories}}',
+    '{{/categories.length}}',
     '<div class="recipe-columns">',
     '  <div>',
     '    <div class="recipe-col-heading">Ingredients</div>',

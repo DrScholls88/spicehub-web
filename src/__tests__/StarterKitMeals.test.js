@@ -7,6 +7,7 @@ import {
   prepareStarterMeal,
 } from '../data/starterKitMeals.js';
 import { STARTER_KIT_RAW } from '../data/starterKitData.js';
+import { existsSync } from 'node:fs';
 
 const seed = (over = {}) => ({
   name: 'Gate Fixture',
@@ -38,7 +39,8 @@ describe('StarterKitMeals seed pack', () => {
       // notes / dietaryTags are optional in starterKitData.js; prepareStarterMeal defaults them.
       if (meal.notes !== undefined) expect(Array.isArray(meal.notes)).toBe(true);
       expect(meal.sourceUrl).toMatch(/^https?:\/\//);
-      expect(meal.imageUrl).toMatch(/^https?:\/\//);
+      expect(meal.imageUrl).toMatch(/^(https?:\/\/|\/starter-kit\/)/);
+      if (meal.imageUrl.startsWith('/starter-kit/')) expect(existsSync(`public${meal.imageUrl}`)).toBe(true);
       expect(meal.imageUrl).not.toMatch(/cdninstagram|fbcdn|scontent/i);
       expect(meal.link).toBeUndefined();
       expect(meal.id).toBeUndefined();
@@ -63,6 +65,7 @@ describe('StarterKitMeals seed pack', () => {
     expect(isStarterDinner(seed({ category: 'Tailgate' }))).toBe(false);
     expect(isStarterDinner(seed({ category: 'Pasta' }))).toBe(false);
     expect(isStarterDinner(seed({ imageUrl: '' }))).toBe(false);
+    expect(isStarterDinner(seed({ imageUrl: '/starter-kit/dish.jpg' }))).toBe(true);
   });
 
   it('buildStarterKitMeals drops non-dinners and photo-less rows, lands dinners in The Rotation', () => {
