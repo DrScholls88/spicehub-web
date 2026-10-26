@@ -169,8 +169,11 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
   const [quickPreview, setQuickPreview] = useState(null); // meal object for popup
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState(new Set());
-  // Starter-pack admin tool; main.jsx sets sh_admin from ?admin=1.
-  const [starterTools] = useState(() => { try { return localStorage.getItem('sh_admin') === '1'; } catch { return false; } });
+  // Starter-pack admin tool: sh_admin comes from ?admin=1 (main.jsx) or five
+  // taps on Settings' version line. Read every render so a toggle made while
+  // this screen is mounted shows up without a reload.
+  let starterTools = false;
+  try { starterTools = localStorage.getItem('sh_admin') === '1'; } catch { /* storage blocked */ }
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [userTags, setUserTags] = useState([]);
   const [activeTags, setActiveTags] = useState([]); // active tag names for filtering
@@ -574,13 +577,30 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
       // Lazy: keeps JSZip out of the Meals chunk for everyone who never uses this.
       const { buildStarterPackZip } = await import('../lib/starterPackExport.js');
       const { blob, count, photos } = await buildStarterPackZip(selected);
+      const fileName = `spicehub-starter-pack-${new Date().toISOString().slice(0, 10)}.zip`;
+      const summary = `Starter ZIP: ${count} recipe${count === 1 ? '' : 's'}, ${photos} photo${photos === 1 ? '' : 's'}`;
+      // Installed apps (iOS especially) ignore <a download>; the share sheet can
+      // save the file instead. It needs a fresh tap after the async build, so a
+      // NotAllowedError falls through to the plain download.
+      const file = new File([blob], fileName, { type: 'application/zip' });
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: fileName });
+          onToast?.(summary, 'success');
+          return;
+        } catch (err) {
+          if (err?.name === 'AbortError') return;
+        }
+      }
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `spicehub-starter-pack-${new Date().toISOString().slice(0, 10)}.zip`;
+      a.download = fileName;
+      document.body.appendChild(a);
       a.click();
+      a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 10_000);
-      onToast?.(`Starter ZIP ready: ${count} recipe${count === 1 ? '' : 's'}, ${photos} photo${photos === 1 ? '' : 's'}`, 'success');
+      onToast?.(`${summary} — check your downloads`, 'success');
     } catch (err) {
       console.warn('[SpiceHub] Starter ZIP failed:', err);
       onToast?.('Could not build the starter ZIP — try again', 'error');
@@ -1047,7 +1067,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
                   position: 'absolute', top: '50%', left: '100%', transform: 'translateY(-50%)',
                   zIndex: 40, marginLeft: 8,
                   padding: '7px 12px', borderRadius: 8,
-                  background: 'var(--surface-raised, #1a1a1a)',
+                  background: 'var(--card)', // --surface-raised isn't defined here: was black under light-mode text
                   border: '1px solid var(--border, #333)',
                   boxShadow: '0 4px 16px rgba(0,0,0,.3)',
                   fontSize: 11, lineHeight: 1.4, color: 'var(--text, #eee)',
@@ -1074,8 +1094,10 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
           style={{
             display: 'flex', alignItems: 'center', gap: 4,
             padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border, #2a2a2a)',
-            background: activeFilterCount > 0 ? 'var(--primary, #FF6B35)' : 'var(--surface-raised, #1a1a1a)',
-            color: activeFilterCount > 0 ? '#fff' : 'var(--text-muted, #888)',
+            // --surface-raised is only defined inside ImportSheet, so this fell
+            // back to #1a1a1a: a black button in light mode.
+            background: activeFilterCount > 0 ? 'var(--button-fill)' : 'var(--surface)',
+            color: activeFilterCount > 0 ? 'var(--on-button-fill)' : 'var(--text-light)',
             fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap',
           }}
         >
@@ -1083,7 +1105,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
         </button>
         <div className="ml-grid-toggle" style={{
           display: 'flex', gap: 2, padding: 2, borderRadius: 8,
-          background: 'var(--surface-raised, #1a1a1a)',
+          background: 'var(--surface)',
           border: '1px solid var(--border, #2a2a2a)',
         }}>
           {[
@@ -1093,6 +1115,7 @@ export default function MealLibrary({ meals, onAdd, onEdit, onDelete, onViewDeta
           ].map(opt => (
             <button
               key={opt.id}
+              className="ml-grid-opt"
               aria-label={opt.label}
               onClick={() => handleGridChange(opt.id)}
               style={{

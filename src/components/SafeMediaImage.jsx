@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { apiUrl } from '../lib/nativeShell';
 
 /** Inline shimmer skeleton — no external CSS dependency needed */
 const shimmerStyle = (style) => ({
@@ -63,7 +64,7 @@ export default function SafeMediaImage({ src, alt, style, fallbackEmoji = '🍳'
 
     // Instagram/FB CDN URLs need proxying — they expire and block cross-origin
     if (isInstagramCdnUrl(src)) {
-      setImgSrc(`/api/proxy?mode=image-data-url&url=${encodeURIComponent(src)}`);
+      setImgSrc(apiUrl(`/api/proxy?mode=image-data-url&url=${encodeURIComponent(src)}`));
       return;
     }
 

@@ -2,6 +2,9 @@
 // It installs AbortSignal.timeout on iOS 15, without which the entire import
 // pipeline throws TypeError at its first fetch.
 import './polyfills.js'
+// Second: on a Capacitor device this re-points relative /api/* fetches at the
+// deployed API before anything can call fetch. Inert on the web.
+import { isNative } from './lib/nativeShell.js'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
@@ -60,32 +63,30 @@ createRoot(document.getElementById('root')).render(
 // App.jsx listens for and pipes into ImportModal as `sharedContent`, which
 // triggers parseHybrid automatically — no copy-paste required.
 //
-// The plugin import is dynamic + try-wrapped because the web build doesn't
-// have access to Capacitor; on web this is a no-op. On native, it auto-fires
-// when the OS routes a share intent to us.
+// Web is a no-op. On a device the plugin holds a cold-start share until this
+// listener attaches, but App.jsx may not have mounted its window listener yet,
+// so the payload is also parked on window.__spicehubPendingShare for App to
+// pick up on mount.
+//
+// 2026-10-24: this used to import a `ShareTarget` export that the plugin has
+// never had (it is `CapacitorShareTarget`) and read `payload.url/.text`, which
+// the plugin never sends (it sends `texts: string[]`), so native shares were
+// silently dropped.
 async function wireShareTarget() {
+  if (!isNative) return;
   try {
-    // Only run on native platforms — quick guard avoids loading the plugin
-    // bundle on web where it'd just throw.
-    if (typeof window === 'undefined') return;
-    const capModule = await import(/* @vite-ignore */ '@capacitor/core').catch(() => null);
-    const isNative = capModule?.Capacitor?.isNativePlatform?.();
-    if (!isNative) return;
-
-    const { ShareTarget } = await import(/* @vite-ignore */ '@capgo/capacitor-share-target');
-    if (!ShareTarget?.addListener) return;
-
-    ShareTarget.addListener('shareReceived', (payload) => {
-      // payload shape: { url?, text?, title?, mimeType? }
-      const url = payload?.url || extractFirstUrl(payload?.text || '');
-      const text = payload?.text || '';
+    const { CapacitorShareTarget } = await import('@capgo/capacitor-share-target');
+    CapacitorShareTarget.addListener('shareReceived', (payload) => {
+      // payload: { title, texts: string[], files: [] }. Text/URL only, like the web share_target.
+      const text = (payload?.texts || []).join('\n').trim();
+      const url = extractFirstUrl(text);
       const title = payload?.title || '';
       if (!url && !text) return;
 
-      const evt = new CustomEvent('spicehub:share-import', {
-        detail: { url, text, title, mode: url ? 'url' : 'text' },
-      });
-      window.dispatchEvent(evt);
+      // Same shape sw.js builds for the web share target: drop text that is just the URL.
+      const detail = { url, text: text === url ? '' : text, title, mode: url ? 'url' : 'text' };
+      window.__spicehubPendingShare = detail;
+      window.dispatchEvent(new CustomEvent('spicehub:share-import', { detail }));
     });
   } catch (err) {
     console.warn('[share-target] wiring failed:', err?.message || err);
@@ -99,8 +100,12 @@ function extractFirstUrl(s) {
 
 wireShareTarget();
 
-// Register service worker with background sync support
-if ('serviceWorker' in navigator) {
+// Register service worker with background sync support.
+// Not on a Capacitor device: the app is already bundled offline there, and a
+// worker would keep serving the previous build's cached assets after a store
+// update. iOS WebViews never had one; the offline queue falls back to the
+// online listener (backgroundSync.js) exactly as it does there.
+if ('serviceWorker' in navigator && !isNative) {
   // ── Durable "not a first install" signal (2026-09-09) ────────────
   // See src/lib/pwaUpdateSignal.js for the full rationale: iOS/WebKit is
   // documented to null out navigator.serviceWorker.controller across a

@@ -197,3 +197,107 @@
   text-align: center;
 }
 .sm-alldone p { margin: 0; font-size: 16px; font-weight: 700; color: var(--text, #1c140d); }
+
+/* ── Store name in the Store Mode hint line ── */
+.sm-title { color: var(--text); font-weight: 800; }
+
+/* ── Online order runner (OnlineOrderRunner.jsx) — oo- prefix ─────────────
+   Calm card surface instead of the orange Store Mode header: white text on
+   --primary is 3.79:1 in light mode (design.md §3), so text-bearing fills use
+   --button-fill / --on-button-fill and everything else is themed tokens. */
+.oo-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  padding-top: calc(10px + env(safe-area-inset-top));
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+.oo-exit {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 44px; padding: 8px 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text);
+  font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.oo-title { flex: 1; font-size: 17px; font-weight: 700; text-align: center; }
+.oo-count { font-size: 14px; font-weight: 700; color: var(--text-light); font-variant-numeric: tabular-nums; min-width: 56px; text-align: right; }
+.oo-progress { height: 4px; background: var(--surface); flex: 0 0 auto; }
+.oo-progress-fill { height: 100%; background: var(--primary); transition: width 250ms cubic-bezier(0.32, 0.72, 0, 1); }
+
+.oo-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 20px 16px calc(28px + env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: 14px;
+  max-width: 520px; width: 100%; margin: 0 auto; box-sizing: border-box;
+}
+.oo-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 24px 18px;
+  text-align: center;
+  outline: none;
+}
+.oo-query { font-size: 26px; font-weight: 800; line-height: 1.2; color: var(--text); text-transform: capitalize; overflow-wrap: anywhere; }
+.oo-detail { margin-top: 8px; font-size: 14px; color: var(--text-light); }
+.oo-tags { margin-top: 6px; font-size: 13px; color: var(--text-muted); }
+.oo-status { margin-top: 10px; font-size: 12px; font-weight: 700; color: var(--primary-ink); text-transform: uppercase; letter-spacing: 0.4px; }
+
+.oo-find, .oo-added, .oo-skip, .oo-prev, .oo-chip {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent;
+  transition: transform 120ms ease, background-color 150ms ease;
+}
+.oo-find:active, .oo-added:active, .oo-skip:active, .oo-chip:active { transform: scale(0.97); }
+.oo-find {
+  min-height: 56px; width: 100%;
+  border: none; border-radius: var(--radius-sm);
+  background: var(--button-fill); color: var(--on-button-fill);
+  font-size: 17px; font-weight: 800;
+}
+.oo-row { display: flex; gap: 10px; }
+.oo-added {
+  flex: 2; min-height: 52px;
+  border: 2px solid var(--success); border-radius: var(--radius-sm);
+  background: var(--card); color: var(--text);
+  font-size: 16px; font-weight: 800;
+}
+.oo-added svg { color: var(--success); }
+.oo-skip {
+  flex: 1; min-height: 52px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text);
+  font-size: 15px; font-weight: 700;
+}
+.oo-move { display: flex; flex-direction: column; gap: 8px; }
+.oo-move-label { font-size: 13px; color: var(--text-light); }
+.oo-move-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.oo-chip {
+  min-height: 44px; padding: 8px 14px;
+  border: 1px solid var(--border); border-radius: var(--radius-pill);
+  background: var(--card); color: var(--text);
+  font-size: 14px; font-weight: 600;
+}
+.oo-prev {
+  align-self: center; min-height: 44px; padding: 8px 14px;
+  border: none; background: none; color: var(--text-light);
+  font-size: 14px; font-weight: 600;
+}
+.oo-prev:disabled { opacity: 0.4; cursor: default; }
+
+.oo-done { align-items: stretch; text-align: center; padding-top: 48px; }
+.oo-done-icon { align-self: center; width: 72px; height: 72px; border-radius: 50%; display: grid; place-items: center; background: var(--surface); color: var(--success); }
+.oo-done-title { margin: 4px 0 0; font-size: 22px; font-weight: 800; color: var(--text); }
+.oo-done-sub { margin: 0 0 8px; font-size: 15px; color: var(--text-light); }
+
+@media (prefers-reduced-motion: reduce) {
+  .oo-progress-fill, .oo-find, .oo-added, .oo-skip, .oo-chip { transition: none; }
+}

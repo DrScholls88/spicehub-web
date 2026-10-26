@@ -121,7 +121,7 @@
 }
 
 .ml-view-tab.ml-view-active {
-  color: var(--primary);
+  color: var(--primary-ink);
 }
 
 .ml-view-underline {
@@ -521,8 +521,7 @@
 
 .ml-tile-added {
   font-size: 10px;
-  color: var(--text-muted, #aaa);
-  opacity: 0.8;
+  color: var(--text-muted); /* no opacity: at 10px it dropped to 3.45:1 */
   letter-spacing: 0.2px;
   display: block;
   margin-top: 1px;

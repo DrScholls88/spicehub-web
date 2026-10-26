@@ -55,6 +55,7 @@ What Ponytail **should** cut here: duplicate helpers (grep `src/lib/` and the `s
 | Offline | `src/sw.js`, `backgroundSync.js`, `sync.js`, offline queue |
 | Import engine | Entry: `src/import/index.js` barrel. Core: `recipeParser.js`, `recipeSchema.js`, `src/lib/importGuards.js`, `src/lib/importConfig.js`, `photoImportEngine.js`, `batchImportEngine.js`. UI: `ImportSheet.jsx`, `ImportInput.jsx`, `ImportReview.jsx`, `ReExtractSheet.jsx` |
 | Inbound doorways | `src/lib/launchIntent.js` (share target, manifest shortcuts, capture +) |
+| Native shell | Capacitor 8: `capacitor.config.json`, `android/`, `ios/`, `src/lib/nativeShell.js` (`/api` origin rewrite, back button, share/save, auth deep link). Runbook: `docs/native-release.md` |
 | Server | Vercel `api/` (extract, structure, vision, proxy, discover); Render Express `server/` (yt-dlp audio, image persistence) |
 | AI | Gemini is the structuring engine (model names in `importConfig.js`: verify live before changing, they've died 3 times). Grok off unless `VITE_AI_PROVIDER=grok`. Whisper runs in-browser via Transformers.js. |
 | Social | Supabase: friends, home group, activity feed, shared slots |

@@ -77,3 +77,11 @@ cookies.json
 # Task 0). File-copy backup so slices can be diffed/restored without
 # stash/reset. Delete once the overhaul lands.
 _import_backup_2026-09-04/
+
+# Store signing material: never commit, back up off-machine (docs/native-release.md)
+*.jks
+*.keystore
+keystore.properties
+*.p12
+*.p8
+*.mobileprovision

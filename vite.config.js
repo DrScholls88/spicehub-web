@@ -5,6 +5,10 @@ import os from 'os'
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
+import {
+  LEGAL_VERSION, PRIVACY_POLICY_SECTIONS,
+  TERMS_OF_SERVICE_SECTIONS, ACCOUNT_DELETION_SECTIONS,
+} from './src/legal/legalContent.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -133,6 +137,43 @@ function emitVersionManifest() {
   };
 }
 
+// ── Public legal pages (2026-10-24) ─────────────────────────────────────────
+// The App Store and Play Console need a privacy policy URL and Play needs an
+// account-deletion URL. Rendered from the same legalContent.js the in-app
+// LegalDocument shows, so the store pages can never drift from the app.
+// Static HTML with no script, so they work for store reviewers' crawlers.
+// Served as https://spicehub-web.vercel.app/{privacy,terms,delete-account}.html
+function emitLegalPages() {
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const page = (title, sections) => `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(title)} · SpiceHub</title>
+<style>
+:root{color-scheme:light dark;--bg:#fff8f0;--fg:#2b1d12;--muted:#6b5442;--link:#b33f00}
+@media (prefers-color-scheme:dark){:root{--bg:#1c1410;--fg:#f5ebe0;--muted:#c9b6a3;--link:#ffab7a}}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:720px;margin:0 auto;padding:32px 16px 64px}h1{margin:0 0 4px}h2{margin:32px 0 8px;font-size:1.15rem}
+p{margin:0 0 10px}.meta{color:var(--muted)}a{color:var(--link)}
+</style></head><body><main>
+<h1>${esc(title)}</h1><p class="meta">SpiceHub · Version ${esc(LEGAL_VERSION)}</p>
+${sections.map((s) => `<h2>${esc(s.title)}</h2>\n${s.paragraphs.map((p) => `<p>${esc(p)}</p>`).join('\n')}`).join('\n')}
+</main></body></html>
+`;
+  return {
+    name: 'spicehub-legal-pages',
+    apply: 'build',
+    generateBundle() {
+      for (const [fileName, title, sections] of [
+        ['privacy.html', 'Privacy Policy', PRIVACY_POLICY_SECTIONS],
+        ['terms.html', 'Terms of Service', TERMS_OF_SERVICE_SECTIONS],
+        ['delete-account.html', 'Delete your SpiceHub account', ACCOUNT_DELETION_SECTIONS],
+      ]) {
+        this.emitFile({ type: 'asset', fileName, source: page(title, sections) });
+      }
+    },
+  };
+}
+
 export default defineConfig({
   define: {
     '__SPICEHUB_BUILD__': JSON.stringify(buildNum),
@@ -158,6 +199,7 @@ export default defineConfig({
     react(),
     deferMainStylesheet(),
     emitVersionManifest(),
+    emitLegalPages(),
 VitePWA({
       registerType: 'autoUpdate',
       // 2026-08-24: was the plugin default ('auto'), which injects

@@ -10,7 +10,8 @@
  * Pure stack ops are testable without DOM; browser wiring is initBackNavigation().
  */
 
-/** @typedef {'popstate' | 'closewatcher' | 'escape' | 'ui' | 'unmount'} BackSource */
+/** @typedef {'popstate' | 'closewatcher' | 'escape' | 'ui' | 'unmount' | 'native'} BackSource */
+/* 'native' = Capacitor Android hardware back (src/lib/nativeShell.js). */
 
 /** @typedef {{
  *   pushId: string,
@@ -187,7 +188,7 @@ function programmaticHistoryBack() {
 
 function handleRootBack(source) {
   // Only intercept real user backs at root
-  if (source !== 'popstate' && source !== 'closewatcher' && source !== 'escape') {
+  if (source !== 'popstate' && source !== 'closewatcher' && source !== 'escape' && source !== 'native') {
     return 'empty';
   }
 

@@ -505,7 +505,7 @@ body::before {
 }
 
 .tab-bar button.active {
-  color: var(--primary);
+  color: var(--primary-ink); /* 11px label: --primary is 3.76:1 on the bar */
   border-top-color: var(--primary);
 }
 
@@ -2609,9 +2609,13 @@ body::before {
   border-bottom-color: #6a1b9a;
 }
 
-.tab-bar button.bar-tab:hover {
-  color: #9c27b0;
-  background: #f3e5f5;
+/* Hover only where hover exists: on touch screens :hover sticks after a tap,
+   which left the Bar tab with a pale-lilac fill (1.95:1 label in dark mode). */
+@media (hover: hover) {
+  .tab-bar button.bar-tab:hover {
+    color: #9c27b0;
+    background: #f3e5f5;
+  }
 }
 
 /* ── Bar Library ── */
@@ -4373,7 +4377,7 @@ body::before {
 }
 
 [data-theme="dark"] .tab-bar button.active {
-  color: var(--primary);
+  color: var(--primary-ink);
   border-top-color: var(--primary);
 }
 
@@ -4610,7 +4614,9 @@ body::before {
 }
 
 /* ── Install banner dark ── */
-[data-theme="dark"] .install-banner {
+/* Not the orange import nudge: it keeps its own gradient + dark ink, and on
+   this dark green its black text measured 1.5:1. */
+[data-theme="dark"] .install-banner:not(.nudge-orange) {
   background: #1b331b;
 }
 
@@ -4859,9 +4865,36 @@ body::before {
    4.5:1 (spring 4.66, summer 4.68, winter 4.62). Autumn keeps --primary-ink.
    Dark keeps --button-fill: var(--primary) with dark ink, which passes for
    every seasonal primary. */
-:root:not([data-theme="dark"]):not([data-system-dark="true"])[data-accent="spring"] { --button-fill: #e2175b; }
-:root:not([data-theme="dark"]):not([data-system-dark="true"])[data-accent="summer"] { --button-fill: #ad6100; }
-:root:not([data-theme="dark"]):not([data-system-dark="true"])[data-accent="winter"] { --button-fill: #0b77ce; }
+:root:not([data-theme="dark"]):not([data-system-dark="true"])[data-accent="spring"] { --button-fill: #e2175b; --primary-ink: #e2175b; }
+:root:not([data-theme="dark"]):not([data-system-dark="true"])[data-accent="summer"] { --button-fill: #ad6100; --primary-ink: #ad6100; }
+:root:not([data-theme="dark"]):not([data-system-dark="true"])[data-accent="winter"] { --button-fill: #0b77ce; --primary-ink: #0b77ce; }
+/* --primary-ink follows the same darkened value so accent-coloured TEXT (tab
+   labels, badges) clears 4.5:1 too, not just filled buttons. */
+
+/* ── Touch hit areas (2026-10-24) ───────────────────────────────────────────
+   The same trick as .ml-tile-menu-btn::before, made generic: the control keeps
+   its look, but an invisible ::after grows the tappable box to at least 44px
+   (design.md "Touch Targets"; Apple's 44pt) by exactly the missing amount on
+   each axis — % insets resolve against the control's own width/height.
+   :where() keeps position:relative at zero specificity, so any control that
+   is already absolutely positioned keeps that. List found by a Playwright
+   sweep of every tab at 390px; extend it rather than restyling call sites. */
+:where(.stg-pulse, .legalfooter-link, .landing-edit-toggle, .st-close, .pc-name-btn,
+  .wv-tl-action, .wv-tl-spin-chip, .wv-tl-toggle-btn, .wv-week-toolbar-btn,
+  .ml-filter-btn, .ml-label-chip, .ml-label-add-btn, .ml-menu-btn, .ml-rotation-tip-btn,
+  .ml-section-header, .ml-view-tab, .ml-grid-opt, .bl-cat-chip, .bl-filter-btn, .bl-grid-toggle-btn,
+  .bl-header-btn, .bl-label-chip, .bl-label-add-btn) {
+  position: relative;
+}
+:is(.stg-pulse, .legalfooter-link, .landing-edit-toggle, .st-close, .pc-name-btn,
+  .wv-tl-action, .wv-tl-spin-chip, .wv-tl-toggle-btn, .wv-week-toolbar-btn,
+  .ml-filter-btn, .ml-label-chip, .ml-label-add-btn, .ml-menu-btn, .ml-rotation-tip-btn,
+  .ml-section-header, .ml-view-tab, .ml-grid-opt, .bl-cat-chip, .bl-filter-btn, .bl-grid-toggle-btn,
+  .bl-header-btn, .bl-label-chip, .bl-label-add-btn)::after {
+  content: '';
+  position: absolute;
+  inset: min(0px, calc((100% - 44px) / 2)) min(0px, calc((100% - 44px) / 2));
+}
 
 
 /* ═══════════════════════════════════════════════════════════════════════════════
@@ -5416,6 +5449,13 @@ body::before {
   letter-spacing: 0.2px;
   line-height: 1.5;
   white-space: nowrap;
+}
+
+/* Phones: with four header buttons there's no room, and the badge was drawn
+   over the wordmark ("SpiceHub.018"). The version stays in the Settings
+   footer, which is where store reviewers and support look anyway. */
+@media (max-width: 480px) {
+  .app-build-badge { display: none; }
 }
 
 /* Current destination. Shop has no bottom tab any more, so the cart is the

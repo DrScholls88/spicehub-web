@@ -22,6 +22,7 @@ import useRootBackGuard from './hooks/useRootBackGuard';
 import useSwipeDismiss from './hooks/useSwipeDismiss';
 import useKeyboardInset from './hooks/useKeyboardInset';
 import { getInventory, isStaple } from './lib/pantryDomain';
+import { foodName as groceryFoodName } from './lib/groceryStores';
 import { normalizeIngredient } from './utils/ingredientNormalizer.js';
 import { useRotationEngine } from './hooks/useRotationEngine';
 import { SPECIAL_DAYS } from './lib/specialDays';
@@ -1166,8 +1167,14 @@ useEffect(() => {
 // Native share intents (@capgo/capacitor-share-target) — same handler, different
 // doorway. main.jsx dispatches `spicehub:share-import`; we normalize and reuse.
 useEffect(() => {
-  const handler = (e) => runLaunchIntent(intentFromShareEvent(e?.detail));
+  const handler = (e) => {
+    window.__spicehubPendingShare = null;
+    runLaunchIntent(intentFromShareEvent(e?.detail));
+  };
   window.addEventListener('spicehub:share-import', handler);
+  // Cold start (share sheet launched the app): the plugin can fire before this
+  // listener exists, so main.jsx parks the payload for us.
+  if (window.__spicehubPendingShare) handler({ detail: window.__spicehubPendingShare });
   return () => window.removeEventListener('spicehub:share-import', handler);
 }, [runLaunchIntent]);
 
@@ -1568,6 +1575,11 @@ useEffect(() => {
       // ingredients were already shopped for on the source day, so skip them
       // here rather than double-counting (see WeekView's handleToggleBatchCook).
       if (meal._leftoverOf) return;
+      // Meal tags on each grocery row ("Tacos · Chili") + per-meal skip.
+      const mealLabel = String(meal.name || '').trim();
+      const tagMeal = (it) => {
+        if (mealLabel && !it.meals.includes(mealLabel)) it.meals.push(mealLabel);
+      };
 
       // Spec A: prefer the structured ingredient array (source of truth).
       const structured = (Array.isArray(meal.ingredientsStructured) && meal.ingredientsStructured.length)
@@ -1586,8 +1598,11 @@ useEffect(() => {
             const rememberedStore = fuzzyStoreMemoryLookup(si.name || name, storeMemory);
             const category = si.category || categorizeIngredient(si.name || name);
             const covered = resolveIngredientCoverage(si.name || base);
-            items[key] = { name, checked: false, store: rememberedStore, category, _struct: si, covered };
+            // `food` is persisted (db.saveGroceryList) — _struct is not — so the
+            // clean food name survives a reload for store memory, search and copy.
+            items[key] = { name, checked: false, store: rememberedStore, category, _struct: si, covered, food: si.name || '', meals: [] };
           }
+          tagMeal(items[key]);
         });
         return;
       }
@@ -1599,11 +1614,15 @@ useEffect(() => {
       (meal.ingredients || []).forEach(ing => {
         const key = ing.toLowerCase().trim();
         if (!items[key]) {
-          const rememberedStore = fuzzyStoreMemoryLookup(ing, storeMemory);
+          // Look memory up by the food name (what GroceryList saves under),
+          // not the whole "2 tbsp olive oil" line.
+          const food = groceryFoodName({ name: ing });
+          const rememberedStore = fuzzyStoreMemoryLookup(food || ing, storeMemory);
           const category = metaMap[key] || categorizeIngredient(ing);
           const covered = resolveIngredientCoverage(ing);
-          items[key] = { name: ing, checked: false, store: rememberedStore, category, covered };
+          items[key] = { name: ing, checked: false, store: rememberedStore, category, covered, food, meals: [] };
         }
+        tagMeal(items[key]);
       });
     });
 
@@ -1623,6 +1642,8 @@ useEffect(() => {
           // A manual promote/demote in Grocery (Phase 2b) always outranks the
           // freshly-recomputed coverage guess on rebuild.
           covered: typeof prev.covered === 'boolean' ? prev.covered : item.covered,
+          // A skipped meal stays skipped across rebuilds.
+          ...(Array.isArray(prev.skipMeals) && prev.skipMeals.length && { skipMeals: prev.skipMeals }),
         };
       });
     }

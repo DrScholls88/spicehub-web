@@ -12,6 +12,7 @@
 // Pure helpers are exported for the golden corpus (tests/import/corpus.extract.test.js).
 // ─────────────────────────────────────────────────────────────────────────────
 import { extractPluginCandidate } from '../src/import/pluginExtractors.js';
+import { extractRdfaFromHtml } from '../src/lib/recipeHtmlExtraction.js';
 
 import {
   USER_AGENTS,
@@ -329,6 +330,25 @@ export function extractFromHtml(html, url = '') {
     const micro = extractMicrodataCandidate(html);
     if (micro && micro.ingredients.length > 0) {
       candidate = micro;
+      acquiredVia = 'microdata';
+    }
+  }
+
+  // RDFa (typeof/property — Drupal cocktail sites like Kindred). Shares the
+  // microdata tier: same confidence, same progress chip.
+  if (!candidate) {
+    const rdfa = extractRdfaFromHtml(html);
+    if (rdfa && rdfa.ingredients.length > 0) {
+      candidate = {
+        name: rdfa.name,
+        description: '',
+        ingredients: rdfa.ingredients,
+        directions: rdfa.directions,
+        imageUrl: rdfa.imageUrl,
+        recipeYield: rdfa.servings,
+        servings: '', prepTime: '', cookTime: '', totalTime: '',
+        cuisine: '', course: '', nutrition: null, author: '',
+      };
       acquiredVia = 'microdata';
     }
   }

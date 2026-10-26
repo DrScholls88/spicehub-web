@@ -81,6 +81,18 @@ describe('api/extract — microdata extraction', () => {
     expect(r.candidate.imageUrl).toMatch(/sunday-gravy/);
   });
 
+  it('rdfa: server candidate from typeof/property markup (shares the microdata tier)', () => {
+    const html = loadFixture('html', 'rdfa.html');
+    const r = extractFromHtml(html, 'https://lanternrow.example.com/cocktail/smoked-maple-sour');
+    expect(r.acquiredVia).toBe('microdata');
+    expect(r.candidate.name).toBe('Smoked Maple Sour');
+    expect(r.candidate.ingredients.length).toBe(7);
+    expect(r.candidate.ingredients[0]).toBe('2 oz Bourbon (or rye)');
+    expect(r.candidate.directions.length).toBe(2);
+    expect(r.candidate.recipeYield).toBe('1');
+    assertZeroJunk({ title: r.candidate.name, ingredients: r.candidate.ingredients, directions: r.candidate.directions }, 'extract rdfa');
+  });
+
   it('extractMicrodataCandidate returns null when no Recipe itemtype exists', () => {
     expect(extractMicrodataCandidate(loadFixture('html', 'schemaless-blog.html'))).toBeNull();
   });

@@ -102,8 +102,8 @@
   flex-shrink: 0;
   padding: 8px 16px;
   border-radius: 20px;
-  border: 1px solid #d0d0d0;
-  background: white;
+  border: 1px solid var(--border);
+  background: var(--card); /* was white: light --text on white in dark mode, 1.13:1 */
   font-size: 14px;
   font-weight: 500;
   color: var(--text);

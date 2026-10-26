@@ -81,6 +81,15 @@ describe('backStack', () => {
     expect(requestBack('popstate')).toBe('root-exit');
   });
 
+  it('native hardware back closes the top layer, then double-back exits at root', () => {
+    const onBack = vi.fn();
+    pushLayer({ id: 'sheet', onBack });
+    expect(requestBack('native')).toBe('handled');
+    expect(onBack).toHaveBeenCalledTimes(1);
+    expect(requestBack('native')).toBe('root-hint');
+    expect(requestBack('native')).toBe('root-exit');
+  });
+
   it('three stacked backs close three layers', () => {
     const calls = [];
     pushLayer({ id: 'a', onBack: () => calls.push('a') });

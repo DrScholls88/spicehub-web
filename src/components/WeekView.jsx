@@ -5,6 +5,7 @@ import MealSpinner from './MealSpinner';
 import MakeItYoursCard from './MakeItYoursCard';
 import useBackHandler from '../hooks/useBackHandler';
 import { filterMealsByConstraints, fridgeMatchRatio, mealTotalMinutes } from '../lib/weekPlanner';
+import { isDessert, matchesMealQuery } from '../lib/mealFilters';
 
 // Extracted from App.css 2026-08-24 (see the header in that file for the
 // move rules). MUST stay the first stylesheet imported here: these rules
@@ -35,6 +36,9 @@ const MONTH_NAMES = [
   'July','August','September','October','November','December',
 ];
 const LONG_PRESS_MS = 500;
+// Day of week (0 = Sunday) on which "Next week" opens by default, so the week
+// ahead isn't hidden when only today is left in this one. Widen here later.
+const AUTO_OPEN_NEXT_WEEK_DAY = 0;
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
 function getMonday(date) {
@@ -126,6 +130,9 @@ const ANIMATIONS_CSS = `
     --text-light: #d4d4d8;
     --text-muted: #8b8b94;
     --primary: #10b981;
+    /* Root dark tokens resolve against the app's green, not this emerald. */
+    --primary-ink: #10b981;
+    --button-fill: #10b981;
     --primary-light: #34d399;
     --primary-dark: #059669;
     --success: #10b981;
@@ -242,6 +249,7 @@ const ANIMATIONS_CSS = `
     -webkit-tap-highlight-color: transparent;
     border: 1.5px solid var(--border);
     background: var(--card);
+    scroll-margin-top: 12px;
   }
   .wv-tl-card:active { transform: scale(0.97); }
   /* ── "Active" card treatment — a thin left accent bar + soft tint reads as
@@ -270,13 +278,16 @@ const ANIMATIONS_CSS = `
     background: transparent;
   }
   .wv-tl-card.tl-empty:active { transform: scale(0.98); }
-  .wv-tl-card.tl-past { opacity: 0.55; }
+  /* Past days: dim the photo, not the text (0.55 opacity took 10-11px labels
+     to 2.2:1). */
+  .wv-tl-card.tl-past .wv-tl-thumb { opacity: 0.55; }
+  .wv-tl-card.tl-past .wv-tl-name { color: var(--text-muted); }
   .wv-tl-dow { text-align: center; min-width: 38px; flex-shrink: 0; }
   .wv-tl-dow-label {
     font-size: 10px; font-weight: 700; text-transform: uppercase;
     letter-spacing: 0.5px; color: var(--text-muted);
   }
-  .wv-tl-card.tl-today .wv-tl-dow-label { color: var(--primary); }
+  .wv-tl-card.tl-today .wv-tl-dow-label { color: var(--primary-ink); }
   .wv-tl-dow-num { font-size: 19px; font-weight: 800; color: var(--text); }
   .wv-tl-card.tl-today .wv-tl-dow-num { color: var(--primary); }
   .wv-tl-thumb {
@@ -321,7 +332,7 @@ const ANIMATIONS_CSS = `
   .wv-tl-spin-chip {
     flex-shrink: 0; padding: 5px 10px; border-radius: 8px;
     background: var(--primary-soft); border: none;
-    color: var(--primary); font-size: 11px; font-weight: 700;
+    color: var(--primary-ink); font-size: 11px; font-weight: 700;
     cursor: pointer; display: flex; align-items: center; gap: 4px;
     transition: transform 100ms ease;
   }
@@ -347,7 +358,7 @@ const ANIMATIONS_CSS = `
     font-size: 13px; font-weight: 700; color: var(--text-light);
   }
   .wv-tl-section-badge {
-    font-size: 11px; font-weight: 700; color: var(--primary);
+    font-size: 11px; font-weight: 700; color: var(--primary-ink);
   }
   /* ── Contextual sub-header — Spin Unlocked / Lock toggle / Diet filter,
      one compact row under the week it acts on, instead of a bottom stack. ── */
@@ -365,7 +376,7 @@ const ANIMATIONS_CSS = `
   }
   .wv-week-toolbar-btn:active { transform: scale(0.95); }
   .wv-week-toolbar-btn.primary {
-    background: var(--primary-soft); color: var(--primary);
+    background: var(--primary-soft); color: var(--primary-ink);
   }
   /* iOS Safari zooms the whole page whenever a focused form control computes
      under 16px, and a PWA with a locked viewport gives you no way back out —
@@ -546,7 +557,7 @@ const ANIMATIONS_CSS = `
   }
   .wv-carry-place-btn:active { transform: scale(0.93); }
   .wv-carry-bar {
-    position: sticky; top: 0; z-index: 30;
+    position: sticky; top: env(safe-area-inset-top, 0px); z-index: 30;
     display: flex; align-items: center; gap: 10px;
     margin: 0 12px 10px; padding: 10px 12px;
     background: var(--primary); color: white;
@@ -681,6 +692,7 @@ export default function WeekView({
   const [selectedDates, setSelectedDates] = useState(new Set());
   const [showDetailPanel, setShowDetailPanel] = useState(false);
   const [pickerDay, setPickerDay] = useState(null);
+  const [pickerQuery, setPickerQuery] = useState('');
   const [slideDir, setSlideDir] = useState(null);
   const [spinnerSelectedIndices, setSpinnerSelectedIndices] = useState(null);
   const [spinnerTargetDates, setSpinnerTargetDates] = useState(null);
@@ -701,7 +713,7 @@ export default function WeekView({
   // (further up this file) calls setNextWeekExpanded(true) to surface both
   // valid drop targets — reading the setter above its own useState made the
   // React Compiler bail out of optimizing this entire component.
-  const [nextWeekExpanded, setNextWeekExpanded] = useState(false);
+  const [nextWeekExpanded, setNextWeekExpanded] = useState(today.getDay() === AUTO_OPEN_NEXT_WEEK_DAY);
 
   // ── Search modal state ──────────────────────────────────────────────────────
   const [searchOpen, setSearchOpen] = useState(false);
@@ -746,6 +758,29 @@ export default function WeekView({
     style.textContent = ANIMATIONS_CSS;
     document.head.appendChild(style);
     return () => {};
+  }, []);
+
+  // Bring today's card into view once on arrival. On a Sunday the dimmed past
+  // days push today (and the Next week toggle under it) below the fold, so the
+  // week ahead looked missing. Only scrolls when today isn't already fully
+  // visible above the tab bar, so Mon-Thu the page is left alone.
+  useEffect(() => {
+    if (viewMode !== 'timeline') return undefined;
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        const card = timelineScrollRef.current?.querySelector(`[data-datekey="${dateKey(today)}"]`);
+        if (!card) return;
+        const r = card.getBoundingClientRect();
+        const fold = window.innerHeight - 96; // tab bar (52px) + safe-area + breathing room
+        if (r.top >= 0 && r.bottom <= fold) return;
+        const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+        card.scrollIntoView({ block: 'start', behavior: reduce ? 'auto' : 'smooth' });
+      });
+    });
+    return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
+    // Arrival only: don't yank the page when the user flips view modes later.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const getMealForDate = useCallback((date) => {
@@ -893,6 +928,7 @@ export default function WeekView({
 
   const openPicker = useCallback((date) => {
     const dow = date.getDay() === 0 ? 6 : date.getDay() - 1;
+    setPickerQuery('');
     setPickerDay(dow);
   }, []);
   const closePicker = useCallback(() => setPickerDay(null), []);
@@ -1078,27 +1114,27 @@ export default function WeekView({
     setPantryMatchTargetDate(null);
   }, [pantryMatchTargetDate, currentWeekMonday, onSetDay, onSpinnerComplete, onToast]);
 
+  // Manual assignment never offers desserts (a dessert isn't Tuesday's dinner),
+  // except the meal already sitting on the day, so it stays visible and swappable.
+  const searchPool = useMemo(() => {
+    const cur = searchTargetDate ? getMealForDate(searchTargetDate).meal : null;
+    const keepId = cur && !cur._special ? cur.id : null;
+    return meals.filter(m => !isDessert(m) || (keepId != null && m.id === keepId));
+  }, [meals, searchTargetDate, getMealForDate]);
+
   const availableCuisines = useMemo(() => {
     const cats = new Set();
-    meals.forEach(m => { if (m.category) cats.add(m.category); });
+    searchPool.forEach(m => { if (m.category) cats.add(m.category); });
     return [...cats].sort();
-  }, [meals]);
+  }, [searchPool]);
 
   const filteredSearchMeals = useMemo(() => {
-    let result = meals;
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim();
-      result = result.filter(m =>
-        m.name?.toLowerCase().includes(q) ||
-        m.category?.toLowerCase().includes(q) ||
-        m.labels?.some(l => l.toLowerCase().includes(q))
-      );
-    }
+    let result = searchPool.filter(m => matchesMealQuery(m, searchQuery));
     if (searchCuisine) {
       result = result.filter(m => m.category === searchCuisine);
     }
     return result;
-  }, [meals, searchQuery, searchCuisine]);
+  }, [searchPool, searchQuery, searchCuisine]);
 
   // Determine if activeDate falls in the current week — if not, assignments
   // must route through onSpinnerComplete (saves to weekHistory) rather than
@@ -1133,6 +1169,10 @@ export default function WeekView({
     if (pickerDay === null) return null;
     const { meal: currentMeal } = getMealForDate(activeDate);
     const isPastDay = activeDate < today && !isSameDay(activeDate, today);
+    // Same rule as the search modal: no desserts, except the day's current meal.
+    const curPickId = currentMeal && !currentMeal._special ? currentMeal.id : null;
+    const pickerMeals = meals.filter(m =>
+      (!isDessert(m) || (curPickId != null && m.id === curPickId)) && matchesMealQuery(m, pickerQuery));
     return (
       <div className="pk-overlay" onClick={closePicker}>
         <div className="pk-sheet" onClick={e => e.stopPropagation()}
@@ -1287,8 +1327,34 @@ export default function WeekView({
               </div>
             )}
           </>)}
+          <div style={{ padding: '0 0 8px' }}>
+            <input
+              type="search"
+              inputMode="search"
+              enterKeyHint="search"
+              autoComplete="off"
+              value={pickerQuery}
+              onChange={(e) => setPickerQuery(e.target.value)}
+              placeholder="Search your library…"
+              aria-label="Search your library"
+              style={{
+                width: '100%', boxSizing: 'border-box', minHeight: 44,
+                padding: '10px 12px', borderRadius: 12,
+                border: '1.5px solid var(--border)',
+                background: 'var(--surface)', color: 'var(--text)',
+                fontSize: 16, fontFamily: 'inherit',
+                /* the page root is user-select:none, which blocks typing in iOS inputs */
+                userSelect: 'text', WebkitUserSelect: 'text',
+              }}
+            />
+          </div>
           <div className="pk-list">
-            {meals.map(meal => {
+            {pickerMeals.length === 0 && (
+              <div className="pk-meta" style={{ padding: '16px 4px', textAlign: 'center' }}>
+                No meals match your search
+              </div>
+            )}
+            {pickerMeals.map(meal => {
               const isCur = currentMeal && !currentMeal._special && currentMeal.id === meal.id;
               return (
                 <div key={meal.id} className={`pk-item ${isCur ? 'current' : ''}`}
@@ -1444,12 +1510,6 @@ export default function WeekView({
       style={{
         display: 'flex',
         flexDirection: 'column',
-        height: '100%',
-        /* Without min-height:0 a flex column refuses to shrink below its
-           content, so the timeline pane below (flex:1 + overflow-y:auto) grows
-           instead of scrolling and its lower rows end up under the tab bar.
-           Chrome papers over this more often than iOS Safari does. */
-        minHeight: 0,
         background: 'var(--bg)',
         userSelect: 'none',
         WebkitUserSelect: 'none',
@@ -1544,11 +1604,12 @@ export default function WeekView({
         <div
           ref={timelineScrollRef}
           style={{
-            flex: 1,
-            minHeight: 0,
-            overflowY: 'auto',
-            WebkitOverflowScrolling: 'touch',
-            overscrollBehaviorY: 'contain',
+            /* NOT a scroll container. It used to be flex:1 + overflow-y:auto +
+               overscroll-behavior:contain, but nothing bounds its height (the page
+               scrolls, scrollHeight === clientHeight), so it was a dead nested
+               scroller that swallowed every vertical swipe starting inside it;
+               only the page gutters outside it scrolled. The page scrolls, like
+               Meal Library. Do not re-add overflow here. */
             paddingTop: 4,
             /* Was a flat 8px, which left the expanded Next week panel's last
                row sitting under the fixed .tab-bar (52px + safe-area inset) on
@@ -1969,7 +2030,7 @@ export default function WeekView({
               setSpinnerTargetDates(null);
               setJustCompletedSpin(true);
               // Land on the filled week, not wherever the timeline was scrolled.
-              if (fromPlanCard) timelineScrollRef.current?.scrollTo?.({ top: 0 });
+              if (fromPlanCard) window.scrollTo?.({ top: 0 });
             }}
             onClose={() => {
               onCloseSpinner();
@@ -2107,7 +2168,7 @@ export default function WeekView({
         {searchOpen && (
           <SearchModal
             meals={filteredSearchMeals}
-            allMeals={meals}
+            allMeals={searchPool}
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
             searchCuisine={searchCuisine}
@@ -2344,7 +2405,7 @@ function TimelineWeek({
             className={classes.join(' ')}
             onClick={handleCardClick}
             initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: isCarryDim ? 0.4 : (isPast && !isToday ? 0.55 : 1), y: 0 }}
+            animate={{ opacity: isCarryDim ? 0.4 : 1, y: 0 }}
             transition={{ duration: 0.3, delay: idx * TL_STAGGER_DELAY / 1000, ease: [0.23, 1, 0.32, 1] }}
           >
             {/* ── Pick-up grip — tap to carry this meal, tap again to put it back.
@@ -2843,6 +2904,11 @@ function DetailPanel({ show, activeDate, today, getMealForDate, isCurrentWeek, o
                 <span style={{ fontSize: 36 }}>{meal.icon}</span>
                 <span style={{ fontSize: 18, fontWeight: 700 }}>{meal.name}</span>
               </div>
+              {activeDate >= today && (
+                <button onClick={onOpenPicker} style={{ ...OUTLINE_BTN, width: '100%', marginBottom: 8 }}>
+                  ✏️ Change
+                </button>
+              )}
               {isCurrent && (
                 <button onClick={() => onClearDay(dow)} style={{ ...DANGER_BTN, width: '100%' }}>
                   <X size={16} style={{ verticalAlign: 'middle', marginRight: 4 }} /> Clear Day
@@ -3100,7 +3166,7 @@ function SearchModal({ meals, allMeals, searchQuery, onSearchChange, searchCuisi
               style={{
                 flex: 1, border: 'none', outline: 'none',
                 background: 'transparent', color: 'var(--text)',
-                fontSize: 14, fontWeight: 500,
+                fontSize: 16, fontWeight: 500,
                 padding: '11px 0', minWidth: 0,
               }}
             />
@@ -3351,7 +3417,7 @@ const SELECT_TOGGLE_BTN = {
 
 const PRIMARY_BTN = {
   padding: '13px 16px', border: 'none', borderRadius: 12,
-  background: 'var(--primary)', color: 'white',
+  background: 'var(--button-fill)', color: 'var(--on-button-fill)', // white on --primary was 3.78:1
   fontSize: 14, fontWeight: 700, cursor: 'pointer',
   transition: 'transform 0.1s, opacity 0.1s',
 };

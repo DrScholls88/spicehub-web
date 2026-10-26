@@ -1001,6 +1001,12 @@ export async function saveGroceryList(items) {
           ...(item.quantity && { quantity: item.quantity }),
           ...(item.unit && { unit: item.unit }),
           ...(item.category && { category: item.category }),
+          // Grocery screen v2: clean food name, source meals, per-meal skip,
+          // quest label. Non-indexed fields — no schema version bump needed.
+          ...(item.food && { food: item.food }),
+          ...(Array.isArray(item.meals) && item.meals.length && { meals: item.meals }),
+          ...(Array.isArray(item.skipMeals) && item.skipMeals.length && { skipMeals: item.skipMeals }),
+          ...(item.questName && { questName: item.questName }),
         })));
       }
     });

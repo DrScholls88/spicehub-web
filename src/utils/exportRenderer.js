@@ -13,7 +13,7 @@
 //   exportViaShare(title, content)            → Promise<void>
 //   exportForPrint(htmlContent)               → void
 
-import { renderTemplate, renderRecipe, TEMPLATES, safeUrl } from '../recipeTemplates.js';
+import { renderTemplate, renderRecipe, TEMPLATES, TEXT_TEMPLATES, safeUrl } from '../recipeTemplates.js';
 import { consolidateGroceries, normalizeIngredient } from './ingredientNormalizer.js';
 import { GROCERY_CATEGORIES } from '../recipeSchema.js';
 import { formatQuantity, formatUnit, formatFood } from './displayFormatter.js';
@@ -112,7 +112,7 @@ export function renderGroceryExport(ingredients, options = {}) {
   const tpl = TEMPLATES[templateName];
   if (!tpl) return '';
 
-  return renderTemplate(tpl, { title, items });
+  return renderTemplate(tpl, { title, items }, { escape: !TEXT_TEMPLATES.has(templateName) });
 }
 
 /**
@@ -143,7 +143,7 @@ export function renderMealPlanExport(days, options = {}) {
   const tpl = TEMPLATES[templateName];
   if (!tpl) return '';
 
-  return renderTemplate(tpl, { title, days: normalizedDays });
+  return renderTemplate(tpl, { title, days: normalizedDays }, { escape: !TEXT_TEMPLATES.has(templateName) });
 }
 
 /**
@@ -196,7 +196,7 @@ export function renderRecipeExport(recipe, options = {}) {
   const tpl = TEMPLATES[templateName];
   if (!tpl) return renderRecipe(recipe, 'plain');
 
-  return renderTemplate(tpl, ctx);
+  return renderTemplate(tpl, ctx, { escape: !TEXT_TEMPLATES.has(templateName) });
 }
 
 /**

@@ -1,5 +1,6 @@
 import React, { createContext, useState, useEffect, useCallback, useContext } from 'react';
 import { hapticLight } from '../haptics';
+import { setSystemBarsDark } from '../lib/nativeShell';
 
 // Create the theme context
 const ThemeContext = createContext(undefined);
@@ -50,6 +51,11 @@ const ThemeProvider = ({ children }) => {
     // Set data-system-dark so CSS selector [data-theme="auto"][data-system-dark="true"] works
     document.documentElement.setAttribute('data-system-dark', String(isDark && theme === 'auto'));
   }, [theme, isDark]);
+
+  // Native system bar icons (nativeShell.js explains the split). No-op on web.
+  useEffect(() => {
+    setSystemBarsDark(isDark);
+  }, [isDark]);
 
   // Apply accent to DOM
   useEffect(() => {

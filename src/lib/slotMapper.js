@@ -53,7 +53,9 @@ export function toSlotData(localSlot, profileName) {
   // Real meal
   return {
     name: localSlot.name,
-    imageUrl: isPublicUrl(localSlot.imageUrl) ? localSlot.imageUrl : undefined,
+    // A saved local copy (data: URL) can't be shared; fall back to the original link.
+    imageUrl: isPublicUrl(localSlot.imageUrl) ? localSlot.imageUrl
+      : isPublicUrl(localSlot.sourceImageUrl) ? localSlot.sourceImageUrl : undefined,
     ingredients: (localSlot.ingredients || []).map(i =>
       typeof i === 'string' ? i : (i && i.name) || ''
     ),

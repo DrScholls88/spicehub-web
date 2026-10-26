@@ -34,6 +34,12 @@ const CASES = [
     url: 'https://afamilytable.example.com/nanas-sunday-gravy/',
     expect: { titleMatch: /sunday gravy/i, minIngredients: 10, minDirections: 1, hasImage: true },
   },
+  {
+    id: 'rdfa',
+    url: 'https://lanternrow.example.com/cocktail/smoked-maple-sour',
+    // Drupal-style RDFa only (typeof/property, no itemprop, no JSON-LD).
+    expect: { titleMatch: /smoked maple sour/i, minIngredients: 7, minDirections: 2 },
+  },
 ];
 
 describe('golden corpus — HTML fixtures → parseHtml', () => {
@@ -52,6 +58,16 @@ describe('golden corpus — HTML fixtures → parseHtml', () => {
       assertZeroJunk({ ...recipe, title: recipe.name || recipe.title }, c.id);
     });
   }
+
+  it('rdfa: keeps nested ingredient text whole and ignores related/author/comment properties', () => {
+    const html = loadFixture('html', 'rdfa.html');
+    const recipe = parseHtml(html, 'https://lanternrow.example.com/cocktail/smoked-maple-sour');
+    expect(recipe.name).toBe('Smoked Maple Sour');
+    expect(recipe.ingredients[0]).toBe('2 oz Bourbon (or rye)');
+    expect(recipe.ingredients[1]).toBe('3/4 oz Lemon juice, fresh');
+    const all = [...recipe.ingredients, ...recipe.directions].join(' ');
+    expect(all).not.toMatch(/decoy|Maren|Swapped the maple/i);
+  });
 
   it('schemaless-blog: never fabricates a recipe from prose', () => {
     const html = loadFixture('html', 'schemaless-blog.html');

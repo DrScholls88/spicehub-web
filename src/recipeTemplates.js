@@ -90,9 +90,15 @@ export function safeUrl(u) {
  * @param {object} context
  * @returns {string}
  */
-export function renderTemplate(template, context) {
+// Plain-text formats go to the clipboard / share sheet / a React text node,
+// never into HTML, so HTML-escaping them turned "&" into "&amp;" and "Joe's"
+// into "Joe&#39;s" in every copied recipe.
+export const TEXT_TEMPLATES = new Set(['markdown', 'plain', 'groceryText', 'mealPlanText']);
+
+export function renderTemplate(template, context, opts = {}) {
   if (!template) return '';
   if (context == null) context = {};
+  const escape = opts.escape !== false;
 
   // Strip comments first — they shouldn't survive into output.
   let src = template.replace(/\{\{!.*?\}\}/gs, '');
@@ -105,19 +111,19 @@ export function renderTemplate(template, context) {
     src = src.replace(SECTION_RE, (_, kind, name, body) => {
       const val = lookup(context, name);
       const truthy = isTruthyForSection(val);
-      if (kind === '^') return truthy ? '' : renderTemplate(body, context);
+      if (kind === '^') return truthy ? '' : renderTemplate(body, context, opts);
       // kind === '#'
       if (!truthy) return '';
       if (Array.isArray(val)) {
         return val.map((item) => {
           // If items are primitives, expose them as `.`
           const ctx = (typeof item === 'object' && item !== null) ? { ...context, ...item, '.': item } : { ...context, '.': item };
-          return renderTemplate(body, ctx);
+          return renderTemplate(body, ctx, opts);
         }).join('');
       }
       // Truthy non-array — expand once with the value as `.`
       const ctx = (typeof val === 'object' && val !== null) ? { ...context, ...val, '.': val } : { ...context, '.': val };
-      return renderTemplate(body, ctx);
+      return renderTemplate(body, ctx, opts);
     });
   } while (src !== prev);
 
@@ -130,7 +136,8 @@ export function renderTemplate(template, context) {
   // Double-stache (escaped).
   src = src.replace(/\{\{([\w.-]+)\}\}/g, (_, name) => {
     const v = lookup(context, name);
-    return escapeHtml(v == null ? '' : String(v));
+    const s = v == null ? '' : String(v);
+    return escape ? escapeHtml(s) : s;
   });
 
   return src;
@@ -552,11 +559,11 @@ export function renderRecipe(recipe, templateName = 'markdown') {
   const autoName = (templateName === 'markdown' && recipe?._type === 'drink')
     ? 'drinkCard'
     : templateName;
-  const tpl = TEMPLATES[autoName] || TEMPLATES.plain;
+  const name = TEMPLATES[autoName] ? autoName : 'plain';
   const ctx = recipe
     ? { ...recipe, imageUrl: safeUrl(recipe.imageUrl), sourceUrl: safeUrl(recipe.sourceUrl) }
     : {};
-  return renderTemplate(tpl, ctx);
+  return renderTemplate(TEMPLATES[name], ctx, { escape: !TEXT_TEMPLATES.has(name) });
 }
 
 /**

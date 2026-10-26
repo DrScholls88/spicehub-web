@@ -80,6 +80,8 @@ const allowedOrigins = new Set(
 function isAllowedOrigin(origin) {
   if (!origin) return true;
   if (allowedOrigins.has(origin)) return true;
+  // The Capacitor store builds (android/, ios/) load from these local origins.
+  if (origin === 'https://localhost' || origin === 'capacitor://localhost') return true;
   try {
     return new URL(origin).hostname.endsWith('.vercel.app');
   } catch {

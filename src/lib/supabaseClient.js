@@ -9,6 +9,8 @@
 // Dynamic import — @supabase/supabase-js is only loaded when initSupabase() is
 // called (feature flag on + env vars set). This lets the app build and run
 // without the package installed when VITE_HOME_GROUP_ENABLED is not 'true'.
+import { isNative, NATIVE_AUTH_REDIRECT } from './nativeShell';
+
 let _createClient = null;
 
 let _client = null;
@@ -109,11 +111,18 @@ export async function getCurrentUserId() {
  * Sign in with Google OAuth.
  * Redirects the browser — does not return on success.
  */
+// On a device the page origin is https://localhost / capacitor://localhost,
+// which a browser can't return to, so sign-in comes back through the app's
+// URL scheme instead (nativeShell.js -> completeNativeSignIn below).
+function authRedirectUrl() {
+  return isNative ? NATIVE_AUTH_REDIRECT : `${window.location.origin}/auth/callback`;
+}
+
 export async function signInWithGoogle() {
   const { error } = await getSupabase().auth.signInWithOAuth({
     provider: 'google',
     options: {
-      redirectTo: `${window.location.origin}/auth/callback`,
+      redirectTo: authRedirectUrl(),
     },
   });
   if (error) throw error;
@@ -126,9 +135,27 @@ export async function signInWithMagicLink(email) {
   const { error } = await getSupabase().auth.signInWithOtp({
     email,
     options: {
-      emailRedirectTo: `${window.location.origin}/auth/callback`,
+      emailRedirectTo: authRedirectUrl(),
     },
   });
+  if (error) throw error;
+}
+
+/**
+ * Finish a native sign-in from com.spicehub.app://auth/callback. Implicit flow
+ * puts the tokens in the fragment; PKCE would send ?code= instead.
+ */
+export async function completeNativeSignIn(callbackUrl) {
+  await initSupabase();
+  const u = new URL(callbackUrl);
+  const code = u.searchParams.get('code');
+  const params = new URLSearchParams(u.hash.slice(1));
+  const { error } = code
+    ? await getSupabase().auth.exchangeCodeForSession(code)
+    : await getSupabase().auth.setSession({
+        access_token: params.get('access_token'),
+        refresh_token: params.get('refresh_token'),
+      });
   if (error) throw error;
 }
 
@@ -138,6 +165,23 @@ export async function signInWithMagicLink(email) {
 export async function signOut() {
   const { error } = await getSupabase().auth.signOut();
   if (error) throw error;
+}
+
+/**
+ * Permanently delete the signed-in account and its cloud data
+ * (supabase/migrations/007_delete_my_account.sql). The avatar file goes through
+ * the Storage API first because storage objects shouldn't be deleted with SQL.
+ * Required by App Store guideline 5.1.1(v) and Google Play's deletion policy.
+ */
+export async function deleteMyAccount() {
+  const supabase = getSupabase();
+  const userId = await getCurrentUserId();
+  if (!userId) throw new Error('Not signed in');
+  await supabase.storage.from('avatars').remove([`${userId}/avatar.jpg`]).catch(() => {});
+  const { error } = await supabase.rpc('delete_my_account');
+  if (error) throw error;
+  // The user no longer exists server-side, so only drop the local session.
+  await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
 }
 
 /**

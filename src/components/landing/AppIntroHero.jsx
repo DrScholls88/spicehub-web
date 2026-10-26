@@ -48,7 +48,7 @@ const STAGES = [
     icon: Dices,
     title: 'Auto-plan your week',
     subtitle: 'One spin fills your week with dinners and builds the grocery list.',
-    color: 'var(--primary)',
+    color: 'var(--primary-ink)',
     renderGraphic: (accent) => <PlanGraphic accent={accent} />,
   },
   {
@@ -207,7 +207,8 @@ export default function AppIntroHero() {
               {/* Micro-canvas — the stage's own small looping demo. Same
                   draggable container as the text below, so a swipe started
                   over the graphic still navigates the carousel. */}
-              <div style={{ height: '84px' }}>
+              {/* Decorative demo: the title and subtitle below carry the meaning. */}
+              <div style={{ height: '84px' }} aria-hidden="true">
                 {stage.renderGraphic(stage.color)}
               </div>
 

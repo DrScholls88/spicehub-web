@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Same orange as the web status-bar scrim (App.css body::before). Shows behind
+         the system bars only on Android WebView < 140, where the SystemBars plugin
+         pads the WebView instead of drawing under the bars. -->
+    <color name="spicehub_scrim">#E65100</color>
+</resources>

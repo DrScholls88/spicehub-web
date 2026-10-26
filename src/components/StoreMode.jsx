@@ -3,42 +3,13 @@ import { Reorder, motion, AnimatePresence, useDragControls } from 'framer-motion
 import { X, Check, GripVertical, Eye, EyeOff } from 'lucide-react';
 import { GROCERY_CATEGORIES, categorizeIngredient } from '../recipeSchema';
 import { hapticLight, hapticSuccess } from '../haptics';
+import { DEPT_EMOJI, loadDeptOrder, saveDeptOrder } from '../lib/groceryStores';
 import './StoreMode.css';
 
 // A-3 Store Mode — a focused, in-store shopping state. Big one-thumb targets,
 // department grouping in YOUR aisle order (drag to reorder, persisted), checked
 // items sink with a strikethrough, a progress ring, and a screen wake lock so
 // the phone stays awake while you push the cart. 100% offline.
-
-const PANTRY_ID = '__pantry__';
-const DEPT_ORDER_KEY = 'spicehub_dept_order';
-
-const DEPT_EMOJI = {
-  'Produce': '🥦',
-  'Meat & Seafood': '🥩',
-  'Dairy': '🥛',
-  'Pantry': '🫙',
-  'Frozen': '🧊',
-  'Bakery': '🍞',
-  'Other': '🛒',
-  // Bar departments (drink imports only — see recipeSchema.js categorizeBarIngredient)
-  'Spirits': '🥃',
-  'Beer & Wine': '🍷',
-  'Bitters & Syrups': '🧪',
-  'Mixers & Juices': '🥤',
-  'Garnish': '🍒',
-};
-
-function loadDeptOrder() {
-  try {
-    const raw = localStorage.getItem(DEPT_ORDER_KEY);
-    const arr = raw ? JSON.parse(raw) : null;
-    return Array.isArray(arr) ? arr.filter(d => typeof d === 'string') : [];
-  } catch { return []; }
-}
-function saveDeptOrder(order) {
-  try { localStorage.setItem(DEPT_ORDER_KEY, JSON.stringify(order)); } catch { /* ignore */ }
-}
 
 const norm = (s) => (s || '').toString().trim().toLowerCase();
 
@@ -131,7 +102,10 @@ function DeptSection({ dept, group, hideChecked, onToggle }) {
   );
 }
 
-export default function StoreMode({ items, setItems, onExit, onToast, onSyncGrocery }) {
+// include(item): optional filter (GroceryList passes "belongs to this store,
+// not skipped"). `items` stays the FULL list so line.indices keep pointing at
+// the right rows when a line is toggled.
+export default function StoreMode({ items, setItems, onExit, onToast, onSyncGrocery, include, title }) {
   const [hideChecked, setHideChecked] = useState(false);
   const [deptOrder, setDeptOrder] = useState(() => loadDeptOrder());
   const wakeRef = useRef(null);
@@ -166,7 +140,9 @@ export default function StoreMode({ items, setItems, onExit, onToast, onSyncGroc
     let done = 0;
 
     items.forEach((item, idx) => {
-      if (!item || item.store === PANTRY_ID) return; // pantry items aren't shopped
+      // Pantry-covered items aren't shopped. (This used to test the retired
+      // store === '__pantry__' sentinel, so covered staples leaked in.)
+      if (!item || item.covered || (include && !include(item))) return;
       // Spec A: prefer the structured Item's department + clean food name so
       // department routing and dedup key off real fields, not the display string.
       const struct = item._struct;
@@ -198,7 +174,7 @@ export default function StoreMode({ items, setItems, onExit, onToast, onSyncGroc
       result.push({ dept, lines: arr, total: deptTotal, done: deptDone });
     });
     return { groups: result, totalCount: total, doneCount: done };
-  }, [items]);
+  }, [items, include]);
 
   // ── Order departments: persisted order first, then canonical for the rest ──
   const orderedGroups = useMemo(() => {
@@ -273,7 +249,10 @@ export default function StoreMode({ items, setItems, onExit, onToast, onSyncGroc
         </button>
       </div>
 
-      <p className="sm-reorder-hint">Drag a department header to match your store's aisle order.</p>
+      <p className="sm-reorder-hint">
+        {title && <strong className="sm-title">{title} · </strong>}
+        Drag a department header to match your store's aisle order.
+      </p>
 
       {/* Departments — drag to reorder, persisted per device */}
       <Reorder.Group

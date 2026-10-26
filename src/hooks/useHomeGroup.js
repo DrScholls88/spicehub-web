@@ -10,8 +10,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { isHomeGroupEnabled, isFriendsEnabled, initSupabase, getSupabase, getSession,
          signInWithGoogle, signInWithMagicLink, signOut as supabaseSignOut,
-         getCurrentUserId } from '../lib/supabaseClient';
-import { getProfile, linkLocalProfile, clearHomeGroup as clearProfileGroup } from '../lib/profile';
+         getCurrentUserId, deleteMyAccount } from '../lib/supabaseClient';
+import { getProfile, linkLocalProfile, clearHomeGroup as clearProfileGroup, updateProfile } from '../lib/profile';
+import db from '../db';
 import { createGroup, joinGroup, leaveGroup, getGroupInfo,
          regenerateInviteCode as regenCode, shareFullRecipe,
          claimRecipeTransfer } from '../lib/homeGroup';
@@ -272,6 +273,22 @@ export default function useHomeGroup({ showToast, onWeekPlanUpdate, onGroceryUpd
     setSyncStatus('idle');
   }, []);
 
+  // Settings > Delete Account. Deletes the cloud account, then unlinks this
+  // device so a later sign-in with a new account isn't refused by
+  // linkLocalProfile. The on-device library is untouched.
+  const doDeleteAccount = useCallback(async () => {
+    const profile = await getProfile();
+    unsubscribeRealtime();
+    await deleteMyAccount();
+    await updateProfile({ supabaseUid: undefined, homeGroupId: undefined });
+    if (profile?.homeGroupId) await db.sharedMeta.delete(profile.homeGroupId);
+    await db.friends.clear();
+    setState('local');
+    setGroupInfo(null);
+    setSyncStatus('idle');
+    showToast?.('Account deleted. Recipes on this device are untouched.', 'info');
+  }, []);
+
   const doSignIn = useCallback(async (method, emailOrNull) => {
     if (method === 'google') {
       await signInWithGoogle();
@@ -293,6 +310,7 @@ export default function useHomeGroup({ showToast, onWeekPlanUpdate, onGroceryUpd
     leaveGroup: doLeaveGroup,
     signIn: doSignIn,
     signOut: doSignOut,
+    deleteAccount: doDeleteAccount,
     regenerateInviteCode: regenCode,
     refreshGroupInfo,
     shareFullRecipe,

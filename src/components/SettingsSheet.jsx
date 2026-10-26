@@ -23,6 +23,7 @@ import { isFriendsEnabled } from '../lib/supabaseClient';
 import { clearInstagramCache } from '../db.js';
 import { hapticLight } from '../haptics';
 import { isNewerBuild } from '../lib/pwaUpdateSignal.js';
+import { isNative } from '../lib/nativeShell';
 
 export default function SettingsSheet({
   onClose,
@@ -58,6 +59,21 @@ export default function SettingsSheet({
   // retyping from a <code> block on a phone.
   const shortcutUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/?share-target=1&url=[Shortcut Input]`;
   const [copiedShortcut, setCopiedShortcut] = useState(false);
+  // Five quick taps on the version line toggle the starter-pack tools
+  // (Meals → Select → Starter ZIP). Works inside the installed app, where
+  // there is no address bar for ?admin=1.
+  const [versionTaps, setVersionTaps] = useState({ n: 0, at: 0 });
+  const handleVersionTap = useCallback(() => {
+    const now = Date.now();
+    const n = now - versionTaps.at < 1500 ? versionTaps.n + 1 : 1;
+    if (n < 5) { setVersionTaps({ n, at: now }); return; }
+    setVersionTaps({ n: 0, at: 0 });
+    try {
+      const on = localStorage.getItem('sh_admin') === '1';
+      if (on) localStorage.removeItem('sh_admin'); else localStorage.setItem('sh_admin', '1');
+      showToast?.(on ? 'Starter pack tools off' : 'Starter pack tools on — Meals → Select → Starter ZIP', 'info', 3500);
+    } catch { /* storage blocked */ }
+  }, [versionTaps, showToast]);
   const handleCopyShortcutUrl = useCallback(async () => {
     hapticLight();
     try {
@@ -135,6 +151,15 @@ export default function SettingsSheet({
   // clear as a dev/QA affordance for drink imports — this is the same
   // db.instagramCache.clear() call, surfaced on the meal side so users
   // aren't stuck re-hitting a pre-fix cached failure with no visible cause.
+  const handleDeleteAccount = async () => {
+    if (!window.confirm("Delete your SpiceHub account? This permanently removes your profile, friends, shares and household membership from the cloud. Recipes saved on this device stay. This can't be undone.")) return;
+    try {
+      await homeGroup.deleteAccount();
+    } catch (err) {
+      showToast?.(err?.message || "Couldn't delete your account. Check your connection and try again.", 'error', 4000);
+    }
+  };
+
   const handleClearImportCache = async () => {
     hapticLight();
     try {
@@ -189,7 +214,8 @@ export default function SettingsSheet({
           <div className="stg-section">
             <p className="stg-eyebrow">App Health</p>
             <div className="stg-group">
-              {!isStandalone && (deferredPrompt || isAndroid() || isIOS()) && (
+              {/* Store builds are already installed and update through the store. */}
+              {!isStandalone && !isNative && (deferredPrompt || isAndroid() || isIOS()) && (
                 <button
                   type="button"
                   className="stg-row"
@@ -201,10 +227,12 @@ export default function SettingsSheet({
                   </span>
                 </button>
               )}
-              <button type="button" className="stg-row" onClick={handleCheckForUpdates}>
-                <span className="stg-row-icon">🔄</span>
-                <span className="stg-row-body">Check for Updates</span>
-              </button>
+              {!isNative && (
+                <button type="button" className="stg-row" onClick={handleCheckForUpdates}>
+                  <span className="stg-row-icon">🔄</span>
+                  <span className="stg-row-body">Check for Updates</span>
+                </button>
+              )}
               <button type="button" className="stg-row" onClick={handleClearImportCache}>
                 <span className="stg-row-icon">🧹</span>
                 <span className="stg-row-body">Clear Import Cache</span>
@@ -319,14 +347,22 @@ export default function SettingsSheet({
             local data, which reads as a no-op next to "Leave group" (the
             opposite — drops membership, keeps the session). See the
             matching comment in HomeGroupSection.jsx.
+            Delete Account shows whenever signed in (App Store 5.1.1(v),
+            Google Play account deletion policy).
           */}
-          {homeGroup.state === 'auth_no_group' && (
+          {(homeGroup.state === 'auth_no_group' || homeGroup.state === 'in_group') && (
             <div className="stg-section">
               <p className="stg-eyebrow stg-eyebrow-danger">Danger Zone</p>
               <div className="stg-group stg-danger">
-                <button type="button" className="stg-row" onClick={homeGroup.signOut}>
-                  <span className="stg-row-icon">🚪</span>
-                  <span className="stg-row-body">Sign Out</span>
+                {homeGroup.state === 'auth_no_group' && (
+                  <button type="button" className="stg-row" onClick={homeGroup.signOut}>
+                    <span className="stg-row-icon">🚪</span>
+                    <span className="stg-row-body">Sign Out</span>
+                  </button>
+                )}
+                <button type="button" className="stg-row" onClick={handleDeleteAccount}>
+                  <span className="stg-row-icon">🗑️</span>
+                  <span className="stg-row-body">Delete Account</span>
                 </button>
               </div>
             </div>
@@ -337,7 +373,7 @@ export default function SettingsSheet({
             <LegalFooter />
           </div>
 
-          <div className="st-version-footer">
+          <div className="st-version-footer" onClick={handleVersionTap}>
             SpiceHub Meal Spinner · v{__SPICEHUB_VERSION__}
           </div>
         </div>

@@ -21,7 +21,11 @@
 
 export const LEGAL_CONTACT_NAME = 'SpiceHub';
 export const LEGAL_CONTACT_EMAIL = 'bjgoeke@gmail.com';
-export const LEGAL_VERSION = '2026-07-31';
+export const LEGAL_VERSION = '2026-10-24';
+// 2026-10-24: Android/iOS apps, exact import processors (Gemini, Mistral,
+// Apify, public CORS proxies), server logs, app permissions, in-app account
+// deletion. Also published as /privacy.html, /terms.html and
+// /delete-account.html by the spicehub-legal-pages plugin in vite.config.js.
 
 export const PRIVACY_POLICY_SECTIONS = [
   {
@@ -31,7 +35,8 @@ export const PRIVACY_POLICY_SECTIONS = [
         LEGAL_CONTACT_EMAIL +
         ').',
       'SpiceHub is built offline-first: your personal recipe library, pantry, bar inventory, and most preferences live on your device. Optional cloud features (accounts, household sharing, and friend sharing) are additive and only activate when you choose to use them.',
-      'SpiceHub does not sell your information, does not show ads, and does not use advertising trackers or advertising identifiers.',
+      'SpiceHub is available as a website (spicehub-web.vercel.app) and as Android and iOS apps. This policy covers all three.',
+      'SpiceHub does not sell your information, does not show ads, and does not use advertising trackers, advertising identifiers, analytics, or crash-reporting services.',
     ],
   },
   {
@@ -44,7 +49,7 @@ export const PRIVACY_POLICY_SECTIONS = [
   {
     title: 'What stays on your device (local data)',
     paragraphs: [
-      'The following are stored locally in your browser (IndexedDB / localStorage) and are the primary copy of your personal data:',
+      'The following are stored locally on your device (browser storage such as IndexedDB and localStorage, or the app’s private storage on Android and iOS) and are the primary copy of your personal data:',
       '• Recipes and drinks you save or import',
       '• Photos and images stored on-device',
       '• Personal meal history, cooking log, and library organization (tags, etc.)',
@@ -68,7 +73,7 @@ export const PRIVACY_POLICY_SECTIONS = [
       'If you use account features, SpiceHub may store a cloud profile record that can include:',
       '• A user id from the auth provider',
       '• An optional username (if you set one) for finding friends',
-      '• A display name and avatar choice',
+      '• A display name, and either a built-in avatar or a profile photo you upload. Uploaded photos are kept in a publicly readable storage bucket so friends and household members can see them',
       '• A setting for whether your username is searchable',
       'Username search is designed for people who opt in by setting a username and leaving search enabled. You can turn off searchability where the product provides that control.',
     ],
@@ -90,6 +95,7 @@ export const PRIVACY_POLICY_SECTIONS = [
       'If Friends features are enabled in your build of SpiceHub, you may set a username, send and accept friend requests, and share recipes with accepted friends.',
       'Friend relationships (requests, accepts, blocks) are stored in the cloud so both people see a consistent friends list.',
       'When you share a meal or drink with a friend, SpiceHub sends a copy of the recipe content you chose to share (name, ingredients, directions when included, public image URLs, and similar recipe fields) plus an optional short note. Local-only images and internal device ids are not included. The recipient can save that copy into their own on-device library or dismiss it.',
+      'Friends features can also show your accepted friends an optional “What’s cooking” status you set, reactions you leave on recipes they shared with you, and a feed of that sharing activity.',
       'Sharing is explicit: nothing is shared with another person until you use Share. Blocks are intended to stop further search, requests, and shares between the blocked pair.',
     ],
   },
@@ -103,11 +109,13 @@ export const PRIVACY_POLICY_SECTIONS = [
   {
     title: 'When data leaves your device for import and AI features',
     paragraphs: [
-      'Separate from accounts and sharing, some features send content to third-party processors only when you actively use them:',
-      '• Recipe import from a URL or Instagram/social link may send that URL and extracted media/transcript text to SpiceHub’s backend and to AI services (such as Google Gemini) to structure a recipe',
-      '• Audio transcription (if used) may send audio to a speech-to-text process',
-      '• Some remote images may be fetched through a proxy to work around browser restrictions',
-      'These processing calls are for the content you are importing or analyzing, not a bulk upload of your library. Third parties process data under their own terms and privacy policies.',
+      'Separate from accounts and sharing, importing sends the item you are importing (never your library) off the device, and only when you start an import:',
+      '• Links: the web address goes to SpiceHub’s servers (hosted on Vercel and Render), which fetch the page. For Instagram and other social posts the address may also go to Apify, which retrieves the public post’s caption, comments and media',
+      '• Recipe text: page text, captions, comments and transcripts are sent to Google Gemini to turn them into a structured recipe',
+      '• Photos and PDFs you take, upload or share for import are sent to Google Gemini, or to Mistral AI if Gemini is unavailable, to read the recipe. If neither is reachable, text recognition runs on your device',
+      '• Video audio: for video posts, SpiceHub’s server downloads the audio track of the public video and hands it to your device, where speech-to-text runs locally (the speech model is downloaded once from Hugging Face). Temporary audio files are deleted from the server after transfer. If a server-side speech-to-text service is configured, the audio is sent to it instead',
+      '• When a site blocks direct fetching, the web address (or a remote image address) may be passed through public proxy services (allorigins.win, codetabs.com, corsproxy.io). These see the address being fetched, not anything about you',
+      'Google’s, Mistral’s and Apify’s own terms govern how long they keep what they receive. On some service tiers Google may use submitted content to improve its products, so avoid importing anything private.',
     ],
   },
   {
@@ -115,9 +123,12 @@ export const PRIVACY_POLICY_SECTIONS = [
     paragraphs: [
       'Depending on which features you use, processors may include:',
       '• Supabase — authentication, database, and realtime for optional cloud features',
-      '• Google (Sign-In and/or Gemini API) — sign-in and/or AI structuring of import content',
-      '• Hosting providers for the website and API (for example Vercel and/or Render)',
-      '• Scraping or media helper services used only during import flows when configured',
+      '• Google (Sign-In and Gemini API) — sign-in, and AI structuring of import content and photos',
+      '• Mistral AI — backup reading of imported photos and PDFs',
+      '• Apify — retrieving public Instagram and social posts you import',
+      '• Vercel and Render — hosting for the website and import servers',
+      '• Hugging Face — download of the on-device speech model (no personal data is sent)',
+      '• allorigins.win, codetabs.com, corsproxy.io — public proxies that may fetch an import address when a site blocks direct access',
       'SpiceHub does not control third-party policies. Review their documentation if you rely on those features.',
     ],
   },
@@ -129,12 +140,28 @@ export const PRIVACY_POLICY_SECTIONS = [
     ],
   },
   {
+    title: 'Server logs',
+    paragraphs: [
+      'SpiceHub’s hosting providers (Vercel, Render) and Supabase keep standard request logs, including IP address, time and the address requested, for a short period for security and debugging. The import servers also use IP addresses briefly in memory to rate-limit requests. SpiceHub does not use these logs to identify or profile you.',
+    ],
+  },
+  {
+    title: 'Mobile app permissions',
+    paragraphs: [
+      'The Android and iOS apps ask for these only when you use the related feature:',
+      '• Camera — when you tap Take Photo to import a recipe card or cookbook page. The photo stays on your device unless you import it',
+      '• Photos — only to save an export when you choose Save Image in the share sheet. Picking an image to import uses the system picker, which hands SpiceHub just the photos you choose',
+      '• Share sheet — so you can share a link to SpiceHub from other apps, and share recipes, lists and backups out of it',
+      'The apps do not access your contacts, location, microphone or advertising identifier, and do not track you across other companies’ apps or websites.',
+    ],
+  },
+  {
     title: 'Data retention',
     paragraphs: [
       'Local data remains on your device until you delete it, clear site storage, or uninstall the app.',
       'Cloud Home Group data remains while the group exists and you remain a member; leaving a group stops your access to that group’s shared plan and grocery list going forward.',
       'Friend relationships remain until unfriended or blocked. Shared recipe inbox items may be removed after a limited retention period (for example about 30 days) whether or not they were saved.',
-      'Auth records remain until you delete your account or request deletion (see Your choices). Backups operated by infrastructure providers may persist for a limited technical period after deletion.',
+      'Account data remains until you delete your account (see Your choices). Deleting it immediately removes your sign-in record, profile and profile photo, friends and friend requests, recipe shares, and household memberships. Grocery items and plan entries you added to a household stay for its other members without your name; a household you were the last member of is deleted. Backups operated by infrastructure providers may persist for a limited technical period after deletion.',
     ],
   },
   {
@@ -148,9 +175,9 @@ export const PRIVACY_POLICY_SECTIONS = [
       '• Turn off username searchability where the product provides that control',
       '• Sign out (local library remains on the device)',
       '• Clear browser site data or uninstall the PWA to remove local data',
-      '• Contact ' +
+      '• Delete your account in Settings > Danger Zone > Delete Account (shown while signed in), or email ' +
         LEGAL_CONTACT_EMAIL +
-        ' to request deletion of cloud account/profile data associated with your sign-in. Describe the email or username you used so the request can be matched. Local device data must be cleared on the device itself.',
+        ' if you can\u2019t use the app. Requests are handled within 30 days. Local device data must be cleared on the device itself.',
     ],
   },
   {
@@ -181,6 +208,41 @@ export const PRIVACY_POLICY_SECTIONS = [
     title: 'Contact',
     paragraphs: [
       'Questions about this policy, your data, or deletion requests: ' + LEGAL_CONTACT_EMAIL + '.',
+    ],
+  },
+];
+
+/** Public account-deletion page (/delete-account.html), required by Google Play. */
+export const ACCOUNT_DELETION_SECTIONS = [
+  {
+    title: 'Delete your account in the app',
+    paragraphs: [
+      'Accounts are optional in SpiceHub; you only have one if you signed in for Home Groups or Friends.',
+      'Open SpiceHub, go to Settings, and tap Delete Account under Danger Zone (it appears while you are signed in). Deletion happens immediately.',
+    ],
+  },
+  {
+    title: 'If you can\u2019t use the app',
+    paragraphs: [
+      'Email ' + LEGAL_CONTACT_EMAIL + ' from the address you signed in with, with the subject \u201cDelete my SpiceHub account\u201d. Requests are handled within 30 days.',
+    ],
+  },
+  {
+    title: 'What is deleted',
+    paragraphs: [
+      '• Your sign-in record (email address and user id)',
+      '• Your profile: username, display name and profile photo',
+      '• Friends, friend requests and blocks',
+      '• Recipes you shared or were sent, and reactions on them',
+      '• Your household (Home Group) memberships, and any household you were the last member of, with its shared plan and grocery list',
+    ],
+  },
+  {
+    title: 'What is kept',
+    paragraphs: [
+      '• Grocery items and plan entries you added to a household with other members stay for them, without your name',
+      '• Recipes and data on your device are not touched, because they were never uploaded. Remove them by uninstalling the app or clearing the site\u2019s data',
+      '• Infrastructure backups may hold deleted data for a limited technical period',
     ],
   },
 ];

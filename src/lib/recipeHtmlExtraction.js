@@ -343,7 +343,8 @@ function parseRecipeNode(node) {
 // ─── Microdata extraction (itemprop/itemtype) ────────────────────────────────
 
 export function extractMicrodataFromHtml(html) {
-  if (!html.includes('schema.org/Recipe')) return null;
+  // No itemtype microdata — try RDFa (typeof/property) before giving up.
+  if (!html.includes('schema.org/Recipe')) return extractRdfaFromHtml(html);
 
   const nameRe = /<[^>]*itemprop\s*=\s*["']name["'][^>]*>([^<]+)/i;
   const nameM = nameRe.exec(html);
@@ -388,6 +389,72 @@ export function extractMicrodataFromHtml(html) {
     totalTime: getItemprop('totalTime'),
     servings: getItemprop('recipeYield'),
     description: getItemprop('description'),
+  };
+}
+
+// ─── RDFa extraction (typeof/property — Drupal-style schema.org markup) ─────
+// Microdata's sibling: same vocabulary, different attributes
+// (typeof="schema:Recipe", property="schema:recipeIngredient"). Drupal cocktail
+// sites (Kindred Cocktails) ship this and no JSON-LD. Field values nest spans,
+// links and <abbr>, so each value is read up to its element's MATCHING close
+// tag (a lazy "first </span>" match would keep only "3 oz" of "3 oz Bourbon").
+// Scoped to the Recipe element so author/comment/related-block properties
+// can't leak in. ponytail: no description — Kindred's schema:description is an
+// ingredient-name list, which reads as junk; add per-site if one needs it.
+const RDFA_RECIPE_RX = /<([a-z][a-z0-9]*)\b[^>]*\btypeof\s*=\s*["'][^"']*\b(?:schema:)?Recipe\b[^"']*["'][^>]*>/i;
+
+// Inner HTML of the element opened by regex match `open`, or null if unclosed.
+function innerOf(html, open) {
+  if (/\/>$/.test(open[0])) return '';
+  const start = open.index + open[0].length;
+  const tagRe = new RegExp(`<(/?)${open[1]}\\b[^>]*>`, 'gi');
+  tagRe.lastIndex = start;
+  let depth = 1;
+  let t;
+  while ((t = tagRe.exec(html)) !== null) {
+    depth += t[1] ? -1 : 1;
+    if (depth === 0) return html.slice(start, t.index);
+  }
+  return null;
+}
+
+function rdfaValues(scope, prop) {
+  const out = [];
+  const openRe = new RegExp(`<([a-z][a-z0-9]*)\\b[^>]*\\bproperty\\s*=\\s*["'](?:schema:)?${prop}["'][^>]*>`, 'gi');
+  let m;
+  while ((m = openRe.exec(scope)) !== null) {
+    const inner = innerOf(scope, m);
+    const attr = /\bcontent\s*=\s*["']([^"']*)["']/i.exec(m[0]);
+    const text = decodeHtml(stripTags(inner || ''))
+      .replace(/\s+([,.;:!?)])/g, '$1')
+      .replace(/\(\s+/g, '(')
+      .trim() || (attr ? decodeHtml(attr[1]).trim() : '');
+    if (text) out.push(text);
+  }
+  return out;
+}
+
+export function extractRdfaFromHtml(html) {
+  const root = RDFA_RECIPE_RX.exec(html || '');
+  if (!root) return null;
+  const scope = innerOf(html, root) ?? html.slice(root.index);
+
+  const name = rdfaValues(scope, 'name')[0] || '';
+  const ingredients = rdfaValues(scope, 'recipeIngredient').filter((t) => t.length > 2);
+  const directions = rdfaValues(scope, 'recipeInstructions').filter((t) => t.length > 5);
+  if (!name || (ingredients.length === 0 && directions.length === 0)) return null;
+
+  const one = (prop) => rdfaValues(scope, prop)[0] || '';
+  return {
+    name,
+    ingredients,
+    directions,
+    imageUrl: extractMeta(html, 'og:image') || '',
+    prepTime: one('prepTime'),
+    cookTime: one('cookTime'),
+    totalTime: one('totalTime'),
+    servings: one('recipeYield'),
+    description: '',
   };
 }
 

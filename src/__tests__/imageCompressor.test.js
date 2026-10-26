@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { compressImageUrl } from '../imageCompressor.js';
+import { compressImageUrl, compressRecipeImage } from '../imageCompressor.js';
+
+const downloadImageAsDataUrl = vi.fn();
+vi.mock('../api.js', () => ({ downloadImageAsDataUrl: (...a) => downloadImageAsDataUrl(...a) }));
 
 // imageCompressor.js drives the browser `Image` + `<canvas>` APIs. The
 // project's vitest env is plain 'node' (vitest.config.js — kept lean for the
@@ -90,5 +93,26 @@ describe('compressImageUrl', () => {
   it('returns null when the http(s) fetch fails', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false })));
     expect(await compressImageUrl('https://example.com/missing.jpg')).toBeNull();
+  });
+});
+
+describe('compressRecipeImage: remote photos get a local copy', () => {
+  const remote = 'https://blog.example/hero.jpg';
+
+  it('stores the downloaded copy and keeps the original link', async () => {
+    downloadImageAsDataUrl.mockResolvedValueOnce('data:image/jpeg;base64,AAAA');
+    const out = await compressRecipeImage({ name: 'Soup', imageUrl: remote });
+    expect(out.imageUrl).toBe('data:image/jpeg;base64,AAAA');
+    expect(out.sourceImageUrl).toBe(remote);
+  });
+
+  it('keeps the remote link when the download fails or the device is offline', async () => {
+    downloadImageAsDataUrl.mockResolvedValueOnce(null);
+    expect((await compressRecipeImage({ imageUrl: remote })).imageUrl).toBe(remote);
+
+    vi.stubGlobal('navigator', { onLine: false });
+    downloadImageAsDataUrl.mockClear();
+    expect((await compressRecipeImage({ imageUrl: remote })).imageUrl).toBe(remote);
+    expect(downloadImageAsDataUrl).not.toHaveBeenCalled();
   });
 });

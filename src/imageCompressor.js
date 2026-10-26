@@ -105,6 +105,24 @@ export function estimateBase64Size(dataUrl) {
 // Skip recompressing images that are already small — avoids pointless canvas
 // work on every import for images that are already a couple KB.
 const COMPRESS_THRESHOLD_BYTES = 150 * 1024; // ~150KB
+const LOCALIZE_BUDGET_MS = 8000; // the save button waits on this, so keep it short
+
+async function localizeRecipeImage(recipe) {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return recipe;
+  try {
+    const { downloadImageAsDataUrl } = await import('./api.js');
+    let timer;
+    const dataUrl = await Promise.race([
+      downloadImageAsDataUrl(recipe.imageUrl, { timeoutMs: LOCALIZE_BUDGET_MS }),
+      new Promise((resolve) => { timer = setTimeout(() => resolve(null), LOCALIZE_BUDGET_MS); }),
+    ]);
+    clearTimeout(timer);
+    if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return recipe;
+    return { ...recipe, imageUrl: dataUrl, sourceImageUrl: recipe.sourceImageUrl || recipe.imageUrl };
+  } catch {
+    return recipe;
+  }
+}
 
 /**
  * compressRecipeImage — compress a recipe's imageUrl in place if it's a large
@@ -118,11 +136,14 @@ const COMPRESS_THRESHOLD_BYTES = 150 * 1024; // ~150KB
  * stored per recipe. This resizes to 400x400 WebP@0.7 before the recipe is
  * ever written to Dexie.
  *
- * Only handles `data:` URLs (what the import pipeline hands back by the time
- * a recipe reaches the save path — see server/persistImage.js and
- * api/proxy.js's `image-data-url` mode) so this never triggers a fresh
- * network fetch of a remote/hotlinked image (which would often fail on CORS
- * anyway). Never throws — falls back to the original recipe on any failure.
+ * 2026-10-24: a remote http(s) photo (blog and website imports) is first saved
+ * as a local copy through downloadImageAsDataUrl's direct -> /api/proxy ->
+ * public-proxy cascade, capped at LOCALIZE_BUDGET_MS. The store apps have no
+ * service worker, so a remote photo would not show offline there, and online
+ * it rots when the CDN expires or starts blocking hotlinks. The original URL
+ * is kept as `sourceImageUrl` so household snapshots (slotMapper) can still
+ * send a public link. Offline, or if every leg fails, the remote URL is kept.
+ * Never throws — falls back to the original recipe on any failure.
  *
  * @param {object} recipe
  * @returns {Promise<object>} a new recipe object (not mutated) with imageUrl
@@ -130,6 +151,9 @@ const COMPRESS_THRESHOLD_BYTES = 150 * 1024; // ~150KB
  *   isn't applicable or didn't help.
  */
 export async function compressRecipeImage(recipe) {
+  if (recipe && typeof recipe.imageUrl === 'string' && /^https?:\/\//i.test(recipe.imageUrl)) {
+    recipe = await localizeRecipeImage(recipe);
+  }
   if (!recipe || typeof recipe.imageUrl !== 'string' || !recipe.imageUrl.startsWith('data:')) {
     return recipe;
   }
