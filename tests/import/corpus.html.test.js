@@ -65,6 +65,8 @@ describe('golden corpus — HTML fixtures → parseHtml', () => {
     expect(recipe.name).toBe('Smoked Maple Sour');
     expect(recipe.ingredients[0]).toBe('2 oz Bourbon (or rye)');
     expect(recipe.ingredients[1]).toBe('3/4 oz Lemon juice, fresh');
+    // Drupal writes fractions as 1&frasl;2 — must decode to 1/2, not leak the entity.
+    expect(recipe.ingredients[2]).toBe('1/2 oz Maple syrup (grade A dark)');
     const all = [...recipe.ingredients, ...recipe.directions].join(' ');
     expect(all).not.toMatch(/decoy|Maren|Swapped the maple/i);
   });

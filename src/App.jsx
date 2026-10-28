@@ -41,6 +41,8 @@ import useFriendsRealtime from './hooks/useFriendsRealtime';
 import { isHomeGroupEnabled, isFriendsEnabled } from './lib/supabaseClient';
 import { setCurrentStatus } from './lib/cloudProfile';
 import { getPendingShareCount } from './lib/recipeShare';
+import { toSlotData } from './lib/slotMapper';
+import { toCloudGrocery } from './lib/groceryMapper';
 import { getPendingInboundCount, getLocalFriends } from './lib/friends';
 import AppSkeleton, { ScreenSkeleton } from './components/AppSkeleton';
 import './App.css';
@@ -378,7 +380,6 @@ export default function App() {
   // affectedItems: array of grocery item objects
   const syncGroceryAction = useCallback(async (action, affectedItems) => {
     if (homeGroup?.state !== 'in_group' || !profile?.homeGroupId) return;
-    const { toCloudGrocery } = await import('./lib/groceryMapper');
     for (const item of affectedItems) {
       if (action === 'add') {
         const cloud = toCloudGrocery(item, profile.homeGroupId, profile.supabaseUid);
@@ -1255,7 +1256,6 @@ useEffect(() => {
 
     // Sync current-week slots to home group
     if (homeGroup?.state === 'in_group' && profile?.homeGroupId && currentPlanApplied) {
-      const { toSlotData } = await import('./lib/slotMapper');
       for (let i = 0; i < currentPlanApplied.length; i++) {
         const meal = currentPlanApplied[i];
         if (!meal) continue;
@@ -1287,7 +1287,6 @@ useEffect(() => {
     const pick = rotationRespinDay(dayIndex);
     if (!pick) return; // hook already toasted why (empty rotation, special day, etc.)
     if (homeGroup?.state === 'in_group' && profile?.homeGroupId) {
-      const { toSlotData } = await import('./lib/slotMapper');
       homeGroup.enqueueSync({
         table: 'shared_week_plan',
         action: 'upsert',
@@ -1338,7 +1337,6 @@ useEffect(() => {
     rotationSetDayMeal(dayIndex, meal);
     // Sync slot to home group
     if (homeGroup?.state === 'in_group' && profile?.homeGroupId) {
-      const { toSlotData } = await import('./lib/slotMapper');
       const slotData = toSlotData(meal, profile.displayName);
       homeGroup.enqueueSync({
         table: 'shared_week_plan',

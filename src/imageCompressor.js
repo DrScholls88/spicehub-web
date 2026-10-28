@@ -1,3 +1,5 @@
+import { downloadImageAsDataUrl } from './api.js';
+
 /**
  * Image compression utilities for SpiceHub PWA.
  * Reduces image size before storing in IndexedDB to save storage quota.
@@ -110,7 +112,6 @@ const LOCALIZE_BUDGET_MS = 8000; // the save button waits on this, so keep it sh
 async function localizeRecipeImage(recipe) {
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return recipe;
   try {
-    const { downloadImageAsDataUrl } = await import('./api.js');
     let timer;
     const dataUrl = await Promise.race([
       downloadImageAsDataUrl(recipe.imageUrl, { timeoutMs: LOCALIZE_BUDGET_MS }),

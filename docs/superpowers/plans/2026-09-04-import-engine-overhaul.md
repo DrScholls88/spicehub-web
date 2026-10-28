@@ -1,5 +1,7 @@
 # Import Engine Overhaul — Implementation Plan
 
+> **Status 2026-10-28:** Tasks 0–5, 7, 8, 10–12 shipped; 6, 9, 13 partial (see each task). Remaining work is tracked in `2026-10-27-import-flagship-next.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
 > **Project constitution (AGENTS.md):** never execute git commands. Every task ends with a Conventional Commit *message* for Brian to run. `git add`/`git commit` lines in this plan are text to hand over, not commands for the worker to execute.
@@ -134,7 +136,7 @@ No slice below may begin until this task is complete and verified. Backup is by 
 **Files:**
 - Create: `_import_backup_2026-09-04/` at repo root
 
-- [ ] **Step 1: Create the dated backup folder and copy the import surface**
+- [x] **Step 1: Create the dated backup folder and copy the import surface**
 
 Run from the repo root:
 
@@ -169,7 +171,7 @@ cp server/importRoutes.js               "$BK"/server/
 cp -r tests/import/.                    "$BK"/tests/
 ```
 
-- [ ] **Step 2: Record a manifest with hashes**
+- [x] **Step 2: Record a manifest with hashes**
 
 ```bash
 BK=_import_backup_2026-09-04
@@ -180,7 +182,7 @@ wc -l "$BK"/MANIFEST.txt
 
 Expected: **45 or more** lines. A smaller count means a `cp` silently failed — stop and fix before continuing.
 
-- [ ] **Step 3: Verify the two largest files copied whole**
+- [x] **Step 3: Verify the two largest files copied whole**
 
 ```bash
 BK=_import_backup_2026-09-04
@@ -190,7 +192,7 @@ diff -q src/components/ImportSheet.jsx "$BK"/src/components/ImportSheet.jsx && e
 
 Expected: `PARSER_OK` and `SHEET_OK`, no diff output.
 
-- [ ] **Step 4: Exclude the backup from lint, build, and git**
+- [x] **Step 4: Exclude the backup from lint, build, and git**
 
 Append to `.gitignore`:
 
@@ -204,7 +206,7 @@ Add to the `ignores` array in `eslint.config.js` (the flat-config ignore block t
 '_import_backup_2026-09-04/**',
 ```
 
-- [ ] **Step 5: Confirm the backup is invisible to tooling**
+- [x] **Step 5: Confirm the backup is invisible to tooling**
 
 ```bash
 node_modules/.bin/eslint _import_backup_2026-09-04 2>&1 | tail -3
@@ -213,7 +215,7 @@ git status --porcelain | grep _import_backup || echo "IGNORED_OK"
 
 Expected: eslint reports it is ignored; `IGNORED_OK` prints.
 
-- [ ] **Step 6: Capture the green baseline**
+- [x] **Step 6: Capture the green baseline**
 
 Prepare the Linux natives once (skip if `/tmp/nm_extra` and `/tmp/esb2` already exist at matching versions):
 
@@ -246,11 +248,11 @@ node node_modules/vitest/vitest.mjs run tests/import 2>&1 | tail -20
 
 Expected: the `tests/import` corpus green. If the full suite is run instead, **11 failures are pre-existing** (10 in `src/__tests__/profile.test.js` from cross-file Dexie pollution, 1 in `src/__tests__/v28.adhoc.test.js`) — do not attribute them to this work. Record the exact pass/fail counts in the commit body; every later slice compares against them.
 
-- [ ] **Step 7: Note the build-number side effect**
+- [x] **Step 7: Note the build-number side effect**
 
 `vite build` bumps `buildNumber.json`. Do not commit that churn and do not run `git checkout` yourself — list it in the handover note so Brian can revert it.
 
-- [ ] **Step 8: Commit message to hand to Brian**
+- [x] **Step 8: Commit message to hand to Brian**
 
 ```
 chore(import): snapshot import surface before engine overhaul
@@ -278,7 +280,7 @@ Baseline recorded: vite build exit 0; tests/import green.
 - Modify: `src/db.js:1373`
 - Modify: `eslint.config.js`
 
-- [ ] **Step 1: Add the re-exports the barrel is missing**
+- [x] **Step 1: Add the re-exports the barrel is missing**
 
 `src/import/index.js` currently omits four symbols live callers need. Add to the existing `export { … } from '../recipeParser.js'` block:
 
@@ -305,7 +307,7 @@ Add `photoImportEngine`'s entry point too, so callers stop reaching past the bar
 export { importRecipeFromPages, PhotoImportError } from '../lib/photoImportEngine.js';
 ```
 
-- [ ] **Step 2: Repoint all seven callers, imports only**
+- [x] **Step 2: Repoint all seven callers, imports only**
 
 No call-site argument changes in this task — imports only, so a failure here can only be a resolution error. Example, `ImportSheet.jsx:8-13`:
 
@@ -327,7 +329,7 @@ Apply the same shape to `ReExtractSheet.jsx:4`, `AddEditMeal.jsx:4-5`, `batchImp
 
 **Do not touch `BrowserAssist.jsx`.** It is unmounted (§0.6, row 12). Repointing its imports would put a dead file back in the dependency graph.
 
-- [ ] **Step 3: Verify no direct imports remain**
+- [x] **Step 3: Verify no direct imports remain**
 
 ```bash
 grep -rn "from '.*recipeParser'" src --include=*.js --include=*.jsx \
@@ -338,7 +340,7 @@ grep -rn "from '.*recipeParser'" src --include=*.js --include=*.jsx \
 
 Expected: **no output** (or only `src/lib/photoImportEngine.js`, if Step 2's cycle escape hatch was taken).
 
-- [ ] **Step 4: Add the eslint rule that keeps it that way**
+- [x] **Step 4: Add the eslint rule that keeps it that way**
 
 In `eslint.config.js`, add to the rules block that applies to `src/**`:
 
@@ -365,7 +367,7 @@ Then add an override that exempts the barrel itself, the unmounted BrowserAssist
 },
 ```
 
-- [ ] **Step 5: Verify lint and build**
+- [x] **Step 5: Verify lint and build**
 
 ```bash
 node_modules/.bin/eslint src --ext .js,.jsx -f json > /tmp/lint-slice1.json; echo "exit=$?"
@@ -382,11 +384,11 @@ npx vite build --outDir /tmp/dist-slice1
 
 Expected: exit 0. **Watch stderr for circular-dependency warnings naming `photoImportEngine.js` / `index.js`** — that is Step 2's known risk surfacing.
 
-- [ ] **Step 6: Manual smoke — the acceptance that matters**
+- [x] **Step 6: Manual smoke — the acceptance that matters**
 
 Import one known-good Instagram reel URL and one photo. Both must reach Review with the same title, ingredient count, and cover image as before the change. This slice is defined by *nothing happening*.
 
-- [ ] **Step 7: Commit message**
+- [x] **Step 7: Commit message**
 
 ```
 refactor(import): route every caller through the src/import barrel
@@ -413,7 +415,7 @@ Imports only; no call-site arguments changed. Zero behavior change.
 - Modify: `src/batchImportEngine.js:29`
 - Test: `tests/import/corpus.kindlock.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/import/corpus.kindlock.test.js`. Mock `structurePack` and assert the options object each path forwards. Follow the mocking style already used in `tests/import/corpus.structure-server.test.js`.
 
@@ -455,7 +457,7 @@ Add one `it(...)` per hole B–E in the same shape. For **D**, assert that the R
   });
 ```
 
-- [ ] **Step 2: Run the test and confirm it fails**
+- [x] **Step 2: Run the test and confirm it fails**
 
 ```bash
 NODE_PATH=/tmp/nm_extra/node_modules \
@@ -465,7 +467,7 @@ node node_modules/vitest/vitest.mjs run tests/import/corpus.kindlock.test.js
 
 Expected: 5 failing. Hole A fails with `kindLocked: undefined`; D fails on the missing options object.
 
-- [ ] **Step 3: Fix hole A — photo**
+- [x] **Step 3: Fix hole A — photo**
 
 `photoImportEngine.js:633`, widen the signature:
 
@@ -482,7 +484,7 @@ export async function importRecipeFromPages(
     recipe = await captionToRecipe(captionInput, { type, kindLocked, sourceUrl, sourceType: 'photo' });
 ```
 
-- [ ] **Step 4: Fix hole B — Improve**
+- [x] **Step 4: Fix hole B — Improve**
 
 `ReExtractSheet.jsx:177-186`, add `kindLocked: true` to both branches. Improve always operates on a card whose kind the user already chose, so the lock is unconditional here:
 
@@ -503,7 +505,7 @@ export async function importRecipeFromPages(
           });
 ```
 
-- [ ] **Step 5: Fix hole C — AddEditMeal**
+- [x] **Step 5: Fix hole C — AddEditMeal**
 
 `AddEditMeal.jsx:191`. The form already knows its mode via `isMealMode` (used at `:229`):
 
@@ -527,7 +529,7 @@ And at `:229`, forward the lock the OCR path is already close to having:
       );
 ```
 
-- [ ] **Step 6: Fix hole D — Reddit recursion**
+- [x] **Step 6: Fix hole D — Reddit recursion**
 
 `recipeParser.js:2993`. The enclosing `_importRecipeFromUrlInner` already has all four values in scope:
 
@@ -547,7 +549,7 @@ export async function parseFromUrl(url, onProgress, { type = 'meal', signal, kin
 
 Apply the same widening to `importRecipeFromUrl` (`:2919`) and `_importRecipeFromUrlOuter` (`:2923`). In the outer function, an inherited `requestBudget` must **extend** the deadline, never replace it — reuse the existing budget-extension logic rather than reassigning.
 
-- [ ] **Step 7: Fix hole E — batch queue**
+- [x] **Step 7: Fix hole E — batch queue**
 
 `batchImportEngine.js:29`. The queue row already carries the user's explicit choice:
 
@@ -562,7 +564,7 @@ Apply the same widening to `importRecipeFromUrl` (`:2919`) and `_importRecipeFro
 
 Leave the post-hoc relabel at `:36-38` in place — it is now consistent rather than corrective.
 
-- [ ] **Step 8: Run the tests and confirm they pass**
+- [x] **Step 8: Run the tests and confirm they pass**
 
 ```bash
 NODE_PATH=/tmp/nm_extra/node_modules \
@@ -572,11 +574,11 @@ node node_modules/vitest/vitest.mjs run tests/import
 
 Expected: `corpus.kindlock.test.js` 5 passing, rest of the corpus unchanged from the Task 0 baseline.
 
-- [ ] **Step 9: Manual smoke**
+- [x] **Step 9: Manual smoke**
 
 From the **Bar** tab: import a cocktail Reel; Improve that saved card; import a cocktail photo; import a cocktail blog URL through AddEditMeal. All four land as drinks and stay drinks after save.
 
-- [ ] **Step 10: Commit message**
+- [x] **Step 10: Commit message**
 
 ```
 fix(import): thread kindLocked through every structure and ASR path
@@ -604,13 +606,13 @@ Adds tests/import/corpus.kindlock.test.js pinning all five.
 - Modify: `src/components/ImportSheet.jsx:605-640`
 - Test: `tests/import/corpus.videoaudio.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Assert the helper runs exactly once across a parser attempt plus a sheet fallback, for each of an Instagram reel, a TikTok URL, and a YouTube Shorts URL. Spy on `transcribeFromUrl` and assert `toHaveBeenCalledTimes(1)` per URL.
 
-- [ ] **Step 2: Run it and confirm TikTok and Shorts fail with 2 calls**
+- [x] **Step 2: Run it and confirm TikTok and Shorts fail with 2 calls**
 
-- [ ] **Step 3: Extract the helper**
+- [x] **Step 3: Extract the helper**
 
 `src/import/acquire/videoAudio.js` — one exported function, no UI, no structuring:
 
@@ -633,23 +635,23 @@ export async function acquireVideoAudio(pack, { signal, model, onProgress, budge
 
 Move the body from `recipeParser.js:5365-5392` rather than rewriting it — the abort wiring and the 40s inner timeout are load-bearing.
 
-- [ ] **Step 4: Replace the host regex with the shared detector**
+- [x] **Step 4: Replace the host regex with the shared detector**
 
 `recipeParser.js:5356` — `/\/(reel|tv)\//i` becomes the same `detectVideoSource` call the sheet already uses at `ImportSheet.jsx:596`. Set `_asrAttempted` for **every** host the helper attempted, not just Instagram.
 
-- [ ] **Step 5: Point both call sites at the helper**
+- [x] **Step 5: Point both call sites at the helper**
 
 The parser's pre-exit (`recipeParser.js:5357`) and the sheet's fallback (`ImportSheet.jsx:607`) both call `acquireVideoAudio`. The helper's own no-op guard replaces `alreadyTriedAsr` as the source of truth; leave the `alreadyTriedAsr` read in place as a cheap short-circuit.
 
-- [ ] **Step 6: Run the tests**
+- [x] **Step 6: Run the tests**
 
 Expected: all three URLs transcribe exactly once.
 
-- [ ] **Step 7: Manual smoke**
+- [x] **Step 7: Manual smoke**
 
 A silent Instagram reel and a silent TikTok each spin through audio **once**. Time both — a regression here doubles a 40s wait and is the most user-visible failure mode in this plan.
 
-- [ ] **Step 8: Commit message**
+- [x] **Step 8: Commit message**
 
 ```
 refactor(import): single Whisper pass on every video host
@@ -672,7 +674,7 @@ host test to the shared detectVideoSource.
 - Modify: `src/recipeParser.js:5052-5077` and the ~400 lines downstream that read `captured*`
 - Test: `tests/import/corpus.packflow.test.js`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Assert that for an Instagram fixture, the object handed to `structurePack` is **the same pack object** `acquireInstagramPack` returned — extended, not rebuilt:
 
@@ -690,11 +692,11 @@ Assert that for an Instagram fixture, the object handed to `structurePack` is **
   });
 ```
 
-- [ ] **Step 2: Run it and confirm it fails**
+- [x] **Step 2: Run it and confirm it fails**
 
 Expected failure: provenance from the acquire pack is absent, because the downstream pack is rebuilt from locals.
 
-- [ ] **Step 3: Introduce the pack as the carrier**
+- [x] **Step 3: Introduce the pack as the carrier**
 
 At `recipeParser.js:5059`, keep `igPack` in scope for the whole function instead of draining it into thirteen locals. Replace each `captured*` read downstream with the corresponding pack field. Work **one variable at a time**, running the corpus after each, in this order (least to most entangled):
 
@@ -713,11 +715,11 @@ Leave `capturedRawPageText` alone in this task — it is written by the blog-fol
 
 **Do not batch these.** Each step is a commit-sized change with a corpus run behind it. The IG cascade has many early-return paths and a batched edit will strand one of them.
 
-- [ ] **Step 4: Do the same for the website path**
+- [x] **Step 4: Do the same for the website path**
 
 `recipeParser.js:3097-3106` spreads `serverPack.candidate` and returns, discarding provenance and images. Return a pack-derived object that keeps `_contextPack` populated the way the Gemini branch at `:3112-3125` already does.
 
-- [ ] **Step 5: Create the spine**
+- [x] **Step 5: Create the spine**
 
 `src/import/engine.js`. Keep it boring: detect, dispatch to one acquire fork, structure once, gate once, return.
 
@@ -747,7 +749,7 @@ export async function restructure(pack, { kind, kindLocked }) { /* … */ }
 
 **Hard cap: 400 lines.** If `engine.js` passes it, acquire logic has leaked in — move it back out to a fork rather than raising the cap.
 
-- [ ] **Step 6: Run the corpus after every sub-step of Step 3**
+- [x] **Step 6: Run the corpus after every sub-step of Step 3**
 
 ```bash
 NODE_PATH=/tmp/nm_extra/node_modules \
@@ -757,7 +759,7 @@ node node_modules/vitest/vitest.mjs run tests/import
 
 Expected: green after each. A red run isolates to the single variable just moved — that is the whole reason for the one-at-a-time rule.
 
-- [ ] **Step 7: Verify the line cap**
+- [x] **Step 7: Verify the line cap**
 
 ```bash
 wc -l src/import/engine.js
@@ -765,11 +767,11 @@ wc -l src/import/engine.js
 
 Expected: ≤ 400.
 
-- [ ] **Step 8: Manual smoke**
+- [x] **Step 8: Manual smoke**
 
 An Instagram reel whose recipe is in the comments must still import — that path reads `capturedComments` and is the most likely casualty of Step 3.7.
 
-- [ ] **Step 9: Commit message**
+- [x] **Step 9: Commit message**
 
 ```
 refactor(import): carry the ContextPack through to structure
@@ -792,21 +794,21 @@ import/engine.js spine (detect -> acquire -> pack -> structure -> gate).
 - Modify: `src/components/ImportSheet.jsx:556, 721, 797, 880`
 - Test: `tests/import/corpus.detectSource.test.js`
 
-- [ ] **Step 1: Write the failing test** — one case per return value, plus the three the brief's three-enum detect would miss: a Pinterest URL, a Reddit URL, and pasted text with a URL inside it (must return `blog`/`social`, not `text`).
+- [x] **Step 1: Write the failing test** — one case per return value, plus the three the brief's three-enum detect would miss: a Pinterest URL, a Reddit URL, and pasted text with a URL inside it (must return `blog`/`social`, not `text`).
 
-- [ ] **Step 2: Run it, confirm it fails** (module does not exist).
+- [x] **Step 2: Run it, confirm it fails** (module does not exist).
 
-- [ ] **Step 3: Implement `detectSource`** — pure, no network. **Do not touch `detectImportType`** (`recipeParser.js:5610`); it detects kind, is exported, and `batchImportEngine.js:12` imports it (§0.8).
+- [x] **Step 3: Implement `detectSource`** — pure, no network. **Do not touch `detectImportType`** (`recipeParser.js:5610`); it detects kind, is exported, and `batchImportEngine.js:12` imports it (§0.8).
 
-- [ ] **Step 4: Collapse the sheet's four executors into one submit handler**
+- [x] **Step 4: Collapse the sheet's four executors into one submit handler**
 
 `ImportSheet.jsx` builds one `ImportRequest` and calls `engine.importRequest`. The four executors (`:556`, `:721`, `:797`, `:880` — note the brief and the source analysis both say *three*; `executeTranscribeImport` is the fourth) become one.
 
-- [ ] **Step 5: Run the corpus and the build.**
+- [x] **Step 5: Run the corpus and the build.**
 
-- [ ] **Step 6: Manual smoke** — paste a caption that contains a blog URL. Before: text forever. After: the blog is followed.
+- [x] **Step 6: Manual smoke** — paste a caption that contains a blog URL. Before: text forever. After: the blog is followed.
 
-- [ ] **Step 7: Commit message**
+- [x] **Step 7: Commit message**
 
 ```
 refactor(import): one request object, one submit handler
@@ -820,11 +822,13 @@ executors into a single engine.importRequest call.
 
 ## Task 6: Remaining forks return packs
 
+> **Status 2026-10-28: partial.** Steps 1–4 shipped (forks return packs; `acquireOnly` exists). Step 5 deliberately not done: `photoImportEngine.js` still structures for AddEditMeal and the offline photo-upgrade queue, which need the offline heuristic fallback.
+
 **Files:** Create `src/import/acquire/blog.js`, `src/import/acquire/photo.js`, `src/import/acquire/reddit.js`. Modify `photoImportEngine.js` to stop structuring.
 
-- [ ] **Step 1: Write failing tests** — each fork returns a pack and calls neither `structurePack` nor `captionToRecipe`.
+- [x] **Step 1: Write failing tests** — each fork returns a pack and calls neither `structurePack` nor `captionToRecipe`.
 
-- [ ] **Step 2–4: Implement the three forks.**
+- [x] **Step 2–4: Implement the three forks.**
 
 `acquire/photo.js` returns `onScreenText`, `images`, **and `scanPages`**. `ImportReview` takes `scanPages` as a prop (`ImportSheet.jsx:1332`) and uses it for cover recrop — a fork that discards pages silently removes that affordance.
 
@@ -848,23 +852,25 @@ pack instead of a self-call through parseFromUrl.
 
 ## Task 7: The gate owns the next UI state
 
+> **Status 2026-10-28: done.** Shipped in `c5b3258f`; the bait-cache guard (step 4) only became real on 2026-10-28, because `schemaQualityGate` has no `verdict` and the old `gate.verdict !== 'empty'` checks were always true. Fixed via `cacheIfNotEmpty` (`corpus.cacheGate.test.js`).
+
 **Files:** Create `src/import/gate.js`, `tests/import/corpus.gate.test.js`. Modify `src/lib/importGuards.js:127` (leave a re-export shim), `recipeParser.js:5291, 5525`, `ImportSheet.jsx`.
 
-- [ ] **Step 1: Write the failing test.** Minimum cases: a gin-and-tonic (2 ingredients, `kind: 'drink'`) → `pass`, not `empty` — the current `ings.length < 2` rule at `importGuards.js:145` is the cocktail bug. A bait caption ("recipe in comments!") → `empty`. A recipe with ingredients and no directions → `salvage`. A `kind: 'meal'` two-ingredient result → `salvage`, not `pass`.
+- [x] **Step 1: Write the failing test.** Minimum cases: a gin-and-tonic (2 ingredients, `kind: 'drink'`) → `pass`, not `empty` — the current `ings.length < 2` rule at `importGuards.js:145` is the cocktail bug. A bait caption ("recipe in comments!") → `empty`. A recipe with ingredients and no directions → `salvage`. A `kind: 'meal'` two-ingredient result → `salvage`, not `pass`.
 
-- [ ] **Step 2: Run it, confirm it fails** — today `schemaQualityGate` returns `{ pass, reasons }` with no third state and no kind awareness.
+- [x] **Step 2: Run it, confirm it fails** — today `schemaQualityGate` returns `{ pass, reasons }` with no third state and no kind awareness.
 
-- [ ] **Step 3: Implement `gateRecipe(recipe, pack)` → `{ verdict, reasons }`.** Drink rules: 2 ingredients is a pass when `pack.kind === 'drink'`; a missing method is `salvage`, not a fail. Meal rules keep today's thresholds.
+- [x] **Step 3: Implement `gateRecipe(recipe, pack)` → `{ verdict, reasons }`.** Drink rules: 2 ingredients is a pass when `pack.kind === 'drink'`; a missing method is `salvage`, not a fail. Meal rules keep today's thresholds.
 
-- [ ] **Step 4: Stop caching bait.** `recipeParser.js:5302, 5536, 5551, 5561, 5571` all call `setCachedImport` unconditionally — including immediately after a gate failure is logged at `:5291` and `:5525`. Guard every one of them with `verdict !== 'empty'`. Today a bait extraction is cached for seven days and re-served on every retry, which is why "try again" feels broken.
+- [x] **Step 4: Stop caching bait.** `recipeParser.js:5302, 5536, 5551, 5561, 5571` all call `setCachedImport` unconditionally — including immediately after a gate failure is logged at `:5291` and `:5525`. Guard every one of them with `verdict !== 'empty'`. Today a bait extraction is cached for seven days and re-served on every retry, which is why "try again" feels broken.
 
-- [ ] **Step 5: Extend the gate to the paths it never covered.** `schemaQualityGate` is called at exactly two sites, both inside the Instagram cascade. Photo, paste, Pinterest, and the generic website path have never been gated at all. The engine gates all of them once.
+- [x] **Step 5: Extend the gate to the paths it never covered.** `schemaQualityGate` is called at exactly two sites, both inside the Instagram cascade. Photo, paste, Pinterest, and the generic website path have never been gated at all. The engine gates all of them once.
 
-- [ ] **Step 6: Map verdict to surface in `ImportSheet`** — `pass` → Review; `salvage` → Review with the weak block open; `empty` → Miss.
+- [x] **Step 6: Map verdict to surface in `ImportSheet`** — `pass` → Review; `salvage` → Review with the weak block open; `empty` → Miss.
 
-- [ ] **Step 7: Fix the Miss "Try again" trap.** `ImportSheet.jsx:1305-1315` calls `setRecoveryText('')` and then re-runs the identical `handleUrlImport(importUrl, itemType)`. The text the user just edited in the recovery textarea is **discarded and never used**, and the retry hits the same 7-day cache. Miss is paste-first per the brief, so the button must send the edited text: `engine.importRequest({ text: recoveryText, kind, kindLocked, via: 'miss' })`.
+- [x] **Step 7: Fix the Miss "Try again" trap.** `ImportSheet.jsx:1305-1315` calls `setRecoveryText('')` and then re-runs the identical `handleUrlImport(importUrl, itemType)`. The text the user just edited in the recovery textarea is **discarded and never used**, and the retry hits the same 7-day cache. Miss is paste-first per the brief, so the button must send the edited text: `engine.importRequest({ text: recoveryText, kind, kindLocked, via: 'miss' })`.
 
-- [ ] **Step 8: Run corpus + build. Step 9: Manual smoke** — a two-ingredient highball from the Bar tab reaches Review; a bait caption reaches Miss and is not cached; editing the Miss textarea and pressing the button uses the edit. **Step 10: Commit message.**
+- [x] **Step 8: Run corpus + build. Step 9: Manual smoke** — a two-ingredient highball from the Bar tab reaches Review; a bait caption reaches Miss and is not cached; editing the Miss textarea and pressing the button uses the edit. **Step 10: Commit message.**
 
 ```
 feat(import): pass/salvage/empty gate replaces the observational one
@@ -885,11 +891,11 @@ Also fixes the Miss retry discarding the user's edited text
 
 **Files:** Modify `src/db.js:1652`, `src/lib/importGuards.js:184`.
 
-- [ ] **Step 1: Write the failing test** — same URL, same kind, bumped `ENGINE_PROMPT_VERSION` → cache miss. Same URL, different kind, concurrent → two in-flight imports, not one shared.
+- [x] **Step 1: Write the failing test** — same URL, same kind, bumped `ENGINE_PROMPT_VERSION` → cache miss. Same URL, different kind, concurrent → two in-flight imports, not one shared.
 
-- [ ] **Step 2: Run it, confirm it fails.**
+- [x] **Step 2: Run it, confirm it fails.**
 
-- [ ] **Step 3: Extend the cache key.** `db.js:1652` already includes kind (§0.3). Add the version — `ENGINE_PROMPT_VERSION` already exists at `src/recipeSchema.js:1127` (`'2026.07.3'`), so import it rather than inventing a constant:
+- [x] **Step 3: Extend the cache key.** `db.js:1652` already includes kind (§0.3). Add the version — `ENGINE_PROMPT_VERSION` already exists at `src/recipeSchema.js:1127` (`'2026.07.3'`), so import it rather than inventing a constant:
 
 ```js
 import { ENGINE_PROMPT_VERSION } from './recipeSchema.js';
@@ -900,11 +906,11 @@ function cacheKey(url, type = 'meal') {
 
 `clearInstagramCache` at `db.js:1703` bulk-deletes two hardcoded key shapes and will silently stop matching. Update it, or switch it to a prefix scan.
 
-- [ ] **Step 4: Extend the dedupe key.** `importGuards.js:184` `deduplicateImport(url, fn)` → `deduplicateImport(url, kind, fn)`; `normalizeImportUrl` output gains `::${kind}`. Update the caller at `recipeParser.js:2968`.
+- [x] **Step 4: Extend the dedupe key.** `importGuards.js:184` `deduplicateImport(url, fn)` → `deduplicateImport(url, kind, fn)`; `normalizeImportUrl` output gains `::${kind}`. Update the caller at `recipeParser.js:2968`.
 
-- [ ] **Step 5: Point Improve at `restructure`.** `ReExtractSheet` calls `engine.restructure(pack, { kind, kindLocked: true })` and never opens intake.
+- [x] **Step 5: Point Improve at `restructure`.** `ReExtractSheet` calls `engine.restructure(pack, { kind, kindLocked: true })` and never opens intake.
 
-- [ ] **Step 6: Run corpus + build. Step 7: Manual smoke** — import a URL from Meals, then the same URL from Bar; two distinct results, neither served from the other's cache. **Step 8: Commit message.**
+- [x] **Step 6: Run corpus + build. Step 7: Manual smoke** — import a URL from Meals, then the same URL from Bar; two distinct results, neither served from the other's cache. **Step 8: Commit message.**
 
 ```
 feat(import): key cache and dedupe on url + kind + prompt version
@@ -919,9 +925,11 @@ already importing as a meal joined that import.
 
 ## Task 9: Shrink the parser; retire dead code
 
+> **Status 2026-10-28: partial.** Server trio deleted, no `_DEAD_*`, no `setPhase`. Drink units were already in `UNITS_RE` (step 3 needed no change). Not done: `recipeParser.js` is still ~5,360 lines.
+
 **Files:** Move `cleanSocialCaption` / `isCaptionWeak` to `src/import/clean/socialCaption.js`. Delete `server/coordinator.js`, `server/jobStore.js`, `server/importRoutes.js` and their tests. Reduce `recipeParser.js` to a facade plus leftover line parsers.
 
-- [ ] **Step 1: Confirm the server trio is still unreachable** before deleting:
+- [x] **Step 1: Confirm the server trio is still unreachable** before deleting:
 
 ```bash
 grep -rn "importRoutes\|runWaterfall\|jobStore" src api server --include=*.js --include=*.jsx | grep -v __tests__
@@ -930,13 +938,13 @@ grep -n "app.use\|app.post\|app.get" server/index.js
 
 Expected: no client reference; `importRoutes` absent from `server/index.js`. **If either check contradicts §0.6, stop and re-plan this task** — something was mounted after 2026-09-04.
 
-- [ ] **Step 2: Delete the three server files and their two test files in one change.** Deleting source while leaving `server/__tests__/coordinator.test.js` turns the suite red for a reason unrelated to this work.
+- [x] **Step 2: Delete the three server files and their two test files in one change.** Deleting source while leaving `server/__tests__/coordinator.test.js` turns the suite red for a reason unrelated to this work.
 
-- [ ] **Step 3: Move the caption cleaners**, adding drink units (`oz`, `dash`, `jigger`, `cl`) to the `isCaptionWeak` test so a terse cocktail caption is not judged weak and sent to audio.
+- [x] **Step 3: Move the caption cleaners**, adding drink units (`oz`, `dash`, `jigger`, `cl`) to the `isCaptionWeak` test so a terse cocktail caption is not judged weak and sent to audio.
 
-- [ ] **Step 4: Delete any `_DEAD_*` HTML paths** still in `recipeParser.js`. Keep `parseIngredientLine`, `scoreExtractionConfidence`, and the title helpers until nothing imports them.
+- [x] **Step 4: Delete any `_DEAD_*` HTML paths** still in `recipeParser.js`. Keep `parseIngredientLine`, `scoreExtractionConfidence`, and the title helpers until nothing imports them.
 
-- [ ] **Step 5: Verify the parser no longer owns the spine:**
+- [x] **Step 5: Verify the parser no longer owns the spine:**
 
 ```bash
 grep -n "setPhase\|Phase 0\|Phase 1\|Phase 2\|Phase 3\|browserAssist" src/recipeParser.js
@@ -1043,7 +1051,7 @@ Task 0's backup already covers every file below.
 - Modify: `src/components/import/ImportTimeline.jsx` (chip + spinner)
 - Test: `tests/import/corpus.progress.test.js` (extend, do not rewrite)
 
-- [ ] **Step 1: Write the failing test for the chip display map**
+- [x] **Step 1: Write the failing test for the chip display map**
 
 `mapProgress` must keep returning internal ids — `corpus.progress.test.js:54–58` asserts `'Apify'`, `'IG data'`, `'Gemini'`, `'Reddit'`, `'Video audio'`. Add a *separate* export and test it alongside:
 
@@ -1063,9 +1071,9 @@ describe('progressMap — chip display labels', () => {
 });
 ```
 
-- [ ] **Step 2: Run it, confirm it fails** — `chipLabel` does not exist.
+- [x] **Step 2: Run it, confirm it fails** — `chipLabel` does not exist.
 
-- [ ] **Step 3: Add the display map to `progressMap.js`**
+- [x] **Step 3: Add the display map to `progressMap.js`**
 
 ```js
 const CHIP_LABELS = {
@@ -1081,7 +1089,7 @@ export function chipLabel(chip) { return CHIP_LABELS[chip] || null; }
 
 Do not touch `CHIP_RULES` or `mapProgress`. The engine keeps its vocabulary; only the boundary translates.
 
-- [ ] **Step 4: Render the timeline, with the spinner under the rail**
+- [x] **Step 4: Render the timeline, with the spinner under the rail**
 
 In `ImportTimeline.jsx`, run the incoming `chip` through `chipLabel` and drop the literal `via ` prefix — the label carries its own preposition. Between `.itl-rail-row` and `.itl-status-row`, add the ring, hidden once every node is done:
 
@@ -1093,11 +1101,11 @@ In `ImportTimeline.jsx`, run the incoming `chip` through `chipLabel` and drop th
 
 The rail carries *how far*; the ring carries *still alive*. A three-node rail alone goes visually static between stages, and Understanding is exactly where the long waits sit.
 
-- [ ] **Step 5: Replace the ring-only loading branch**
+- [x] **Step 5: Replace the ring-only loading branch**
 
 `ImportSheet.jsx:1226–1282` renders `.import-sheet-ring-spinner` and `.import-sheet-status-text` directly. Swap in `<ImportTimeline stage={timeline.stage} chip={timeline.chip} statusMsg={progressMsg} slow={elapsedTime >= 8} />` — the state is already computed in ten places and read in none. Keep the cover-image block above it.
 
-- [ ] **Step 6: Rewrite the status ladder in `importCopy.js`**
+- [x] **Step 6: Rewrite the status ladder in `importCopy.js`**
 
 Report outcomes, not attempts, so the sequence reads as travel:
 
@@ -1118,21 +1126,21 @@ const DEFAULT_STATUS = 'Working on your recipe…';
 
 Order matters — first match wins, and the comments rule must sit above the caption rule or it never fires.
 
-- [ ] **Step 7: Give the finish a beat**
+- [x] **Step 7: Give the finish a beat**
 
 On a successful structure, set the line to **`Plated up.`** before the review transition. One string; it is the only moment the import gets to feel finished rather than merely stopped.
 
 Change the 8-second subtext at `ImportSheet.jsx:1268` to **"Still going — some posts hide the recipe well."** The current wording promises "trying another way", which is not always true.
 
-- [ ] **Step 8: Make cancel visible**
+- [x] **Step 8: Make cancel visible**
 
 `useBackHandler` already covers `phase === 'loading'` (`ImportSheet.jsx:542`), so back raises the discard confirm. Add a matching footer button during loading — **Cancel import** — so the exit is not only the corner ✕. It aborts via the existing `abortRef` controller.
 
-- [ ] **Step 9: Run corpus + build.** Expected: `corpus.progress.test.js` green including the new block.
+- [x] **Step 9: Run corpus + build.** Expected: `corpus.progress.test.js` green including the new block.
 
-- [ ] **Step 10: Manual smoke** — an Instagram reel with the recipe in comments, and a silent reel. Watch the whole ladder. No tool name may appear on screen in either.
+- [x] **Step 10: Manual smoke** — an Instagram reel with the recipe in comments, and a silent reel. Watch the whole ladder. No tool name may appear on screen in either.
 
-- [ ] **Step 11: Commit message**
+- [x] **Step 11: Commit message**
 
 ```
 feat(import): render the progress timeline in plain language
@@ -1157,13 +1165,13 @@ Only the URL path is humanized. Photo and transcribe imports show raw engine tex
 
 **Files:** `src/components/ImportSheet.jsx:608, 614, 822, 895, 902`
 
-- [ ] **Step 1: Write the failing test** — assert `setProgressMsg` never receives a string matching `/apify|gemini|oembed|yt-dlp|whisper|json-ld|ig-json|transcrib/i` across all four executors.
+- [x] **Step 1: Write the failing test** — assert `setProgressMsg` never receives a string matching `/apify|gemini|oembed|yt-dlp|whisper|json-ld|ig-json|transcrib/i` across all four executors.
 
-- [ ] **Step 2: Run it, confirm the photo and transcribe paths fail.**
+- [x] **Step 2: Run it, confirm the photo and transcribe paths fail.**
 
-- [ ] **Step 3: Wrap the three raw pass-throughs** — `:614`, `:822`, `:902` all do `setProgressMsg(msg)`. Wrap each in `humanizeImportStatus(...)`, which is already imported at `:18`.
+- [x] **Step 3: Wrap the three raw pass-throughs** — `:614`, `:822`, `:902` all do `setProgressMsg(msg)`. Wrap each in `humanizeImportStatus(...)`, which is already imported at `:18`.
 
-- [ ] **Step 4: Replace the two hardcoded strings**
+- [x] **Step 4: Replace the two hardcoded strings**
 
 ```js
 // :608 — was 'No caption found — transcribing video audio…'
@@ -1172,9 +1180,9 @@ setProgressMsg('Not much written down — having a listen');
 setProgressMsg('Having a listen to the video…');
 ```
 
-- [ ] **Step 5: Run corpus + build. Step 6: Manual smoke** — import a cookbook photo and a silent reel; read every line.
+- [x] **Step 5: Run corpus + build. Step 6: Manual smoke** — import a cookbook photo and a silent reel; read every line.
 
-- [ ] **Step 7: Commit message**
+- [x] **Step 7: Commit message**
 
 ```
 fix(import): humanize progress on the photo and transcribe paths
@@ -1192,15 +1200,15 @@ video imports surfaced raw engine strings, and two messages hardcoded
 
 **Files:** `src/components/ImportReview.jsx:684–694, 962–1000, 1296–1316`; `src/components/ImportSheet.css:1349+`
 
-- [ ] **Step 1: Write the failing test** — flipping kind to `drink` sets destination `bar` and the save label reads `Save to Bar Library`; flipping back sets `library` / `Save to Meal Library`. Assert no `week` or `grocery` destination is reachable.
+- [x] **Step 1: Write the failing test** — flipping kind to `drink` sets destination `bar` and the save label reads `Save to Bar Library`; flipping back sets `library` / `Save to Meal Library`. Assert no `week` or `grocery` destination is reachable.
 
-- [ ] **Step 2: Run it, confirm it fails** — `destinations` at `:685–694` still offers `week` and `grocery`.
+- [x] **Step 2: Run it, confirm it fails** — `destinations` at `:685–694` still offers `week` and `grocery`.
 
-- [ ] **Step 3: Delete the destination grid**
+- [x] **Step 3: Delete the destination grid**
 
 Remove the `destinations` array (`:684–694`), the `.review-destination` block (`:1296–1316`), and its CSS from `ImportSheet.css:1349` onward. Keep `destValue` / `setDest` — they still carry the derived value to `onSave`.
 
-- [ ] **Step 4: Replace the two correction buttons with one kind chip**
+- [x] **Step 4: Replace the two correction buttons with one kind chip**
 
 `:962–1000` currently renders two mutually exclusive one-tap buttons ("Actually, this is a Drink → Bar" / the reverse). Collapse them into a single chip near the title that opens a two-item menu, each item naming its consequence:
 
@@ -1211,23 +1219,23 @@ Drink  — Saves to Bar Library
 
 Keep everything the existing handlers do: set `itemType` / `type` / `_type`, call `setDest`, and call `invalidateCachedImport(recipe.link || recipe.sourceUrl)` — without that last line the 7-day cache keeps re-serving the wrong kind on every re-import of the same link.
 
-- [ ] **Step 5: Derive the save label** — `Save to Meal Library` / `Save to Bar Library`, so the consequence is visible at the moment of committing.
+- [x] **Step 5: Derive the save label** — `Save to Meal Library` / `Save to Bar Library`, so the consequence is visible at the moment of committing.
 
-- [ ] **Step 6: Move the disagreement warning next to the chip**
+- [x] **Step 6: Move the disagreement warning next to the chip**
 
 `review-type-disagreement` (`:947`) is now the *only* place a kind mismatch surfaces, since there is no second control to notice it in. It must render adjacent to the chip, not further down the sheet.
 
-- [ ] **Step 7: Salvage opens on the weak part** (needs Task 7)
+- [x] **Step 7: Salvage opens on the weak part** (needs Task 7)
 
 On `gate === 'salvage'`, open `activeTab` on the list carrying the flags rather than defaulting to `ingredients` (`:401`), and set the trust line under the title: *"Pieced together from the caption and 3 comments — worth a quick look."* `flaggedSteps` and `moveAllFlaggedToIngredients` already exist (`:648`, `:660`), and `.review-tab.flagged` already draws the amber dot (`ImportSheet.css:988`) — this is wiring, not new UI.
 
-- [ ] **Step 8: Put Discard beside Save on a salvage.** On a thin extraction the odds of wanting out are high enough that the exit should not hide in the corner. It raises the existing `showDiscardConfirm` footer (`:1379`).
+- [x] **Step 8: Put Discard beside Save on a salvage.** On a thin extraction the odds of wanting out are high enough that the exit should not hide in the corner. It raises the existing `showDiscardConfirm` footer (`:1379`).
 
-- [ ] **Step 9: Leave the tabs alone.** `.review-tab` is already a 46px horizontal row with counts, drag targets and the flag dot. A 46 → 42px trim is optional and cosmetic; nothing else changes.
+- [x] **Step 9: Leave the tabs alone.** `.review-tab` is already a 46px horizontal row with counts, drag targets and the flag dot. A 46 → 42px trim is optional and cosmetic; nothing else changes.
 
-- [ ] **Step 10: Run corpus + build. Step 11: Manual smoke** — import a cocktail from Meals, flip the chip to Drink, save, confirm it lands in Bar and the cache was invalidated.
+- [x] **Step 10: Run corpus + build. Step 11: Manual smoke** — import a cocktail from Meals, flip the chip to Drink, save, confirm it lands in Bar and the cache was invalidated.
 
-- [ ] **Step 12: Commit message**
+- [x] **Step 12: Commit message**
 
 ```
 feat(import): kind picks the shelf; drop the destination grid
@@ -1245,17 +1253,19 @@ into a week is a separate act on a recipe that already exists.
 
 ## Task 13: Miss — the diagnosed ask
 
+> **Status 2026-10-28: partial.** Steps 3, 4 and 6 shipped (paste-first fallback, `bait-caption` diagnosis, Give up). Step 5 waits on the gate emitting new reasons.
+
 **Depends on:** Task 7. The gate must return real reasons before the screen can name one.
 
 **Files:** `src/components/ImportSheet.jsx:1290–1318`; `src/import/gate.js`
 
-- [ ] **Step 1: Write the failing test** — each gate reason maps to its own copy and its own pre-focused affordance; an unrecognized reason falls back to paste-first rather than rendering an empty shell.
+- [x] **Step 1: Write the failing test** — each gate reason maps to its own copy and its own pre-focused affordance; an unrecognized reason falls back to paste-first rather than rendering an empty shell.
 
-- [ ] **Step 2: Run it, confirm it fails** — today there is one generic recovery screen.
+- [x] **Step 2: Run it, confirm it fails** — today there is one generic recovery screen.
 
-- [ ] **Step 3: Ship the fallback first.** Fix the discard bug from Task 7 step 7 — **Use this text** sends `{ text: recoveryText }` through the engine instead of clearing it and re-running the URL. Every reason below degrades to this.
+- [x] **Step 3: Ship the fallback first.** Fix the discard bug from Task 7 step 7 — **Use this text** sends `{ text: recoveryText }` through the engine instead of clearing it and re-running the URL. Every reason below degrades to this.
 
-- [ ] **Step 4: Add the first diagnosis — link-in-bio**, the most common Instagram miss:
+- [x] **Step 4: Add the first diagnosis — link-in-bio**, the most common Instagram miss:
 
 > **The recipe's on their blog.** The post just points at "link in bio" — there's nothing here to cook from yet.
 
@@ -1263,9 +1273,9 @@ Pre-focused field asks for the blog URL. Secondary: *Paste the recipe text inste
 
 - [ ] **Step 5: Add the remaining three** as the gate learns to name them: no caption at all · photo too dark to read · offline and queued. A wrong diagnosis is worse than a generic one, so each ships only once its reason is reliable.
 
-- [ ] **Step 6: Add the third way out** — **Give up on this one** in the footer, so a dead end is never a trap.
+- [x] **Step 6: Add the third way out** — **Give up on this one** in the footer, so a dead end is never a trap.
 
-- [ ] **Step 7: Do not mount BrowserAssist.** Miss stays one surface. `DomAimSheet` remains a later, separate plan whose precondition is Task 6 attaching `pack.html`.
+- [x] **Step 7: Do not mount BrowserAssist.** Miss stays one surface. `DomAimSheet` remains a later, separate plan whose precondition is Task 6 attaching `pack.html`.
 
 - [ ] **Step 8: Run corpus + build. Step 9: Manual smoke** — a bait caption with a link in bio reaches Miss, names the cause, and pasting the blog URL completes the import.
 

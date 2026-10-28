@@ -1378,12 +1378,17 @@ export async function processImportQueue() {
             // Dynamic import avoids a db.js ↔ recipeParser.js cycle.
             const { importRecipeFromPages } = await import('./lib/photoImportEngine.js');
             const pages = (item.scanPages || []).map((dataUrl, i) => ({ id: `q-${item.id}-${i}`, dataUrl }));
-            const improved = await importRecipeFromPages(pages, { type: item.itemType || 'meal' });
+            // kindLocked: itemType is the kind the user confirmed in Review; the
+            // upgrade must not re-detect a Bar photo as a meal.
+            const improved = await importRecipeFromPages(pages, { type: item.itemType || 'meal', kindLocked: true });
 
             if (improved && !improved._ocrDraft) {
-              const target = await db.meals.where('name').equalsIgnoreCase(item.targetName).first();
+              // Drinks are saved to db.drinks, not db.meals: look in the table
+              // the draft was actually saved to, or a Bar draft never upgrades.
+              const table = item.itemType === 'drink' ? db.drinks : db.meals;
+              const target = await table.where('name').equalsIgnoreCase(item.targetName).first();
               if (target) {
-                await db.meals.update(target.id, {
+                await table.update(target.id, {
                   ...mergeRecipeData(target, {
                     ...improved,
                     name: improved.name || improved.title || target.name,

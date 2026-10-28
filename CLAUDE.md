@@ -82,6 +82,7 @@ Ponytail's "leave one runnable check" = **one vitest case in the existing suite*
 - **Line endings:** mixed CRLF/LF, drifting mid-session. Check each file's ending right before editing. Huge diffs → `git diff --ignore-cr-at-eol --stat` before panicking.
 - **Concurrent editors:** other tools edit this repo while sessions run. Re-check your changes before reporting done.
 - **Deletes:** move to `_to_delete/` if you can't delete; Brian clears it.
+- **Dependencies:** never run `npm audit fix --force` (or accept its suggestions). On 2026-10-28 it downgraded `vite-plugin-pwa` 1.2.0 to 0.2.1 (no `injectManifest`, so `src/sw.js` stops building) and `workbox-build` 7 to 5, which added critical advisories. Plain `npm audit fix` is fine. Audit findings in build-time tooling (workbox chain, `@capacitor/cli`) are accepted; `sharp` via `@huggingface/transformers` is Node-only, upgrade it only with a Whisper smoke test.
 
 ---
 

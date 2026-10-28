@@ -236,6 +236,27 @@ function jsonResponse(body, status, cacheSeconds = 0) {
   return new Response(JSON.stringify(body), { status, headers });
 }
 
+/**
+ * Load public/discover/<kind>-catalog.json from this deployment's own origin.
+ * Returns { sources, posts } — empty on any failure or malformed file.
+ */
+export async function loadCatalog(reqUrl, kind) {
+  try {
+    const resp = await fetch(new URL(`/discover/${kind}-catalog.json`, reqUrl), {
+      signal: AbortSignal.timeout(FEED_TIMEOUT_MS),
+    });
+    if (!resp.ok) return { sources: {}, posts: [] };
+    const data = await resp.json();
+    const sources = data && typeof data.sources === 'object' && data.sources ? data.sources : {};
+    const posts = Array.isArray(data?.posts)
+      ? data.posts.filter(p => p && p.title && /^https?:\/\//i.test(p.link || '') && sources[p.source])
+      : [];
+    return { sources, posts };
+  } catch {
+    return { sources: {}, posts: [] };
+  }
+}
+
 export default async function handler(req) {
   if (req.method !== 'GET') {
     return jsonResponse({ error: 'Method not allowed' }, 405);
@@ -248,13 +269,19 @@ export default async function handler(req) {
   const limit = Math.min(parseInt(searchParams.get('limit') || '15', 10), 50);
   const filterMode = searchParams.get('filter') === 'relaxed' ? 'relaxed' : 'strict';
 
+  // Static catalog for sitemap-only sites with no RSS feed (see
+  // scripts/build-discover-catalog.mjs). Optional: any failure just means RSS only.
+  const catalog = await loadCatalog(req.url, kind);
+
   // Determine which sources to fetch
   let sourceKeys = Object.keys(sourceMap);
+  let catalogKeys = Object.keys(catalog.sources);
   if (requestedSources) {
     const requested = requestedSources.split(',').map(s => s.trim().toLowerCase());
     sourceKeys = sourceKeys.filter(k => requested.includes(k));
-    if (sourceKeys.length === 0) {
-      return jsonResponse({ error: 'No valid sources specified', available: Object.keys(sourceMap) }, 400);
+    catalogKeys = catalogKeys.filter(k => requested.includes(k));
+    if (sourceKeys.length === 0 && catalogKeys.length === 0) {
+      return jsonResponse({ error: 'No valid sources specified', available: [...Object.keys(sourceMap), ...Object.keys(catalog.sources)] }, 400);
     }
   }
 
@@ -293,6 +320,10 @@ export default async function handler(req) {
     if (val.error) errors.push({ source: val.key, error: val.error });
     if (val.items.length > 0) bySource[val.key] = val.items;
   }
+  for (const key of catalogKeys) {
+    const items = catalog.posts.filter(p => p.source === key).slice(0, limit);
+    if (items.length > 0) bySource[key] = items;
+  }
 
   // Round-robin interleave: take one from each source in turn so the
   // feed isn't dominated by whichever blog posted most recently
@@ -311,11 +342,14 @@ export default async function handler(req) {
 
   return jsonResponse({
     posts: merged,
-    sources: Object.fromEntries(
-      Object.entries(sourceMap)
-        .filter(([k]) => sourceKeys.includes(k))
-        .map(([k, v]) => [k, { name: v.name, emoji: v.emoji, tags: v.tags }])
-    ),
+    sources: {
+      ...Object.fromEntries(
+        Object.entries(sourceMap)
+          .filter(([k]) => sourceKeys.includes(k))
+          .map(([k, v]) => [k, { name: v.name, emoji: v.emoji, tags: v.tags }])
+      ),
+      ...Object.fromEntries(catalogKeys.map(k => [k, catalog.sources[k]])),
+    },
     errors: errors.length > 0 ? errors : undefined,
     fetchedAt: new Date().toISOString(),
   }, 200, 1800); // 30-min cache

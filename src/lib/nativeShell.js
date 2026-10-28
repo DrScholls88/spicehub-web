@@ -71,6 +71,9 @@ if (isNative) {
     App.addListener('appUrlOpen', async ({ url }) => {
       if (!url?.startsWith(NATIVE_AUTH_REDIRECT)) return; // ://share is the share plugin's
       try {
+        // ponytail: dynamic on purpose. supabaseClient.js statically imports this file, so a
+        // static import here would be a cycle. Vite's "will not move module into another chunk"
+        // warning for it is expected.
         const { completeNativeSignIn } = await import('./supabaseClient');
         await completeNativeSignIn(url);
         window.location.reload(); // same as the web /auth/callback path in App.jsx

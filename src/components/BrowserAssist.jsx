@@ -39,7 +39,7 @@ import useOnlineStatus from '../hooks/useOnlineStatus';
 
 
 /**
- * BrowserAssist â€” Smart recipe extraction with full pipeline UI.
+ * BrowserAssist — Smart recipe extraction with full pipeline UI.
  *
  * Strategy:
  *   SOCIAL MEDIA (Instagram, TikTok, YouTube, etc.):
@@ -64,21 +64,21 @@ import useOnlineStatus from '../hooks/useOnlineStatus';
  *   onBlocksSelected   - callback(selectedIds: string[]) when user changes block selection
  *
  * Ref (via forwardRef):
- *   triggerVisualScrape() â€” kick off visual scrape from parent without requiring a button click
+ *   triggerVisualScrape() — kick off visual scrape from parent without requiring a button click
  */
 const BrowserAssist = forwardRef(function BrowserAssist({ url, onRecipeExtracted, onFallbackToText, initialCapturedText = '', seedRecipe = null, type = 'meal', defaultVisualMode = false, onError, onBlocksSelected, inline = false }, ref) {
   const API_BASE = import.meta.env.VITE_API_BASE || '';
   const { isOnline } = useOnlineStatus();
 
   // phases:
-  //   'loading'    â€” fetching / running pipeline (shown during work)
-  //   'preview'    â€” auto-extracted recipe ready for review
-  //   'iframe'     â€” showing page in iframe (non-social fallback only)
-  //   'manual'     â€” all social methods failed, show manual paste card
-  //   'offline'    â€” device offline
-  //   'queued'     â€” recipe queued for offline import
-  //   'error'      â€” unrecoverable error
-  //   'extracting' â€” manual extraction from iframe in progress
+  //   'loading'    — fetching / running pipeline (shown during work)
+  //   'preview'    — auto-extracted recipe ready for review
+  //   'iframe'     — showing page in iframe (non-social fallback only)
+  //   'manual'     — all social methods failed, show manual paste card
+  //   'offline'    — device offline
+  //   'queued'     — recipe queued for offline import
+  //   'error'      — unrecoverable error
+  //   'extracting' — manual extraction from iframe in progress
   const [phase, setPhase] = useState('loading');
   const [errorMsg, setErrorMsg] = useState('');
   // Incrementing this re-triggers the extraction effect without a page reload
@@ -137,7 +137,7 @@ const toggleDeepMode = () => {
   // since those sites need layout-based detection most.
   const [visualScrapeMode, setVisualScrapeMode] = useState(defaultVisualMode);
   const [visualScrapeRunning, setVisualScrapeRunning] = useState(false);
-  // Classified blocks returned by the server's parseVisualPayload â€” used to
+  // Classified blocks returned by the server's parseVisualPayload — used to
   // render color-coded overlays inside the iframe scale wrapper. Client trusts
   // the server's type field and never re-classifies.
   // type: 'title' (yellow) | 'ingredient' (green) | 'instruction' (purple) | 'caption' (orange) | 'other'
@@ -188,7 +188,7 @@ const toggleDeepMode = () => {
       container.removeEventListener('touchmove', handleTouchMove);
       container.removeEventListener('touchend', handleTouchEnd);
     };
-  }, []); // intentionally empty â€” uses ref for current zoom
+  }, []); // intentionally empty \u2014 uses ref for current zoom
 
   // â”€â”€ Aim-parser: parent â†” iframe message bridge â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Receives spicehub:aim-pick messages (the user tapped a region in the iframe)
@@ -228,7 +228,7 @@ const toggleDeepMode = () => {
     // Also update the inner toolbar's aim button label
     const aimBtn = doc.querySelector('[data-spicehub-btn="aim"]');
     if (aimBtn) {
-      aimBtn.textContent = aimMode ? 'âœ– Stop aim' : 'ðŸŽ¯ Aim parser';
+      aimBtn.textContent = aimMode ? '\u2716 Stop aim' : '\uD83C\uDFAF Aim parser';
       aimBtn.style.background = aimMode ? '#E53935' : '#2196F3';
     }
   }, [aimMode, htmlContent]);
@@ -434,7 +434,7 @@ const toggleDeepMode = () => {
   }, [manualText, url]);
 
   // â”€â”€ Retry pipeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-  // Increments retryCount to re-trigger the extraction useEffect cleanly â€”
+  // Increments retryCount to re-trigger the extraction useEffect cleanly —
   // no page reload, full waterfall restarts from step 1 (subtitle scan first).
   const handleRetry = useCallback(() => {
     setManualText('');
@@ -1741,13 +1741,13 @@ export default BrowserAssist;
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
 /**
- * mergeRecipeLayers â€” combines up to 3 recipe sources into one.
+ * mergeRecipeLayers — combines up to 3 recipe sources into one.
  * Lower layers fill gaps in higher layers but never overwrite them.
  * Layer priority (highest first): aim > scraped > seed.
  *
- *   seed    â€” partial data auto-import scraped (title/image often reliable here)
- *   scraped â€” what the page heuristic+AI produced inside the internal browser
- *   aim     â€” text the user tapped to aim at (most explicit intent; wins)
+ *   seed    — partial data auto-import scraped (title/image often reliable here)
+ *   scraped — what the page heuristic+AI produced inside the internal browser
+ *   aim     — text the user tapped to aim at (most explicit intent; wins)
  *
  * Returns a cleaned recipe object or null if nothing usable.
  */
@@ -1799,7 +1799,7 @@ export function mergeRecipeLayers(seed, scraped, aim, sourceUrl, extractedVia) {
 }
 
 /**
- * mergeAimedText â€” merges newly-tapped text into an aim-recipe draft.
+ * mergeAimedText — merges newly-tapped text into an aim-recipe draft.
  * Routes lines by target:
  *   'title'       â†’ recipe.name (first non-trivial line wins)
  *   'ingredients' â†’ forced into ingredients[] (uses smartClassifyLines to split)
@@ -1838,7 +1838,7 @@ export function mergeAimedText(prev, rawText, target, sourceUrl) {
     }
     return next;
   }
-  // 'auto' â€” use the heuristic line classifier imported at module scope
+  // 'auto' — use the heuristic line classifier imported at module scope
   try {
     const classified = smartClassifyLines(lines) || {};
     for (const ing of (classified.ingredients || [])) {
@@ -1848,7 +1848,7 @@ export function mergeAimedText(prev, rawText, target, sourceUrl) {
       if (!next.directions.includes(dir)) next.directions.push(dir);
     }
   } catch {
-    // Classifier unavailable â€” dump to directions (safer default)
+    // Classifier unavailable — dump to directions (safer default)
     for (const l of lines) {
       if (!next.directions.includes(l)) next.directions.push(l);
     }
@@ -1857,7 +1857,7 @@ export function mergeAimedText(prev, rawText, target, sourceUrl) {
 }
 
 /**
- * runCaptionExpander â€” auto-clicks 'more' / '...' / 'read more' buttons that
+ * runCaptionExpander — auto-clicks 'more' / '...' / 'read more' buttons that
  * Instagram, TikTok, YouTube, Facebook, and Pinterest use to truncate long
  * captions. Returns the number of elements we clicked so the UI can give
  * feedback like "Expanded 3".
@@ -1869,7 +1869,7 @@ export function mergeAimedText(prev, rawText, target, sourceUrl) {
 export function runCaptionExpander(doc) {
   if (!doc || !doc.body) return 0;
   const clicked = new Set();
-  // Selector-based pass â€” works on most modern social sites
+  // Selector-based pass — works on most modern social sites
   const SELECTORS = [
     // Instagram embed + web: "more" button inside caption
     'button[aria-label="more" i]',
@@ -1897,7 +1897,7 @@ export function runCaptionExpander(doc) {
         const text = (el.textContent || el.getAttribute('aria-label') || '').trim().toLowerCase();
         // If textContent is set, only click things that look like expand controls
         if (text && text.length > 80) return; // big blocks are not expand buttons
-        if (text && !/^(\.\.\.|â€¦|more|read more|see more|show more|see all|expand|view more|continue reading)$/i.test(text)) {
+        if (text && !/^(\.\.\.|\u2026|more|read more|see more|show more|see all|expand|view more|continue reading)$/i.test(text)) {
           // For generic role=button div fallback, require the expand-ish text
           if (sel === 'div[role="button"][tabindex="0"]') return;
         }
@@ -1905,9 +1905,9 @@ export function runCaptionExpander(doc) {
       });
     } catch { /* skip this selector */ }
   }
-  // Text-content pass â€” find small clickable elements whose text is exactly
+  // Text-content pass — find small clickable elements whose text is exactly
   // one of the expand phrases. Catches sites that don't use aria-labels.
-  const EXPAND_TEXT = /^(\.\.\.|â€¦|more|read more|see more|show more|see all|expand|view more|continue reading)$/i;
+  const EXPAND_TEXT = /^(\.\.\.|\u2026|more|read more|see more|show more|see all|expand|view more|continue reading)$/i;
   doc.querySelectorAll('button, span[role="button"], a[role="button"]').forEach(el => {
     if (clicked.has(el)) return;
     if (el.closest('#spicehub-toolbar') || el.closest('#spicehub-helper')) return;
@@ -1936,7 +1936,7 @@ const PLACEHOLDER_PATTERNS = [
   /^content (is )?not available/i,
   /^(sorry|oops),?\s*(this )?(content|page|post|recipe)/i,
   /^instagram\s+\w/i,
-  /verified\s*[Â·â€¢Â·]\s*(view\s+profile|follow)/i,
+  /verified\s*[\u00B7\u2022\u00B7]\s*(view\s+profile|follow)/i,
   /^view profile$/i,
   /^play$/i,
   /^watch on instagram/i,
@@ -2034,7 +2034,7 @@ function extractImageUrlsFromHtml(html) {
     const clean = u.replace(/&amp;/g, '&').replace(/\\u0026/g, '&').replace(/\\/g, '');
     if (isUsableImageUrl(clean) && !seen.has(clean)) { urls.push(clean); seen.add(clean); }
   }
-  // og:image â€” try all attribute orderings (property=â€¦ content=â€¦ or reversed)
+  // og:image — try all attribute orderings (property=… content=… or reversed)
   const ogM = html.match(/<meta[^>]+property\s*=\s*["']og:image["'][^>]+content\s*=\s*["']([^"']*)["']/i)
     || html.match(/<meta[^>]+content\s*=\s*["']([^"']*)["'][^>]+property\s*=\s*["']og:image["']/i)
     || html.match(/<meta[^>]+property=og:image[^>]+content\s*=\s*["']([^"']*)["']/i);
@@ -2058,17 +2058,17 @@ function extractImageUrlsFromHtml(html) {
   const embedImgM = html.match(/<img[^>]+class="[^"]*EmbedImage[^"]*"[^>]+src="([^"]+)"/i)
     || html.match(/<img[^>]+src="([^"]+)"[^>]+class="[^"]*EmbedImage[^"]*"/i);
   if (embedImgM?.[1]) addUrl(embedImgM[1]);
-  // <img src="â€¦"> â€” only large images (explicit size in URL or image extension)
+  // <img src="…"> — only large images (explicit size in URL or image extension)
   for (const m of html.matchAll(/<img[^>]+src="(https:\/\/[^"]{20,})"/gi)) {
     const u = m[1].replace(/&amp;/g, '&');
     if (/\d{3,4}[x_]\d{3,4}|\.(jpg|jpeg|png|webp)(\?|$)/i.test(u)) addUrl(u);
   }
-  // Lazy-loaded images â€” data-src, data-lazy-src, data-lazy (very common on recipe blogs)
+  // Lazy-loaded images — data-src, data-lazy-src, data-lazy (very common on recipe blogs)
   for (const m of html.matchAll(/data-(?:src|lazy-src|lazy|original)="(https:\/\/[^"]{20,})"/gi)) {
     const u = m[1].replace(/&amp;/g, '&');
     if (/\.(jpg|jpeg|png|webp)|\d{3,4}[x_]\d{3,4}/i.test(u)) addUrl(u);
   }
-  // <source srcset="url 1200w, url2 800w"> â€” pick largest
+  // <source srcset="url 1200w, url2 800w"> — pick largest
   for (const m of html.matchAll(/<source[^>]+srcset="([^"]+)"/gi)) {
     const srcset = m[1];
     // Pick the URL with the largest width descriptor

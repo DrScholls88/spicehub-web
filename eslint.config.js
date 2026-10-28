@@ -89,7 +89,8 @@ export default defineConfig([
       // already uses `await import(...)` as a cycle-dodge idiom — so close
       // that hole explicitly or the seam rots through it.
       'no-restricted-syntax': ['error', {
-        selector: "ImportExpression[source.value=/(^|\/)recipeParser(\.js)?$/]",
+        // No '/' inside the regex: esquery ends a regex literal at the first slash.
+        selector: "ImportExpression[source.value=/recipeParser(\\.js)?$/]",
         message: 'Import from src/import/index.js — the engine barrel — not recipeParser directly.',
       }],
     },
@@ -117,7 +118,8 @@ export default defineConfig([
   {
     // Exempt from the barrel rule, each for a different reason:
     //   index.js       — the barrel itself; it must import the monolith.
-    //   BrowserAssist  — its UI phase is commented out (ImportSheet.jsx ~1341)
+    //   BrowserAssist  — its UI phase is commented out (ImportSheet.jsx, the
+    //                    phase === 'browserAssist' block)
     //                    but the module is still imported and bundled. It pulls
     //                    seven symbols the barrel does not export, so repointing
     //                    would mean widening the barrel with monolith internals
@@ -130,8 +132,8 @@ export default defineConfig([
     //                    ./db.js). Adding the barrel as a third hop inside that
     //                    cycle risks init order in a Dexie upgrade closure.
     // Tests import the monolith directly so they keep passing while the spine
-    // moves behind the barrel. Consequence: nothing currently imports through
-    // the barrel in a test, so barrel/monolith drift is not covered.
+    // moves behind the barrel. Barrel/monolith drift is covered separately by
+    // tests/import/corpus.barrel.test.js.
     files: [
       'src/import/index.js',
       'src/components/BrowserAssist.jsx',

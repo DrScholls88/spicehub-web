@@ -1,11 +1,11 @@
 /**
  * SpiceHub Recipe Parser
  * Strategy:
- *   1. ALL URLs      Ã¢â€ â€™ server-side extraction first (server.js /api/extract-url)
- *      Ã¢â‚¬Â¢ Social media URLs Ã¢â€ â€™ headless Chrome (real browser, renders JS)
- *      Ã¢â‚¬Â¢ Recipe blogs      Ã¢â€ â€™ fast HTTP fetch + JSON-LD / OG meta parsing
- *   2. CORS PROXY    Ã¢â€ â€™ fallback if server unreachable (limited for social media)
- *   3. CAPTION TEXT  Ã¢â€ â€™ 4-pass heuristic parser (used internally on extracted captions)
+ *   1. ALL URLs      → server-side extraction first (server.js /api/extract-url)
+ *      • Social media URLs → headless Chrome (real browser, renders JS)
+ *      • Recipe blogs      → fast HTTP fetch + JSON-LD / OG meta parsing
+ *   2. CORS PROXY    → fallback if server unreachable (limited for social media)
+ *   3. CAPTION TEXT  → 4-pass heuristic parser (used internally on extracted captions)
  */
 import { cleanUrl, isInstagramCdnUrl, fetchHtmlViaProxy as fetchHtmlViaProxyFromApi, downloadImageAsDataUrl, proxyImageUrl, fetchInstagramCommentsViaApify } from './api.js';
 import { getCachedImport, setCachedImport, logImportTelemetry, domainForTelemetry } from './db.js';
@@ -28,6 +28,7 @@ import { normalizeIngredient, resolveUnit } from './utils/ingredientNormalizer.j
 // Unified import engine (2026-07 unification): shared zero-junk contract,
 // server acquisition, and ContextPack structuring. See tests/import/README.md.
 import { stripJunkLines, isJunkLine, BAIT_ONLY_RE, countQuantityLines } from './import/junk.js';
+import { gateRecipe } from './import/gate.js';
 import { acquireWebsitePack } from './import/acquire/website.js';
 import { acquireInstagramPack } from './import/acquire/instagram.js';
 import { acquirePinterestPack } from './import/acquire/pinterest.js';
@@ -73,8 +74,8 @@ function sanitizeLLMResponse(text) {
 }
 
 /**
- * looksLikeIngredientLine Ã¢â‚¬â€ uses parse-ingredient (battle-tested NLP for
- * "1 Ã‚Â½ cups flour" / fractions / metric / parenthetical notes) as the
+ * looksLikeIngredientLine — uses parse-ingredient (battle-tested NLP for
+ * "1 ½ cups flour" / fractions / metric / parenthetical notes) as the
  * primary signal that a line is an ingredient. Falls back gracefully on
  * malformed input. Returns true when at least one parsed entry has a
  * recognised quantity, unit, or non-empty description.
@@ -88,7 +89,7 @@ function looksLikeIngredientLine(line) {
     if (!parsed || parsed.length === 0) return false;
     const entry = parsed[0];
     // Require either a quantity OR a unit OR an "ingredient" identified beyond
-    // the raw text Ã¢â‚¬â€ protects against parse-ingredient labelling whole sentences
+    // the raw text — protects against parse-ingredient labelling whole sentences
     // (e.g. "Mix the flour with eggs") as ingredients with quantity 1.
     const hasQty = entry.quantity != null || entry.quantity2 != null;
     const hasUnit = entry.unitOfMeasure || entry.unitOfMeasureID;
@@ -153,21 +154,21 @@ function isProfilePicUrl(url) {
   return /profile_pic|avatar|accounts\/avatars|[?&]s=150|150x150|s150x150|dst-jpg_s150x150|\/profile\//i.test(url);
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Title sanitizer (public export, delegates to cleanTitle) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── Title sanitizer (public export, delegates to cleanTitle) ────────────────
 export function sanitizeRecipeTitle(raw) {
   return cleanTitle(raw);
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Structured ingredient / direction helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── Structured ingredient / direction helpers ────────────────────────────────
 
 /**
- * structureIngredient Ã¢â‚¬â€ Parse a raw ingredient string into quantity/unit/item parts.
+ * structureIngredient — Parse a raw ingredient string into quantity/unit/item parts.
  * Returns {quantity, unit, item} where any field may be empty string.
  * Examples:
- *   "2 cups flour"            Ã¢â€ â€™ { quantity: "2", unit: "cups", item: "flour" }
- *   "1/2 tsp vanilla extract" Ã¢â€ â€™ { quantity: "1/2", unit: "tsp", item: "vanilla extract" }
- *   "Salt to taste"           Ã¢â€ â€™ { quantity: "", unit: "", item: "Salt to taste" }
- *   "Ã¢â‚¬Â¢ 3 tbsp olive oil"      Ã¢â€ â€™ { quantity: "3", unit: "tbsp", item: "olive oil" }
+ *   "2 cups flour"            → { quantity: "2", unit: "cups", item: "flour" }
+ *   "1/2 tsp vanilla extract" → { quantity: "1/2", unit: "tsp", item: "vanilla extract" }
+ *   "Salt to taste"           → { quantity: "", unit: "", item: "Salt to taste" }
+ *   "• 3 tbsp olive oil"      → { quantity: "3", unit: "tbsp", item: "olive oil" }
  */
 export function structureIngredient(raw = '') {
   const text = raw.replace(/^[\u2022\-*]\s*/, '').trim(); // strip bullets
@@ -179,20 +180,20 @@ export function structureIngredient(raw = '') {
   if (maybeUnit && UNITS.test(maybeUnit)) {
     return { quantity: qty.trim(), unit: maybeUnit.trim(), item: rest.trim() };
   }
-  // No unit match Ã¢â‚¬â€ quantity only, rest is item
+  // No unit match — quantity only, rest is item
   return { quantity: qty.trim(), unit: '', item: ((maybeUnit || '') + ' ' + (rest || '')).trim() };
 }
 
 /**
- * structureDirection Ã¢â‚¬â€ Wrap a direction string as a numbered step object.
+ * structureDirection — Wrap a direction string as a numbered step object.
  */
 export function structureDirection(raw = '', index = 0) {
   return { step: index + 1, text: raw.trim() };
 }
 
 /**
- * buildStructuredFields Ã¢â‚¬â€ Compute all four structured/searchable fields from
- * plain ingredient and direction arrays. Always safe to call Ã¢â‚¬â€ returns empty
+ * buildStructuredFields — Compute all four structured/searchable fields from
+ * plain ingredient and direction arrays. Always safe to call — returns empty
  * arrays/strings if inputs are missing or empty.
  */
 export function buildStructuredFields(ingredients = [], directions = []) {
@@ -206,7 +207,7 @@ export function buildStructuredFields(ingredients = [], directions = []) {
   };
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Social media detection Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── Social media detection ───────────────────────────────────────────────────
 const SOCIAL_DOMAINS = [
   'instagram.com', 'www.instagram.com',
   'tiktok.com', 'www.tiktok.com', 'vm.tiktok.com',
@@ -257,26 +258,26 @@ export function extractMultipleUrls(text) {
   return urls;
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Image selection: pick the best/largest from candidates Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── Image selection: pick the best/largest from candidates ──
 // JSON-LD `image` can be: a string, an array of strings, an ImageObject,
 // an array of ImageObjects, or nested combinations.
 // selectBestImage moved to lib/recipeHtmlExtraction.js (2026-08-09)
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Ingredient / Direction heuristics (enhanced) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── Ingredient / Direction heuristics (enhanced) ─────────────────────────────
 const UNITS_RE = /\b(cups?|tbsp|tsp|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|grams?|g\b|kg|ml|cl|liters?|litres?|pinch|dash(?:es)?|splash(?:es)?|drops?|parts?|barspoons?|bar spoons?|bunch|cloves?|cans?|jars?|packages?|pkg|sticks?|slices?|handful|sprigs?|heads?|stalks?|fillets?|breasts?|thighs?|inches?|inch|pieces?|pcs?|medium|large|small|whole|half|to taste|chopped|diced|minced|sliced|crushed|grated|shredded|fresh|dried|frozen|peeled|deveined|boneless|skinless|room temperature|softened|melted|divided)\b/i;
-const BULLET_RE = /^[-Ã¢â‚¬Â¢*Ã¢â€“ÂªÃ¢â€“Â¸Ã¢â€“ÂºÃ¢â€”Â¦Ã¢â‚¬Â£Ã¢ÂÆ’Ã¢Å“â€œÃ¢Å“â€Ã°Å¸â€Â¸Ã°Å¸â€Â¹Ã¢â€”Â½Ã¢â€”Â¾Ã¢â€“Â«Ã¢â€“ÂªÃ¯Â¸ÂÃ°Å¸Â¥â€žÃ°Å¸Â¥â€¢Ã°Å¸Â§â€¦Ã°Å¸Â§â€žÃ°Å¸ÂÂ³Ã°Å¸Â¥Å¡Ã°Å¸Â§Ë†Ã°Å¸Â¥â€ºÃ°Å¸Ââ€”Ã°Å¸Â¥Â©Ã°Å¸Â§â‚¬Ã°Å¸Ââ€¦Ã°Å¸Â«â€™Ã°Å¸Å’Â¿Ã°Å¸Â«â€˜Ã°Å¸Â¥Â¦Ã°Å¸Ââ€¹]\s*/;
-const FRACTION_RE = /^[Ã‚Â½Ã‚Â¼Ã‚Â¾Ã¢â€¦â€œÃ¢â€¦â€Ã¢â€¦â€ºÃ¢â€¦Å“Ã¢â€¦ÂÃ¢â€¦Å¾\d]/;
-const NUM_UNIT_RE = /^[\dÃ‚Â½Ã‚Â¼Ã‚Â¾Ã¢â€¦â€œÃ¢â€¦â€Ã¢â€¦â€ºÃ¢â€¦Å“Ã¢â€¦ÂÃ¢â€¦Å¾][\d./\s]*\s*(cups?|tbsp|tsp|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|grams?|kg|ml|cl|liters?|pinch|dash(?:es)?|splash(?:es)?|drops?|parts?|barspoons?|bar spoons?|bunch|cloves?|cans?|jars?|packages?|pkg|sticks?|slices?|handful|sprigs?|heads?|stalks?)/i;
+const BULLET_RE = /^[-\u2022*\u25AA\u25B8\u25BA\u25E6\u2023\u2043\u2713\u2714\uD83D\uDD38\uD83D\uDD39\u25FD\u25FE\u25AB\u25AA\uFE0F\uD83E\uDD44\uD83E\uDD55\uD83E\uDDC5\uD83E\uDDC4\uD83C\uDF73\uD83E\uDD5A\uD83E\uDDC8\uD83E\uDD5B\uD83C\uDF57\uD83E\uDD69\uD83E\uDDC0\uD83C\uDF45\uD83E\uDED2\uD83C\uDF3F\uD83E\uDED1\uD83E\uDD66\uD83C\uDF4B]\s*/u;
+const FRACTION_RE = /^[\u00BD\u00BC\u00BE\u2153\u2154\u215B\u215C\u215D\u215E\d]/;
+const NUM_UNIT_RE = /^[\d\u00BD\u00BC\u00BE\u2153\u2154\u215B\u215C\u215D\u215E][\d./\s]*\s*(cups?|tbsp|tsp|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|grams?|kg|ml|cl|liters?|pinch|dash(?:es)?|splash(?:es)?|drops?|parts?|barspoons?|bar spoons?|bunch|cloves?|cans?|jars?|packages?|pkg|sticks?|slices?|handful|sprigs?|heads?|stalks?)/i;
 const STEP_NUM_RE = /^\d+[.):\s-]/;
 // CB-02: Added 'm' flag so '^' matches start of each line in multiline captions,
 // fixing false negatives on recipes where the first cooking verb is not the first word
 // of the entire caption (e.g. "Basil, garlic\nBlend until smooth").
-const COOKING_VERBS_RE = /^(mix|stir|add|combine|pour|heat|cook|bake|fry|saut[eÃƒÂ©]|chop|dice|mince|preheat|whisk|blend|fold|season|serve|place|put|set|bring|let|cover|remove|transfer|slice|cut|grill|roast|simmer|boil|drain|rinse|prepare|arrange|sprinkle|drizzle|toss|marinate|refrigerate|chill|freeze|thaw|melt|beat|cream|knead|roll|shape|form|spread|layer|garnish|start|begin|first|then|next|finally|broil|brush|coat|press|squeeze|wash|peel|trim|shred|grate|crush|smash|pound|flatten|stuff|fill|top|finish|taste|adjust|reduce|deglaze|caramelize|brown|sear|steam|poach|microwave|stir-fry|deep.fry|pan.fry|air.fry|shake|muddle|double.strain|fine.strain|strain|build|rim|express|float|swizzle|jigger|churn|dry.shake)\b/im;
+const COOKING_VERBS_RE = /^(mix|stir|add|combine|pour|heat|cook|bake|fry|saute|chop|dice|mince|preheat|whisk|blend|fold|season|serve|place|put|set|bring|let|cover|remove|transfer|slice|cut|grill|roast|simmer|boil|drain|rinse|prepare|arrange|sprinkle|drizzle|toss|marinate|refrigerate|chill|freeze|thaw|melt|beat|cream|knead|roll|shape|form|spread|layer|garnish|start|begin|first|then|next|finally|broil|brush|coat|press|squeeze|wash|peel|trim|shred|grate|crush|smash|pound|flatten|stuff|fill|top|finish|taste|adjust|reduce|deglaze|caramelize|brown|sear|steam|poach|microwave|stir-fry|deep.fry|pan.fry|air.fry|shake|muddle|double.strain|fine.strain|strain|build|rim|express|float|swizzle|jigger|churn|dry.shake)\b|^saut\u00E9(?![a-z])/im;
 // Spoken/informal direction starters (YouTube Shorts, TikTok narration style)
 const SPOKEN_DIRECTION_RE = /^(you'?re? (?:gonna|going to)|go ahead and|now (?:we|you|I)|what (?:we|you|I) (?:do|did)|take (?:your|the|some)|grab (?:your|the|some)|throw (?:it|that|the|some) in|pop (?:it|that|the) in|toss (?:it|that|the) in|once (?:it|that|the|your)|when (?:it|that|the|your)|after (?:it|that|the|your|about)|make sure|be sure to|don'?t forget to|carefully|gently|slowly|quickly|keep (?:stirring|mixing|cooking)|continue|allow|until|while)\b/i;
 
 // Common food words that indicate an ingredient line even without a unit
-const FOOD_RE = /\b(chicken|beef|pork|salmon|shrimp|tofu|rice|pasta|noodles|bread|flour|sugar|butter|oil|olive oil|vegetable oil|canola oil|sesame oil|coconut oil|garlic|onion|onions|shallot|shallots|tomato|tomatoes|pepper|peppers|salt|cheese|cream|milk|eggs?|lemon|lime|vinegar|soy sauce|honey|ginger|cilantro|parsley|basil|oregano|cumin|paprika|cinnamon|avocado|potato|potatoes|broccoli|spinach|mushrooms?|carrots?|celery|corn|beans?|chickpeas?|lentils?|coconut|vanilla|chocolate|bacon|sausage|ham|turkey|lettuce|cucumber|zucchini|bell pepper|jalape[nÃƒÂ±]o|mayo|mayonnaise|mustard|ketchup|sriracha|sesame|peanut|almond|walnut|cashew|oats?|yogurt|sour cream|cream cheese|mozzarella|parmesan|cheddar|feta|ricotta|tortilla|pita|naan|wonton|dumpling|vodka|whiskey|bourbon|rum|tequila|gin|scotch|vermouth|bitters|angostura|triple sec|cointreau|campari|kahlua|amaretto|ginger beer|tonic|soda water|club soda|cranberry juice|orange juice|lime juice|lemon juice|simple syrup|grenadine|baking soda|baking powder|cornstarch|cream of tartar|yeast|heavy cream|half.and.half|buttermilk|sweetened condensed milk|evaporated milk|cocoa powder|brown sugar|powdered sugar|confectioners|maple syrup|molasses|worcestershire|fish sauce|oyster sauce|hoisin|tahini|miso|sambal|harissa|chili flakes?|red pepper flakes?|cayenne|nutmeg|turmeric|cardamom|cloves?|allspice|thyme|rosemary|sage|dill|chives?|scallions?|green onions?|leeks?|capers|olives|artichoke|eggplant|squash|pumpkin|sweet potato|yam|beet|radish|cabbage|kale|arugula|watercress)\b/i;
+const FOOD_RE = /\b(chicken|beef|pork|salmon|shrimp|tofu|rice|pasta|noodles|bread|flour|sugar|butter|oil|olive oil|vegetable oil|canola oil|sesame oil|coconut oil|garlic|onion|onions|shallot|shallots|tomato|tomatoes|pepper|peppers|salt|cheese|cream|milk|eggs?|lemon|lime|vinegar|soy sauce|honey|ginger|cilantro|parsley|basil|oregano|cumin|paprika|cinnamon|avocado|potato|potatoes|broccoli|spinach|mushrooms?|carrots?|celery|corn|beans?|chickpeas?|lentils?|coconut|vanilla|chocolate|bacon|sausage|ham|turkey|lettuce|cucumber|zucchini|bell pepper|jalape[n\u00F1]o|mayo|mayonnaise|mustard|ketchup|sriracha|sesame|peanut|almond|walnut|cashew|oats?|yogurt|sour cream|cream cheese|mozzarella|parmesan|cheddar|feta|ricotta|tortilla|pita|naan|wonton|dumpling|vodka|whiskey|bourbon|rum|tequila|gin|scotch|vermouth|bitters|angostura|triple sec|cointreau|campari|kahlua|amaretto|ginger beer|tonic|soda water|club soda|cranberry juice|orange juice|lime juice|lemon juice|simple syrup|grenadine|baking soda|baking powder|cornstarch|cream of tartar|yeast|heavy cream|half.and.half|buttermilk|sweetened condensed milk|evaporated milk|cocoa powder|brown sugar|powdered sugar|confectioners|maple syrup|molasses|worcestershire|fish sauce|oyster sauce|hoisin|tahini|miso|sambal|harissa|chili flakes?|red pepper flakes?|cayenne|nutmeg|turmeric|cardamom|cloves?|allspice|thyme|rosemary|sage|dill|chives?|scallions?|green onions?|leeks?|capers|olives|artichoke|eggplant|squash|pumpkin|sweet potato|yam|beet|radish|cabbage|kale|arugula|watercress)\b/i;
 
 function looksLikeIngredient(line) {
   if (BULLET_RE.test(line)) return true;
@@ -310,7 +311,7 @@ function looksLikeDirection(line) {
   if (SPOKEN_DIRECTION_RE.test(line)) return true;
   // Sentences containing time/temperature are usually directions
   if (/\b(\d+\s*(?:minutes?|mins?|hours?|hrs?|seconds?|secs?))\b/i.test(line) && line.length > 25) return true;
-  if (/\b(\d+\s*(?:degrees?|Ã‚Â°)\s*[FCfc]?)\b/i.test(line) && line.length > 25) return true;
+  if (/\b(\d+\s*(?:degrees?|\u00B0)\s*[FCfc]?)\b/i.test(line) && line.length > 25) return true;
   return false;
 }
 
@@ -394,7 +395,7 @@ function cleanStructuredSocialRecipe(recipe) {
 
 // isCaptionWeak — moved to import/clean/socialCaption.js
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Caption Parser wrapper (used by BrowserImport) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── Caption Parser wrapper (used by BrowserImport) ─────────────────────────
 export function parseManualCaption(captionText, sourceUrl) {
   const parsed = parseCaption(captionText);
   return {
@@ -406,7 +407,7 @@ export function parseManualCaption(captionText, sourceUrl) {
   };
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Gemini structuring Ã¢â‚¬â€ direct browser call Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── Gemini structuring — direct browser call ───────────────────
 // All Gemini calls route through /api/structure (server proxy).
 
 /**
@@ -942,7 +943,7 @@ export async function structureWithAIClient(rawText, { title: hintTitle = '', im
 }
 
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ AI-powered structuring via server /api/structure-recipe (Gemini Flash) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── AI-powered structuring via server /api/structure-recipe (Gemini Flash) ───
 // All AI calls route through the server proxy. No client-side API keys.
 // Returns a SpiceHub recipe object on success, null if unavailable.
 export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl = '', sourceUrl = '', type = 'meal', author = '' } = {}) {
@@ -1007,7 +1008,7 @@ export async function structureWithAI(rawText, { title: hintTitle = '', imageUrl
   }
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ captionToRecipe: Gemini-first structuring with heuristic fallback Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── captionToRecipe: Gemini-first structuring with heuristic fallback ────────
 // Takes raw caption text and returns a structured recipe object.
 // Used by BrowserAssist Pass 0 and extractInstagramAgent to get clean results.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1206,7 +1207,7 @@ export async function captionToRecipe(captionText, { title = '', imageUrl = '', 
   return null;
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Caption Parser (4-pass, enhanced for video content) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── Caption Parser (4-pass, enhanced for video content) ─────────
 export function parseCaption(text) {
   const ingredients = [];
   const directions = [];
@@ -1264,7 +1265,7 @@ export function parseCaption(text) {
     .trim();
 
   // PASS 1.1: Normalize Instagram-style emoji bullet lines
-  // Convert "Ã°Å¸Â¥â€¢ 2 carrots" into "- 2 carrots" for better bullet detection
+  // Convert "🥕 2 carrots" into "- 2 carrots" for better bullet detection
   text = text.replace(/^([\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}])\s+/gmu, '- ');
   // Strip trailing hashtag blocks (common at end of Instagram captions)
   const hashtagBlockIdx = text.search(/\n\s*(?:#\w+\s*){3,}$/);
@@ -1276,7 +1277,7 @@ export function parseCaption(text) {
   // YouTube: "2:30 - Add the garlic" / "2:30 Add the garlic"
   // TikTok: timestamps in descriptions
   // Also handles "0:00 Intro\n0:30 Ingredients\n2:00 Steps" style chapter lists
-  text = text.replace(/^(\d{1,2}:\d{2}(?::\d{2})?)\s*[-Ã¢â‚¬â€œÃ¢â‚¬â€:]\s*/gm, '');
+  text = text.replace(/^(\d{1,2}:\d{2}(?::\d{2})?)\s*[-\u2013\u2014:]\s*/gm, '');
   text = text.replace(/^(\d{1,2}:\d{2}(?::\d{2})?)\s*[-–— :]\s*/gm, '');
   const timestampLines = text.match(/^\d{1,2}:\d{2}(?::\d{2})?\s+.+$/gm);
   if (timestampLines && timestampLines.length >= 3) {
@@ -1443,7 +1444,7 @@ export function parseCaption(text) {
     // Clean prefix markers
     // First strip bullet markers (but preserve what follows, including leading numbers)
     let cleaned = cleanLine
-      .replace(/^[-\u2022*\u203A\u2023\u2043\u2212\u2022\u00A3\u29B8\u2714\u2713]\s*/, '');
+      .replace(/^[-\u2022*\u203A\u2023\u2043\u2212\u2022\u00A3\u29B8\u2714\u2713\u25AA\u25B8\u25BA\u25E6]\s*/, '');
     // Only strip leading numbers when followed by punctuation delimiter (step numbers like "1." or "2)")
     // NOT when followed by a space + unit (ingredient quantities like "2 tbsp")
     cleaned = cleaned.replace(/^\d+[.):-]\s*/, '').trim();
@@ -1480,7 +1481,7 @@ export function parseCaption(text) {
   return { title, ingredients, directions };
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Speech transcript parser (for yt-dlp subtitle content) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── Speech transcript parser (for yt-dlp subtitle content) ──────────────────
 // Spoken recipe content is unstructured continuous text. We split it into
 // sentences, then classify each sentence as ingredient-like or direction-like.
 function parseSpeechTranscript(text) {
@@ -1498,7 +1499,7 @@ function parseSpeechTranscript(text) {
     .replace(/\s{2,}/g, ' ')
     .trim();
 
-  // Split transcript into sentences Ã¢â‚¬â€ handle both period-separated and natural speech
+  // Split transcript into sentences — handle both period-separated and natural speech
   const sentences = text
     .replace(/([.!?])\s+/g, '$1\n')
     // Also split on "so" / "and then" / "now" when they start a new thought after a pause
@@ -1582,7 +1583,7 @@ function parseSpeechTranscript(text) {
   return { title, ingredients, directions };
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ HTML helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── HTML helpers ─────────────────────────────────────────────────────────────
 // decodeHtml, extractMeta moved to lib/recipeHtmlExtraction.js (2026-08-09)
 
 function cleanTitle(title) {
@@ -1591,18 +1592,18 @@ function cleanTitle(title) {
     // Remove "Username on Instagram: ..." prefix
     .replace(/^[\w.\s]+on\s+(Instagram|TikTok|Facebook)\s*:\s*/i, '')
     // Remove "... | Instagram" / "... - TikTok" / "... - YouTube" / "... | Allrecipes" suffix
-    .replace(/\s*[|\-Ã¢â‚¬â€œÃ¢â‚¬â€Ã¢â‚¬Â¢]\s*(Instagram|TikTok|Facebook|Pinterest|YouTube|Reels?|Allrecipes|AllRecipes|Food Network|Tasty|Delish|Serious Eats|Bon AppÃƒÂ©tit|Epicurious|Simply Recipes|The Pioneer Woman|Yummly|Skinnytaste|Love and Lemons|Half Baked Harvest|Cookie and Kate|Minimalist Baker|Budget Bytes).*$/i, '')
+    .replace(/\s*[|\-\u2013\u2014\u2022]\s*(Instagram|TikTok|Facebook|Pinterest|YouTube|Reels?|Allrecipes|AllRecipes|Food Network|Tasty|Delish|Serious Eats|Bon App\u00E9tit|Epicurious|Simply Recipes|The Pioneer Woman|Yummly|Skinnytaste|Love and Lemons|Half Baked Harvest|Cookie and Kate|Minimalist Baker|Budget Bytes).*$/i, '')
     // Generic site-suffix strip: " | Word" or " - Word" at end where Word is 2-25 chars (likely a domain/brand)
     .replace(/\s*[|]\s*[A-Z][A-Za-z0-9 &]{1,24}$/, '')
     .replace(/\s*on (Instagram|TikTok|Facebook).*$/i, '')
-    // Remove social handle prefixes: "Chris Ã¢â‚¬Â¢ Ã¢â€œâ€¹ | " or "@username: "
-    .replace(/^[^|]*[Ã¢â‚¬Â¢\u24cb\u24b6-\u24E9][^|]*\|\s*/u, '')
+    // Remove social handle prefixes: "Chris • Ⓥ | " or "@username: "
+    .replace(/^[^|]*[\u2022\u24cb\u24b6-\u24E9][^|]*\|\s*/u, '')
     .replace(/^@[\w.]+[:\s]+/i, '')
     // Remove handles and hashtags
     .replace(/\s*\(@[\w.]+\).*$/, '')
     .replace(/#\w[\w.]*/g, '')
     // Remove "Reel by username" etc.
-    .replace(/^(Reel|Video|Post)\s+by\s+[\w.]+\s*[-Ã¢â‚¬â€œÃ¢â‚¬â€:.]?\s*/i, '')
+    .replace(/^(Reel|Video|Post)\s+by\s+[\w.]+\s*[-\u2013\u2014:.]?\s*/i, '')
     // Remove social media engagement stats
     .replace(/\d+[kKmM]?\s*(likes?|comments?|shares?|views?|saves?)\s*[,.]?\s*/gi, '')
     // Remove "Part N!" suffix
@@ -1623,7 +1624,7 @@ function cleanTitle(title) {
 
   // If title is too long, try to find a natural break point
   if (title.length > 120) {
-    const parts = title.split(/\s*[|\-Ã¢â‚¬â€œÃ¢â‚¬â€]\s*/);
+    const parts = title.split(/\s*[|\-\u2013\u2014]\s*/);
     if (parts[0].length > 3 && parts[0].length <= 120) {
       title = parts[0].trim();
     } else {
@@ -1647,7 +1648,7 @@ function cleanTitle(title) {
   return title;
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Flexible instruction parser Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── Flexible instruction parser ──────────────────────────
 // Handles the many formats recipe sites use for instructions:
 //   - Array of strings
 //   - Array of { text: "..." } objects (HowToStep)
@@ -1688,14 +1689,14 @@ function parseRecipeNode(node) {
       .filter(Boolean);
   }
 
-  // Directions Ã¢â‚¬â€ Comprehensive parsing:
+  // Directions — Comprehensive parsing:
   // Handles HowToStep, HowToSection, plain strings, JSON strings,
   // dict-indexed steps, and newline-separated blocks.
   let directions = [];
   const inst = node.recipeInstructions;
   directions = parseInstructionsFlexible(inst);
 
-  // Image Ã¢â‚¬â€ Pick the best/largest from multiple candidates
+  // Image — Pick the best/largest from multiple candidates
   const imageUrl = selectBestImage(node.image);
 
   return {
@@ -1706,13 +1707,13 @@ function parseRecipeNode(node) {
   };
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Strip social media OG description prefix Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── Strip social media OG description prefix ────────────────────────────────
 // Instagram OG descriptions start with "123 likes, 45 comments - username on Month Day, Year:"
 // TikTok starts with "username (@handle). ... | ... likes. ..."
 function stripSocialMetaPrefix(text) {
   if (!text) return text;
   // Instagram: "123 likes, 45 comments - username on Month Day, Year:"
-  text = text.replace(/^[\d,.]+[kKmM]?\s+likes?,?\s*[\d,.]+[kKmM]?\s+comments?\s*[-Ã¢â‚¬â€œÃ¢â‚¬â€]\s*[^:]+:\s*/i, '');
+  text = text.replace(/^[\d,.]+[kKmM]?\s+likes?,?\s*[\d,.]+[kKmM]?\s+comments?\s*[-\u2013\u2014]\s*[^:]+:\s*/i, '');
   // Instagram alt: "username shared a post on Instagram: "..."
   text = text.replace(/^[\w.]+\s+shared\s+a\s+(post|reel)\s+on\s+Instagram\s*:\s*/i, '');
   // TikTok: "username (@handle). description | 123 Likes..."
@@ -1722,12 +1723,12 @@ function stripSocialMetaPrefix(text) {
   return text.trim();
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ CORS proxy cascade (fully client-side, no server needed) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── CORS proxy cascade (fully client-side, no server needed) ─────────────────
 // PROXIES removed
 
 // fetchHtmlViaProxy removed
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Instagram embed extraction (client-side via CORS proxy) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── Instagram embed extraction (client-side via CORS proxy) ──────────────────
 function extractInstagramShortcode(url) {
   try {
     const u = new URL(url);
@@ -1804,10 +1805,10 @@ async function extractInstagramEmbed(url) {
         if (text && text.length > 15) { caption = text; break; }
       }
     }
-    // JSON data fallback Ã¢â‚¬â€ multiple 2026 Instagram patterns
+    // JSON data fallback — multiple 2026 Instagram patterns
     if (!caption) {
       const dataPatterns = [
-        // 2024/2025 SFX JSON payload: "caption":{"text":"Ã¢â‚¬Â¦"}
+        // 2024/2025 SFX JSON payload: "caption":{"text":"…"}
         /"caption"\s*:\s*\{\s*"text"\s*:\s*"((?:[^"\\]|\\.)*)"/,
         // Flat caption field
         /"caption"\s*:\s*"((?:[^"\\]|\\.){20,})"/,
@@ -1901,14 +1902,14 @@ async function extractInstagramEmbed(url) {
             author = oData.author_name || '';
             if (!title) title = author;
             if (!imageUrl && oData.thumbnail_url && isValidImageUrl(oData.thumbnail_url) && !isProfilePicUrl(oData.thumbnail_url)) imageUrl = oData.thumbnail_url;
-            console.log(`[instagram-embed] oEmbed fallback success Ã¢â‚¬â€ ${caption.length} chars`);
+            console.log(`[instagram-embed] oEmbed fallback success \u2014 ${caption.length} chars`);
           }
         }
       } catch { /* oEmbed not available */ }
     }
 
     if (!caption && !title) {
-      // No clean caption found Ã¢â‚¬â€ extract visible text from HTML for Gemini AI fallback
+      // No clean caption found — extract visible text from HTML for Gemini AI fallback
       if (html && html.length > 500) {
         const rawPageText = html
           .replace(/<script[\s\S]*?<\/script>/gi, ' ')
@@ -1917,7 +1918,7 @@ async function extractInstagramEmbed(url) {
           .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ')
           .replace(/\s+/g, ' ').trim().slice(0, 6000);
         if (rawPageText.length > 300) {
-          console.log(`[instagram-embed] No caption Ã¢â‚¬â€ returning ${rawPageText.length}c page text for AI fallback`);
+          console.log(`[instagram-embed] No caption \u2014 returning ${rawPageText.length}c page text for AI fallback`);
           return { ok: false, rawPageText, imageUrl, sourceUrl: url };
         }
       }
@@ -1925,7 +1926,7 @@ async function extractInstagramEmbed(url) {
       return null;
     }
 
-    console.log(`[instagram-embed] Success Ã¢â‚¬â€ caption: ${caption.length} chars, image: ${imageUrl ? 'yes' : 'no'}`);
+    console.log(`[instagram-embed] Success \u2014 caption: ${caption.length} chars, image: ${imageUrl ? 'yes' : 'no'}`);
     return { ok: true, type: 'caption', caption: stripSocialMetaPrefix(caption), title, author, imageUrl, sourceUrl: url };
   } catch (e) {
     console.log(`[instagram-embed] Error: ${e.message}`);
@@ -1933,7 +1934,7 @@ async function extractInstagramEmbed(url) {
   }
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬ Convert embed extraction result Ã¢â€ â€™ recipe format Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ─── Convert embed extraction result → recipe format ─────────────────────────
 // Unused (no callers anywhere in src/) but left in place rather than deleted —
 // prefixed per this file's existing "_" = intentionally-unused convention
 // (eslint varsIgnorePattern: '^[A-Z_]') instead of guessing it's safe to
@@ -1955,16 +1956,16 @@ function _handleEmbedResult(data, sourceUrl) {
   };
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Server API helpers for unified pipeline Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ── Server API helpers for unified pipeline ──────────────────────────────────
 // The server (server/index.js) provides yt-dlp and headless Chrome capabilities.
-// These are optional Ã¢â‚¬â€ if the server is unavailable, we fall back to client-side.
+// These are optional — if the server is unavailable, we fall back to client-side.
 
 let _serverBaseUrl = null;
 let _serverChecked = false;
 
 /**
  * Detect the SpiceHub server URL. Tries configured URL + same-origin.
- * NEVER tries localhost/127.0.0.1 when running on HTTPS (production) Ã¢â‚¬â€ that
+ * NEVER tries localhost/127.0.0.1 when running on HTTPS (production) — that
  * generates ERR_CONNECTION_REFUSED spam for every import with no benefit.
  * Returns base URL string or null if server is not available.
  */
@@ -2019,14 +2020,14 @@ export function resetServerDetection() {
 
 /**
  * Try dedicated video extraction endpoint (/api/extract-video).
- * This uses yt-dlp metadata + subtitles Ã¢â‚¬â€ faster and more targeted than
+ * This uses yt-dlp metadata + subtitles — faster and more targeted than
  * the general /api/extract-url endpoint for video/social URLs.
  * Returns parsed recipe object or null.
  */
 /**
  * Try to parse comma-delimited Instagram-style ingredient lists.
  * Instagram captions often list ingredients as: "2 eggs, 1 cup flour, butter, salt"
- * or use emoji separators: "Ã°Å¸Â¥Å¡ 2 eggs Ã°Å¸Â§Ë† butter Ã°Å¸Â§â‚¬ cheese"
+ * or use emoji separators: "🥚 2 eggs 🧈 butter 🧀 cheese"
  */
 // Unused (no callers anywhere in src/) but left in place rather than deleted —
 // same intentionally-unused convention as _handleEmbedResult above.
@@ -2054,7 +2055,7 @@ function _tryCommaDelimitedParse(text) {
       }
     }
 
-    // Check for emoji-separated ingredients (Ã°Å¸Â¥Å¡ 2 eggs Ã°Å¸Â§Ë† butter)
+    // Check for emoji-separated ingredients (🥚 2 eggs 🧈 butter)
     const emojiParts = line.split(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{27BF}]/u).filter(p => p.trim().length > 1);
     if (emojiParts.length >= 3) {
       const foodCount = emojiParts.filter(p => FOOD_RE.test(p.trim()) || NUM_UNIT_RE.test(p.trim())).length;
@@ -2069,7 +2070,7 @@ function _tryCommaDelimitedParse(text) {
 
     // If the line has cooking verbs, it's a direction
     if (COOKING_VERBS_RE.test(line) && line.length > 15) {
-      directions.push(line.replace(/^[-Ã¢â‚¬Â¢*Ã¢â€“ÂªÃ¢â€“Â¸Ã¢â€“ÂºÃ¢â€”Â¦Ã¢â‚¬Â£Ã¢ÂÆ’Ã¢Å“â€œÃ¢Å“â€Ã°Å¸â€Â¸Ã°Å¸â€Â¹]\s*/, '').replace(/^\d+[.):-]\s*/, '').trim());
+      directions.push(line.replace(/^[-\u2022*\u25AA\u25B8\u25BA\u25E6\u2023\u2043\u2713\u2714\uD83D\uDD38\uD83D\uDD39]\s*/u, '').replace(/^\d+[.):-]\s*/, '').trim());
     }
   }
 
@@ -2100,7 +2101,7 @@ function parseSpokenTranscript(text) {
   // Spoken ingredient patterns: "you'll need X", "grab your X", "X of Y"
   const SPOKEN_ING_RE = /(?:you(?:'re| are| will)? (?:going to )?need|you(?:'ll| will) need|grab(?: your)?|take|get|add|use|put in)\s+(.+)/i;
   const QUANTITY_MENTION_RE = /\b(?:cup|tablespoon|teaspoon|tbsp|tsp|ounce|oz|pound|lb|pinch|dash|splash|drop|part|barspoon|handful|bunch|clove|can|jar|package|stick|piece)s?\b/i;
-  const SPOKEN_DIRECTION_RE = /\b(?:preheat|mix|stir|cook|bake|fry|saut[ÃƒÂ©e]|boil|simmer|chop|dice|slice|fold|whisk|pour|drain|season|sprinkle|spread|roll|knead|let it|set aside|cover|flip|turn|remove|place|combine|toss|serve|plate|garnish|shake|muddle|strain|build|rim|express|float|swizzle|jigger|churn)\b/i;
+  const SPOKEN_DIRECTION_RE = /\b(?:preheat|mix|stir|cook|bake|fry|saute|boil|simmer|chop|dice|slice|fold|whisk|pour|drain|season|sprinkle|spread|roll|knead|let it|set aside|cover|flip|turn|remove|place|combine|toss|serve|plate|garnish|shake|muddle|strain|build|rim|express|float|swizzle|jigger|churn)\b|\bsaut\u00E9(?![a-z])/i;
 
   for (const sentence of sentences) {
     // Check if it mentions ingredient quantities
@@ -2120,11 +2121,11 @@ function parseSpokenTranscript(text) {
         if (clean.length > 2 && clean.length < 80) ingredients.push(clean);
       }
     } else if (hasQuantity && !hasAction) {
-      // Sentence mentions quantities but no cooking verbs Ã¢â‚¬â€ likely ingredient listing
+      // Sentence mentions quantities but no cooking verbs — likely ingredient listing
       const clean = sentence.replace(/^(?:and\s+|also\s+|plus\s+)/i, '').trim();
       if (clean.length > 3 && clean.length < 120) ingredients.push(clean);
     } else if (hasAction) {
-      // Sentence has cooking verbs Ã¢â‚¬â€ it's a direction
+      // Sentence has cooking verbs — it's a direction
       const clean = sentence
         .replace(/^(?:and\s+then\s+|then\s+|next\s+|now\s+|so\s+)/i, '')
         .replace(/^\w/, c => c.toUpperCase())
@@ -2367,11 +2368,11 @@ function parseRecipeFromServerJsonLd(recipe) {
   };
 }
 
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// ═══════════════════════════════════════════════════════════════════════════════
 // SCRAPER TIER 0: ENDPOINT NUDGING
 // Try to find a background JSON endpoint the site is already serving.
-// Zero-cost, no DOM parsing, no CSS selectors Ã¢â‚¬â€ just smarter URL construction.
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// Zero-cost, no DOM parsing, no CSS selectors — just smarter URL construction.
+// ═══════════════════════════════════════════════════════════════════════════════
 
 /**
  * Endpoint nudging: check if the recipe site already serves structured JSON
@@ -2379,11 +2380,11 @@ function parseRecipeFromServerJsonLd(recipe) {
  *
  * Checks (in order):
  *   1. WordPress REST API: /wp-json/wp/v2/posts?slug={slug}
- *      Ã¢â€ â€™ Returns post object with `content.rendered` (full HTML)
+ *      → Returns post object with `content.rendered` (full HTML)
  *   2. WP Recipe Maker public API: /wp-json/wprm/v1/recipe/{id}
- *      Ã¢â€ â€™ Returns structured { ingredients, instructions } (ideal)
+ *      → Returns structured { ingredients, instructions } (ideal)
  *   3. Generic JSON suffix: {url}.json or {url}?format=json
- *      Ã¢â€ â€™ Some headless or JAMstack sites serve JSON versions
+ *      → Some headless or JAMstack sites serve JSON versions
  *
  * @param {string} url - Original page URL
  * @param {string|null} [fetchedHtml] - Already-fetched HTML (to extract WP post ID)
@@ -2400,7 +2401,7 @@ async function tryEndpointNudging(url, _fetchedHtml = null) {
     const pathParts = u.pathname.replace(/\/$/, '').split('/').filter(Boolean);
     const slug = pathParts[pathParts.length - 1] || '';
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ Strategy 1: WordPress REST API by slug Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    // ── Strategy 1: WordPress REST API by slug ──────────────────────────────
     // Works on any site running WordPress (the majority of recipe blogs do).
     // Endpoint: /wp-json/wp/v2/posts?slug={slug}&_fields=id,title,content
     if (slug) {
@@ -2432,7 +2433,7 @@ async function tryEndpointNudging(url, _fetchedHtml = null) {
                 return { ...cssRecipe, link: url, _extractedVia: 'wp-rest-css' };
               }
 
-              // Third try: Turndown Ã¢â€ â€™ Gemini on rendered content
+              // Third try: Turndown → Gemini on rendered content
               const md = htmlToMarkdown(contentHtml, { focusSection: true });
               if (md.length > 100) {
                 const aiResult = await structureWithAIClient(md, { title: cleanTitle(title), sourceUrl: url });
@@ -2463,7 +2464,7 @@ async function tryEndpointNudging(url, _fetchedHtml = null) {
       } catch { /* WP REST API not available or CORS blocked */ }
     }
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ Strategy 2: Generic JSON suffix Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    // ── Strategy 2: Generic JSON suffix ────────────────────────────────────
     // Some sites (Ghost, Craft CMS, some headless setups) serve JSON at ?format=json
     const jsonSuffixUrls = [
       `${url}${url.includes('?') ? '&' : '?'}format=json`,
@@ -2539,12 +2540,12 @@ function normalizeWprmApiResponse(wprm, sourceUrl) {
   };
 }
 
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
-// SCRAPER TIER 1: TURNDOWN Ã¢â€ â€™ GEMINI BLOG PIPELINE
+// ═══════════════════════════════════════════════════════════════════════════════
+// SCRAPER TIER 1: TURNDOWN → GEMINI BLOG PIPELINE
 // Convert full blog HTML to clean Markdown via Turndown, then structure with AI.
 // Better than raw text stripping: preserves list structure, numbered steps,
 // and section headings that guide Gemini to correct ingredient/direction split.
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// ═══════════════════════════════════════════════════════════════════════════════
 
 /**
  * Convert fetched HTML to Markdown and structure via Gemini.
@@ -2558,7 +2559,7 @@ function normalizeWprmApiResponse(wprm, sourceUrl) {
 async function tryMarkdownExtraction(html, sourceUrl, { type = 'meal' } = {}) {
   if (!html || html.length < 200) return null;
   if (!htmlLooksLikeRecipe(html)) {
-    console.log('[md-extract] HTML does not look like a recipe Ã¢â‚¬â€ skipping Turndown pipeline');
+    console.log('[md-extract] HTML does not look like a recipe \u2014 skipping Turndown pipeline');
     return null;
   }
 
@@ -2566,14 +2567,14 @@ async function tryMarkdownExtraction(html, sourceUrl, { type = 'meal' } = {}) {
     const titleHint = extractMeta(html, 'og:title') || extractMeta(html, 'twitter:title') || '';
     const imageUrl = extractMeta(html, 'og:image') || '';
 
-    // Convert to Markdown Ã¢â‚¬â€ this is the key improvement over plain text stripping
+    // Convert to Markdown — this is the key improvement over plain text stripping
     const markdown = htmlToMarkdown(html, { focusSection: true, maxChars: 7000 });
     if (!markdown || markdown.length < 100) {
       console.log('[md-extract] Turndown produced empty/tiny output');
       return null;
     }
 
-    console.log(`[md-extract] Turndown Ã¢â€ â€™ ${markdown.length} chars of Markdown Ã¢â‚¬â€ sending to Gemini`);
+    console.log(`[md-extract] Turndown \u2192 ${markdown.length} chars of Markdown \u2014 sending to Gemini`);
 
     const aiResult = await structureWithAIClient(markdown, {
       title: cleanTitle(titleHint),
@@ -2590,7 +2591,7 @@ async function tryMarkdownExtraction(html, sourceUrl, { type = 'meal' } = {}) {
 
     if (!hasContent) return null;
 
-    console.log(`[md-extract] Turndown+Gemini success Ã¢â‚¬â€ ${aiResult.ingredients?.length} ing, ${aiResult.directions?.length} dir`);
+    console.log(`[md-extract] Turndown+Gemini success \u2014 ${aiResult.ingredients?.length} ing, ${aiResult.directions?.length} dir`);
     return { ...aiResult, link: sourceUrl, _extractedVia: 'turndown-gemini' };
   } catch (e) {
     console.log(`[md-extract] Error: ${e.message}`);
@@ -2598,10 +2599,10 @@ async function tryMarkdownExtraction(html, sourceUrl, { type = 'meal' } = {}) {
   }
 }
 
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// ═══════════════════════════════════════════════════════════════════════════════
 // SCRAPER TIER 2: REDDIT JSON RECIPE STRUCTURING
 // Parse Reddit selftext (already Markdown) through our caption parser + Gemini.
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// ═══════════════════════════════════════════════════════════════════════════════
 
 /**
  * Given rawText from a Reddit post (already in Markdown), structure it into
@@ -2619,7 +2620,7 @@ async function structureRedditRecipe(redditData, onProgress) {
 
   if (onProgress) onProgress('Structuring Reddit recipe...');
 
-  // Reddit selftext is Markdown Ã¢â‚¬â€ parseCaption handles it well
+  // Reddit selftext is Markdown — parseCaption handles it well
   // (lists become bullet lines, numbered steps are detected by STEP_NUM_RE)
   const parsed = parseCaption(rawText);
 
@@ -2639,7 +2640,7 @@ async function structureRedditRecipe(redditData, onProgress) {
     };
   }
 
-  // Heuristic failed Ã¢â‚¬â€ try Gemini
+  // Heuristic failed — try Gemini
   if (onProgress) onProgress('Using AI to structure Reddit recipe...');
   const aiResult = await structureWithAIClient(rawText, { title, imageUrl, sourceUrl: link });
   if (aiResult) {
@@ -2690,15 +2691,15 @@ async function persistRedditImages(structured) {
 
 /**
  * Main entry: parse recipe from a URL.
- * Unified pipeline Ã¢â‚¬â€ tries multiple strategies automatically.
+ * Unified pipeline — tries multiple strategies automatically.
  *
  * Strategy (in order):
- *   0. Reddit URLs Ã¢â€ â€™ .json endpoint (zero-auth, no scraping)
- *   1. Instagram URLs Ã¢â€ â€™ embed extraction, then server (yt-dlp + Chrome)
- *   2. Video/Social URLs Ã¢â€ â€™ server (yt-dlp metadata + subtitles), then CORS proxy
- *   3. Recipe blogs Ã¢â€ â€™ CORS proxy + JSON-LD / endpoint nudging / microdata /
+ *   0. Reddit URLs → .json endpoint (zero-auth, no scraping)
+ *   1. Instagram URLs → embed extraction, then server (yt-dlp + Chrome)
+ *   2. Video/Social URLs → server (yt-dlp metadata + subtitles), then CORS proxy
+ *   3. Recipe blogs → CORS proxy + JSON-LD / endpoint nudging / microdata /
  *      CSS heuristics / Turndown+Gemini
- *   4. All strategies exhausted Ã¢â€ â€™ guide user to Paste Text
+ *   4. All strategies exhausted → guide user to Paste Text
  *
  * @param {string} url - The URL to import from
  * @param {function} onProgress - Optional callback for progress updates
@@ -2772,11 +2773,11 @@ async function _importRecipeFromUrlOuter(url, onProgress, { type = 'meal', signa
 
 async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signal, requestBudget, kindLocked = false } = {}) {
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ 0. Reddit: zero-auth JSON endpoint (fastest non-Instagram path) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── 0. Reddit: zero-auth JSON endpoint (fastest non-Instagram path) ──────────
   // Reddit's .json trick gives structured post data with no scraping, no auth,
   // and no CORS proxy needed. Always try this first for reddit.com URLs.
   if (isRedditUrl(url)) {
-    console.log('[SpiceHub] Reddit URL Ã¢â‚¬â€ trying .json API...');
+    console.log('[SpiceHub] Reddit URL \u2014 trying .json API...');
     if (onProgress) onProgress('Fetching Reddit post via JSON API...');
 
     const redditData = await tryRedditJson(url, onProgress);
@@ -2784,7 +2785,7 @@ async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signa
     if (redditData) {
       // Special case: link post pointing to external recipe site
       if (redditData._isRedirectToExternal && redditData.externalUrl) {
-        console.log(`[SpiceHub] Reddit link post Ã¢â‚¬â€ redirecting to: ${redditData.externalUrl}`);
+        console.log(`[SpiceHub] Reddit link post \u2014 redirecting to: ${redditData.externalUrl}`);
         if (onProgress) onProgress('Following Reddit link to recipe site...');
         // Recursively parse the external URL (without Reddit wrapper)
         const externalRecipe = await parseFromUrl(redditData.externalUrl, onProgress, {
@@ -2801,7 +2802,7 @@ async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signa
         }
       }
 
-      // Text post with recipe content Ã¢â‚¬â€ structure it
+      // Text post with recipe content — structure it
       const structured = await structureRedditRecipe(redditData, onProgress);
       if (structured && (structured.ingredients?.length > 0 || structured.directions?.length > 0)) {
         if (onProgress) onProgress('Saving recipe photo...');
@@ -2809,13 +2810,13 @@ async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signa
       }
     }
 
-    // Reddit extraction failed Ã¢â‚¬â€ fall through to CORS proxy as final fallback
-    console.log('[SpiceHub] Reddit JSON API failed Ã¢â‚¬â€ trying CORS proxy fallback');
+    // Reddit extraction failed — fall through to CORS proxy as final fallback
+    console.log('[SpiceHub] Reddit JSON API failed \u2014 trying CORS proxy fallback');
   }
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ 1. Instagram: try embed first, then Agent extraction Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── 1. Instagram: try embed first, then Agent extraction ──
   if (isInstagramUrl(url)) {
-    console.log('[SpiceHub] Instagram URL Ã¢â‚¬â€ trying embed extraction...');
+    console.log('[SpiceHub] Instagram URL \u2014 trying embed extraction...');
     if (onProgress) onProgress('Trying Instagram embed extraction...');
 
     const instagramRecipe = await importFromInstagram(url, (phaseOrMsg, status, msg, metadata) => {
@@ -2826,8 +2827,8 @@ async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signa
       return instagramRecipe;
     }
 
-    // Instagram all paths failed Ã¢â‚¬â€ route to BrowserAssist
-    console.log('[SpiceHub] Instagram extraction failed Ã¢â‚¬â€ routing to BrowserAssist');
+    // Instagram all paths failed — route to BrowserAssist
+    console.log('[SpiceHub] Instagram extraction failed \u2014 routing to BrowserAssist');
     return null;
   }
 
@@ -2847,7 +2848,7 @@ async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signa
 
   // ── 2. Video/Social URLs: try Agent extraction, then yt-dlp, then CORS proxy ──
   if (isSocialMediaUrl(url)) {
-    console.log('[SpiceHub] Social/video URL Ã¢â‚¬â€ trying extraction pipeline...');
+    console.log('[SpiceHub] Social/video URL \u2014 trying extraction pipeline...');
 
     const videoRecipe = await tryVideoExtraction(url, onProgress, { type, kindLocked });
     if (videoRecipe && !videoRecipe._error && hasRecipeContent(videoRecipe)) return videoRecipe;
@@ -2875,12 +2876,12 @@ async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signa
     return { _error: true, reason: 'social-fetch-failed', platform: getSocialPlatform(url) };
   }
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ 3. Recipe blogs: multi-tier pipeline Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── 3. Recipe blogs: multi-tier pipeline ───────────────────────────────────
   //    3a. CORS proxy + JSON-LD / microdata / CSS heuristics (fast, reliable)
   //    3b. Endpoint nudging (WordPress REST API, WP Recipe Maker API)
   //    3c. Server-side extraction (yt-dlp, headless Chrome)
-  //    3d. Turndown Ã¢â€ â€™ Gemini (HTML Ã¢â€ â€™ clean Markdown Ã¢â€ â€™ AI structuring)
-  //    3e. Raw text Ã¢â€ â€™ Gemini (legacy fallback, coarser than Turndown)
+  //    3d. Turndown → Gemini (HTML → clean Markdown → AI structuring)
+  //    3e. Raw text → Gemini (legacy fallback, coarser than Turndown)
 
   // 3-pre: Unified server acquisition (/api/extract) — no CORS proxies, no
   // client-side scraping. Complete structured-data candidates return directly
@@ -2958,7 +2959,7 @@ async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signa
     console.log('[SpiceHub] CORS proxy failed:', e.message);
   }
 
-  // 3b: Endpoint nudging Ã¢â‚¬â€ try WP REST API, WPRM API, JSON suffix
+  // 3b: Endpoint nudging — try WP REST API, WPRM API, JSON suffix
   // Only run if we have HTML (to extract slug) or can construct the API URL from the URL itself
   if (onProgress) onProgress('Checking for structured data endpoints...');
   const nudgedResult = await tryEndpointNudging(url, fetchedHtml);
@@ -2972,7 +2973,7 @@ async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signa
   const serverResult = await tryServerExtraction(url, onProgress);
   if (serverResult && !serverResult._error) return serverResult;
 
-  // 3d: Turndown Ã¢â€ â€™ Gemini Ã¢â‚¬â€ better than raw text stripping
+  // 3d: Turndown → Gemini — better than raw text stripping
   // Uses the HTML we already fetched (or refetches if needed)
   if (onProgress) onProgress('Trying AI extraction with Markdown conversion...');
   const htmlForTurndown = fetchedHtml || await fetchHtmlViaProxyFromApi(url, 20000).catch(() => null);
@@ -2982,7 +2983,7 @@ async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signa
     if (turndownResult) return turndownResult;
   }
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ 4. Gemini AI fallback (legacy raw-text path) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── 4. Gemini AI fallback (legacy raw-text path) ─────────────────────────
   // Kept as a last resort; Turndown pipeline above is better but may not always
   // have access to the fetched HTML (e.g. all proxies timed out on both attempts).
   if (onProgress) onProgress('Trying AI extraction...');
@@ -3022,7 +3023,7 @@ async function _importRecipeFromUrlInner(url, onProgress, { type = 'meal', signa
     console.log('[SpiceHub] AI fallback failed:', e.message);
   }
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ 5. All methods exhausted Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── 5. All methods exhausted ──
   return null;
 }
 
@@ -3079,13 +3080,13 @@ export function parseHtml(html, sourceUrl) {
 // of its comment lines carry pre-existing byte-corrupted mojibake (unrelated
 // to this change) that this text-editing tool cannot reliably match/delete.
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Client-side Microdata extraction Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ── Client-side Microdata extraction ──────────────────────────────────────────
 // 2026-08-09: superseded by the imported extractMicrodataFromHtml — see note
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Client-side heuristic CSS class extraction Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ── Client-side heuristic CSS class extraction ─────────────────────────────────
 // 2026-08-09: superseded by the imported extractRecipeByCSS — see note above
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Extract recipe from DOM (used by BrowserAssist for visible page content) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ── Extract recipe from DOM (used by BrowserAssist for visible page content) ──────
 /**
  * Extract recipe from visible DOM content (text + image URLs).
  * Called by BrowserAssist when user clicks "Extract Recipe" button on visible page.
@@ -3137,13 +3138,13 @@ export function extractRecipeFromDOM(visibleText, imageUrls = [], sourceUrl = ''
   };
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Helper: Classify DOM lines into ingredients vs directions Ã¢â€â‚¬Ã¢â€â‚¬
+// ── Helper: Classify DOM lines into ingredients vs directions ──
 // Mutates recipe.ingredients and recipe.directions in place.
 function classifyDOMLines(lines, recipe) {
   // Measurement units that strongly indicate ingredients
   const UNIT_RE = /\b(cups?|tbsp|tsp|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|grams?|g\b|kg|ml|liters?|pinch|dash|cloves?|cans?|packages?|sticks?|slices?|bunch)\b/i;
   // Fractions at start of line strongly indicate ingredients
-  const STARTS_WITH_NUM = /^[\dÃ‚Â½Ã‚Â¼Ã‚Â¾Ã¢â€¦â€œÃ¢â€¦â€Ã¢â€¦â€ºÃ¢â€¦Å“Ã¢â€¦ÂÃ¢â€¦Å¾]/;
+  const STARTS_WITH_NUM = /^[\d\u00BD\u00BC\u00BE\u2153\u2154\u215B\u215C\u215D\u215E]/;
   // Cooking action verbs strongly indicate directions
   const COOKING_VERB = COOKING_VERBS_RE;
   // Numbered step at start
@@ -3202,7 +3203,7 @@ function classifyDOMLines(lines, recipe) {
     else if (trimmed.length > 40) {
       recipe.directions.push(trimmed);
     }
-    // Short lines without clear signal Ã¢â‚¬â€ guess ingredient
+    // Short lines without clear signal — guess ingredient
     else {
       recipe.ingredients.push(trimmed);
     }
@@ -3210,20 +3211,20 @@ function classifyDOMLines(lines, recipe) {
 
 }
 
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// ═══════════════════════════════════════════════════════════════════════════════
 // ENHANCED RECIPE EXTRACTION FUNCTIONS (Production-Ready)
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// ═══════════════════════════════════════════════════════════════════════════════
 
 /**
  * Detect recipe plugins and structured markup in DOM/HTML content.
  *
  * Recognizes:
- *   - WPRM (WP Recipe Maker) Ã¢â‚¬â€ .wprm-recipe, data-json
- *   - Tasty Recipes Ã¢â‚¬â€ .tasty-recipes, schema.org JSON-LD
- *   - EasyRecipe Ã¢â‚¬â€ .EasyRecipeType
- *   - Schema.org Recipe Ã¢â‚¬â€ JSON-LD @type: Recipe
- *   - Semantic HTML Ã¢â‚¬â€ <article>, <section> with microdata/aria labels
- *   - Common CSS patterns Ã¢â‚¬â€ recipe-ingredient, recipe-instruction, etc.
+ *   - WPRM (WP Recipe Maker) — .wprm-recipe, data-json
+ *   - Tasty Recipes — .tasty-recipes, schema.org JSON-LD
+ *   - EasyRecipe — .EasyRecipeType
+ *   - Schema.org Recipe — JSON-LD @type: Recipe
+ *   - Semantic HTML — <article>, <section> with microdata/aria labels
+ *   - Common CSS patterns — recipe-ingredient, recipe-instruction, etc.
  *
  * Returns: { type, title, ingredients, directions, imageUrl, meta }
  *   type: 'wprm' | 'tasty' | 'easyrecipe' | 'jsonld' | 'semantic' | null
@@ -3237,7 +3238,7 @@ export function detectRecipePlugins(domOrHtml) {
     doc = parser.parseFromString(domOrHtml, 'text/html');
   }
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ WPRM (WP Recipe Maker) Detection Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── WPRM (WP Recipe Maker) Detection ──
   const wprmContainer = doc.querySelector('.wprm-recipe, [data-wprm-recipe]');
   if (wprmContainer) {
     const result = extractWPRM(wprmContainer);
@@ -3246,7 +3247,7 @@ export function detectRecipePlugins(domOrHtml) {
     }
   }
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Tasty Recipes Detection Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Tasty Recipes Detection ──
   const tastyContainer = doc.querySelector('.tasty-recipes, [data-tasty-recipe]');
   if (tastyContainer) {
     const result = extractTastyRecipes(tastyContainer);
@@ -3255,7 +3256,7 @@ export function detectRecipePlugins(domOrHtml) {
     }
   }
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ EasyRecipe Detection Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── EasyRecipe Detection ──
   const easyRecipeContainer = doc.querySelector('.EasyRecipeType, [itemtype*="Recipe"]');
   if (easyRecipeContainer) {
     const result = extractEasyRecipe(easyRecipeContainer);
@@ -3264,19 +3265,19 @@ export function detectRecipePlugins(domOrHtml) {
     }
   }
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ JSON-LD Recipe Detection (Schema.org) Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── JSON-LD Recipe Detection (Schema.org) ──
   const jsonldResult = extractJsonLdRecipe(doc);
   if (jsonldResult.ingredients.length > 0 || jsonldResult.directions.length > 0) {
     return { type: 'jsonld', ...jsonldResult };
   }
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Semantic HTML + Microdata Detection Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Semantic HTML + Microdata Detection ──
   const semanticResult = extractSemanticRecipe(doc);
   if (semanticResult.ingredients.length > 0 || semanticResult.directions.length > 0) {
     return { type: 'semantic', ...semanticResult };
   }
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Common CSS pattern detection Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Common CSS pattern detection ──
   const cssResult = extractByCommonPatterns(doc);
   if (cssResult.ingredients.length > 0 || cssResult.directions.length > 0) {
     return { type: 'css-patterns', ...cssResult };
@@ -3474,12 +3475,12 @@ function normalizeJsonLdRecipe(recipe) {
       return;
     }
     if (typeof instr !== 'object') return;
-    // HowToStep / RecipeStep Ã¢â‚¬â€ direct text
+    // HowToStep / RecipeStep — direct text
     if (instr.text) {
       directions.push(instr.text.trim());
       return;
     }
-    // HowToSection Ã¢â‚¬â€ recurse into itemListElement
+    // HowToSection — recurse into itemListElement
     if (instr.itemListElement && Array.isArray(instr.itemListElement)) {
       for (const item of instr.itemListElement) flattenInstruction(item);
       return;
@@ -3633,14 +3634,14 @@ export function parseIngredientLine(text) {
   text = text.trim();
 
   // Remove bullet points and list markers
-  text = text.replace(/^[-Ã¢â‚¬Â¢*Ã¢â€“ÂªÃ¢â€“Â¸Ã¢â€“ÂºÃ¢â€”Â¦Ã¢â‚¬Â£Ã¢ÂÆ’Ã¢Å“â€œÃ¢Å“â€]\s*/, '').trim();
+  text = text.replace(/^[-\u2022*\u25AA\u25B8\u25BA\u25E6\u2023\u2043\u2713\u2714]\s*/, '').trim();
 
   // Remove numbered list markers (1., 1), 1:) but NOT bare numbers followed by space+unit (quantities)
   text = text.replace(/^\d+[.):-]\s*/, '').trim();
 
   // Match quantity + unit pattern
-  // Quantity: decimal numbers, fractions (1/2, Ã¢â€¦â€œ), unicode fractions
-  const quantityUnitPattern = /^([\dÃ‚Â½Ã‚Â¼Ã‚Â¾Ã¢â€¦â€œÃ¢â€¦â€Ã¢â€¦â€ºÃ¢â€¦Å“Ã¢â€¦ÂÃ¢â€¦Å¾][\d./\s-]*?)\s+(cups?|tablespoons?|tbsp|teaspoons?|tsp|ounces?|oz|lbs?|pounds?|grams?|g\b|kg|ml|liters?|litres?|pinch|pinches|dash|dashes|bunch|cloves?|cans?|jars?|packages?|pkg|sticks?|slices?|handful|handfuls|sprigs?|heads?|stalks?|fillets?|breasts?|thighs?|inches?|inch|pieces?|pcs?|counts?)\b/i;
+  // Quantity: decimal numbers, fractions (1/2, ⅓), unicode fractions
+  const quantityUnitPattern = /^([\d\u00BD\u00BC\u00BE\u2153\u2154\u215B\u215C\u215D\u215E][\d./\s-]*?)\s+(cups?|tablespoons?|tbsp|teaspoons?|tsp|ounces?|oz|lbs?|pounds?|grams?|g\b|kg|ml|liters?|litres?|pinch|pinches|dash|dashes|bunch|cloves?|cans?|jars?|packages?|pkg|sticks?|slices?|handful|handfuls|sprigs?|heads?|stalks?|fillets?|breasts?|thighs?|inches?|inch|pieces?|pcs?|counts?)\b/i;
 
   const match = text.match(quantityUnitPattern);
   if (match) {
@@ -3656,7 +3657,7 @@ export function parseIngredientLine(text) {
   }
 
   // Try to match just quantity (for things like "3 chicken breasts")
-  const quantityOnlyPattern = /^([\dÃ‚Â½Ã‚Â¼Ã‚Â¾Ã¢â€¦â€œÃ¢â€¦â€Ã¢â€¦â€ºÃ¢â€¦Å“Ã¢â€¦ÂÃ¢â€¦Å¾][\d./\s-]*?)\s+/;
+  const quantityOnlyPattern = /^([\d\u00BD\u00BC\u00BE\u2153\u2154\u215B\u215C\u215D\u215E][\d./\s-]*?)\s+/;
   const qMatch = text.match(quantityOnlyPattern);
   if (qMatch) {
     const quantity = qMatch[1].trim();
@@ -3671,7 +3672,7 @@ export function parseIngredientLine(text) {
     }
   }
 
-  // No quantity/unit detected Ã¢â‚¬â€ entire line is ingredient name
+  // No quantity/unit detected — entire line is ingredient name
   return {
     quantity: null,
     unit: null,
@@ -3700,15 +3701,15 @@ export function smartClassifyLines(lines, _sourceElement = null) {
   }
 
   // Enhanced patterns with stronger signals
-  const STRONG_INGREDIENT_PATTERN = /^([\dÃ‚Â½Ã‚Â¼Ã‚Â¾Ã¢â€¦â€œÃ¢â€¦â€Ã¢â€¦â€ºÃ¢â€¦Å“Ã¢â€¦ÂÃ¢â€¦Å¾][\d./\s]*\s+)?(cups?|tbsp|tsp|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|grams?|g\b|kg|ml|liters?|pinch|dash|bunch|cloves?|cans?|packages?|sticks?|slices?|handful|sprigs?|heads?|stalks?|fillets?|pieces?)\b/i;
+  const STRONG_INGREDIENT_PATTERN = /^([\d\u00BD\u00BC\u00BE\u2153\u2154\u215B\u215C\u215D\u215E][\d./\s]*\s+)?(cups?|tbsp|tsp|tablespoons?|teaspoons?|oz|ounces?|lbs?|pounds?|grams?|g\b|kg|ml|liters?|pinch|dash|bunch|cloves?|cans?|packages?|sticks?|slices?|handful|sprigs?|heads?|stalks?|fillets?|pieces?)\b/i;
 
-  const DIRECTION_KEYWORD_START = /^(mix|stir|add|combine|pour|heat|cook|bake|fry|saut[eÃƒÂ©]|chop|dice|mince|preheat|whisk|blend|fold|season|serve|place|put|set|bring|let|cover|remove|transfer|slice|cut|grill|roast|simmer|boil|drain|rinse|prepare|arrange|sprinkle|drizzle|toss|marinate|refrigerate|chill|freeze|thaw|melt|beat|cream|knead|roll|shape|form|spread|layer|garnish|start|begin|first|then|next|finally|broil|brush|coat|press|squeeze|wash|peel|trim|shred|grate|crush|smash|pound|flatten|stuff|fill|top|finish|taste|adjust|reduce|deglaze|caramelize|brown|sear|steam|poach|microwave|you'?re? gonna|go ahead|now (?:we|you|I)|take (?:your|the)|grab (?:your|the)|throw|once|when|after|carefully|gently|slowly|continue|allow|until|while)\b/i;
+  const DIRECTION_KEYWORD_START = /^(mix|stir|add|combine|pour|heat|cook|bake|fry|saute|chop|dice|mince|preheat|whisk|blend|fold|season|serve|place|put|set|bring|let|cover|remove|transfer|slice|cut|grill|roast|simmer|boil|drain|rinse|prepare|arrange|sprinkle|drizzle|toss|marinate|refrigerate|chill|freeze|thaw|melt|beat|cream|knead|roll|shape|form|spread|layer|garnish|start|begin|first|then|next|finally|broil|brush|coat|press|squeeze|wash|peel|trim|shred|grate|crush|smash|pound|flatten|stuff|fill|top|finish|taste|adjust|reduce|deglaze|caramelize|brown|sear|steam|poach|microwave|you'?re? gonna|go ahead|now (?:we|you|I)|take (?:your|the)|grab (?:your|the)|throw|once|when|after|carefully|gently|slowly|continue|allow|until|while)\b|^saut\u00E9(?![a-z])/i;
 
   const NUMBERED_STEP = /^\d+[.):\s-]/;
-  const BULLET_POINT = /^[-Ã¢â‚¬Â¢*Ã¢â€“ÂªÃ¢â€“Â¸Ã¢â€“ÂºÃ¢â€”Â¦Ã¢â‚¬Â£Ã¢ÂÆ’]/;
+  const BULLET_POINT = /^[-\u2022*\u25AA\u25B8\u25BA\u25E6\u2023\u2043]/;
 
-  // Timestamp pattern: "2:30" or "0:00:15" Ã¢â‚¬â€ strip these from lines (common in video descriptions)
-  const TIMESTAMP_PREFIX = /^(\d{1,2}:\d{2}(?::\d{2})?)\s*[-Ã¢â‚¬â€œÃ¢â‚¬â€:.]?\s*/;
+  // Timestamp pattern: "2:30" or "0:00:15" — strip these from lines (common in video descriptions)
+  const TIMESTAMP_PREFIX = /^(\d{1,2}:\d{2}(?::\d{2})?)\s*[-\u2013\u2014:.]?\s*/;
 
   // Filler lines common in video descriptions
   const VIDEO_FILLER_RE = /^(follow me|subscribe|like and subscribe|link in bio|comment below|tag a friend|save this|share this|check out|don't forget|make sure to|music:|song:|audio:|outfit:|shop:|affiliate|#\w+\s*$|@\w+\s*$)/i;
@@ -3720,7 +3721,7 @@ export function smartClassifyLines(lines, _sourceElement = null) {
     let trimmed = line.trim();
     if (!trimmed) continue;
 
-    // Strip timestamp prefixes (e.g. "2:30 Add the garlic" Ã¢â€ â€™ "Add the garlic")
+    // Strip timestamp prefixes (e.g. "2:30 Add the garlic" → "Add the garlic")
     trimmed = trimmed.replace(TIMESTAMP_PREFIX, '').trim();
     if (!trimmed) continue;
 
@@ -3775,7 +3776,7 @@ export function smartClassifyLines(lines, _sourceElement = null) {
     } else if ((hasNumberedStep || hasDirectionKeyword) && length > 20) {
       directions.push(trimmed);
     } else if (hasBulletPoint && !hasDirectionKeyword && !hasNumberedStep) {
-      // Bullets without clear direction signal Ã¢â‚¬â€ likely ingredients
+      // Bullets without clear direction signal — likely ingredients
       ingredients.push(trimmed);
     } else if (hasDirectionKeyword) {
       directions.push(trimmed);
@@ -3783,18 +3784,18 @@ export function smartClassifyLines(lines, _sourceElement = null) {
       // Very long lines without food words are probably directions
       directions.push(trimmed);
     } else if (length < 50 && FOOD_RE.test(trimmed)) {
-      // Short line with food keywords Ã¢â€ â€™ ingredient
+      // Short line with food keywords → ingredient
       ingredients.push(trimmed);
     } else if (hasNumberedStep) {
       directions.push(trimmed);
     } else if (length > 60 && /[,.]/.test(trimmed) && FOOD_RE.test(trimmed)) {
-      // Long line WITH food words and punctuation Ã¢â‚¬â€ could be ingredient list
+      // Long line WITH food words and punctuation — could be ingredient list
       ingredients.push(trimmed);
     } else if (length > 60) {
       // Long lines default to directions
       directions.push(trimmed);
     } else {
-      // Default: short unknown lines Ã¢â€ â€™ ingredients, long ones Ã¢â€ â€™ directions
+      // Default: short unknown lines → ingredients, long ones → directions
       if (length < 45) {
         ingredients.push(trimmed);
       } else {
@@ -3829,7 +3830,7 @@ export function scoreExtractionConfidence(recipe) {
   else if (realIngs.length >= 3) score += 18;
   else if (realIngs.length >= 1) score += 8;
   // Bonus: ingredients with quantities
-  const quantifiedIngs = realIngs.filter(i => /^[\dÃ‚Â½Ã‚Â¼Ã‚Â¾Ã¢â€¦â€œÃ¢â€¦â€Ã¢â€¦â€ºÃ¢â€¦Å“Ã¢â€¦ÂÃ¢â€¦Å¾]/.test(i.trim()));
+  const quantifiedIngs = realIngs.filter(i => /^[\d\u00BD\u00BC\u00BE\u2153\u2154\u215B\u215C\u215D\u215E]/.test(i.trim()));
   if (quantifiedIngs.length >= 3) score += 10;
   else if (quantifiedIngs.length >= 1) score += 5;
 
@@ -3894,7 +3895,7 @@ export function classifyWithConfidence(lines) {
       return { text: line, category: 'direction', confidence: 78, reason: 'contains time reference' };
     }
 
-    // Ambiguous Ã¢â‚¬â€ use length and food words as tiebreaker
+    // Ambiguous — use length and food words as tiebreaker
     if (line.length < 45 && FOOD_RE.test(line)) {
       return { text: line, category: 'ingredient', confidence: 55, reason: 'short with food word (uncertain)' };
     }
@@ -3961,7 +3962,7 @@ export function extractWithBrowserAPI(pageContent) {
     sourceUrl = pageContent.sourceUrl || '';
   }
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Step 1: Try to detect recipe plugins/structured markup Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Step 1: Try to detect recipe plugins/structured markup ──
   if (html) {
     const pluginResult = detectRecipePlugins(html);
     if (pluginResult.type && (pluginResult.ingredients.length > 0 || pluginResult.directions.length > 0)) {
@@ -3980,7 +3981,7 @@ export function extractWithBrowserAPI(pageContent) {
     }
   }
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Helper: extract title from HTML meta tags Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Helper: extract title from HTML meta tags ──
   function extractTitleFromHtml() {
     if (!html) return '';
     const ogTitle = html.match(/<meta[^>]+property\s*=\s*["']og:title["'][^>]+content\s*=\s*["']([^"']*)["']/i);
@@ -3990,7 +3991,7 @@ export function extractWithBrowserAPI(pageContent) {
     return '';
   }
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Step 2: Try parseCaption on visible text (leverages existing heuristics) Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Step 2: Try parseCaption on visible text (leverages existing heuristics) ──
   if (visibleText) {
     const parsed = parseCaption(visibleText);
     if (parsed.ingredients.length > 0 || parsed.directions.length > 0) {
@@ -4009,7 +4010,7 @@ export function extractWithBrowserAPI(pageContent) {
       };
     }
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ Step 3: Use smart line classification as fallback Ã¢â€â‚¬Ã¢â€â‚¬
+    // ── Step 3: Use smart line classification as fallback ──
     const lines = visibleText
       .split('\n')
       .map(l => l.trim())
@@ -4040,9 +4041,9 @@ export function extractWithBrowserAPI(pageContent) {
   return null;
 }
 
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// ═══════════════════════════════════════════════════════════════════════════════
 // URL SHORTCUT RESOLVER
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// ═══════════════════════════════════════════════════════════════════════════════
 
 /**
  * Known URL shortener / redirect domains.
@@ -4068,14 +4069,14 @@ export function isShortUrl(url) {
   } catch { return false; }
 }
 
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// ═══════════════════════════════════════════════════════════════════════════════
 // UNIFIED IMPORT ENGINE  (Build 79)
 // Single entry point for all recipe URL imports.
-// For Instagram: yt-dlp FIRST Ã¢â€ â€™ embed page Ã¢â€ â€™ AI browser Ã¢â€ â€™ manual fallback.
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// For Instagram: yt-dlp FIRST → embed page → AI browser → manual fallback.
+// ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Internal Ã¢â‚¬â€ checks if a recipe object has real extractable content
+ * Internal — checks if a recipe object has real extractable content
  * (not just placeholder strings injected when extraction partially fails).
  */
 function hasRecipeContent(recipe) {
@@ -4095,7 +4096,7 @@ function hasRecipeContent(recipe) {
 }
 
 /**
- * Public Ã¢â‚¬â€ the inverse contract used by UI code (ImportModal / BrowserAssist).
+ * Public — the inverse contract used by UI code (ImportModal / BrowserAssist).
  *
  * A "weak" result is one where the automatic pipeline didn't produce something
  * the user can actually cook from. This is the trigger for auto-handoff to the
@@ -4103,11 +4104,11 @@ function hasRecipeContent(recipe) {
  * we open BrowserAssist with the page loaded and let the user aim the parser.
  *
  * Returns true if ANY of:
- *   Ã¢â‚¬Â¢ recipe is null/undefined
- *   Ã¢â‚¬Â¢ recipe._error is set
- *   Ã¢â‚¬Â¢ recipe._needsManualCaption is set
- *   Ã¢â‚¬Â¢ BOTH ingredients AND directions are placeholder/empty
- *   Ã¢â‚¬Â¢ ingredients has fewer than 2 real items AND directions has fewer than 2 real items
+ *   • recipe is null/undefined
+ *   • recipe._error is set
+ *   • recipe._needsManualCaption is set
+ *   • BOTH ingredients AND directions are placeholder/empty
+ *   • ingredients has fewer than 2 real items AND directions has fewer than 2 real items
  *     (heuristic: a recipe you can follow needs at least a couple of each)
  */
 export function isWeakResult(recipe) {
@@ -4134,7 +4135,7 @@ export function isWeakResult(recipe) {
 }
 
 /**
- * parseVisualJSON Ã¢â‚¬â€ Layout-based recipe extractor.
+ * parseVisualJSON — Layout-based recipe extractor.
  *
  * CONTRACT:
  *   Input:  visualJson { url, viewport: { width, height }, scrollY, nodes[] }
@@ -4142,15 +4143,15 @@ export function isWeakResult(recipe) {
  *                style: { fontSize, fontWeight, color, backgroundColor,
  *                         fontFamily, lineHeight, textDecoration },
  *                depth, zIndex, src? (for IMG nodes) }
- *   Output: standard SpiceHub recipe schema Ã¢â‚¬â€ same shape as parseFromHTML / parseFromText.
+ *   Output: standard SpiceHub recipe schema — same shape as parseFromHTML / parseFromText.
  *
  * Strategy:
- *   1. Score every text node by visual weight (font-size Ãƒâ€” font-weight Ãƒâ€” position bias).
+ *   1. Score every text node by visual weight (font-size × font-weight × position bias).
  *   2. Pick title: highest-weight node in the top 40% of viewport, 5-80 chars.
  *   3. Identify ingredients: medium-weight nodes that match ingredient patterns
  *      (bullets, fractions, quantity words) or cluster tightly with ones that do.
  *   4. Identify instructions: numbered or long paragraph blocks below ingredients.
- *   5. Filter noise: tiny text, footer/comment zones (> 3Ãƒâ€” viewport height).
+ *   5. Filter noise: tiny text, footer/comment zones (> 3× viewport height).
  *   6. IG/TikTok captions: high-zIndex or semi-transparent background nodes captured first.
  */
 export function parseVisualJSON(visualJson, url) {
@@ -4163,7 +4164,7 @@ export function parseVisualJSON(visualJson, url) {
   const sourceUrl = url || visualJson.url || '';
   const vpH = viewport.height || 844;
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Helpers ───────────────────────────────────────────────────────────────
   const parseFontSize = (s) => parseFloat(s) || 14;
   const parseFontWeight = (s) => {
     if (!s) return 400;
@@ -4194,7 +4195,7 @@ export function parseVisualJSON(visualJson, url) {
     return false;
   };
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Caption / overlay detection (Instagram Reels, TikTok) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Caption / overlay detection (Instagram Reels, TikTok) ────────────────
   // High z-index or semi-transparent background = video caption overlay
   const captionNodes = nodes.filter(n =>
     !isNoisy(n) &&
@@ -4206,10 +4207,10 @@ export function parseVisualJSON(visualJson, url) {
        !n.style.backgroundColor.startsWith('rgb(250')))
   );
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Working set: clean, non-noisy nodes Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Working set: clean, non-noisy nodes ───────────────────────────────────
   const clean = nodes.filter(n => !isNoisy(n));
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ 1. Title detection Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── 1. Title detection ────────────────────────────────────────────────────
   // Highest visual weight + top 40% of viewport + 5-80 chars text
   const titleCandidates = clean.filter(n => {
     const text = n.text.trim();
@@ -4225,14 +4226,14 @@ export function parseVisualJSON(visualJson, url) {
   // Exclude the title node from further parsing
   const titleTop = titleNode ? titleNode.rect.top : -1;
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ 2. Ingredient detection Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── 2. Ingredient detection ───────────────────────────────────────────────
   // Look below the title for clustered medium-weight nodes matching ingredient patterns
   const belowTitle = clean.filter(n => n.rect.top > titleTop + 20);
 
   // Primary: nodes directly matching ingredient pattern
   const directIngNodes = belowTitle.filter(n => INGREDIENT_PATTERN.test(n.text.trim()));
 
-  // Secondary: if we have Ã¢â€°Â¥ 3 direct matches, also pull in nearby (vertical gap < 60px)
+  // Secondary: if we have ≥ 3 direct matches, also pull in nearby (vertical gap < 60px)
   // nodes of similar style that likely belong to the same list
   let ingredientNodes = [...directIngNodes];
   if (directIngNodes.length >= 2) {
@@ -4255,7 +4256,7 @@ export function parseVisualJSON(visualJson, url) {
   ingredientNodes.sort((a, b) => a.rect.top - b.rect.top);
   const ingredients = ingredientNodes.map(n => n.text.trim()).filter(Boolean);
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ 3. Instruction detection Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── 3. Instruction detection ──────────────────────────────────────────────
   // Numbered blocks or longer text paragraphs below ingredients
   const ingMaxTop = ingredientNodes.length > 0
     ? Math.max(...ingredientNodes.map(n => n.rect.top))
@@ -4272,23 +4273,23 @@ export function parseVisualJSON(visualJson, url) {
   instructionNodes.sort((a, b) => a.rect.top - b.rect.top);
   const directions = instructionNodes.map(n => n.text.trim()).filter(Boolean);
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ 4. Caption fallback (social / video overlay) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── 4. Caption fallback (social / video overlay) ─────────────────────────
   // If ingredients/directions are empty, try to extract from caption nodes
   const effectiveIngredients = ingredients.length > 0 ? ingredients
     : captionNodes.filter(n => INGREDIENT_PATTERN.test(n.text.trim())).map(n => n.text.trim());
   const effectiveDirections = directions.length > 0 ? directions
     : captionNodes.filter(n => n.text.trim().length > 20).map(n => n.text.trim()).slice(0, 20);
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ 5. Image detection Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── 5. Image detection ────────────────────────────────────────────────────
   const imgNode = nodes.find(n => n.tagName === 'IMG' && n.src && n.rect.width > 80);
   const image = imgNode ? imgNode.src : null;
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ 6. Confidence score Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── 6. Confidence score ───────────────────────────────────────────────────
   const classified = (titleNode ? 1 : 0) + Math.min(effectiveIngredients.length, 5) + Math.min(effectiveDirections.length, 5);
   const total = clean.length > 0 ? clean.length : 1;
   const confidence = Math.min(classified / Math.min(total, 15), 1);
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Debug logging (development only) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Debug logging (development only) ─────────────────────────────────────
   // `process` only exists under Node/SSR contexts and is guarded by `typeof`
   // before use, but this file lints against browser globals so there is no
   // `process` to check the second operand against.
@@ -4321,23 +4322,23 @@ export function parseVisualJSON(visualJson, url) {
   };
 }
 
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// ═══════════════════════════════════════════════════════════════════════════════
 // GEMINI HYBRID FALLBACK (Phase 1)
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * calculateVisualConfidence Ã¢â‚¬â€ Enhanced confidence scoring for visual parsing results.
+ * calculateVisualConfidence — Enhanced confidence scoring for visual parsing results.
  *
  * Factors:
  *   - Title presence (strongest signal)
- *   - Ingredient count (Ã¢â€°Â¥ 3 is strong)
- *   - Direction count (Ã¢â€°Â¥ 2 is strong)
+ *   - Ingredient count (≥ 3 is strong)
+ *   - Direction count (≥ 2 is strong)
  *   - Content completeness ratio
  *
  * Returns: 0-1 confidence score
- *   Ã¢â€°Â¥ 0.75 Ã¢â€ â€™ visual result is reliable (ship it)
- *   0.5-0.75 Ã¢â€ â€™ ambiguous (use Gemini fallback)
- *   < 0.5 Ã¢â€ â€™ weak (escalate to full deep extraction)
+ *   ≥ 0.75 → visual result is reliable (ship it)
+ *   0.5-0.75 → ambiguous (use Gemini fallback)
+ *   < 0.5 → weak (escalate to full deep extraction)
  */
 export function calculateVisualConfidence(visualResult) {
   if (!visualResult || visualResult._error) return 0;
@@ -4374,12 +4375,12 @@ export function calculateVisualConfidence(visualResult) {
 }
 
 /**
- * parseRecipeHybrid Ã¢â‚¬â€ Browser-side wrapper for hybrid visual + Gemini parsing.
+ * parseRecipeHybrid — Browser-side wrapper for hybrid visual + Gemini parsing.
  *
  * Flow:
- *   1. Run visual heuristics Ã¢â€ â€™ get confidence score
- *   2. If confidence Ã¢â€°Â¥ 0.75 Ã¢â€ â€™ return visual result (fast, deterministic)
- *   3. Else Ã¢â€ â€™ call server /api/gemini-fallback endpoint
+ *   1. Run visual heuristics → get confidence score
+ *   2. If confidence ≥ 0.75 → return visual result (fast, deterministic)
+ *   3. Else → call server /api/gemini-fallback endpoint
  *   4. Server calls Gemini, returns structured recipe + confidence
  *   5. Blend results: visual 60% + Gemini 40% when fallback used
  *
@@ -4387,7 +4388,7 @@ export function calculateVisualConfidence(visualResult) {
  * only when visual layout is ambiguous.
  */
 export async function parseRecipeHybrid(visualNodes = [], caption = '', url = '') {
-  const visualThresholdHigh = 0.75; // Strong visual signal Ã¢â€ â€™ ship immediately
+  const visualThresholdHigh = 0.75; // Strong visual signal \u2192 ship immediately
   const geminiThresholdMin = 0.6; // Gemini confidence floor
 
   // Step 1: Run visual parser
@@ -4410,7 +4411,7 @@ export async function parseRecipeHybrid(visualNodes = [], caption = '', url = ''
     };
   }
 
-  // Step 4: Visual weak or missing Ã¢â€ â€™ call server Gemini endpoint
+  // Step 4: Visual weak or missing → call server Gemini endpoint
   console.log(`[Hybrid] Low visual confidence (${(visualConfidence * 100).toFixed(0)}%), using Client-Side AI...`);
 
   let geminiResult = null;
@@ -4432,7 +4433,7 @@ export async function parseRecipeHybrid(visualNodes = [], caption = '', url = ''
   } catch (err) {
     console.error('[Gemini fallback] Client call failed:', err?.message || err);
   }
-  // Step 5: No Gemini result or too low confidence Ã¢â€ â€™ return visual as-is
+  // Step 5: No Gemini result or too low confidence → return visual as-is
   if (!geminiResult || geminiResult.confidence < geminiThresholdMin) {
     console.log('[Hybrid] Gemini result weak or unavailable, returning visual fallback');
     return {
@@ -4470,7 +4471,7 @@ export async function parseRecipeHybrid(visualNodes = [], caption = '', url = ''
 }
 
 /**
- * resolveShortUrl Ã¢â‚¬â€ attempts to follow short-URL redirects via the backend.
+ * resolveShortUrl — attempts to follow short-URL redirects via the backend.
  * Falls back silently to the original URL on any error.
  */
 export async function resolveShortUrl(url) {
@@ -4493,14 +4494,14 @@ export async function resolveShortUrl(url) {
 }
 
 /**
- * importFromInstagram Ã¢â‚¬â€ Unified 3-phase Instagram extraction engine.
+ * importFromInstagram — Unified 3-phase Instagram extraction engine.
  *
- * Phase order (ReciME insight Ã¢â‚¬â€ video subtitles are richest for Reels):
- *   0. yt-dlp video subtitles  Ã¢â€ Â FIRST
+ * Phase order (ReciME insight — video subtitles are richest for Reels):
+ *   0. yt-dlp video subtitles  ← FIRST
  *   1. Instagram embed page (fast, no Puppeteer)
  *   2. AI browser (Puppeteer, only if 0+1 fail)
  *   3. Gemini AI on any captured text
- *   Ã¢â€ â€™ Last resort: { _needsManualCaption: true, sourceUrl }
+ *   → Last resort: { _needsManualCaption: true, sourceUrl }
  *
  * @param {string} url  - Instagram post/reel URL
  * @param {function} onProgress  - callback(phaseIndex, status, message)
@@ -4520,6 +4521,14 @@ async function resolveDisplayableImage(rawUrl, persistFn) {
   if (persisted && persisted.startsWith('data:')) return { url: persisted, status: 'data-url' };
   if (/scontent|fbcdn|cdninstagram/i.test(rawUrl)) return { url: proxyImageUrl(rawUrl), status: 'proxied' };
   return { url: rawUrl, status: 'raw' };
+}
+
+// Cache only what the engine gate lets through. schemaQualityGate returns
+// { pass, reasons } with no verdict, so the old `gate.verdict !== 'empty'`
+// guards were always true and bait/empty extractions were cached for 7 days.
+export async function cacheIfNotEmpty(url, recipe, type, caption = '') {
+  if (gateRecipe(recipe, { kind: type, caption }).verdict === 'empty') return;
+  try { await setCachedImport(url, recipe, type); } catch { /* cache write failure is non-fatal */ }
 }
 
 export async function importFromInstagram(url, onProgress = () => {}, { type = 'meal', signal, requestBudget, kindLocked = false } = {}) {
@@ -4847,7 +4856,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
           domain: domainForTelemetry(blogRecipe.link || url), extractionSource: 'blog_link_follower',
           ms: 0, url,
         });
-        if (gate.verdict !== 'empty') { try { await setCachedImport(url, finalRecipe, type); } catch { /* non-fatal */ } }
+        await cacheIfNotEmpty(url, finalRecipe, type, capturedRawCaption || igPack?.caption || capturedCaption);
         return finalRecipe;
 
       } else if (blogRecipe?._isPartial && blogRecipe._articleText) {
@@ -5127,7 +5136,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
           domain: domainForTelemetry(url), extractionSource: finalRecipe._extractionSource || '',
           ms: 0, url,
         });
-        if (gate.verdict !== 'empty') { try { await setCachedImport(url, finalRecipe, type); } catch { /* cache write failure is non-fatal */ } }
+        await cacheIfNotEmpty(url, finalRecipe, type, capturedRawCaption || igPack?.caption || capturedCaption);
         return finalRecipe;
       }
       // Gemini returned partial — try merge with yt-dlp if available
@@ -5142,7 +5151,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
           progress(3, 'done', 'Recipe extracted from video!');
           const persistedImageUrl = await persistCapturedImage(capturedImageUrl || merged.imageUrl || '');
           const finalRecipe = { ...merged, imageUrl: persistedImageUrl, extractedVia: 'yt-dlp', sourceUrl: url, importedAt: new Date().toISOString() };
-          try { await setCachedImport(url, finalRecipe, type); } catch { /* non-fatal */ }
+          await cacheIfNotEmpty(url, finalRecipe, type, capturedRawCaption || igPack?.caption || capturedCaption);
           return finalRecipe;
         }
       }
@@ -5152,7 +5161,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
         progress(3, 'done', 'Using video extraction (AI unavailable)');
         const persistedImageUrl = await persistCapturedImage(capturedImageUrl || videoRecipe.imageUrl || '');
         const finalRecipe = { ...videoRecipe, imageUrl: persistedImageUrl, extractedVia: 'yt-dlp', sourceUrl: url, importedAt: new Date().toISOString() };
-        try { await setCachedImport(url, finalRecipe, type); } catch { /* non-fatal */ }
+        await cacheIfNotEmpty(url, finalRecipe, type, capturedRawCaption || igPack?.caption || capturedCaption);
         return finalRecipe;
       }
     }
@@ -5162,7 +5171,7 @@ export async function importFromInstagram(url, onProgress = () => {}, { type = '
     progress(3, 'done', 'Recipe from video subtitles!');
     const persistedImageUrl = await persistCapturedImage(capturedImageUrl || videoRecipe.imageUrl || '');
     const finalRecipe = { ...videoRecipe, imageUrl: persistedImageUrl, extractedVia: 'yt-dlp', sourceUrl: url, importedAt: new Date().toISOString() };
-    try { await setCachedImport(url, finalRecipe, type); } catch { /* non-fatal */ }
+    await cacheIfNotEmpty(url, finalRecipe, type, capturedRawCaption || igPack?.caption || capturedCaption);
     return finalRecipe;
   } else {
     progress(3, 'failed', 'No text captured from any source');

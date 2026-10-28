@@ -9,7 +9,7 @@ import db, {
   recoverStuckBatchItems,
   getBatchQueueItems,
 } from './db';
-import { importRecipeFromUrl, detectImportType } from './import/index.js';
+import { importRecipeFromUrl, detectImportType, gateRecipe, scoreExtractionConfidence } from './import/index.js';
 
 let running = false;
 let listenersAttached = false;
@@ -33,18 +33,21 @@ async function processOne(item) {
       signal: controller.signal,
     });
 
+    // Same gate the import sheet uses: a title-only or bait extraction is a
+    // miss, not a "ready" row the user has to open to discover is empty.
     const hasRecipe = result && !result._needsBrowserAssist &&
-      ((result.title || result.name) || (Array.isArray(result.ingredients) && result.ingredients.length > 0));
+      gateRecipe(result, { kind: userLocked ? item.itemType : (result.itemType || detectedType), caption: result.sourceCaption || '' }).verdict !== 'empty';
 
     if (hasRecipe) {
       const finalType = item.itemTypeUserOverride
         ? item.itemType
         : (result.itemType || result.type || detectedType || 'meal');
       // Ensure confidence is always a number so biq-confidence badges always render.
-      // Gemini-scored results already have it; Apify-only extractions may not.
+      // Gemini-scored results already have it; Apify-only extractions fall back
+      // to the structural heuristic rather than a made-up 50%.
       const normalizedRecipe = {
         ...result,
-        confidence: typeof result.confidence === 'number' ? result.confidence : 0.5,
+        confidence: typeof result.confidence === 'number' ? result.confidence : scoreExtractionConfidence(result) / 100,
       };
       await updateBatchQueueItem(item.id, {
         status: 'ready',
