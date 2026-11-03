@@ -69,6 +69,10 @@ export const IG_RECONCILIATION = [
   'INSTAGRAM REEL RULES.',
   '- The CAPTION is authoritative for ingredient lists and measured quantities.',
   '  Prefer numbered/bulleted lists in the CAPTION over anything spoken.',
+  '- TEXT ON THE CAROUSEL SLIDES is the creator\'s own written recipe, read off',
+  '  the post images. Treat it as equal to the CAPTION; when the caption has no',
+  '  list, the slides ARE the recipe. Ignore slide watermarks, @handles and',
+  '  "swipe" / "save this" prompts.',
   '- Use the TRANSCRIPT only to FILL missing steps or amounts the caption omits,',
   '  and to order steps. Never invent quantities or steps not supported by either.',
   '- Do not double-count: if the same step appears in both CAPTION and TRANSCRIPT,',
@@ -180,7 +184,7 @@ export function buildPackContents(pack, { type = 'meal' } = {}) {
   const { text, sections } = buildPackSections(pack);
   const kind =
     type === 'drink' ? 'drink'
-    : detectKindHeuristic([pack.caption, pack.transcript, pack.markdown].filter(Boolean).join('\n').slice(0, 4000)) === 'drink' ? 'drink'
+    : detectKindHeuristic([pack.caption, pack.slideText, pack.frameText, pack.transcript, pack.markdown].filter(Boolean).join('\n').slice(0, 4000)) === 'drink' ? 'drink'
     : 'meal';
 
   const mode = packHasCompleteCandidate(pack) ? 'verify' : 'extract';

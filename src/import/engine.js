@@ -23,21 +23,24 @@
 
 import { detectSourcePlatform, thinFromStructured } from '../recipeSchema.js';
 import { acquireInstagramPack } from './acquire/instagram.js';
-import { acquireWebsitePack } from './acquire/website.js';
+import { acquireWebsitePack, packFromPageHtml } from './acquire/website.js';
 import { acquirePinterestPack } from './acquire/pinterest.js';
 import { structurePack } from './structure/gemini.js';
 import { packHasCompleteCandidate } from './contextPack.js';
 import { detectSource, extractUrl } from './detectSource.js';
-import { captionToRecipe, transcribeVideoForRecipe } from '../recipeParser.js';
+import { captionToRecipe, transcribeVideoForRecipe, structureDeterministic, finalizeAIRecipe } from '../recipeParser.js';
 import { acquireVideoAudio } from './acquire/videoAudio.js';
 import { detectVideoSource } from '../lib/videoSource.js';
-import { acquirePhotoPack } from './acquire/photo.js';
+import { acquirePhotoPack, stampPhotoMeta } from './acquire/photo.js';
 import { acquireRedditPack } from './acquire/reddit.js';
 import { acquireBlogPack } from './acquire/blog.js';
 import { isRedditUrl } from '../scrapers/redditDiscovery.js';
 import { gateRecipe } from './gate.js';
 import { enrichDrinkFromCorpus } from './enrich.js';
 import { tryInstagramFollowerEnrichment } from './acquire/instagramFollowers.js';
+import { readCarouselSlides } from './acquire/instagramSlides.js';
+import { readVideoFrames } from './acquire/videoFrames.js';
+import { acquireVideoFilePack, videoPackText } from './acquire/videoFile.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,6 +49,8 @@ import { tryInstagramFollowerEnrichment } from './acquire/instagramFollowers.js'
  * @property {string}  [url]          — URL to import from
  * @property {string}  [text]         — raw text (paste / OCR / transcript)
  * @property {Array}   [pages]        — multi-page PDF pages (future)
+ * @property {File}    [videoFile]    — uploaded video (saved Reel / screen recording)
+ * @property {string}  [pageHtml]     — page the person loaded in the native in-app browser
  * @property {'meal'|'drink'} kind    — recipe kind
  * @property {boolean} kindLocked     — lock kind (no auto-detect)
  * @property {AbortSignal} [signal]   — abort signal
@@ -97,7 +102,7 @@ function detectAcquireFork(url) {
  * @param {{ signal?: AbortSignal, onProgress?: Function }} opts
  * @returns {Promise<object|null>} ContextPack or null on failure
  */
-async function acquire(fork, url, { signal, onProgress = noop } = {}) {
+async function acquire(fork, url, { signal, onProgress = noop, onMiss } = {}) {
   try {
     switch (fork) {
       case 'instagram': {
@@ -106,11 +111,11 @@ async function acquire(fork, url, { signal, onProgress = noop } = {}) {
       }
       case 'pinterest': {
         onProgress('Extracting from Pinterest…');
-        return await acquirePinterestPack(url, { signal });
+        return await acquirePinterestPack(url, { signal, onMiss });
       }
       case 'website': {
         onProgress('Extracting via SpiceHub server…');
-        return await acquireWebsitePack(url, { signal });
+        return await acquireWebsitePack(url, { signal, onMiss });
       }
       case 'reddit': {
         onProgress('Extracting from Reddit…');
@@ -154,8 +159,9 @@ async function structure(pack, { kind = 'meal', kindLocked = false, signal, onPr
     };
   }
 
-  // AI structuring via Gemini
-  if (!pack.caption && !pack.markdown) return null;
+  // AI structuring via Gemini. A captionless Reel can still carry its recipe
+  // in slide/frame text or a transcript, so any labelled section counts.
+  if (!pack.caption && !pack.markdown && !pack.transcript && !pack.slideText && !pack.frameText) return null;
 
   try {
     onProgress('Structuring recipe with AI…');
@@ -176,7 +182,17 @@ async function structure(pack, { kind = 'meal', kindLocked = false, signal, onPr
       // thinFromStructured on this exact structurePack() output; this
       // engine.js path — the one ImportSheet.jsx actually calls — never did.
       // 2026-09-09.
-      const thin = thinFromStructured(structured);
+      // structure/gemini.js leaves finalizeAIRecipe to its callers. It holds
+      // the misplaced-line cleanup (and its _postProcessAudit), the zero-junk
+      // filter, per-field confidence and the soft quality gate; skipping it
+      // (2026-09-06 → 2026-10-29) left every engine link import uncleaned.
+      const thin = finalizeAIRecipe(thinFromStructured(structured), {
+        hintTitle: pack.title || '',
+        sourceUrl: pack.sourceUrl || '',
+        author: pack.author || '',
+        via: 'gemini-pack:' + (pack.acquiredVia || pack.sourceType || 'unknown'),
+        expectLink: !['photo', 'text', 'video'].includes(pack.sourceType),
+      });
       return {
         ...thin,
         isRecipe: structured.isRecipe,
@@ -316,10 +332,26 @@ export async function importRequest(request) {
   if (source === 'photo') {
     const photoPack = await acquirePhotoPack(pages, { kind, kindLocked, signal, onProgress });
     if (!photoPack) return { recipe: null, pack: null, gate: 'empty', reasons: ['photo acquisition failed'] };
-    const photoRecipe = await structure(photoPack, { kind, kindLocked, signal, onProgress });
+    let photoRecipe = await structure(photoPack, { kind, kindLocked, signal, onProgress });
+    // Offline (or /api/structure down): shape the OCR text on-device so a
+    // Tesseract draft still reaches Review and the upgrade queue.
+    if (!photoRecipe) photoRecipe = structureDeterministic(photoPack.caption, { type: kind, kindLocked });
+    stampPhotoMeta(photoRecipe, photoPack);
     photoPack.kind = kind; photoPack.kindLocked = kindLocked;
     const { gate: photoVerdict, reasons: photoReasons } = gate(photoRecipe, photoPack);
     return { recipe: photoRecipe, pack: photoPack, gate: photoVerdict, reasons: photoReasons };
+  }
+
+  // ── Video file path (saved Reel / screen recording, works offline) ──
+  if (source === 'video') {
+    const { pack: videoPack, reason } = await acquireVideoFilePack(request.videoFile, { signal, onProgress, model: request.whisperModel });
+    if (!videoPack) return { recipe: null, pack: null, gate: 'empty', reasons: [reason] };
+    let videoRecipe = await structure(videoPack, { kind, kindLocked, signal, onProgress });
+    // Offline (or /api/structure down): shape the words on-device, as for photos.
+    if (!videoRecipe) videoRecipe = structureDeterministic(videoPackText(videoPack), { type: kind, kindLocked, imageUrl: videoPack.images[0]?.url || '' });
+    videoPack.kind = kind; videoPack.kindLocked = kindLocked;
+    const { gate: videoVerdict, reasons: videoReasons } = gate(videoRecipe, videoPack);
+    return { recipe: videoRecipe, pack: videoPack, gate: videoVerdict, reasons: videoReasons };
   }
 
   // ── Text path (no URL found in input) ──
@@ -342,9 +374,14 @@ export async function importRequest(request) {
   // Standard: detect → acquire → structure → gate
   const fork = detectAcquireFork(resolvedUrl);
 
-  const pack = await acquire(fork, resolvedUrl, { signal, onProgress });
+  let missReason = '';
+  // A page the person read in the native in-app browser needs no fetch.
+  const pack = request.pageHtml
+    ? await packFromPageHtml(request.pageHtml, resolvedUrl)
+    : await acquire(fork, resolvedUrl, { signal, onProgress, onMiss: (r) => { missReason = r; } });
+  if (!pack && request.pageHtml) missReason = 'no-recipe-on-page';
   if (!pack) {
-    return { recipe: null, pack: null, gate: 'empty', reasons: ['acquisition failed'] };
+    return { recipe: null, pack: null, gate: 'empty', reasons: [missReason || 'acquisition failed'] };
   }
 
   // Instagram-only: grounded blog/comment followers before a weak/bait
@@ -361,7 +398,11 @@ export async function importRequest(request) {
       // through to normal Gemini structuring on the (possibly enriched) pack
       // instead of returning a shaky result.
     }
+    // Thin caption on a carousel → read the recipe printed on the slides.
+    await readCarouselSlides(pack, { signal, onProgress });
   }
+  // Thin caption on a short video → read the recipe shown on screen.
+  await readVideoFrames(pack, { url: resolvedUrl, signal, onProgress });
 
   const recipe = await structure(pack, { kind, kindLocked, signal, onProgress });
   // Neither structure() branch (schema.org fast path, Gemini pack path) stamps

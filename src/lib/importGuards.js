@@ -10,6 +10,32 @@
  *   - Gemini input budget (cap text before LLM)
  */
 
+// ── Site walls (bot challenges, publisher blocks) ───────────────────────────
+// A blocked fetch comes back as a small HTML shell, with a 402/403/503 or
+// sometimes a plain 200. Shared by api/extract.js (Vercel) and server/index.js
+// (Render) so both report the same reason instead of passing the shell on as
+// recipe text. Only challenge-PAGE markers count: real recipe pages embed
+// Cloudflare Turnstile on their comment forms (challenges.cloudflare.com,
+// cf-chl-widget-*), so those alone are not a wall.
+const BOT_CHALLENGE_RE = /<title>\s*Just a moment\.\.\.\s*<\/title>|cf_chl_opt|Enable JavaScript and cookies to continue/i;
+const PUBLISHER_WALL_RE = /contentlicensing@|experiencing an access issue, please contact/i;
+const WALL_PAGE_MAX_CHARS = 150_000; // challenge shells are ~1–20 KB; real recipe pages are far larger
+
+/**
+ * Why a fetched page is a wall rather than content.
+ * @param {string} html  response body (may be empty)
+ * @param {number} [status=200]  HTTP status
+ * @returns {'publisher-block'|'bot-challenge'|''}
+ */
+export function pageWallReason(html, status = 200) {
+  if (status === 402 || status === 451) return 'publisher-block';
+  const text = String(html || '');
+  if (status < 400 && text.length > WALL_PAGE_MAX_CHARS) return '';
+  if (BOT_CHALLENGE_RE.test(text)) return 'bot-challenge';
+  if (PUBLISHER_WALL_RE.test(text)) return 'publisher-block';
+  return '';
+}
+
 // ── SSRF Protection ─────────────────────────────────────────────────────────
 // Block private, loopback, link-local, and cloud metadata IPs before any fetch.
 

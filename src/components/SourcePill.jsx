@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Pencil, Link as LinkIcon, Camera } from 'lucide-react';
+import { Pencil, Link as LinkIcon, Camera, Video } from 'lucide-react';
 
 /* ── Platform icon config ──────────────────────────────────────────────── */
 const PLATFORMS = {
@@ -57,8 +57,9 @@ export function getDetectionLabel(url) {
  * @param {boolean}  isPhoto  - True for photo imports
  * @param {function} onEdit   - Called when the pencil is tapped (aborts + re-expands)
  */
-export default function SourcePill({ url, isPhoto, onEdit }) {
-  const platform = useMemo(() => (isPhoto ? null : detectPlatform(url)), [url, isPhoto]);
+export default function SourcePill({ url, isPhoto, videoName = '', onEdit }) {
+  const isVideo = !!videoName && !url;
+  const platform = useMemo(() => (isPhoto || isVideo ? null : detectPlatform(url)), [url, isPhoto, isVideo]);
   const config = platform ? PLATFORMS[platform] : null;
 
   const displayUrl = useMemo(() => {
@@ -79,23 +80,25 @@ export default function SourcePill({ url, isPhoto, onEdit }) {
         className="source-pill-icon"
         style={config ? { background: config.gradient } : undefined}
       >
-        {isPhoto ? (
+        {isVideo ? (
+          <Video size={14} color="#fff" />
+        ) : isPhoto ? (
           <Camera size={14} color="#fff" />
         ) : (
           <LinkIcon size={14} color="#fff" />
         )}
       </div>
 
-      {/* Truncated URL or "Recipe photo" */}
+      {/* Truncated URL, video file name, or "Recipe photo" */}
       <span className="source-pill-url">
-        {isPhoto ? 'Recipe photo' : displayUrl}
+        {isVideo ? videoName.slice(0, 50) : isPhoto ? 'Recipe photo' : displayUrl}
       </span>
 
       {/* Edit / abort button */}
       <button
         className="source-pill-edit"
         onClick={onEdit}
-        aria-label={isPhoto ? 'Cancel import and retake photo' : 'Cancel import and edit URL'}
+        aria-label={isVideo ? 'Cancel video import' : isPhoto ? 'Cancel import and retake photo' : 'Cancel import and edit URL'}
         type="button"
       >
         <Pencil size={13} />

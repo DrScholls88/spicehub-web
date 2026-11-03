@@ -12,11 +12,13 @@ import {
 import { getPreferredWhisperModel, setPreferredWhisperModel } from '../lib/transcriptionService.js';
 import { cleanUrl } from '../api.js';
 import { ENGINE_PROMPT_VERSION } from '../recipeSchema.js';
-import { humanizeImportStatus } from '../importCopy.js';
+import { humanizeImportStatus, missMessage } from '../importCopy.js';
+import { canReadInApp, readRecipePageInApp } from '../lib/inAppRecipeBrowser.js';
 import db, { queuePhotoUpgrade } from '../db.js';
 import useOnlineStatus from '../hooks/useOnlineStatus';
 import ImportInput from './ImportInput';
 import ImportReview from './ImportReview';
+import PageAligner from './PageAligner';
 import BrowserAssist from './BrowserAssist';
 import SourcePill from './SourcePill.jsx';
 import { advanceTimeline, INITIAL_TIMELINE } from '../import/progressMap.js';
@@ -136,8 +138,10 @@ export default function ImportSheet({
   const [gateVerdict, setGateVerdict] = useState(null);
   const [gateReasons, setGateReasons] = useState([]);
   const [error, setError] = useState('');
+  const [missActions, setMissActions] = useState([]); // next steps under a link Miss (importCopy.missMessage)
   const [progressMsg, setProgressMsg] = useState('');
   const [importUrl, setImportUrl] = useState('');
+  const [videoName, setVideoName] = useState(''); // uploaded video being imported (SourcePill label)
   const [itemType, setItemType] = useState(initialItemType);
   // Tracks an explicit Meal/Drink chip tap in ImportInput, lifted here so the
   // footer "Smart Import" CTA (which calls execute*Import directly,
@@ -240,6 +244,10 @@ export default function ImportSheet({
 
   // ── Quiet Field: recovery phase text ──────────────────────────────────
   const [recoveryText, setRecoveryText] = useState('');
+  // Hard-to-read photo: which page to offer a retake for, and the retake in flight.
+  const [ocrWorstPage, setOcrWorstPage] = useState(null);
+  const [retake, setRetake] = useState(null); // { index, src } | null
+  const retakeInputRef = useRef(null);
 
   const abortRef = useRef(null);
   const browserAssistRef = useRef(null);
@@ -558,7 +566,7 @@ export default function ImportSheet({
   // It builds an ImportRequest, calls engine.importRequest, and handles the
   // result uniformly. Replaces executeUrlImport, executePasteImport,
   // executePhotoImport, and executeTranscribeImport.
-  const executeImport = useCallback(async ({ url: rawUrl, text, pages, type, explicitOverride, via }) => {
+  const executeImport = useCallback(async ({ url: rawUrl, text, pages, videoFile, pageHtml, type, explicitOverride, via }) => {
     // Abort any in-flight import.
     if (abortRef.current) abortRef.current.abort();
     const controller = new AbortController();
@@ -572,6 +580,8 @@ export default function ImportSheet({
       url: rawUrl ? cleanUrl(rawUrl) : undefined,
       text,
       pages,
+      videoFile,
+      pageHtml,
       kind: effectiveType,
       kindLocked: userChose,
       signal: controller.signal,
@@ -590,13 +600,20 @@ export default function ImportSheet({
     setItemType(effectiveType);
     setPhase('loading');
     setError('');
+    setMissActions([]);
     setLoadingImage('');
+    setVideoName(source === 'video' ? (videoFile?.name || 'Your video') : '');
 
     if (source === 'photo') {
       const count = Array.isArray(pages) ? pages.length : 0;
       setDraftSessionId(`photo-import:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
       setProgressMsg(count > 1 ? `Reading ${count} pages…` : 'Reading your photo…');
       setTimeline({ stage: 0, chip: count > 1 ? `${count} pages` : 'Photo scan' });
+    } else if (source === 'video') {
+      setDraftSessionId(`video-import:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+      setImportUrl('');
+      setProgressMsg('Having a listen to your video…');
+      setTimeline({ stage: 0, chip: 'Video audio' });
     } else if (source === 'text') {
       setDraftSessionId(`pasted-text:${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
       setProgressMsg('Sorting ingredients from instructions…');
@@ -613,6 +630,7 @@ export default function ImportSheet({
     try {
       const { recipe: result, pack, gate: verdict, reasons: gateReasonsResult = [] } = await importRequest(request);
       if (controller.signal.aborted) return;
+      setOcrWorstPage(pack?._ocrConfidence?.worstPage ?? null);
 
       if (result && (result.title || result.name || (result.ingredients || []).length)) {
         const normalized = normalizeRecipeForReview(result, effectiveType, { userChose });
@@ -628,8 +646,9 @@ export default function ImportSheet({
         }
       }
 
-      // No recipe — check for caption recovery.
-      const caption = pack?.caption || '';
+      // No recipe — check for caption recovery. A video pack's words live in
+      // its transcript / on-screen text, so those are recoverable too.
+      const caption = pack?.caption || [pack?.frameText, pack?.transcript].filter(Boolean).join('\n\n');
       if (caption.trim()) {
         hapticError();
         setCapturedText(caption);
@@ -640,11 +659,23 @@ export default function ImportSheet({
         setPhase('recovery');
       } else {
         hapticError();
-        setError(source === 'photo'
+        // Link imports: say why the page couldn't be read, and offer the
+        // paste/screenshot paths that don't need the site's cooperation.
+        const miss = source === 'photo' || source === 'text' || source === 'video'
+          ? null
+          : missMessage(gateReasonsResult, request.url, {
+            canBrowse: (source === 'website' || source === 'pinterest') && canReadInApp(),
+          });
+        setMissActions(miss?.actions || []);
+        setError(miss?.text || (source === 'photo'
           ? "We couldn't read a recipe in that photo. Try a clearer shot."
+          : source === 'video'
+            ? (gateReasonsResult.includes('whisper-not-cached')
+              ? "Offline video import needs the speech model, which downloads on your first video import with a connection. Connect once, then it works offline."
+              : "We couldn't hear or see a recipe in that video. Try a screenshot of the ingredient card instead.")
           : source === 'text'
             ? "That text didn't look like a recipe. Try adding the ingredients or steps."
-            : "We couldn't read a recipe from this.");
+            : "We couldn't read a recipe from this."));
         setPhase('input');
       }
     } catch (err) {
@@ -683,6 +714,13 @@ export default function ImportSheet({
     }
   }, [phase, executeImport]);
 
+  // Native app: open the link in the in-app browser; when the person taps
+  // import there, the page they are viewing goes straight to the engine.
+  const handleOpenInAppBrowser = useCallback(async () => {
+    const page = await readRecipePageInApp(importUrl || url);
+    if (page) handleImport({ url: page.url, pageHtml: page.html });
+  }, [importUrl, url, handleImport]);
+
   // Legacy compatibility: handlePhotoImport normalizes single data URLs to pages.
   const handlePhotoImport = useCallback(async (pagesOrDataUrl, type) => {
     const pages = typeof pagesOrDataUrl === 'string'
@@ -690,6 +728,35 @@ export default function ImportSheet({
       : pagesOrDataUrl;
     handleImport({ pages, type });
   }, [handleImport]);
+
+  // ── Retake one hard-to-read page ─────────────────────────────────────────
+  // Opens the system camera, runs the shot through the same PageAligner
+  // crop/flatten step as capture, swaps it in for page N and re-imports.
+  // Goes through handleImport so edits already made in Review still get the
+  // "replace the recipe you're reviewing?" confirmation.
+  const handleRetakePage = useCallback((pageNum) => {
+    setRetake({ index: Math.max(0, (pageNum || 1) - 1), src: null });
+    retakeInputRef.current?.click();
+  }, []);
+  const handleRetakeFile = useCallback((e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) { setRetake(null); return; }
+    setRetake((r) => (r ? { ...r, src: URL.createObjectURL(file) } : null));
+  }, []);
+  const closeRetake = useCallback(() => {
+    setRetake((r) => {
+      if (r?.src) { try { URL.revokeObjectURL(r.src); } catch { /* not a blob URL */ } }
+      return null;
+    });
+  }, []);
+  const handleRetakeConfirm = useCallback((dataUrl) => {
+    const index = retake?.index ?? 0;
+    const next = scanPages.map((p, i) => (i === index ? { id: `${Date.now()}-retake`, dataUrl, source: 'scan' } : p));
+    closeRetake();
+    setScanPages(next);
+    handleImport({ pages: next });
+  }, [retake, scanPages, closeRetake, handleImport]);
 
   // ── BrowserAssist recipe callback ────────────────────────────────────────
   const handleBrowserAssistRecipe = useCallback((extractedRecipe) => {
@@ -927,8 +994,11 @@ export default function ImportSheet({
                     scanPages={scanPages}
                     setScanPages={setScanPages}
                     onImport={(u) => handleImport({ url: u })}
+                    onVideo={(file) => handleImport({ videoFile: file })}
                     disabled={false}
                     errorMsg={error || null}
+                    missActions={error ? missActions : []}
+                    onOpenBrowser={handleOpenInAppBrowser}
                   />
                 </motion.div>
               )}
@@ -937,7 +1007,30 @@ export default function ImportSheet({
                   key="source-pill"
                   url={importUrl}
                   isPhoto={scanPages.length > 0 && !importUrl}
+                  videoName={videoName}
                   onEdit={handleReExpand}
+                />
+              )}
+            </AnimatePresence>
+
+            {/* Retake a hard-to-read page: hidden camera input + aligner overlay */}
+            <input
+              ref={retakeInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handleRetakeFile}
+              style={{ display: 'none' }}
+              aria-hidden="true"
+            />
+            <AnimatePresence>
+              {retake?.src && (
+                <PageAligner
+                  key="retake"
+                  imageSrc={retake.src}
+                  pageCount={scanPages.length}
+                  onConfirm={handleRetakeConfirm}
+                  onCancel={closeRetake}
                 />
               )}
             </AnimatePresence>
@@ -1034,7 +1127,32 @@ export default function ImportSheet({
                   exit={{ opacity: 0 }}
                   transition={{ duration: 0.2 }}
                 >
-                  {gateReasons.includes('bait-caption') ? (
+                  {gateReasons.includes('photo-unreadable') && scanPages.length > 0 ? (
+                    <>
+                      <p className="import-sheet-recovery-msg import-sheet-recovery-msg-title">
+                        That photo was hard to read.
+                      </p>
+                      <p className="import-sheet-recovery-msg">
+                        {scanPages.length > 1 && ocrWorstPage
+                          ? `Page ${ocrWorstPage} came out too blurry or dark to read. Retake it in good light, or fix the text below.`
+                          : 'It came out too blurry or dark to read. Retake it in good light, or fix the text below.'}
+                      </p>
+                      <button
+                        type="button"
+                        className="import-sheet-recovery-alt"
+                        onClick={() => handleRetakePage(ocrWorstPage || 1)}
+                      >
+                        {scanPages.length > 1 && ocrWorstPage ? `Retake page ${ocrWorstPage}` : 'Retake photo'}
+                      </button>
+                      <textarea
+                        className="import-sheet-recovery-textarea"
+                        value={recoveryText}
+                        onChange={(e) => setRecoveryText(e.target.value)}
+                        aria-label="Text read from the photo"
+                        rows={6}
+                      />
+                    </>
+                  ) : gateReasons.includes('bait-caption') ? (
                     <>
                       <p className="import-sheet-recovery-msg import-sheet-recovery-msg-title">
                         The recipe's on their blog.
@@ -1114,6 +1232,7 @@ export default function ImportSheet({
                     setDestination={setDestination}
                     scanPages={scanPages}
                     gate={gateVerdict}
+                    onRetakePage={scanPages.length > 0 ? handleRetakePage : undefined}
                   />
                 </motion.div>
               )}

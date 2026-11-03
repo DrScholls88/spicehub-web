@@ -99,4 +99,4 @@ export { detectSource, extractUrl } from './detectSource.js';
 // Caption cleaning + weakness detection (extracted from recipeParser)
 export { cleanSocialCaption, isCaptionWeak } from './clean/socialCaption.js';
 
-export { gateRecipe } from './gate.js';
+export { gateRecipe, OCR_HARD_TO_READ } from './gate.js';

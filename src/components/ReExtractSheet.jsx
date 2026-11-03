@@ -222,6 +222,16 @@ export default function ReExtractSheet({ meal, onClose, onSaved }) {
     }
   }, [meal, itemType, curIngredients, curDirections, videoSource]);
 
+  // Offline: start on our own the moment the connection returns, so the
+  // sheet waits for you instead of being a dead end. It still lands on the
+  // diff; nothing is merged without your choice.
+  useEffect(() => {
+    if (phase !== 'offline') return undefined;
+    const resume = () => runExtraction(mode);
+    window.addEventListener('online', resume);
+    return () => window.removeEventListener('online', resume);
+  }, [phase, mode, runExtraction]);
+
   // Kick off automatically on open — caption re-run is still the default;
   // audio is an explicit opt-in via the button below.
   useEffect(() => {
@@ -331,7 +341,7 @@ export default function ReExtractSheet({ meal, onClose, onSaved }) {
               <motion.div key="offline" className="re-status" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <WifiOff size={26} />
                 <p>You're offline.</p>
-                <span className="re-status-sub">Re-extraction needs a connection. Reconnect and try again.</span>
+                <span className="re-status-sub">Improving needs a connection. Keep this open and we'll start as soon as you're back online.</span>
                 <button className="re-btn re-btn-ghost" onClick={() => runExtraction(mode)}>Try again</button>
               </motion.div>
             )}

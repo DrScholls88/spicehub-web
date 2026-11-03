@@ -95,6 +95,20 @@ registerRoute(
   })
 );
 
+// ── On-device Whisper runtime (onnxruntime-web WASM) ───────────────────────
+// ort-*.wasm (~21 MB) is deliberately NOT precached (vite.config.js
+// globIgnores) so installs stay light. Cache it the first time a video is
+// transcribed instead, so importing a saved video file then works offline
+// (Transformers.js caches the model weights itself). Same-origin, hashed
+// filename → CacheFirst is safe; 2 entries covers old + new build mid-update.
+registerRoute(
+  ({ url, sameOrigin }) => sameOrigin && /\/assets\/ort-[^/]+\.(?:wasm|mjs)$/i.test(url.pathname),
+  new CacheFirst({
+    cacheName: 'whisper-runtime',
+    plugins: [new ExpirationPlugin({ maxEntries: 2, purgeOnQuotaError: true })],
+  })
+);
+
 // ── Google AI API calls: NetworkFirst (fast, no caching) ───────────────────
 registerRoute(
   /^https:\/\/generativelanguage\.googleapis\.com\/.*/i,

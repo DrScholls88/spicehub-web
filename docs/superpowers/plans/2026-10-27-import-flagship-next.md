@@ -123,6 +123,8 @@ Verified against code on 2026-10-27 (HEAD `27c45302`). Most landed in `c5b3258f`
 
 ### Task 3 (P1): Read carousel slide text — the real social gap
 
+> **Status 2026-10-28: shipped.** `acquire/instagramSlides.js`, wired after the followers in `engine.js`. Trigger: 2+ images and <2 quantity lines in the cleaned caption. Online vision tiers only (no Tesseract). `slideText` had to be added to `createContextPack`: `/api/structure` rebuilds the pack through it, and would have dropped the field. Test: `corpus.carouselSlides.test.js`. engine.js is 415 lines, over its 400 cap; trim it in a later task.
+
 **Why:** many recipe carousels put the ingredients on the slides and leave a two-line caption. Today those posts go to the comment and blog followers, then audio, and then reach Miss.
 
 **Flow (no new deps, no new endpoint):** the IG acquire leg already returns `childPosts` image URLs (`api/proxy.js:546`), and `contextPack` already tags them `kind: 'carousel'`. When the gate would return `empty` or `isCaptionWeak(caption)` is true, **and** the pack has carousel images:
@@ -140,6 +142,13 @@ Verified against code on 2026-10-27 (HEAD `27c45302`). Most landed in `c5b3258f`
 
 ### Task 4 (P2): Honest photo-quality signal
 
+> **Status 2026-10-28: shipped.** Found first: since the engine took over photo imports (2026-09-06), no photo metadata reached the recipe. `_ocrDraft` never fed the offline upgrade queue, Review never said "read on your device", saved scans lost `_scanPages`, and an offline photo landed on Miss because `/api/structure` was unreachable. Fixed with `stampPhotoMeta` (`acquire/photo.js`) plus an on-device `structureDeterministic` fallback in the engine's photo branch.
+> - 4a/4b: `ocrPageFromTesseract` + `summarizeOcrConfidence` in `photoImportEngine.js` produce `_ocrConfidence { min, worstPage, perPage }`. Review shows "Page N was hard to read" with **Retake page N** (system camera → PageAligner → swap the page → re-import through `handleImport`, so edits still get the replace confirmation).
+> - 4c: done differently from the plan. An offline Improve now waits for the `online` event and starts by itself, rather than joining a queue: a queue would merge without the diff review.
+> - 4d: `gateRecipe` adds `photo-unreadable` (min < `OCR_HARD_TO_READ` = 60) and downgrades a pass to salvage. Miss gets its own "That photo was hard to read" diagnosis with a retake button.
+> - Not done: the engine path still doesn't crop the dish photo (`_dishPhotoBox` is carried; Review's Adjust photo covers it).
+> - Test: `corpus.photoMeta.test.js`.
+
 - [ ] **4a** In `transcribeWithTesseract` (`photoImportEngine.js:529`) keep `result.data.confidence` per page. For the cloud tiers, if the Gemini/Mistral contract has no confidence, leave it null. Don't invent one.
 - [ ] **4b** Stamp `recipe._ocrConfidence = { min, perPage }`. In `ImportReview`, when `min < 60`, show the chip "Page N was hard to read" with a **Retake page N** action that reopens `PhotoScanSession` at that index. Use design.md tokens, a 44px target and an `aria-label`.
 - [ ] **4c** Instead of "re-extract offline": when Improve is pressed offline (`ReExtractSheet.jsx:171`), offer **"Improve when I'm back online"**. This enqueues into the existing offline photo-upgrade queue pattern (`ImportSheet.jsx:745`) rather than a dead-end screen.
@@ -148,11 +157,54 @@ Verified against code on 2026-10-27 (HEAD `27c45302`). Most landed in `c5b3258f`
 
 ### Task 5 (P2): Show what the cleaner changed
 
+> **Status 2026-10-29: shipped.** Found first: the engine's `structure()` never ran `finalizeAIRecipe`. structure/gemini.js leaves that to its callers. So from 2026-09-06 every engine link import skipped the misplaced-line cleanup, the zero-junk filter, title cleaning, per-field confidence, normalizer enrichment and the soft quality gate, and had no `_postProcessAudit` to list. Now finalized (`expectLink: false` for photo/text, so they aren't capped for lacking a URL). The gate treats "Imported Recipe" (finalize's default) as generic.
+> - Audit entries now carry `index` (position in the source list). `undoCleanup` (`src/import/clean/undoCleanup.js`) restores a line and drops its entry. Review's "Tidied N lines" is a disclosure listing each line with **Undo**.
+> - Test: `corpus.cleanupAudit.test.js`.
+
 - [ ] Make the existing correction-count chip (`ImportReview.jsx:806-809`) a disclosure that lists `_postProcessAudit.moved` / `.filtered` lines (`recipeParser.js:725-726`), each with **Undo** (puts the line back where it came from). Use plain language: "Moved 2 lines from steps to ingredients." No new state store; it reads the audit already on the recipe.
 - [ ] Test: Undo restores the exact line at its original index.
 - [ ] **Commit:** `feat(review): list and undo deterministic cleanup moves`
 
 ### Task 6 (P3): OCR tier spike — measure, don't adopt
+
+> **Status 2026-10-29: 6a done. The bar is cleared, so the decision is Brian's.** Fixtures: 8 of Brian's photos in `tests/import/fixtures/photos/` (1600px JPEG + `expected.json` ingredient lines). Script: `scripts/ocr-bench.mjs` (Node; skips any engine not installed, so litert-ocr is never a repo dependency). Metric: a line counts when ≥67% of its food words appear in the OCR text (one-letter slips allowed for words of 5+ letters). Tesseract got the app's `preprocessForOCR` (2500px, BT.601 gray, 1.5× contrast); litert-ocr got the raw JPEG.
+>
+> | Photo | Tesseract | litert-ocr 0.1.0 |
+> |---|---|---|
+> | cookbook two-page spread | 30% (conf 41) | 100% (conf 98) |
+> | handwritten card, cropped | 0% (32) | 100% (92) |
+> | IG screenshot pair | 100% (75) | 100% (99) |
+> | IG screenshot, low-res | 100% (80) | 100% (100) |
+> | annotated textbook | 100% (88) | 100% (100) |
+> | vintage two-column | 86% (93) | 71% (99) |
+> | handwritten notebook, shadow | 11% (30) | 89% (93) |
+> | cursive | 0% (33) | 50% (90) |
+> | **mean** | **53%** | **89%** (+36; gate was +15) |
+>
+> Findings that change 6b:
+> - **litert's confidence does not track accuracy** (90 on a 50% cursive read). If it becomes the on-device tier, `OCR_HARD_TO_READ`/`photo-unreadable` must not use its `data.confidence` as-is; Tesseract's (30–41 on failures) does track. Needs a different legibility signal (e.g. dropped-line count or per-symbol confidence) before swapping.
+> - **Speed is unmeasured in the browser.** Node had 2 threads (1.7–8.6 s/page). Without COEP the PWA runs single-threaded, "several times slower" per its README. A phone test is needed before adopting.
+> - **Download:** ~74 MB cache after one run (vs Tesseract's self-hosted bundle). Opt-in only.
+> - PaddleOCR.js not benched: browser SDK (OpenCV.js + ORT web), no Node path; litert already clears the bar.
+> - 6c (pixtral-12b-latest liveness, mistral-ocr pricing) not done: needs the server key.
+
+#### 6d — Engine-agnostic legibility signal (shipped 2026-10-29, Brian's priority 1)
+
+- `src/import/legibility.js`: `scoreLegibility(text, lexicon)` checks the recognised text, not the engine. Share of known kitchen words (`src/data/ocrLexicon.js`, 6.2k words generated from the repo's ingredient data by `scripts/build-ocr-lexicon.mjs`, lazy-loaded), junk-symbol share, and garbage-line share.
+- Tesseract pages now score `min(Tesseract confidence, legibility)`. The same function is what any future engine (litert) must use; its native confidence is ignored.
+- Calibration (`corpus.legibility.test.js`, fixtures = the 16 real dumps in `tests/import/fixtures/photos/ocr/`): with `OCR_HARD_TO_READ` = 60 it flags all 4 Tesseract failures (11–26) and litert's 2 flawed handwriting reads (47, 54), and passes all 10 clean reads (66–93). 8 photos is a small set; add more as they turn up.
+- Cloud tiers are still unscored on purpose: a dish-photo page has no text and would score 0.
+
+#### Policy until device numbers exist
+
+litert-ocr is **not** a primary path. If it is built, it is only an explicit "Try a better reader" action offered after a hard-to-read Tesseract result, gated by a Settings toggle "Download better offline reader (~74 MB)". It is never a silent opt-in.
+
+#### 6e — Device cost measurement (Brian, needs real phones + a staging deploy)
+
+- Threads need cross-origin isolation (COOP `same-origin` plus COEP). `require-corp` would break cross-origin images that lack CORP headers; use COEP `credentialless` on staging. Safari doesn't support `credentialless`, and litert's README says Safari runs one WASM thread anyway, so **the iPhone single-thread time is the binding number**.
+- CSP: the app self-hosts Tesseract under `public/tesseract/` because `script-src`/`worker-src` block CDNs. litert loads its runtime from jsDelivr, so it must be self-hosted the same way (or the CSP widened, which is not recommended).
+- Caching: litert keeps its models in the Cache API itself. Do **not** add them to the Workbox precache manifest (74 MB on every install). Verify they survive iOS PWA storage eviction, and that the app still works offline when they are absent (Tesseract floor).
+- Measure: first-load download time, then per-page time single- vs multi-thread on a mid-range Android and an iPhone, using the 8 fixture photos.
 
 **Gate for adoption:** beats Tesseract by ≥15 points of ingredient-line recall on a photo set that does not exist yet: create `tests/import/fixtures/photos/` with ~10 real phone photos from Brian (cookbook page, screenshot, handwritten card, low light) and hand-written expected ingredient lines, and Brian approves the first-use download size.
 

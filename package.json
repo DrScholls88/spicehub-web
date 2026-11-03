@@ -27,6 +27,7 @@
     "@capacitor/ios": "^8.5.3",
     "@capacitor/share": "^8.0.3",
     "@capgo/capacitor-share-target": "^8.0.63",
+    "@capgo/inappbrowser": "^8.6.14",
     "@google/generative-ai": "^0.21.0",
     "@huggingface/transformers": "^3.0.0",
     "@playwright/test": "^1.59.1",

@@ -10,7 +10,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { BAIT_ONLY_RE } from './junk.js';
 
-const GENERIC_NAMES = /^(recipe|imported|untitled|home|blog|post|page|instagram|reel)$/i;
+// 'imported recipe' is finalizeAIRecipe's default when the model gave no title.
+const GENERIC_NAMES = /^(recipe|imported( recipe)?|untitled|home|blog|post|page|instagram|reel)$/i;
 
 /**
  * Normalize ingredients/directions to an array of non-empty strings.
@@ -22,13 +23,14 @@ function toLines(val) {
 }
 
 /**
- * Gate a structured recipe against quality thresholds.
+ * Content thresholds (ingredients, bait, name, directions). gateRecipe below
+ * wraps this with the photo-legibility check.
  *
  * @param {object|null} recipe — structured recipe from structurePack / captionToRecipe
  * @param {object}      pack   — ContextPack (carries kind, caption, markdown, etc.)
  * @returns {{ verdict: 'pass'|'salvage'|'empty', reasons: string[] }}
  */
-export function gateRecipe(recipe, pack) {
+function gateCore(recipe, pack) {
   if (!recipe) {
     return { verdict: 'empty', reasons: ['no-recipe'] };
   }
@@ -73,4 +75,28 @@ export function gateRecipe(recipe, pack) {
   // ── Verdict ───────────────────────────────────────────────────────────
   if (reasons.length === 0) return { verdict: 'pass', reasons: [] };
   return { verdict: 'salvage', reasons };
+}
+
+/**
+ * Below this page score (0–100) a photo page counts as hard to read. The score
+ * is min(engine confidence, text legibility) — see src/import/legibility.js.
+ */
+export const OCR_HARD_TO_READ = 60;
+
+/**
+ * Gate a structured recipe against quality thresholds.
+ * A hard-to-read photo page adds 'photo-unreadable' and downgrades a pass to
+ * salvage: the text may look complete and still be misread.
+ *
+ * @param {object|null} recipe
+ * @param {object}      pack
+ * @returns {{ verdict: 'pass'|'salvage'|'empty', reasons: string[] }}
+ */
+export function gateRecipe(recipe, pack) {
+  const out = gateCore(recipe, pack);
+  const ocr = pack?._ocrConfidence;
+  if (ocr && typeof ocr.min === 'number' && ocr.min < OCR_HARD_TO_READ) {
+    return { verdict: out.verdict === 'pass' ? 'salvage' : out.verdict, reasons: [...out.reasons, 'photo-unreadable'] };
+  }
+  return out;
 }

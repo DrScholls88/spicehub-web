@@ -1,0 +1,120 @@
+[
+ {
+  "file": "cookbook-two-page-spread.jpg",
+  "description": "Printed cookbook spread, small bold type, photo on right",
+  "ingredients": [
+   "50g (1.8oz) sweetener, syrup or granular of choice",
+   "2 tablespoons (30g) coconut oil",
+   "1 teaspoon vanilla extract",
+   "1/4 cup (30g) the good stuff, finely minced",
+   "30g (1oz) dark chocolate, optional, roughly chopped",
+   "2 tablespoons (20g) unsweetened cacao",
+   "1 cup (140g) love, roughly chopped",
+   "1 cup (80g) happiness",
+   "1 cup (70g) shredded paper",
+   "1 tablespoon (15g) chia seeds"
+  ]
+ },
+ {
+  "file": "handwritten-card-cropped.jpg",
+  "description": "Handwritten recipe card, edges cropped, small photo",
+  "ingredients": [
+   "2 sticks real butter",
+   "2 cups sifted flour",
+   "1 cup chopped nuts",
+   "1/4 cup sugar",
+   "1 t vanilla"
+  ]
+ },
+ {
+  "file": "instagram-screenshot-pair.jpg",
+  "description": "Two Instagram screenshots side by side, list in caption",
+  "ingredients": [
+   "Parsnip fries",
+   "Leftover roast beef",
+   "Green onion",
+   "Cilantro",
+   "Avocado slices",
+   "1/2 avo",
+   "2 TBSP lemon juice",
+   "1/4 cup olive oil"
+  ]
+ },
+ {
+  "file": "instagram-screenshot-small.jpg",
+  "description": "Low-resolution Instagram screenshot, caption below photo",
+  "ingredients": [
+   "1 T olive oil",
+   "1 lb lean ground beef",
+   "1 medium yellow onion, chopped",
+   "1 red bell pepper",
+   "Salt and pepper",
+   "2 tsp garlic, minced",
+   "1 (28 oz) can crushed tomatoes"
+  ]
+ },
+ {
+  "file": "textbook-annotated.jpg",
+  "description": "Printed textbook page with overlapping callout labels and unicode fractions",
+  "ingredients": [
+   "1/2 onion, diced",
+   "1/3 carrot, diced",
+   "1/2 potato, diced",
+   "1/2 stick celery, sliced",
+   "4 green beans, sliced",
+   "1/3 zucchini, sliced",
+   "1/2 cup cabbage, shredded",
+   "1 tablespoon oil",
+   "1 clove garlic, crushed",
+   "1 tablespoon tomato paste",
+   "100 grams diced canned tomatoes",
+   "1 cup beef stock",
+   "1 cup water",
+   "1 tablespoon canned cannellini beans",
+   "1 tablespoon small pasta",
+   "1 tablespoon grated parmesan cheese"
+  ]
+ },
+ {
+  "file": "vintage-two-column.jpg",
+  "description": "Vintage cookbook scan, two ingredient columns, old typeface",
+  "ingredients": [
+   "1 cup sugar",
+   "1/4 cup melted butter",
+   "1 egg, unbeaten",
+   "2 squares unsweetened chocolate, melted",
+   "3/4 teaspoon vanilla",
+   "1/2 cup flour",
+   "1/2 cup walnut meats, cut in pieces"
+  ]
+ },
+ {
+  "file": "handwritten-notebook-low-light.jpg",
+  "description": "Handwritten print in a lined notebook, shadow across the page",
+  "ingredients": [
+   "2 1/4 cups flour",
+   "1 tsp baking soda",
+   "1/2 tsp salt",
+   "1 cup butter",
+   "3/4 cup sugar",
+   "1 cup brown sugar",
+   "2 eggs",
+   "1 tsp vanilla",
+   "2 cups chocolate chips"
+  ]
+ },
+ {
+  "file": "handwritten-cursive.jpg",
+  "description": "Cursive handwriting on lined paper, misspellings in source",
+  "ingredients": [
+   "2 1/2 cups rolled oats",
+   "1/2 cup cocoa",
+   "1 cup coconut",
+   "1 1/2 cups sugar",
+   "1/4 cup shortening",
+   "1/4 cup butter",
+   "1/2 cup milk",
+   "1 tsp vanilla"
+  ]
+ }
+]

@@ -14,7 +14,7 @@ import os from 'node:os';
 import dns from 'node:dns/promises';
 import net from 'node:net';
 import { fileURLToPath } from 'url';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 // Shared extraction contract (single source of truth). recipeSchema.js has ZERO
@@ -26,6 +26,7 @@ import {
   buildFewShotContents,
 } from '../src/recipeSchema.js';
 import { GEMINI_PRIMARY_MODEL } from '../src/lib/importConfig.js';
+import { pageWallReason } from '../src/lib/importGuards.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -48,7 +49,91 @@ function resolveYtDlpBin() {
   return _ytDlpBinCache;
 }
 
+// Same lookup for ffmpeg: FFMPEG_BIN env → <repo>/bin/ffmpeg (render-build.sh
+// drops a static build there when the host has none) → `ffmpeg` on PATH.
+const _BUNDLED_FFMPEG = path.join(__dirname, '..', 'bin', 'ffmpeg');
+let _ffmpegBinCache = null;
+function resolveFfmpegBin() {
+  if (_ffmpegBinCache) return _ffmpegBinCache;
+  if (process.env.FFMPEG_BIN) _ffmpegBinCache = process.env.FFMPEG_BIN;
+  else if (fs.existsSync(_BUNDLED_FFMPEG)) _ffmpegBinCache = _BUNDLED_FFMPEG;
+  else _ffmpegBinCache = 'ffmpeg';
+  return _ffmpegBinCache;
+}
+
+// IG_COOKIES_JSON_B64 (browser-export JSON, see scripts/encode-cookies.js) as a
+// Netscape cookies.txt for yt-dlp, written once per process with 0600 perms.
+// Instagram refuses most anonymous media downloads, so without this the audio
+// and frames legs fail on IG even when yt-dlp itself is installed.
+let _igCookieFileCache;
+function igCookieFile() {
+  if (_igCookieFileCache !== undefined) return _igCookieFileCache;
+  _igCookieFileCache = '';
+  const cookies = igCookieList();
+  if (cookies.length === 0) return _igCookieFileCache;
+  const lines = ['# Netscape HTTP Cookie File'];
+  for (const c of cookies) {
+    const domain = c.domain || '.instagram.com';
+    lines.push([
+      domain,
+      domain.startsWith('.') ? 'TRUE' : 'FALSE',
+      c.path || '/',
+      c.secure === false ? 'FALSE' : 'TRUE',
+      String(Math.floor(Number(c.expirationDate || c.expires) || 0)),
+      c.name,
+      c.value,
+    ].join('\t'));
+  }
+  try {
+    const file = path.join(os.tmpdir(), 'spicehub-ig-cookies.txt');
+    fs.writeFileSync(file, lines.join('\n') + '\n', { mode: 0o600 });
+    _igCookieFileCache = file;
+  } catch { /* no cookies → anonymous download, same as before */ }
+  return _igCookieFileCache;
+}
+
+/** Extra yt-dlp flags every download/metadata call needs: ffmpeg location + IG cookies. */
+function ytDlpExtraArgs(url) {
+  const args = [];
+  const ffmpeg = resolveFfmpegBin();
+  if (ffmpeg !== 'ffmpeg') args.push('--ffmpeg-location', ffmpeg);
+  if (/(^|\.)instagram\.com$/i.test(safeHostname(url))) {
+    const cookies = igCookieFile();
+    if (cookies) args.push('--cookies', cookies);
+  }
+  return args;
+}
+
+function safeHostname(url) {
+  try { return new URL(url).hostname; } catch { return ''; }
+}
+
+// Which helper binaries actually run on this host. Probed once per process so
+// a missing yt-dlp/ffmpeg shows up in GET /api/v2/ping instead of as a silent
+// 422 on every video import (it was missing in production until 2026-11-02).
+let _toolProbe = null;
+function probeTools() {
+  if (_toolProbe) return _toolProbe;
+  const runs = (bin, args) => {
+    try { return spawnSync(bin, args, { timeout: 8000, windowsHide: true, stdio: 'ignore' }).status === 0; } catch { return false; }
+  };
+  _toolProbe = {
+    ytDlp: runs(resolveYtDlpBin(), ['--version']),
+    ffmpeg: runs(resolveFfmpegBin(), ['-version']),
+    igCookies: igCookieList().length > 0,
+  };
+  return _toolProbe;
+}
+
 export const app = express();
+// Render terminates TLS at its own proxy and forwards the client in
+// X-Forwarded-For. Without this, req.ip is whichever proxy hop relayed the
+// request, so express-rate-limit keyed every user on a shifting pool of proxy
+// IPs (verified 2026-11-02: back-to-back requests landed in different
+// buckets). Trust exactly the hops Render adds, never the client's own
+// X-Forwarded-For entries (that would let a caller pick their own bucket).
+// TRUST_PROXY_HOPS lets the count be corrected in the dashboard without a deploy.
+app.set('trust proxy', Number.parseInt(process.env.TRUST_PROXY_HOPS || '1', 10));
 const PORT = process.env.PORT || 3001;
 
 // Baseline security headers on every response — mirrors the header set
@@ -237,17 +322,19 @@ function headersFor(targetUrl) {
 }
 
 function instagramCookieHeader() {
+  return igCookieList().map((c) => `${c.name}=${c.value}`).join('; ');
+}
+
+/** Instagram cookies from IG_COOKIES_JSON_B64, or [] when unset/invalid. */
+function igCookieList() {
   const raw = process.env.IG_COOKIES_JSON_B64;
-  if (!raw) return '';
+  if (!raw) return [];
   try {
     const parsed = JSON.parse(Buffer.from(raw, 'base64').toString('utf8'));
-    if (!Array.isArray(parsed)) return '';
-    return parsed
-      .filter((c) => c?.name && typeof c.value === 'string' && /instagram\.com/i.test(c.domain || 'instagram.com'))
-      .map((c) => `${c.name}=${c.value}`)
-      .join('; ');
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((c) => c?.name && typeof c.value === 'string' && /instagram\.com/i.test(c.domain || 'instagram.com'));
   } catch {
-    return '';
+    return [];
   }
 }
 
@@ -265,6 +352,22 @@ async function fetchText(targetUrl, timeoutMs = 20000) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+// Why a fetched page is NOT the content we asked for, or '' when it is.
+// Bot challenges and publisher walls often come back as 200 (or 402/403) with a
+// tiny HTML shell, and returning that shell as `ok: true` made the client
+// structure "Just a moment... Enable JavaScript" as if it were a recipe.
+// The wall test itself is shared with api/extract.js (src/lib/importGuards.js).
+const MIN_PAGE_TEXT_CHARS = 200; // a login wall strips to "Instagram"; a recipe page is thousands
+
+export function blockedPageReason(fetched) {
+  const html = String(fetched?.text || '');
+  const wall = pageWallReason(html, fetched?.status ?? 200);
+  if (wall) return wall;
+  if (fetched?.status >= 400) return `upstream-${fetched.status}`;
+  if (stripHtml(html).length < MIN_PAGE_TEXT_CHARS) return 'no-content';
+  return '';
 }
 
 function extractMeta(html, name) {
@@ -356,7 +459,7 @@ function extractInstagramEmbedData(html, sourceUrl) {
 function runYtDlpJson(url, timeoutMs = 70000) {
   return new Promise((resolve) => {
     const bin = resolveYtDlpBin();
-    const child = spawn(bin, ['--dump-json', '--skip-download', '--no-warnings', url], {
+    const child = spawn(bin, ['--dump-json', '--skip-download', '--no-warnings', ...ytDlpExtraArgs(url), url], {
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -411,7 +514,7 @@ function cleanSubtitle(text) {
 }
 
 app.get('/api/v2/ping', (_req, res) => {
-  res.json({ ok: true, status: 'resource-server', clientFirst: true });
+  res.json({ ok: true, status: 'resource-server', clientFirst: true, tools: probeTools() });
 });
 
 app.post('/api/resolve-url', standardLimiter, async (req, res) => {
@@ -479,6 +582,8 @@ app.post('/api/extract-url', standardLimiter, async (req, res) => {
         extractedVia: 'server-jsonld',
       });
     }
+    const blocked = blockedPageReason(fetched);
+    if (blocked) return res.json({ ok: false, error: blocked, status: fetched.status, sourceUrl: parsed.href });
     return res.json({
       ok: true,
       type: 'caption',
@@ -514,7 +619,9 @@ app.post('/api/extract-instagram-agent', standardLimiter, async (req, res) => {
       const fetched = await fetchText(candidate, 25000);
       if (!fetched.text || fetched.text.length < 500) continue;
       const data = extractInstagramEmbedData(fetched.text, parsed.href);
-      if (data.caption || data.rawText || data.imageUrl) {
+      // rawText alone is not data: a login wall strips to just "Instagram".
+      const usefulText = data.rawText && !blockedPageReason(fetched);
+      if (data.caption || data.imageUrl || usefulText) {
         return res.json({
           ok: true,
           ...data,
@@ -525,7 +632,7 @@ app.post('/api/extract-instagram-agent', standardLimiter, async (req, res) => {
     } catch { /* try next candidate */ }
   }
 
-  return res.json({ ok: false, error: 'no-instagram-data' });
+  return res.json({ ok: false, error: 'no-instagram-data', sourceUrl: parsed.href });
 });
 
 app.post('/api/structure-recipe', expensiveLimiter, async (req, res) => {
@@ -602,6 +709,7 @@ function runYtDlpSubtitles(url, timeoutMs = 70000) {
         '--skip-download',
         '--dump-json',
         '--no-warnings',
+        ...ytDlpExtraArgs(url),
         url,
       ],
       { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] },
@@ -690,6 +798,7 @@ app.post('/api/transcribe', expensiveLimiter, async (req, res) => {
         '-o', rawAudioPath,
         '--no-warnings',
         '--no-playlist',
+        ...ytDlpExtraArgs(parsed.href),
         parsed.href,
       ], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
 
@@ -718,7 +827,7 @@ app.post('/api/transcribe', expensiveLimiter, async (req, res) => {
 
     // 2) Transcode to 16 kHz mono WAV with ffmpeg
     const ffResult = await new Promise((resolve) => {
-      const child = spawn('ffmpeg', [
+      const child = spawn(resolveFfmpegBin(), [
         '-y', '-i', rawFile,
         '-ar', '16000', '-ac', '1',
         '-f', 'wav',
@@ -815,6 +924,118 @@ app.post('/api/transcribe', expensiveLimiter, async (req, res) => {
   } catch (err) {
     cleanup();
     return res.status(502).json({ ok: false, error: err.message });
+  }
+});
+
+// -----------------------------------------------------------------------------
+// /api/frames — still frames from a short video so the client can read recipe
+// text shown ON SCREEN. Music-only Reels with text overlays have no caption and
+// no speech, so neither the caption nor Whisper ever sees the recipe.
+// yt-dlp (<=720p) → ffmpeg scene-change frames (first frame always; uniform
+// 1-per-2s when there are too few cuts) + the final second, where many Reels
+// show the whole ingredient card → JPEG data URLs. No LLM work here: the client
+// reads them through the existing /api/vision tiers (acquire/videoFrames.js).
+// ponytail: no pixel de-dupe; the client drops repeated overlay lines instead.
+// -----------------------------------------------------------------------------
+const FRAME_MAX = 9;          // + the last-second frame = photoImportEngine MAX_PAGES (10)
+const FRAME_MIN_SCENES = 4;   // fewer cuts than this → uniform sampling instead
+const FRAME_SCALE = 'scale=720:-2';
+
+function runProcess(bin, args, timeoutMs) {
+  return new Promise((resolve) => {
+    const child = spawn(bin, args, { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    const name = path.basename(bin);
+    const timer = setTimeout(() => { child.kill(); resolve({ ok: false, error: `${name}-timeout` }); }, timeoutMs);
+    child.stderr.on('data', (chunk) => { stderr = (stderr + chunk.toString()).slice(-2000); });
+    child.on('error', (err) => { clearTimeout(timer); resolve({ ok: false, error: `${name}: ${err.message}` }); });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      resolve(code === 0 ? { ok: true, stderr } : { ok: false, stderr, error: stderr.slice(-500) || `${name} exit ${code}` });
+    });
+  });
+}
+
+// Video length in seconds, read from ffmpeg's own input banner (render-build.sh
+// only ships ffmpeg, not ffprobe). `ffmpeg -i x` with no output exits 1 — expected.
+async function videoDurationSec(ffmpeg, video) {
+  const probe = await runProcess(ffmpeg, ['-hide_banner', '-i', video], 15000);
+  const m = /Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/.exec(probe.stderr || '');
+  return m ? Number(m[1]) * 3600 + Number(m[2]) * 60 + parseFloat(m[3]) : 0;
+}
+
+function removeStampFiles(dir, stamp) {
+  try {
+    for (const f of fs.readdirSync(dir)) {
+      if (f.startsWith(stamp)) { try { fs.unlinkSync(path.join(dir, f)); } catch { /* ignore */ } }
+    }
+  } catch { /* ignore */ }
+}
+
+app.post('/api/frames', expensiveLimiter, async (req, res) => {
+  const target = cleanUrl(req.body?.url);
+  const safe = await requireSafeUrl(target);
+  if (!safe.ok) return res.status(400).json({ ok: false, error: safe.error });
+  const { parsed } = safe;
+
+  const tmpDir = os.tmpdir();
+  const stamp = `spicehub-frames-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const ffmpeg = resolveFfmpegBin();
+  const jpg = ['-q:v', '5'];
+  const framesWith = (prefix) => fs.readdirSync(tmpDir).filter((f) => f.startsWith(prefix) && f.endsWith('.jpg')).sort();
+
+  try {
+    // Video-only stream is enough for stills and needs no merge step.
+    const dl = await runProcess(resolveYtDlpBin(), [
+      '-f', 'bv*[height<=720]/b[height<=720]/bv*/b',
+      '--max-filesize', '80M',
+      '-o', path.join(tmpDir, `${stamp}-video.%(ext)s`),
+      '--no-warnings', '--no-playlist', '--no-part',
+      ...ytDlpExtraArgs(parsed.href),
+      parsed.href,
+    ], 90000);
+    if (!dl.ok) return res.status(422).json({ ok: false, error: dl.error, sourceUrl: parsed.href });
+    const videoName = fs.readdirSync(tmpDir).find((f) => f.startsWith(`${stamp}-video.`));
+    if (!videoName) return res.status(422).json({ ok: false, error: 'video-file-not-found', sourceUrl: parsed.href });
+    const video = path.join(tmpDir, videoName);
+
+    // 1) Scene changes: text overlays usually land on a cut.
+    let sampledVia = 'scene';
+    await runProcess(ffmpeg, [
+      '-y', '-i', video,
+      '-vf', `select=eq(n\\,0)+gt(scene\\,0.25),${FRAME_SCALE}`, '-vsync', 'vfr',
+      '-frames:v', String(FRAME_MAX), ...jpg, path.join(tmpDir, `${stamp}-s%02d.jpg`),
+    ], 60000);
+    let frames = framesWith(`${stamp}-s`);
+
+    // 2) Few cuts (one long shot, or overlays on continuous footage): spread
+    //    FRAME_MAX frames evenly across the whole video. A fixed fps would stop
+    //    sampling at FRAME_MAX / fps seconds and miss the back half of a Reel.
+    if (frames.length < FRAME_MIN_SCENES) {
+      const duration = await videoDurationSec(ffmpeg, video);
+      const fps = duration > 0 ? Math.min(1, FRAME_MAX / duration) : 0.5;
+      await runProcess(ffmpeg, [
+        '-y', '-i', video, '-vf', `fps=${fps.toFixed(4)},${FRAME_SCALE}`,
+        '-frames:v', String(FRAME_MAX), ...jpg, path.join(tmpDir, `${stamp}-u%02d.jpg`),
+      ], 60000);
+      const uniform = framesWith(`${stamp}-u`);
+      if (uniform.length > frames.length) { frames = uniform; sampledVia = 'uniform'; }
+    }
+
+    // 3) The final second — end cards often carry the full ingredient list.
+    const lastName = `${stamp}-zlast.jpg`;
+    const last = await runProcess(ffmpeg, [
+      '-y', '-sseof', '-1', '-i', video, '-frames:v', '1', '-vf', FRAME_SCALE, ...jpg, path.join(tmpDir, lastName),
+    ], 30000);
+    if (last.ok && fs.existsSync(path.join(tmpDir, lastName))) frames.push(lastName);
+
+    if (frames.length === 0) return res.status(422).json({ ok: false, error: 'no-frames', sourceUrl: parsed.href });
+    const dataUrls = frames.map((f) => `data:image/jpeg;base64,${fs.readFileSync(path.join(tmpDir, f)).toString('base64')}`);
+    return res.json({ ok: true, frames: dataUrls, count: dataUrls.length, sampledVia, sourceUrl: parsed.href });
+  } catch (err) {
+    return res.status(502).json({ ok: false, error: err.message });
+  } finally {
+    removeStampFiles(tmpDir, stamp);
   }
 });
 

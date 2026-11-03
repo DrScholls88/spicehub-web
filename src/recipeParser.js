@@ -600,24 +600,29 @@ function reclassifyIngredientsAndDirections(ingredients = [], directions = []) {
 
   let ing = ingredients.map(toText).filter(Boolean);
   let dir = directions.map(toText).filter(Boolean);
+  // `index` on each audit entry = the line's position in the list it came
+  // from, as the model emitted it, so Review's Undo can put it back in place.
+  // null when that position is not knowable (a line already moved once).
+  const dirInputLen = dir.length;
 
   // Pass 1 — directions hiding in the ingredient list.
   const keepIng = [];
-  for (const line of ing) {
+  for (let index = 0; index < ing.length; index += 1) {
+    const line = ing[index];
     if (isTrashIngredientLine(line) || isNutritionLine(line)) {
-      filtered.push({ from: 'ingredients', line, reason: isNutritionLine(line) ? 'nutrition' : 'trash' });
+      filtered.push({ from: 'ingredients', line, index, reason: isNutritionLine(line) ? 'nutrition' : 'trash' });
       continue;
     }
     if (NUMBERED_STEP_RE.test(line)) {
       dir.push(line);
-      moved.push({ from: 'ingredients', to: 'directions', line, reason: 'numbered-step' });
+      moved.push({ from: 'ingredients', to: 'directions', line, index, reason: 'numbered-step' });
       continue;
     }
     const strongDir = COOKING_VERBS_RE.test(line) || SPOKEN_DIRECTION_RE.test(line);
     const strongIng = looksLikeIngredient(line) && !strongDir;
     if (strongDir && !strongIng) {
       dir.push(line);
-      moved.push({ from: 'ingredients', to: 'directions', line, reason: 'action-verb' });
+      moved.push({ from: 'ingredients', to: 'directions', line, index, reason: 'action-verb' });
       continue;
     }
     keepIng.push(line);
@@ -645,7 +650,7 @@ function reclassifyIngredientsAndDirections(ingredients = [], directions = []) {
     const wouldEmptyDirections = keepDir.length === 0 && i === dir.length - 1;
     if (strongIng && !strongDir && !wouldEmptyDirections) {
       ing.push(line);
-      moved.push({ from: 'directions', to: 'ingredients', line, reason: 'pure-quantity-food' });
+      moved.push({ from: 'directions', to: 'ingredients', line, index: i < dirInputLen ? i : null, reason: 'pure-quantity-food' });
       continue;
     }
     keepDir.push(line);
@@ -655,7 +660,7 @@ function reclassifyIngredientsAndDirections(ingredients = [], directions = []) {
   // Final defensive trash sweep on ingredients.
   const finalIng = ing.filter((line) => {
     if (isTrashIngredientLine(line) || isNutritionLine(line)) {
-      filtered.push({ from: 'ingredients', line, reason: 'final-trash' });
+      filtered.push({ from: 'ingredients', line, index: null, reason: 'final-trash' });
       return false;
     }
     return true;
@@ -666,7 +671,7 @@ function reclassifyIngredientsAndDirections(ingredients = [], directions = []) {
   // sometimes emits as steps. Same structural filter used on ingredients.
   const finalDir = dir.filter((line) => {
     if (isTrashIngredientLine(line) || isNutritionLine(line)) {
-      filtered.push({ from: 'directions', line, reason: 'direction-trash' });
+      filtered.push({ from: 'directions', line, index: null, reason: 'direction-trash' });
       return false;
     }
     return true;
@@ -753,7 +758,7 @@ export function enforceDeterministicRules(input = {}) {
  * deterministic enforcer, then attaches display name, structured fields, source
  * metadata, and the engine tag. Keeps all paths consistent + observable.
  */
-function finalizeAIRecipe(thin, { hintTitle = '', imageUrl = '', sourceUrl = '', via = '', author = '' } = {}) {
+export function finalizeAIRecipe(thin, { hintTitle = '', imageUrl = '', sourceUrl = '', via = '', author = '', expectLink = true } = {}) {
   const enforced = enforceDeterministicRules({ ...thin, _structuredVia: via || thin._structuredVia });
   const audit = enforced._postProcessAudit;
   if (audit && (audit.movedCount || audit.filteredCount)) {
@@ -804,7 +809,8 @@ function finalizeAIRecipe(thin, { hintTitle = '', imageUrl = '', sourceUrl = '',
   if (!result.name || /^imported recipe$/i.test(result.name.trim())) gateReasons.push('generic-name');
   if (!Array.isArray(result.ingredients) || result.ingredients.length < 2) gateReasons.push('ingredients<2');
   if (!Array.isArray(result.directions) || result.directions.length < 1) gateReasons.push('directions<1');
-  if (!finalLink) gateReasons.push('no-sourceUrl');
+  // Photo / pasted-text imports have no link by nature; don't penalize them for it.
+  if (!finalLink && expectLink) gateReasons.push('no-sourceUrl');
   if (isVideoSource && !result.videoUrl) gateReasons.push('reel-missing-videoUrl');
 
   if (gateReasons.length) {

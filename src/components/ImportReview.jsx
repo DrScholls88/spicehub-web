@@ -27,6 +27,8 @@ import PhotoGallery from './PhotoGallery';
 import DishPhotoCropper from './DishPhotoCropper';
 import CoverPicker from './import/CoverPicker.jsx';
 import { autoExpand } from '../lib/autoExpandTextarea.js';
+import { OCR_HARD_TO_READ } from '../import/gate.js';
+import { undoCleanup } from '../import/clean/undoCleanup.js';
 
 // Spring-like easing shared across review animations (spec §1)
 const SPRING_EASE = [0.32, 0.72, 0, 1];
@@ -387,10 +389,11 @@ function ListItem({
  *   onSave      — callback with final recipe + destination
  *   confidence  — extraction confidence score (0-1)
  */
-export default function ImportReview({ recipe, onChange, onSave, confidence, destination, setDestination, scanPages = null, gate = null }) {
+export default function ImportReview({ recipe, onChange, onSave, confidence, destination, setDestination, scanPages = null, gate = null, onRetakePage }) {
   // Manual dish-photo re-crop (photo imports only — needs the original pages)
   const [showCropper, setShowCropper] = useState(false);
   const [showKindMenu, setShowKindMenu] = useState(false);
+  const [showCleanup, setShowCleanup] = useState(false);
   const kindMenuRef = useRef(null);
   // destination / setDestination are controlled from ImportSheet;
   // fall back to local state when used standalone
@@ -804,9 +807,23 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
   // ── Engine metadata chip (read-only; renders nothing on older recipes) ───
   const engineName = engineLabel(recipe._structuredVia);
   const audit = recipe._postProcessAudit;
-  const correctionCount =
-    (typeof audit?.movedCount === 'number' ? audit.movedCount : 0)
-    + (typeof audit?.filteredCount === 'number' ? audit.filteredCount : 0);
+
+  // ── Hard-to-read photo page (Tesseract confidence) ───────────────────────
+  // Cloud reads carry no score, so this only ever appears on on-device drafts.
+  const ocr = recipe._ocrConfidence;
+  const ocrHardPage = ocr && typeof ocr.min === 'number' && ocr.min < OCR_HARD_TO_READ ? (ocr.worstPage || 1) : null;
+  const ocrMultiPage = (recipe._scanPageCount || scanPages?.length || 0) > 1;
+  // Every line the deterministic cleanup moved or dropped, each undoable.
+  const cleanupEntries = [
+    ...(Array.isArray(audit?.moved) ? audit.moved : []),
+    ...(Array.isArray(audit?.filtered) ? audit.filtered : []),
+  ].filter((e) => e && e.line);
+  const cleanupLabel = (e) => (
+    e.to === 'directions' ? 'Moved to steps'
+      : e.to === 'ingredients' ? 'Moved to ingredients'
+        : e.reason === 'nutrition' ? 'Removed (nutrition info)'
+          : 'Removed (not a recipe line)'
+  );
 
   // ── Extraction source + image-status chip (Instagram import diagnostics) ──
   // Plain-language source labels — no scraper/brand jargon (Apify, oEmbed, IG JSON…).
@@ -853,7 +870,6 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
     usedAudioTranscript ? 'used audio transcript' : null,
     imageStatusLabel || null,
     visionErrorLabel || null,
-    correctionCount > 0 ? `tidied ${correctionCount} line${correctionCount === 1 ? '' : 's'}` : null,
     normalizationHints.length > 0
       ? `matched ${normalizationHints.length} ingredient name${normalizationHints.length === 1 ? '' : 's'}`
       : null,
@@ -944,6 +960,54 @@ export default function ImportReview({ recipe, onChange, onSave, confidence, des
         <p className="review-import-details">
           {importDetailParts.join(' · ')}
         </p>
+      )}
+
+      {cleanupEntries.length > 0 && (
+        <div className="review-cleanup">
+          <button
+            type="button"
+            className="review-cleanup-toggle"
+            aria-expanded={showCleanup}
+            onClick={() => setShowCleanup((v) => !v)}
+          >
+            Tidied {cleanupEntries.length} line{cleanupEntries.length === 1 ? '' : 's'}
+            <ChevronDown size={14} strokeWidth={2.5} className={`review-kind-chevron${showCleanup ? ' open' : ''}`} />
+          </button>
+          {showCleanup && (
+            <ul className="review-cleanup-list">
+              {cleanupEntries.map((e, i) => (
+                <li key={`${e.from}-${e.to || 'x'}-${i}-${e.line}`} className="review-cleanup-item">
+                  <span className="review-cleanup-text">
+                    <span className="review-cleanup-what">{cleanupLabel(e)}</span>
+                    <span className="review-cleanup-line">{e.line}</span>
+                  </span>
+                  <button
+                    type="button"
+                    className="review-cleanup-undo"
+                    aria-label={`Undo: put "${e.line}" back`}
+                    onClick={() => onChange(undoCleanup(recipe, e))}
+                  >
+                    Undo
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {ocrHardPage && (
+        <div className="review-flag-banner review-flag-banner--photo" role="status">
+          <span>
+            {ocrMultiPage ? `Page ${ocrHardPage} was hard to read.` : 'This photo was hard to read.'} Check
+            the list against the photo before saving.
+          </span>
+          {onRetakePage && (
+            <button type="button" onClick={() => onRetakePage(ocrHardPage)}>
+              {ocrMultiPage ? `Retake page ${ocrHardPage}` : 'Retake photo'}
+            </button>
+          )}
+        </div>
       )}
 
       {/* Kind chip — single control for meal/drink with dropdown menu naming

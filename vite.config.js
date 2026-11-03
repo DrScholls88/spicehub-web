@@ -257,17 +257,22 @@ VitePWA({
         // see whisperWorker.js env.useBrowserCache), so the service worker
         // doesn't need a copy, and eagerly shipping 21MB to every install for
         // an optional ASR fallback most sessions never touch would be a real
-        // regression for a "zero-cost, lightweight" PWA. Transcription itself
-        // only ever runs against a URL fetch anyway (there's no offline path
-        // into it), so there's no offline-sovereignty loss from lazy-loading
-        // this on first real use instead of precaching it.
+        // regression for a "zero-cost, lightweight" PWA. Since 2026-11-02 an
+        // uploaded video file IS an offline path into Whisper, so sw.js caches
+        // ort-*.wasm at runtime ('whisper-runtime', CacheFirst) on first real
+        // use: offline works after one online video import, with no install cost.
         // og-image.png (added 2026-08-24) is 74 KB and matches the `png` in the
         // glob above, but the APP never requests it — it exists purely for the
         // og:image / twitter:image tags in index.html, which are read by
         // crawlers and link-preview bots fetching the URL directly. Precaching
         // it would spend 74 KB of every user's install budget on a file that is
         // never fetched from inside the PWA.
-        globIgnores: ['**/ort-*.wasm', '**/ort-*.mjs', '**/og-image.png'],
+        // extract-*.js (~290 KB) is api/extract.js's HTML extractor, which the
+        // client loads only from the NATIVE in-app recipe browser
+        // (acquire/website.js packFromPageHtml). The PWA can never reach that
+        // path, so don't make every web install download it; the native app
+        // serves it from its own bundled files and doesn't need the precache.
+        globIgnores: ['**/ort-*.wasm', '**/ort-*.mjs', '**/og-image.png', '**/extract-*.js'],
       },
       // cleanupOutdatedCaches is called directly in sw.js (workbox-precaching
       // import) — no vite-plugin-pwa `workbox` block needed for it.

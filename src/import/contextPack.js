@@ -19,6 +19,8 @@
  *   commentRecipeFollower.js) depend on this staying raw — a cleaned caption
  *   has its bare URLs stripped, which is what breaks blog-link discovery.
  * @property {string|null} transcript ASR / subtitle text
+ * @property {string|null} slideText  text read off carousel slide images (acquire/instagramSlides.js)
+ * @property {string|null} frameText  on-screen text read off sampled video frames (acquire/videoFrames.js)
  * @property {string|null} markdown  Readability-isolated page content
  * @property {object|null} jsonLd    raw Schema.org Recipe node when found
  * @property {object|null} candidate parsed recipe candidate from structured data
@@ -40,6 +42,8 @@ export function createContextPack(fields = {}) {
     author: fields.author || '',
     caption: fields.caption || null,
     transcript: fields.transcript || null,
+    slideText: fields.slideText || null,
+    frameText: fields.frameText || null,
     markdown: fields.markdown || null,
     jsonLd: fields.jsonLd || null,
     candidate: fields.candidate || null,
@@ -118,6 +122,8 @@ export function packHasCompleteCandidate(pack) {
 export const PACK_BUDGET = {
   total: 50000,
   caption: 6000,
+  slideText: 6000,
+  frameText: 6000,
   transcript: 14000,
   jsonLd: 12000,
 };
@@ -141,6 +147,8 @@ export function buildPackSections(pack) {
   };
 
   push('CAPTION', pack.caption, PACK_BUDGET.caption);
+  push('TEXT ON THE CAROUSEL SLIDES', pack.slideText, PACK_BUDGET.slideText);
+  push('TEXT SHOWN ON SCREEN IN THE VIDEO', pack.frameText, PACK_BUDGET.frameText);
   push('TRANSCRIPT', pack.transcript, PACK_BUDGET.transcript);
 
   if (pack.jsonLd) {

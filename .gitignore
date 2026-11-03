@@ -85,3 +85,6 @@ keystore.properties
 *.p12
 *.p8
 *.mobileprovision
+
+# Import engine snapshot before video-frames work (2026-11-02). See RESTORE.md inside.
+_import_backup_2026-11-02/

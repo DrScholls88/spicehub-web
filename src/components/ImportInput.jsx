@@ -1,11 +1,12 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Camera, Upload, X, Check, Loader2 } from 'lucide-react';
+import { Camera, Upload, X, Check, Loader2, ClipboardPaste, ImageUp, Globe } from 'lucide-react';
 import { getDetectionLabel } from './SourcePill';
 import { isPdfFile, pdfToPageDataUrls } from '../lib/pdfPages.js';
 import { MAX_PAGES } from '../lib/photoImportEngine.js';
 import { hapticLight, hapticError } from '../haptics';
 import PageAligner from './PageAligner';
+import { isVideoFile, MAX_VIDEO_BYTES } from '../import/acquire/videoFile.js';
 
 /* ── Constants ──────────────────────────────────────────────────────────── */
 const FIRST_VISIT_KEY = 'spicehub_hasUsedImport';
@@ -21,8 +22,8 @@ function looksLikeUrl(s) {
  * One unified field that accepts URLs, text, photos, screenshots, or PDFs.
  * Auto-detects input type. Two separate, single-purpose actions cover
  * photo intake — kept distinct so it's always obvious which one to reach
- * for: Upload opens the phone's own file/gallery browser (images or
- * PDFs); Take Photo opens the system camera app for one snap. Neither
+ * for: Upload opens the phone's own file/gallery browser (images,
+ * PDFs, or a saved video, which imports straight away); Take Photo opens the system camera app for one snap. Neither
  * relies on a live in-browser camera feed, so both work even where
  * getUserMedia is blocked. Every raw photo either one produces — camera
  * or gallery — then runs through PageAligner, a static-image "Genius
@@ -42,8 +43,11 @@ export default function ImportInput({
   scanPages,
   setScanPages,
   onImport,        // Called on Enter key with URL (footer handles main CTA)
+  onVideo,         // Called with a picked video File — imports immediately (no staging)
   disabled,        // True during loading — field is hidden, SourcePill shows instead
   errorMsg,        // Error string for total-miss error line
+  missActions = [], // Next steps offered under errorMsg: 'browser' | 'paste' | 'screenshot' (importCopy.missMessage)
+  onOpenBrowser,   // Native only: open the link in the in-app browser and import what the person sees
 }) {
   const inputRef = useRef(null);
   const uploadInputRef = useRef(null);
@@ -95,6 +99,14 @@ export default function ImportInput({
     }
   }, [setUrl, setPasteText]);
 
+  // A link that can't be read (publisher wall, bot check): clear it and put
+  // the cursor in the field so the person can paste the recipe text there.
+  const handlePasteInstead = useCallback(() => {
+    setUrl('');
+    setPasteText('');
+    inputRef.current?.focus();
+  }, [setUrl, setPasteText]);
+
   // ── File / photo / PDF handling ───────────────────────────────────────
   // Accepts a FileList/array of images and/or PDFs from the Upload button,
   // the Camera button, a paste, or a drop. PDFs are rendered to page images
@@ -107,6 +119,24 @@ export default function ImportInput({
     const files = Array.from(fileList || []);
     if (!files.length) return;
     setNotice('');
+
+    // A video (saved Reel, screen recording) is its own import: speech +
+    // on-screen text, no page staging. One at a time; it wins over any
+    // photos picked alongside it.
+    const video = files.find(isVideoFile);
+    if (video) {
+      if (video.size > MAX_VIDEO_BYTES) {
+        hapticError();
+        setNotice('That video is over 250 MB. Trim it to the recipe part and try again.');
+        return;
+      }
+      if (onVideo) {
+        setUrl('');
+        setPasteText('');
+        onVideo(video);
+      }
+      return;
+    }
 
     const pdfCollected = [];
     const imageCollected = [];
@@ -150,7 +180,7 @@ export default function ImportInput({
     // Clear URL/text when photos are added
     setUrl('');
     setPasteText('');
-  }, [scanPages, queue, setScanPages, setUrl, setPasteText]);
+  }, [scanPages, queue, setScanPages, setUrl, setPasteText, onVideo]);
 
   const handlePaste = useCallback((e) => {
     // Check clipboard for files first (smart paste)
@@ -160,7 +190,7 @@ export default function ImportInput({
       for (let i = 0; i < items.length; i++) {
         if (items[i].kind === 'file') {
           const f = items[i].getAsFile();
-          if (f && (/^image\//.test(f.type) || isPdfFile(f))) files.push(f);
+          if (f && (/^image\//.test(f.type) || isPdfFile(f) || isVideoFile(f))) files.push(f);
         }
       }
       if (files.length > 0) {
@@ -251,7 +281,7 @@ export default function ImportInput({
     setDragOver(false);
     if (e.dataTransfer?.files?.length) {
       const files = Array.from(e.dataTransfer.files);
-      const usable = files.filter(f => /^image\//.test(f.type) || isPdfFile(f));
+      const usable = files.filter(f => /^image\//.test(f.type) || isPdfFile(f) || isVideoFile(f));
       if (usable.length > 0) {
         ingestFiles(usable);
         return;
@@ -298,11 +328,11 @@ export default function ImportInput({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      {/* Hidden file input — Upload button: gallery/files, images + PDFs */}
+      {/* Hidden file input — Upload button: gallery/files, images + PDFs + one video */}
       <input
         ref={uploadInputRef}
         type="file"
-        accept="image/*,application/pdf,.pdf"
+        accept="image/*,application/pdf,.pdf,video/*"
         multiple
         onChange={handleFileChange}
         style={{ display: 'none' }}
@@ -369,8 +399,8 @@ export default function ImportInput({
             <button
               className="import-input-field-action upload"
               onClick={handleUploadClick}
-              aria-label="Upload a photo, screenshot, or PDF"
-              title="Upload photo or PDF"
+              aria-label="Upload a photo, screenshot, PDF, or video"
+              title="Upload photo, PDF, or video"
               type="button"
             >
               <Upload size={20} strokeWidth={1.8} />
@@ -452,9 +482,33 @@ export default function ImportInput({
         )}
       </AnimatePresence>
 
+      {/* What to do instead, when the link itself can't be read */}
+      {errorMsg && missActions.length > 0 && (
+        <div className="import-input-miss-actions">
+          {missActions.includes('browser') && onOpenBrowser && (
+            <button type="button" className="import-input-miss-action" onClick={onOpenBrowser}>
+              <Globe size={16} strokeWidth={1.8} aria-hidden="true" />
+              Open in SpiceHub browser
+            </button>
+          )}
+          {missActions.includes('paste') && (
+            <button type="button" className="import-input-miss-action" onClick={handlePasteInstead}>
+              <ClipboardPaste size={16} strokeWidth={1.8} aria-hidden="true" />
+              Paste the recipe text
+            </button>
+          )}
+          {missActions.includes('screenshot') && (
+            <button type="button" className="import-input-miss-action" onClick={handleUploadClick}>
+              <ImageUp size={16} strokeWidth={1.8} aria-hidden="true" />
+              Upload a screenshot
+            </button>
+          )}
+        </div>
+      )}
+
       {/* First-visit hint */}
       {showFirstVisitHint && (
-        <p className="import-input-hint">or drop a photo, screenshot, or PDF of a recipe</p>
+        <p className="import-input-hint">or drop a photo, screenshot, PDF, or video of a recipe</p>
       )}
 
       {/* Static alignment step — Genius-Scan-style crop/flatten. Both

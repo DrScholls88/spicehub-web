@@ -28,6 +28,7 @@
  */
 
 import { captionToRecipe, parseCaption } from '../recipeParser.js';
+import { loadOcrLexicon, scoreLegibility } from '../import/legibility.js';
 import { compressImageUrl } from '../imageCompressor.js';
 import { GEMINI_VISION_MODEL as DEFAULT_GEMINI_VISION_MODEL } from './importConfig.js';
 
@@ -517,10 +518,39 @@ async function transcribeWithMistral(uploadPages, { signal } = {}) {
   return { ...contract, engine: 'mistral' };
 }
 
+// ── OCR confidence ─────────────────────────────────────────────────────────
+// Only Tesseract reports how sure it was; the cloud tiers return text without
+// a score, so their pages carry confidence: null and summarize to null.
+
+/** One Tesseract result → contract page. confidence = Tesseract's mean word confidence, 0–100. */
+export function ocrPageFromTesseract(result) {
+  const c = result?.data?.confidence;
+  return {
+    transcript: cleanOcrText(result?.data?.text || ''),
+    confidence: typeof c === 'number' && Number.isFinite(c) ? Math.round(c) : null,
+  };
+}
+
+/**
+ * Summarize per-page confidence → { min, worstPage (1-based), perPage }, or
+ * null when no page carries a score (cloud tiers).
+ */
+export function summarizeOcrConfidence(pages) {
+  if (!Array.isArray(pages)) return null;
+  const perPage = pages.map((p) => (typeof p?.confidence === 'number' ? p.confidence : null));
+  if (!perPage.some((c) => c !== null)) return null;
+  let worstPage = 0;
+  perPage.forEach((c, i) => { if (c !== null && (perPage[worstPage] === null || c < perPage[worstPage])) worstPage = i; });
+  return { min: perPage[worstPage], worstPage: worstPage + 1, perPage };
+}
+
 // ── Tier 3: Tesseract.js (on-device, always available) ─────────────────────
 
 async function transcribeWithTesseract(pages, { onProgress } = {}) {
   const { default: Tesseract } = await import('tesseract.js');
+  // Text-based legibility (src/import/legibility.js) backs up Tesseract's own
+  // confidence; a lexicon load failure just leaves Tesseract's score alone.
+  const lexicon = await loadOcrLexicon().catch(() => null);
   const out = [];
   for (let i = 0; i < pages.length; i++) {
     onProgress?.('transcribe', `Reading page ${i + 1} of ${pages.length} on-device…`);
@@ -544,10 +574,16 @@ async function transcribeWithTesseract(pages, { onProgress } = {}) {
           }
         },
       });
-      out.push({ transcript: cleanOcrText(result?.data?.text || '') });
+      const page = ocrPageFromTesseract(result);
+      if (lexicon) {
+        page.legibility = scoreLegibility(page.transcript, lexicon).score;
+        page.confidence = page.confidence === null ? page.legibility : Math.min(page.confidence, page.legibility);
+      }
+      out.push(page);
     } catch (err) {
       console.warn(`[PhotoImport] Tesseract failed on page ${i + 1}:`, err);
-      out.push({ transcript: '' });
+      // A page Tesseract could not read at all is as unreadable as it gets.
+      out.push({ transcript: '', confidence: 0 });
     }
   }
   return { pages: out, dishPhoto: null, contentType: 'recipe', engine: 'tesseract' };
@@ -696,6 +732,7 @@ export async function importRecipeFromPages(pages, { type = 'meal', kindLocked =
       contentType: contract.contentType,
       isDishPhotoOnly,
       visionError: visionError || null,
+      ocrConfidence: summarizeOcrConfidence(contract.pages),
       _scanPageCount: pages.length,
     };
   }
@@ -763,6 +800,7 @@ export async function importRecipeFromPages(pages, { type = 'meal', kindLocked =
   recipe._extractionSource = 'photo';
   recipe._ocrDraft = contract.engine === 'tesseract';
   recipe._dishPhotoBox = contract.dishPhoto || null;
+  recipe._ocrConfidence = summarizeOcrConfidence(contract.pages);
   recipe._scanPageCount = pages.length;
   // Persist every captured page (already-compressed upload copies, in reading
   // order) so the saved recipe can offer a swipeable gallery later — MealDetail

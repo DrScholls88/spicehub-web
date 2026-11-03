@@ -47,6 +47,8 @@ export async function acquirePhotoPack(pages, { kind = 'meal', kindLocked = fals
 
     // Carry vision metadata for review UI badges.
     if (result._ocrDraft) pack._ocrDraft = true;
+    pack._visionEngine = result._visionEngine || null;
+    if (result.ocrConfidence) pack._ocrConfidence = result.ocrConfidence;
     if (result.visionError) pack._visionError = result.visionError;
     if (result.dishPhoto) pack._dishPhoto = result.dishPhoto;
 
@@ -57,4 +59,34 @@ export async function acquirePhotoPack(pages, { kind = 'meal', kindLocked = fals
     // PhotoImportError and others → null so the engine gates as empty.
     return null;
   }
+}
+
+/**
+ * Copy the photo fields the review UI, the save path and the offline upgrade
+ * queue depend on from the pack onto the structured recipe. The legacy
+ * importRecipeFromPages full path stamped these itself; when the engine took
+ * over photo imports (2026-09-06) nothing did, so `_ocrDraft` never reached
+ * ImportSheet's upgrade queue, Review never said "read on your device", and
+ * saved recipes lost their page gallery (`_scanPages`).
+ *
+ * Mutates and returns the recipe; a null recipe passes through.
+ */
+export function stampPhotoMeta(recipe, pack) {
+  if (!recipe || !pack) return recipe;
+  const pages = (pack.images || []).map((img) => img.dataUrl || img.url).filter(Boolean);
+  recipe.sourceCaption = recipe.sourceCaption || pack.caption || '';
+  recipe._extractionSource = 'photo';
+  recipe._visionEngine = pack._visionEngine || null;
+  recipe._ocrDraft = !!pack._ocrDraft;
+  recipe._scanPages = pages;
+  recipe._scanPageCount = pages.length || (pack.scanPages || []).length;
+  recipe._dishPhotoBox = pack._dishPhoto || null;
+  if (pack._visionError) recipe._visionError = pack._visionError;
+  if (pack._ocrConfidence) recipe._ocrConfidence = pack._ocrConfidence;
+  if (recipe._ocrDraft) {
+    // Honest badge: on-device OCR drafts always warrant review.
+    recipe.confidence = Math.min(typeof recipe.confidence === 'number' ? recipe.confidence : 0.45, 0.45);
+    recipe.needsReview = true;
+  }
+  return recipe;
 }

@@ -49,6 +49,8 @@ const CHIP_RULES = [
   { chip: 'SpiceHub server', re: /via spicehub server|server-side|server extraction|ig-embed/i },
   { chip: 'Reddit',       re: /reddit/i },
   { chip: 'Gemini',       re: /gemini|✨|structuring|ai extraction/i },
+  { chip: 'Slides',       re: /carousel slide/i },
+  { chip: 'On-screen',    re: /on-screen text/i },
 ];
 
 /**
@@ -111,6 +113,8 @@ const CHIP_LABELS = {
   'JSON-LD': 'from the page', 'Microdata': 'from the page', 'SpiceHub server': 'from the page',
   'Caption': 'from the post', 'Reddit': 'from the thread', 'Video audio': 'from the video',
   'On-device': 'from the page',
+  'Slides': 'from the slides',
+  'On-screen': 'from the video',
   'Gemini': null,
 };
 export function chipLabel(chip) { return CHIP_LABELS[chip] || null; }

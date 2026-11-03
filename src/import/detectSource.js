@@ -52,11 +52,14 @@ const PLATFORM_TO_SOURCE = {
 /**
  * Detect the import source type from user input.
  *
- * @param {{ url?: string, text?: string, pages?: any[] }} input
- * @returns {'instagram'|'pinterest'|'reddit'|'youtube'|'tiktok'|'social'|'website'|'text'|'photo'}
+ * @param {{ url?: string, text?: string, pages?: any[], videoFile?: File }} input
+ * @returns {'instagram'|'pinterest'|'reddit'|'youtube'|'tiktok'|'social'|'website'|'text'|'photo'|'video'}
  */
 export function detectSource(input) {
   if (!input || typeof input !== 'object') return 'text';
+
+  // An uploaded video file (saved Reel / screen recording) takes priority
+  if (input.videoFile) return 'video';
 
   // Photo pages take priority
   if (Array.isArray(input.pages) && input.pages.length > 0) return 'photo';

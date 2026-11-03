@@ -13,6 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { extractPluginCandidate } from '../src/import/pluginExtractors.js';
 import { extractRdfaFromHtml } from '../src/lib/recipeHtmlExtraction.js';
+import { pageWallReason } from '../src/lib/importGuards.js';
 
 import {
   USER_AGENTS,
@@ -420,7 +421,14 @@ export async function fetchWithTimeout(url, headers, timeoutMs = EXTRACT_FETCH_T
     redirect: 'follow',
     signal: AbortSignal.timeout(timeoutMs),
   });
-  if (!res.ok) throw new Error(`upstream ${res.status}`);
+  if (!res.ok) {
+    const err = new Error(`upstream ${res.status}`);
+    err.status = res.status;
+    // Read the (small) block page so the client can tell a publisher wall
+    // from a bot challenge and say which one it hit.
+    err.wall = pageWallReason(await res.text().catch(() => ''), res.status) || undefined;
+    throw err;
+  }
   const text = await res.text();
   return text.length > MAX_HTML_BYTES ? text.slice(0, MAX_HTML_BYTES) : text;
 }
@@ -519,6 +527,11 @@ export default async function handler(req, res) {
     }
 
     const html = await fetchWithTimeout(url, BROWSER_HEADERS);
+    // A challenge served as a 200 is still a wall, not a recipe page.
+    const wall = pageWallReason(html, 200);
+    if (wall) {
+      return res.status(502).json({ ok: false, reason: 'fetch-failed', detail: `upstream 200 ${wall}`, status: 200, wall, url, elapsedMs: Date.now() - started });
+    }
     const result = extractFromHtml(html, url);
     return res.status(200).json({
       ok: true,
@@ -531,6 +544,8 @@ export default async function handler(req, res) {
       ok: false,
       reason: err?.name === 'TimeoutError' ? 'upstream-timeout' : 'fetch-failed',
       detail: err?.message || String(err),
+      status: err?.status,
+      wall: err?.wall,
       url,
       elapsedMs: Date.now() - started,
     });
